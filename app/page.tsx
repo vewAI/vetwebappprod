@@ -1,3 +1,5 @@
+"use client"
+
 import { CaseCard } from "@/features/case_selection/components/case-card"
 import { cases } from "@/features/case_selection/data/card-data"
 
@@ -19,4 +21,3 @@ export default function CaseSelectionPage() {
     </div>
   )
 }
-
