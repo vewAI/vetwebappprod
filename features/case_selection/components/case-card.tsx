@@ -48,7 +48,7 @@ export function CaseCard({ caseItem }: CaseCardProps) {
       <CardHeader>
         <CardTitle>{caseItem.title}</CardTitle>
         <CardDescription>
-          {caseItem.species} - {caseItem.condition}
+          {caseItem.species} - {caseItem.category}
         </CardDescription>
       </CardHeader>
       <CardContent>
