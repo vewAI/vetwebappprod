@@ -11,7 +11,7 @@ export const cases: Case[] = [
       category: "Internal Medicine",
       difficulty: "Easy",
       estimatedTime: 15,
-      imageUrl: "/placeholder.svg?height=400&width=600",
+      imageUrl: "/placeholder.svg",
     },
     {
       id: "case-2",
@@ -23,7 +23,7 @@ export const cases: Case[] = [
       category: "Emergency",
       difficulty: "Medium",
       estimatedTime: 20,
-      imageUrl: "/placeholder.svg?height=400&width=600",
+      imageUrl: "/placeholder.svg",
     },
     {
       id: "case-3",
@@ -35,7 +35,7 @@ export const cases: Case[] = [
       category: "Large Animal",
       difficulty: "Hard",
       estimatedTime: 30,
-      imageUrl: "/placeholder.svg?height=400&width=600",
+      imageUrl: "/placeholder.svg",
     },
     {
       id: "case-4",
@@ -47,7 +47,7 @@ export const cases: Case[] = [
       category: "Surgery",
       difficulty: "Medium",
       estimatedTime: 25,
-      imageUrl: "/placeholder.svg?height=400&width=600",
+      imageUrl: "/placeholder.svg",
     },
     {
       id: "case-5",
@@ -59,7 +59,7 @@ export const cases: Case[] = [
       category: "Internal Medicine",
       difficulty: "Medium",
       estimatedTime: 20,
-      imageUrl: "/placeholder.svg?height=400&width=600",
+      imageUrl: "/placeholder.svg",
     },
     {
       id: "case-6",
@@ -71,6 +71,6 @@ export const cases: Case[] = [
       category: "Large Animal",
       difficulty: "Easy",
       estimatedTime: 15,
-      imageUrl: "/placeholder.svg?height=400&width=600",
+      imageUrl: "/placeholder.svg",
     },
   ]
