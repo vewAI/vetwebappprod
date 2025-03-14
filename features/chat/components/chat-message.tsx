@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils"
 import type { Message } from "@/features/chat/models/chat"
 import { useEffect, useState } from "react"
 
-interface ChatMessageProps {
+type ChatMessageProps = {
   message: Message
 }
 

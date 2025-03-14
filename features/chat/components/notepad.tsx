@@ -5,7 +5,7 @@ import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 
-interface NotepadProps {
+type NotepadProps = {
   isOpen: boolean
   onClose: () => void
 }
