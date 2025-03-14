@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Clock, Tag, ChevronRight } from "lucide-react"
 import type { Case } from "@/features/case_selection/models/case"
 
-interface CaseCardProps {
+type CaseCardProps = {
   caseItem: Case
 }
 
