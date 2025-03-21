@@ -3,12 +3,12 @@ import type {Case} from '@/features/case_selection/models/case';
 export const cases: Case[] = [
     {
       id: "case-1",
-      title: "Canine Vomiting and Diarrhea",
+      title: "Equine High temperature",
       description:
-        "A 5-year-old Labrador Retriever presents with acute vomiting and diarrhea for the past 24 hours. The owner reports the dog may have gotten into the trash.",
-      species: "Canine",
-      condition: "Gastroenteritis",
-      category: "Internal Medicine",
+        "A 3-year-old Cob Mare called Catalina presents with a fever and decreased appetite for the past 24 hours.",
+      species: "Equine",
+      condition: "Strangles",
+      category: "Large Animal",
       difficulty: "Easy",
       estimatedTime: 15,
       imageUrl: "/placeholder.svg",
