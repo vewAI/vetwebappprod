@@ -5,6 +5,7 @@ export interface Stage {
   title: string;
   description: string;
   completed: boolean;
+  role: string; 
 }
 
 export interface StageDefinition {
