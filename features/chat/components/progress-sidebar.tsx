@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import type { Case } from "@/features/case_selection/models/case"
-import type { Stage } from "@/features/chat/models/chat"
+import type { Stage } from "@/features/stages/types"
 
 type ProgressSidebarProps = {
   caseItem: Case
@@ -75,4 +75,3 @@ export function ProgressSidebar({ caseItem, stages, currentStageIndex, onStageSe
     </div>
   )
 }
-
