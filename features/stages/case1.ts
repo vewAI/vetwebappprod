@@ -9,36 +9,42 @@ export const stages: Stage[] = [
     title: "Introduction",
     description: "Introduce yourself and obtain consent",
     completed: false,
+    role: "Virtual Examiner"
   },
   {
     id: "stage-2",
     title: "History Taking",
     description: "Gather relevant history from the client",
     completed: false,
+    role: "Client (Horse Owner)"
   },
   {
     id: "stage-3",
     title: "Physical Examination",
     description: "Perform appropriate physical exam",
     completed: false,
+    role: "Veterinary Assistant"
   },
   {
     id: "stage-4",
     title: "Diagnostic Plan",
     description: "Develop a diagnostic plan",
     completed: false,
+    role: "Laboratory Technician"
   },
   {
     id: "stage-5",
     title: "Treatment Plan",
     description: "Develop a treatment plan",
     completed: false,
+    role: "Client (Horse Owner)"
   },
   {
     id: "stage-6",
     title: "Client Communication",
     description: "Communicate findings and recommendations",
     completed: false,
+    role: "Client (Horse Owner)"
   },
 ];
 
@@ -78,6 +84,7 @@ export function getTransitionMessage(stageIndex: number): Message {
     role: "system",
     content,
     timestamp: new Date().toISOString(),
+    stageIndex,
   };
 }
 
