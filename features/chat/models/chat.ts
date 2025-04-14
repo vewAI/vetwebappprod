@@ -4,11 +4,3 @@ export type Message = {
   content: string
   timestamp: string
 }
-
-export type Stage = {
-  id: string
-  title: string
-  description: string
-  completed: boolean
-}  
-  
