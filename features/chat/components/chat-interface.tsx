@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { ChatMessage } from "@/features/chat/components/chat-message"
 import { Notepad } from "@/features/chat/components/notepad"
-import type { Message, Stage } from "@/features/chat/models/chat"
+import type { Message } from "@/features/chat/models/chat"
+import type { Stage } from "@/features/stages/types"
 import axios from "axios"
 
 type ChatInterfaceProps = {
@@ -54,6 +55,8 @@ export function ChatInterface({
         role: "system",
         content: `Moving to stage: ${stages[currentStageIndex].title}`,
         timestamp: new Date().toISOString(),
+        stageIndex: currentStageIndex,
+        displayRole: "Virtual Examiner" 
       }
 
       setMessages((prev) => [...prev, stageMessage])
@@ -70,6 +73,8 @@ export function ChatInterface({
       role: "user",
       content: input,
       timestamp: new Date().toISOString(),
+      stageIndex: currentStageIndex,
+      displayRole: "You"
     }
 
     setMessages((prev) => [...prev, userMessage])
@@ -94,6 +99,8 @@ export function ChatInterface({
         role: "assistant",
         content: response.data.content,
         timestamp: new Date().toISOString(),
+        stageIndex: currentStageIndex,
+        displayRole: stages[currentStageIndex].role
       }
       setMessages((prev) => [...prev, aiMessage])
     } catch (error) {
@@ -105,6 +112,8 @@ export function ChatInterface({
         role: "system",
         content: "Sorry, there was an error processing your request. Please try again.",
         timestamp: new Date().toISOString(),
+        stageIndex: currentStageIndex,
+        displayRole: "Virtual Examiner"
       }
       setMessages((prev) => [...prev, errorMessage])
     } finally {
@@ -128,7 +137,11 @@ export function ChatInterface({
       <div className="flex-1 overflow-y-auto p-4">
         <div className="mx-auto max-w-3xl space-y-4">
           {messages.map((message) => (
-            <ChatMessage key={message.id} message={message} />
+            <ChatMessage 
+              key={message.id} 
+              message={message} 
+              stages={stages}
+            />
           ))}
           {isLoading && (
             <div className="flex items-center space-x-2 text-sm text-muted-foreground">
