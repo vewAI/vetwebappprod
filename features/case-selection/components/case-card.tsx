@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Clock, Tag, ChevronRight } from "lucide-react"
-import type { Case } from "@/features/case_selection/models/case"
+import type { Case } from "@/features/case-selection/models/case"
 
 type CaseCardProps = {
   caseItem: Case

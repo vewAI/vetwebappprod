@@ -1,4 +1,4 @@
-import type {Case} from '@/features/case_selection/models/case';
+import type {Case} from '@/features/case-selection/models/case';
 
 export const cases: Case[] = [
     {
