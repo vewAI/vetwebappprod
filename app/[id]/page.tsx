@@ -1,7 +1,7 @@
 "use client"
 
 import { notFound } from "next/navigation"
-import { cases } from "@/features/case_selection/data/card-data"
+import { cases } from "@/features/case-selection/data/card-data"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft } from "lucide-react"

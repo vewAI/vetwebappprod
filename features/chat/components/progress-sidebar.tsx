@@ -4,7 +4,7 @@ import { CheckCircle, Circle, ChevronLeft } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import type { Case } from "@/features/case_selection/models/case"
+import type { Case } from "@/features/case-selection/models/case"
 import type { Stage } from "@/features/stages/types"
 
 type ProgressSidebarProps = {

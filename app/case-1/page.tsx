@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { notFound } from "next/navigation"
-import { cases } from "@/features/case_selection/data/card-data"
+import { cases } from "@/features/case-selection/data/card-data"
 import { ChatInterface } from "@/features/chat/components/chat-interface"
 import { ProgressSidebar } from "@/features/chat/components/progress-sidebar"
 import type { Message } from "@/features/chat/models/chat"
