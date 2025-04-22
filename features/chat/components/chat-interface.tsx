@@ -91,6 +91,8 @@ export function ChatInterface({
       // Call the API using axios instead of fetch
       const response = await axios.post('/api/chat', {
         messages: apiMessages,
+        stageIndex: currentStageIndex,
+        caseId: caseId,
       });
   
       // Add AI response to messages
