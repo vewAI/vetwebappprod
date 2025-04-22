@@ -6,6 +6,7 @@ export interface Stage {
   description: string;
   completed: boolean;
   role: string; 
+  roleInfoKey?: string;
 }
 
 export interface StageDefinition {
