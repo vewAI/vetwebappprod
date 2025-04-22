@@ -16,7 +16,8 @@ export const stages: Stage[] = [
     title: "History Taking",
     description: "Gather relevant history from the client",
     completed: false,
-    role: "Client (Horse Owner)"
+    role: "Client (Horse Owner)",
+    roleInfoKey: "getOwnerPrompt"
   },
   {
     id: "stage-3",
