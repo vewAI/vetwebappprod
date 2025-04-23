@@ -10,6 +10,7 @@ import { ChatMessage } from "@/features/chat/components/chat-message"
 import { Notepad } from "@/features/chat/components/notepad"
 import type { Message } from "@/features/chat/models/chat"
 import type { Stage } from "@/features/stages/types"
+import { getStageTransitionMessage } from "@/features/stages/services/stageService"
 import axios from "axios"
 
 type ChatInterfaceProps = {
@@ -50,18 +51,17 @@ export function ChatInterface({
   // Handle stage transitions
   useEffect(() => {
     if (currentStageIndex > 0) {
-      const stageMessage: Message = {
-        id: `stage-transition-${currentStageIndex}-${Date.now()}`,
-        role: "system",
-        content: `Moving to stage: ${stages[currentStageIndex].title}`,
-        timestamp: new Date().toISOString(),
-        stageIndex: currentStageIndex,
-        displayRole: "Virtual Examiner" 
-      }
-
-      setMessages((prev) => [...prev, stageMessage])
+      // Get the custom transition message for this case and stage
+      const transitionMessage = getStageTransitionMessage(caseId, currentStageIndex);
+      
+      // Add the transition message to the chat
+      setMessages((prev) => [...prev, {
+        ...transitionMessage,
+        id: `${transitionMessage.id}-${Date.now()}`,
+        displayRole: "Virtual Examiner"
+      }]);
     }
-  }, [currentStageIndex, stages])
+  }, [currentStageIndex, caseId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
