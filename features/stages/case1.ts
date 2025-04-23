@@ -9,7 +9,7 @@ export const stages: Stage[] = [
     title: "History Taking",
     description: "Introduce yourself and obtain history",
     completed: false,
-    role: "Virtual Examiner",
+    role: "Client (Horse Owner)",
     roleInfoKey: "getOwnerPrompt"
   },
   {
@@ -23,15 +23,15 @@ export const stages: Stage[] = [
   {
     id: "stage-3",
     title: "Owner Follow-up",
-    description: "Develop a diagnostic plan",
+    description: "Talk to the owner about tests needed to confirm diagnosis",
     completed: false,
-    role: "Laboratory Technician",
-    roleInfoKey: "getDiagnosticPrompt"
+    role: "Client (Horse Owner)",
+    roleInfoKey: "getOwnerFollowUpPrompt"
   },
   {
     id: "stage-4",
     title: "Diagnostic Plan",
-    description: "Develop a diagnostic plan",
+    description: "Develop a diagnostic plan based on tests results",
     completed: false,
     role: "Laboratory Technician",
     roleInfoKey: "getDiagnosticPrompt"
