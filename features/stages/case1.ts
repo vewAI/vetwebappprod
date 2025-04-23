@@ -6,32 +6,35 @@ import type { Message } from "@/features/chat/models/chat";
 export const stages: Stage[] = [
   {
     id: "stage-1",
-    title: "Introduction",
-    description: "Introduce yourself and obtain consent",
-    completed: false,
-    role: "Virtual Examiner"
-  },
-  {
-    id: "stage-2",
     title: "History Taking",
-    description: "Gather relevant history from the client",
+    description: "Introduce yourself and obtain history",
     completed: false,
-    role: "Client (Horse Owner)",
+    role: "Virtual Examiner",
     roleInfoKey: "getOwnerPrompt"
   },
   {
-    id: "stage-3",
+    id: "stage-2",
     title: "Physical Examination",
     description: "Perform appropriate physical exam",
     completed: false,
-    role: "Veterinary Assistant"
+    role: "Veterinary Assistant",
+    roleInfoKey: "getPhysicalExamPrompt"
+  },
+  {
+    id: "stage-3",
+    title: "Owner Follow-up",
+    description: "Develop a diagnostic plan",
+    completed: false,
+    role: "Laboratory Technician",
+    roleInfoKey: "getDiagnosticPrompt"
   },
   {
     id: "stage-4",
     title: "Diagnostic Plan",
     description: "Develop a diagnostic plan",
     completed: false,
-    role: "Laboratory Technician"
+    role: "Laboratory Technician",
+    roleInfoKey: "getDiagnosticPrompt"
   },
   {
     id: "stage-5",
@@ -55,18 +58,18 @@ export function getTransitionMessage(stageIndex: number): Message {
   switch (stageIndex) {
     case 0:
       content =
-        "Let's begin with introductions. Please introduce yourself to the client and explain the purpose of today's examination.";
+        "Now, let's move on to history taking. Ask relevant questions about the horse's condition, history, and current symptoms.";
       break;
     case 1:
       content =
-        "Now, let's move on to history taking. Ask relevant questions about the horse's condition, history, and current symptoms.";
+        "It's time for the physical examination. Describe what you would do to examine this horse, being specific about your approach.";
       break;
     case 2:
       content =
-        "It's time for the physical examination. Describe what you would do to examine this horse, being specific about your approach.";
+        "Based on your physical exam findings, converse with Catalina's owner to suggest follow up tests that need to be done.";
       break;
     case 3:
-      content = "Based on your findings, what diagnostic tests would you recommend for this potential infectious disease case? Please explain your reasoning.";
+      content = "Consult with the laboratoy technician to find the results of the tests.";
       break;
     case 4:
       content =
