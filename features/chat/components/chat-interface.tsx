@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { ChatMessage } from "@/features/chat/components/chat-message"
 import { Notepad } from "@/features/chat/components/notepad"
+import { FeedbackButton } from "@/features/feedback/components/feedback-button"
 import type { Message } from "@/features/chat/models/chat"
 import type { Stage } from "@/features/stages/types"
 import { getStageTransitionMessage } from "@/features/stages/services/stageService"
@@ -157,14 +158,23 @@ export function ChatInterface({
       {/* Proceed to Next Stage button */}
       <div className="border-t bg-background p-4">
         <div className="mx-auto max-w-3xl">
-          <Button 
-            onClick={onProceedToNextStage} 
-            disabled={isLastStage} 
-            className="mb-4 w-full bg-gradient-to-l from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600 border-none transition-all duration-300" 
-            variant="outline"
-          >
-            {nextStageTitle}
-          </Button>
+          <div className="flex justify-between items-center mb-4 gap-4">
+            <Button 
+              onClick={onProceedToNextStage} 
+              disabled={isLastStage} 
+              className="flex-1 bg-gradient-to-l from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600 border-none transition-all duration-300" 
+              variant="outline"
+            >
+              {nextStageTitle}
+            </Button>
+            
+            <FeedbackButton 
+              messages={messages}
+              stage={stages[currentStageIndex]}
+              stageIndex={currentStageIndex}
+              caseId={caseId}
+            />
+          </div>
 
           {/* Input area */}
           <form onSubmit={handleSubmit} className="relative">
