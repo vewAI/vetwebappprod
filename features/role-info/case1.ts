@@ -261,24 +261,55 @@ Remember to be both educational and encouraging in your feedback, while emphasiz
   Remember to stay in character as the horse owner and only provide information that is specifically asked about.
     `,
   
-    getHistoryFeedbackPrompt: (context: string) => `
-  You are providing educational feedback on a veterinary student's history-taking skills. Based on the following requirements and the questions the student asked during their interaction with the owner, provide constructive feedback that will help them improve their clinical skills.
-  
-  ${case1RoleInfo.historyFeedback}
-  
-  Here are the questions and answers from the student's interaction with the owner:
-  ${context}
-  
-  Based on these interactions, provide specific, constructive feedback that:
-  1. Acknowledges what they did well in their questioning approach
-  2. Identifies critical information they missed or could have explored further
-  3. Suggests specific follow-up questions they should have asked
-  4. Comments on their systematic approach to history taking
-  5. Emphasizes the importance of any missed points relevant to infectious disease investigation
-  6. Provides examples of better ways to phrase certain questions if applicable
-
-  Keep feedback professional but encouraging, highlighting both strengths and areas for improvement. If they haven't asked many questions yet, encourage them to explore more aspects of the case history
-    `,
+    getHistoryFeedbackPrompt: (context: string) => {
+      
+      const studentMessageCount = (context.match(/Student:/g) || []).length;
+      
+      if (studentMessageCount < 3) {
+        return `
+          You are providing guidance to a veterinary student who is just starting their history-taking for an equine case.
+          The student has asked very few questions (${studentMessageCount} questions) so far.
+          
+          Here is the limited interaction so far:
+          ${context}
+          
+          Instead of providing feedback on their performance, give them guidance on:
+          1. The importance of thorough history taking in veterinary practice
+          2. Key areas they should explore in this case (without revealing any potential diagnoses)
+          3. Examples of good open-ended questions they could ask
+          4. A reminder that they should ask more questions before requesting feedback
+          
+          Be encouraging and supportive, but make it clear that they need to engage more with the history-taking process before meaningful feedback can be provided.
+          
+          DO NOT praise their current approach or suggest they've done well when they've barely interacted with the case.
+          
+          IMPORTANT: Do not mention any specific diagnoses (like strangles or any other condition). The student should determine the diagnosis based on their own investigation.
+        `;
+      }
+      
+      return `
+        You are providing educational feedback on a veterinary student's history-taking skills for an equine case. Based on the following requirements and the questions the student asked during their interaction with the owner, provide constructive feedback that will help them improve their clinical skills.
+        
+        ${case1RoleInfo.historyFeedback}
+        
+        Here are the questions and answers from the student's interaction with the owner:
+        ${context}
+        
+        Based on these interactions, provide specific, constructive feedback that:
+        1. Acknowledges what they did well in their questioning approach
+        2. Identifies critical information they missed or could have explored further
+        3. Suggests specific follow-up questions they should have asked
+        4. Comments on their systematic approach to history taking
+        5. Emphasizes the importance of any missed points relevant to infectious disease investigation
+        6. Provides examples of better ways to phrase certain questions if applicable
+        
+        Keep feedback professional but encouraging, highlighting both strengths and areas for improvement. If they haven't asked many questions yet, encourage them to explore more aspects of the case history.
+        
+        IMPORTANT: 
+        1. Be honest in your assessment. If the student has not performed well or has missed critical information, do not give false praise.
+        2. Do not mention any specific diagnoses (like strangles or any other condition). The student should determine the diagnosis based on their own investigation.
+      `;
+    },
   
     getPhysicalExamPrompt: (studentQuestion: string) => `
   You are a veterinary assistant helping with the physical examination of Catalina. You have access to the following examination findings, but you must ONLY provide information that the student specifically asks about. If they don't ask about a specific parameter, don't mention it.
