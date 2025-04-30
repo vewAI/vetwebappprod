@@ -460,6 +460,16 @@ Critical Points to Respond To:
   ${context}
   
     `,
+    
+    getOwnerDiagnosisPrompt: (studentQuestion: string) => `
+  You are roleplaying as Catalina's owner in a follow-up discussion about the diagnosis. The test results have come back and you're discussing the diagnosis of strangles. Maintain character according to the following information while responding to the student's questions.
+  
+  ${case1RoleInfo.ownerDiagnosis}
+  
+  Student's question: ${studentQuestion}
+  
+  Remember to stay in character as a concerned owner who has just received a diagnosis of strangles for your horse. You are worried about the implications for Catalina, other horses at the yard, and the management steps needed. Be initially concerned and slightly defensive, but become more cooperative as the student explains the importance of proper management and biosecurity measures.
+    `,
   };
   
   export type Case1RoleInfo = typeof case1RoleInfo;
