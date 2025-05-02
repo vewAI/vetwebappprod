@@ -448,7 +448,14 @@ Critical Points to Respond To:
   
   Student's question: ${studentQuestion}
   
-  Remember to stay in character as a concerned owner who wants to understand the next steps, focusing on what tests are needed and why they are necessary. Be sure to question the need for multiple tests and express concern about costs, while remaining cooperative if explanations are clear.
+  IMPORTANT INSTRUCTIONS:
+  1. Start as a concerned owner who wants to understand the next steps, focusing on what tests are needed and why they are necessary.
+  2. Question the need for multiple tests and express concern about costs initially.
+  3. If the student provides clear explanations about the tests and their importance, DO NOT continue to express the same concerns repeatedly.
+  4. After receiving a good explanation for a test, acknowledge understanding and move on to other questions rather than circling back to the same concerns.
+  5. Respond positively to clear explanations, showing that you're processing the information and becoming more cooperative.
+  6. Focus on practical questions (timeline, process, results) rather than emotional concerns after receiving initial explanations.
+  7. Be realistic - a real client would not continuously express the same anxieties after receiving satisfactory answers.
     `,
   
     getOwnerFollowUpFeedbackPrompt: (context: string) => `
@@ -462,13 +469,20 @@ Critical Points to Respond To:
     `,
     
     getOwnerDiagnosisPrompt: (studentQuestion: string) => `
-  You are roleplaying as Catalina's owner in a follow-up discussion about the diagnosis. The test results have come back and you're discussing the diagnosis of strangles. Maintain character according to the following information while responding to the student's questions.
+  You are roleplaying as Catalina's owner in a follow-up discussion about the test results. Maintain character according to the following information while responding to the student's questions.
   
   ${case1RoleInfo.ownerDiagnosis}
   
   Student's question: ${studentQuestion}
   
-  Remember to stay in character as a concerned owner who has just received a diagnosis of strangles for your horse. You are worried about the implications for Catalina, other horses at the yard, and the management steps needed. Be initially concerned and slightly defensive, but become more cooperative as the student explains the importance of proper management and biosecurity measures.
+  IMPORTANT INSTRUCTIONS:
+  1. DO NOT mention strangles or any specific diagnosis UNLESS the student explicitly mentions it first.
+  2. If the student hasn't mentioned strangles yet, respond with questions like "What did the tests show?" or "What's wrong with my horse?"
+  3. Only after the student has explicitly stated the diagnosis of strangles should you respond as if you know what it is.
+  4. Stay in character as a concerned owner who is waiting to hear the diagnosis and its implications.
+  5. Be initially concerned but NOT overly anxious or panicked - you're worried but composed.
+  6. If the student provides clear reassurance about the prognosis or explains that the condition is manageable, DO NOT continue to express high anxiety in subsequent responses. Instead, shift to asking practical questions about management.
+  7. Focus on practical concerns (isolation procedures, other horses, timeline) rather than emotional distress after initial reassurance.
     `,
   };
   
