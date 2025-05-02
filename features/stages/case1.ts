@@ -41,7 +41,8 @@ export const stages: Stage[] = [
     title: "Treatment Plan",
     description: "Develop a treatment plan",
     completed: false,
-    role: "Client (Horse Owner)"
+    role: "Client (Horse Owner)",
+    roleInfoKey: "getOwnerDiagnosisPrompt"
   },
   {
     id: "stage-6",
