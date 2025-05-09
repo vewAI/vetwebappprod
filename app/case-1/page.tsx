@@ -1,10 +1,11 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { notFound } from "next/navigation"
+import axios from "axios"
 import { cases } from "@/features/case-selection/data/card-data"
 import { ChatInterface } from "@/features/chat/components/chat-interface"
 import { ProgressSidebar } from "@/features/chat/components/progress-sidebar"
+import { CompletionDialog } from "@/features/feedback/components/completion-dialog"
 import type { Message } from "@/features/chat/models/chat"
 import type { Stage } from "@/features/stages/types"
 import { getStagesForCase, getStageTransitionMessage, initializeStages, markStageCompleted } from "@/features/stages/services/stageService"
@@ -66,8 +67,13 @@ export default function Case1Page() {
     // getStageTransitionMessage(0),
   ]
 
-  // Update the handleProceedToNextStage function to add a transition message
-  const handleProceedToNextStage = () => {
+  // State for tracking loading state during feedback generation
+  const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false)
+  const [showCompletionDialog, setShowCompletionDialog] = useState(false)
+  const [feedbackContent, setFeedbackContent] = useState("")
+
+  // Update the handleProceedToNextStage function to add a transition message and handle completion
+  const handleProceedToNextStage = async (messages?: Message[]) => {
     if (currentStageIndex < stages.length - 1) {
       // Mark current stage as completed
       setStages(markStageCompleted(stages, currentStageIndex))
@@ -85,8 +91,31 @@ export default function Case1Page() {
       // Handle completion of the final stage
       setStages(markStageCompleted(stages, currentStageIndex))
 
-      // You could navigate to a results page or show a completion modal
-      alert("Examination completed! You've finished all stages.")
+      // Generate overall feedback if we have messages
+      if (messages && messages.length > 0) {
+        try {
+          setIsGeneratingFeedback(true)
+          setShowCompletionDialog(true)
+          
+          // Call the API to generate feedback
+          const response = await axios.post('/api/overall-feedback', {
+            caseId: caseId,
+            messages: messages
+          })
+          
+          // Set the feedback content
+          setFeedbackContent(response.data.feedback)
+        } catch (error) {
+          console.error('Error generating feedback:', error)
+          setFeedbackContent("<p>Unable to generate feedback at this time. Please try again later.</p>")
+        } finally {
+          setIsGeneratingFeedback(false)
+        }
+      } else {
+        // Fallback if no messages are available
+        setShowCompletionDialog(true)
+        setFeedbackContent("<p>Examination completed! You've finished all stages.</p>")
+      }
     }
   }
 
@@ -123,6 +152,15 @@ export default function Case1Page() {
           onProceedToNextStage={handleProceedToNextStage}
         />
       </div>
+
+      {/* Completion Dialog */}
+      <CompletionDialog
+        isOpen={showCompletionDialog}
+        onClose={() => setShowCompletionDialog(false)}
+        feedback={feedbackContent}
+        isLoading={isGeneratingFeedback}
+        caseId={caseId.replace('case-', '')}
+      />
     </div>
   )
 }
