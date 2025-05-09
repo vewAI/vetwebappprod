@@ -555,6 +555,9 @@ Critical Points to Respond To:
   - Format the feedback in clear sections with headings for readability
   - Use a professional, supportive tone throughout
   - Focus feedback on the process and reasoning rather than just the outcome
+  - CRITICAL: Only provide positive feedback on skills that were actually demonstrated in the conversation
+  - If there was minimal or no student interaction, acknowledge this fact and focus on what they need to do to complete the case properly
+  - Do NOT assume the student demonstrated understanding or skills if they did not show evidence of this in their messages
 
   Your feedback should help the student understand their strengths and weaknesses in handling a case with infectious disease implications, emphasizing both clinical skills and the critical importance of biosecurity measures in equine practice.
     `,
