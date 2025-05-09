@@ -23,7 +23,7 @@ export function CompletionDialog({
   const router = useRouter()
   
   const handleReturnHome = () => {
-    router.push('/cases')
+    router.push('/')
   }
   
   const handleRestartCase = () => {
@@ -62,7 +62,7 @@ export function CompletionDialog({
               <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
               <span className="text-center">Generating your comprehensive feedback...</span>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 max-w-md text-center">
-                This may take a moment as we analyze your performance across all stages.
+                This may take a moment as we analyse your performance across all stages.
               </p>
             </div>
           ) : (
