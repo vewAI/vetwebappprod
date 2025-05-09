@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import axios from "axios"
+import { useSearchParams } from "next/navigation"
 import { cases } from "@/features/case-selection/data/card-data"
 import { ChatInterface } from "@/features/chat/components/chat-interface"
 import { ProgressSidebar } from "@/features/chat/components/progress-sidebar"
@@ -14,6 +15,7 @@ export default function Case1Page() {
   // Hardcode the case ID for this specific page
   const caseId = "case-1"
   const caseItem = cases.find((c) => c.id === caseId)
+  const searchParams = useSearchParams()
   
   const [isMobile, setIsMobile] = useState(false)
   const [showSidebar, setShowSidebar] = useState(true)
@@ -43,6 +45,24 @@ export default function Case1Page() {
       window.removeEventListener("resize", checkMobile)
     }
   }, [])
+  
+  // Check for reset parameter and reset the state if present
+  useEffect(() => {
+    const reset = searchParams.get('reset')
+    if (reset === 'true') {
+      // Reset to initial state
+      setCurrentStageIndex(0)
+      const caseStages = getStagesForCase(caseId)
+      setStages(initializeStages(caseStages))
+      setShowCompletionDialog(false)
+      setFeedbackContent('')
+      
+      // Remove the reset parameter from the URL to prevent resetting on refresh
+      const url = new URL(window.location.href)
+      url.searchParams.delete('reset')
+      window.history.replaceState({}, '', url)
+    }
+  }, [searchParams, caseId])
 
   if (!caseItem) {
     console.error(`Case with ID "${caseId}" not found`)
