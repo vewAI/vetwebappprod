@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { supabase } from "@/lib/supabase";
 
 // UI Components
 import { Button } from "@/components/ui/button";
@@ -17,15 +17,23 @@ import {
   CardFooter,
 } from "@/components/ui/card";
 
-// Supabase
-import { supabase } from "@/lib/supabase";
+// Auth Service
+import { useAuth } from "@/features/auth/services/authService";
 
 export default function LoginForm() {
   const router = useRouter();
+  const { user } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Redirect if user is already logged in
+  useEffect(() => {
+    if (user) {
+      router.push('/');
+    }
+  }, [user, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,12 +57,10 @@ export default function LoginForm() {
       });
       
       if (error) {
-        throw error;
+        throw new Error(error.message || 'Failed to sign in');
       }
       
-      // Redirect on success
-      router.push("/"); 
-      router.refresh(); 
+      console.log('Login successful:', data);
       
     } catch (err: any) {
       setError(err.message || "Failed to sign in");
