@@ -488,6 +488,19 @@ Critical Points to Respond To:
     getOverallFeedbackPrompt: (context: string) => `
   You are an experienced veterinary educator providing comprehensive feedback on a student's performance in a clinical case simulation involving a horse named Catalina with suspected strangles. The student has completed all stages of the examination, and you need to provide detailed, constructive feedback based on their performance throughout the entire case.
 
+  IMPORTANT - FIRST ANALYZE INTERACTION LEVEL:
+  1. Identify which stages the student engaged with by analyzing the conversation context below.
+  2. For each stage (History Taking, Physical Examination, Diagnostic Plan, Owner Follow-up, Treatment Plan, Client Communication):
+     - Check if the student had meaningful interaction in that stage (at least 2-3 substantive messages)
+     - If a stage has minimal or no interaction, make a note to address this specifically
+  
+  3. Based on your analysis:
+     - If the student had meaningful interaction in MOST stages, provide full feedback following the standard format below
+     - If the student had meaningful interaction in SOME stages, provide feedback ONLY on those stages they engaged with, and briefly note which stages lacked sufficient interaction
+     - If the student had minimal interaction overall (fewer than 3 substantive messages total), use an <h2> heading "Insufficient Overall Interaction" and explain they need more engagement for meaningful feedback
+  
+  4. IMPORTANT: Do not give generic praise or positive feedback for stages where the student had minimal or no interaction. Be honest about which parts of the case they actually engaged with.
+
   CASE SUMMARY:
   Catalina is a 3-year-old Cob mare presenting with lethargy, reduced appetite, and a fever. The case involves suspicion of strangles (Streptococcus equi) infection, which requires careful diagnostic approach and biosecurity considerations.
 
