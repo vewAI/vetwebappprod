@@ -361,55 +361,45 @@ Critical Points to Respond To:
   Remember to stay in character as the horse owner and only provide information that is specifically asked about.
     `,
   
-    getHistoryFeedbackPrompt: (context: string) => {
-      
-      const studentMessageCount = (context.match(/Student:/g) || []).length;
-      
-      if (studentMessageCount < 3) {
-        return `
-          You are providing guidance to a veterinary student who is just starting their history-taking for an equine case.
-          The student has asked very few questions (${studentMessageCount} questions) so far.
-          
-          Here is the limited interaction so far:
-          ${context}
-          
-          Instead of providing feedback on their performance, give them guidance on:
-          1. The importance of thorough history taking in veterinary practice
-          2. Key areas they should explore in this case (without revealing any potential diagnoses)
-          3. Examples of good open-ended questions they could ask
-          4. A reminder that they should ask more questions before requesting feedback
-          
-          Be encouraging and supportive, but make it clear that they need to engage more with the history-taking process before meaningful feedback can be provided.
-          
-          DO NOT praise their current approach or suggest they've done well when they've barely interacted with the case.
-          
-          IMPORTANT: Do not mention any specific diagnoses (like strangles or any other condition). The student should determine the diagnosis based on their own investigation.
-        `;
-      }
-      
-      return `
-        You are providing educational feedback on a veterinary student's history-taking skills for an equine case. Based on the following requirements and the questions the student asked during their interaction with the owner, provide constructive feedback that will help them improve their clinical skills.
-        
-        ${case1RoleInfo.historyFeedback}
-        
-        Here are the questions and answers from the student's interaction with the owner:
-        ${context}
-        
-        Based on these interactions, provide specific, constructive feedback that:
-        1. Acknowledges what they did well in their questioning approach
-        2. Identifies critical information they missed or could have explored further
-        3. Suggests specific follow-up questions they should have asked
-        4. Comments on their systematic approach to history taking
-        5. Emphasizes the importance of any missed points relevant to infectious disease investigation
-        6. Provides examples of better ways to phrase certain questions if applicable
-        
-        Keep feedback professional but encouraging, highlighting both strengths and areas for improvement. If they haven't asked many questions yet, encourage them to explore more aspects of the case history.
-        
-        IMPORTANT: 
-        1. Be honest in your assessment. If the student has not performed well or has missed critical information, do not give false praise.
-        2. Do not mention any specific diagnoses (like strangles or any other condition). The student should determine the diagnosis based on their own investigation.
-      `;
-    },
+    getHistoryFeedbackPrompt: (context: string) => `
+    IMPORTANT - FIRST CHECK FOR MINIMAL INTERACTION:
+    1. Count how many messages from the "Student" appear in the conversation context below
+    2. If there are fewer than 3 student messages, this indicates MINIMAL INTERACTION
+    3. For minimal interaction, provide GUIDANCE instead of feedback
+    4. For sufficient interaction, provide detailed FEEDBACK on their history-taking skills
+
+    Here is the conversation context to analyze:
+    ${context}
+
+    GUIDANCE FOR MINIMAL INTERACTION:
+    If the student has sent fewer than 3 messages:
+    1. Explain that meaningful feedback requires more interaction with the case
+    2. Provide guidance on the importance of thorough history taking in veterinary practice
+    3. Suggest key areas they should explore in this case (without revealing any potential diagnoses)
+    4. Give examples of good open-ended questions they could ask
+    5. Remind them to ask more questions before requesting feedback
+    6. Be encouraging but clear that they need to engage more with the history-taking process
+    7. DO NOT praise their current approach when they've barely interacted with the case
+
+    FEEDBACK FOR SUFFICIENT INTERACTION:
+    If the student has sent 3 or more messages, provide educational feedback based on the following criteria:
+    ${case1RoleInfo.historyFeedback}
+
+    Your feedback should:
+    1. Acknowledge what they did well in their questioning approach
+    2. Identify critical information they missed or could have explored further
+    3. Suggest specific follow-up questions they should have asked
+    4. Comment on their systematic approach to history taking
+    5. Emphasize the importance of any missed points relevant to infectious disease investigation
+    6. Provide examples of better ways to phrase certain questions if applicable
+
+    Keep feedback professional but encouraging, highlighting both strengths and areas for improvement.
+
+    IMPORTANT GUIDELINES:
+    1. Be honest in your assessment. If the student has not performed well or has missed critical information, do not give false praise.
+    2. Do not mention any specific diagnoses (like strangles or any other condition). The student should determine the diagnosis based on their own investigation.
+  `,
+  
   
     getPhysicalExamPrompt: (studentQuestion: string) => `
   You are a veterinary assistant helping with the physical examination of Catalina. You have access to the following examination findings, but you must ONLY provide information that the student specifically asks about. If they don't ask about a specific parameter, don't mention it.
