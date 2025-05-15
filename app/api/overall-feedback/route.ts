@@ -13,10 +13,6 @@ export async function POST(request: Request) {
     
     console.log('Generating overall feedback for case:', caseId)
     
-    // Count student messages to check for minimal interaction
-    const studentMessages = messages.filter((msg: Message) => msg.role === 'user')
-    const hasMinimalInteraction = studentMessages.length < 3
-    
     // Format messages into a context string for the feedback prompt
     const context = messages
       .map((msg: Message) => {
