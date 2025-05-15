@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/features/auth/services/authService";
 import ProtectedRoute from "@/features/auth/components/ProtectedRoute";
+import Navbar from "@/features/navigation/components/Navbar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -31,9 +32,19 @@ export default function RootLayout({
       >
         <AuthProvider>
           {process.env.NEXT_PUBLIC_ENABLE_AUTH_PROTECTION === 'true' ? (
-            <ProtectedRoute>{children}</ProtectedRoute>
+            <ProtectedRoute>
+              <Navbar />
+              <main>
+                {children}
+              </main>
+            </ProtectedRoute>
           ) : (
-            children
+            <>
+              <Navbar />
+              <main>
+                {children}
+              </main>
+            </>
           )}
         </AuthProvider>
       </body>
