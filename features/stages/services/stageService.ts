@@ -42,8 +42,8 @@ export function getStageTransitionMessage(caseId: string, stageIndex: number): M
 }
 
 /**
- * Initialize stages with the first stage marked as completed
- * @param stages Array of stages to initialize
+ * Initialise stages with the first stage marked as completed
+ * @param stages Array of stages to initialise
  * @returns A new array with the first stage marked as completed
  */
 export function initializeStages(stages: Stage[]): Stage[] {

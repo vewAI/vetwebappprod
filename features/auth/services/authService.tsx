@@ -21,12 +21,12 @@ const AuthContext = createContext<AuthContextType>({
   signOut: async () => {}
 })
 
-// Initialize Supabase client
+// Initialise Supabase client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// AuthProvider component that wraps your app and makes auth object available to any child component that calls useAuth()
+// AuthProvider component that wraps the app and makes auth object available to any child component that calls useAuth()
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
