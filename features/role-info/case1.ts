@@ -365,10 +365,9 @@ Critical Points to Respond To:
   
     getHistoryFeedbackPrompt: (context: string) => `
     IMPORTANT - FIRST CHECK FOR MINIMAL INTERACTION:
-    1. Count how many messages from the "Student" appear in the conversation context below
-    2. If there are fewer than 3 student messages, this indicates MINIMAL INTERACTION
-    3. For minimal interaction, provide GUIDANCE instead of feedback
-    4. For sufficient interaction, provide detailed FEEDBACK on their history-taking skills
+    1. Determine if the student has engaged minimally (fewer than 3 messages) in the conversation context below.
+    2. If there is minimal interaction, provide GUIDANCE instead of feedback, but do not mention the number of messages or count in your response.
+    3. For sufficient interaction, provide detailed FEEDBACK on their history-taking skills.
 
     Here is the conversation context to analyze:
     ${context}
