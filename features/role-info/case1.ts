@@ -1,4 +1,6 @@
-export const case1RoleInfo = {
+import type { RoleInfo } from "./types";
+
+export const case1RoleInfo: RoleInfo = {
     physicalExamFindings: `
   Physical Examination Findings for Catalina:
     Vital Signs:
