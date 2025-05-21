@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAi from 'openai'
-import { case1RoleInfo } from '@/features/role-info/case1'
+import { feedbackPromptRegistry } from '@/features/feedback/feedback-prompts'
 
 const openai = new OpenAi({
   apiKey: process.env.OPENAI_API_KEY
@@ -8,7 +8,7 @@ const openai = new OpenAi({
 
 export async function POST(request: NextRequest) {
   try {
-    const { messages, stageIndex, caseId, stageName } = await request.json()
+    const { messages, stageIndex, caseId, stageName, feedbackPrompt: feedbackPromptFromClient } = await request.json()
     
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json(
@@ -37,29 +37,13 @@ export async function POST(request: NextRequest) {
       }
     })
     
-    // Get the appropriate feedback prompt based on the stage
-    let feedbackPrompt = ""
-    const availableStages = ["History Taking", "Owner Follow-up"]
-    
-    if (!availableStages.includes(stageName)) {
+    // Require the prompt to be provided by the client
+    const feedbackPrompt = feedbackPromptFromClient;
+    if (!feedbackPrompt) {
       return NextResponse.json(
-        { error: 'Feedback is not available for this stage' },
+        { error: 'feedbackPrompt is required in the request body.' },
         { status: 400 }
-      )
-    }
-    
-    switch (stageName) {
-      case "History Taking":
-        feedbackPrompt = case1RoleInfo.getHistoryFeedbackPrompt(context)
-        break
-      case "Owner Follow-up":
-        feedbackPrompt = case1RoleInfo.getOwnerFollowUpFeedbackPrompt(context)
-        break
-      default:
-        return NextResponse.json(
-          { error: 'Feedback is not available for this stage' },
-          { status: 400 }
-        )
+      );
     }
     
     // Call OpenAI API
