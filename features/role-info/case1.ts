@@ -450,13 +450,32 @@ Critical Points to Respond To:
     `,
   
     getOwnerFollowUpFeedbackPrompt: (context: string) => `
-  You are providing educational feedback on a veterinary student's diagnostic planning and client communication skills. Based on the following requirements and the student's interaction with the owner about diagnostic testing, provide constructive feedback that will help them improve their clinical skills.
-  
-  ${case1RoleInfo.ownerFollowUpFeedback}
-  
-  Here are the questions, explanations, and responses from the student's interaction with the owner:
-  ${context}
-  
+IMPORTANT - FIRST CHECK FOR MINIMAL INTERACTION:
+1. Determine if the student has engaged minimally (fewer than 3 messages) in the conversation context below.
+2. If there is minimal interaction, provide GUIDANCE instead of feedback, but do not mention the number of messages or count in your response.
+3. For sufficient interaction, provide detailed FEEDBACK on their diagnostic planning and client communication skills regarding diagnostic testing and biosecurity.
+
+Here is the conversation context to analyze:
+${context}
+
+If the student has sent fewer than 3 messages:
+1. Explain that meaningful feedback requires more interaction with the owner during this stage.
+2. Emphasize the importance of discussing diagnostic plans and biosecurity with the owner in a clear, stepwise manner.
+3. Suggest that the student should:
+   - Ask the owner about their understanding and concerns regarding proposed diagnostic tests and costs.
+   - Clearly explain the rationale for each recommended test (e.g., nasopharyngeal swab, lymph node assessment) and what information these tests provide.
+   - Discuss the importance and logistics of biosecurity and isolation, and address practical management questions (e.g., isolation duration, monitoring, yard management).
+   - Engage the owner in a discussion about timelines, costs, and next steps.
+4. Give examples of good approaches, such as: "I recommend a nasopharyngeal swab to check for infectious causes, and here's why..." or "It's important to keep Catalina isolated for now to protect the other horses."
+5. Remind the student to ask more questions and provide clear explanations before requesting feedback, as this will lead to more meaningful and helpful guidance.
+6. Do NOT praise or critique their current approach when there has been minimal interaction—focus only on what should be done at this stage and why it matters.
+
+If the student has sent 3 or more messages, provide educational feedback based on the following criteria:
+${case1RoleInfo.ownerFollowUpFeedback}
+
+Here are the questions, explanations, and responses from the student's interaction with the owner:
+${context}
+
     `,
     
     getOwnerDiagnosisPrompt: (studentQuestion: string) => `
