@@ -1,5 +1,5 @@
 import { case1RoleInfo } from "../case1";
-import { Stage } from "@/features/stages/types";
+import { caseConfig } from "@/features/config/case-config";
 
 type CaseId = 'case-1';
 // add more cases here
@@ -29,8 +29,8 @@ export function getRoleInfoPrompt(
     return null;
   }
 
-  // Import the stages for this case to get the roleInfoKey
-  const caseStages = getCaseStages(caseId);
+  // Get the stages for this case from the config
+  const caseStages = caseConfig[caseId];
   if (!caseStages || !caseStages[stageIndex]) {
     return null;
   }
@@ -54,19 +54,6 @@ export function getRoleInfoPrompt(
 // Function to check if the caseId is valid
 function isCaseIdValid(caseId: string): caseId is CaseId {
   return Object.keys(caseRoleInfoMap).includes(caseId);
-}
-
-// Function to get the stages for a specific case
-function getCaseStages(caseId: string): Stage[] | null {
-  // could be improved to use dynamic imports for better code splitting
-  switch (caseId) {
-    case "case-1":
-      return require("@/features/stages/case1").stages;
-    // case "case-2":
-    //   return require("@/features/stages/case2").stages;
-    default:
-      return null;
-  }
 }
 
 // Function to get all available case IDs
