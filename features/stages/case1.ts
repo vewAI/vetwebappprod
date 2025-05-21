@@ -1,58 +1,6 @@
-// /features/chat/stages/case-1-stages.ts
-import { Stage, StageDefinition } from "./types";
 import type { Message } from "@/features/chat/models/chat";
 
-// Equine High Temperature (Strangles) - Case 1
-export const stages: Stage[] = [
-  {
-    id: "stage-1",
-    title: "History Taking",
-    description: "Introduce yourself and obtain history",
-    completed: false,
-    role: "Client (Horse Owner)",
-    roleInfoKey: "getOwnerPrompt"
-  },
-  {
-    id: "stage-2",
-    title: "Physical Examination",
-    description: "Perform appropriate physical exam",
-    completed: false,
-    role: "Veterinary Assistant",
-    roleInfoKey: "getPhysicalExamPrompt"
-  },
-  {
-    id: "stage-3",
-    title: "Owner Follow-up",
-    description: "Talk to the owner about tests needed to confirm diagnosis",
-    completed: false,
-    role: "Client (Horse Owner)",
-    roleInfoKey: "getOwnerFollowUpPrompt"
-  },
-  {
-    id: "stage-4",
-    title: "Diagnostic Plan",
-    description: "Develop a diagnostic plan based on tests results",
-    completed: false,
-    role: "Laboratory Technician",
-    roleInfoKey: "getDiagnosticPrompt"
-  },
-  {
-    id: "stage-5",
-    title: "Treatment Plan",
-    description: "Develop a treatment plan",
-    completed: false,
-    role: "Client (Horse Owner)",
-    roleInfoKey: "getOwnerDiagnosisPrompt"
-  },
-  {
-    id: "stage-6",
-    title: "Client Communication",
-    description: "Communicate findings and recommendations",
-    completed: false,
-    role: "Client (Horse Owner)"
-  },
-];
-
+// Equine High Temperature transition messages
 export function getTransitionMessage(stageIndex: number): Message {
   let content = "";
 
@@ -92,10 +40,3 @@ export function getTransitionMessage(stageIndex: number): Message {
     stageIndex,
   };
 }
-
-const case1StageDefinition: StageDefinition = {
-  stages,
-  getTransitionMessage,
-};
-
-export default case1StageDefinition;
