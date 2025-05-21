@@ -5,8 +5,9 @@ export interface Stage {
   title: string;
   description: string;
   completed: boolean;
-  role: string; 
+  role: string;
   roleInfoKey?: string;
+  feedbackPromptKey?: string; // <-- new field for scalable feedback prompt lookup
 }
 
 export interface StageDefinition {
