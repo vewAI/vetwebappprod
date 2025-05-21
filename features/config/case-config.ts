@@ -8,7 +8,8 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       description: "Take a detailed history from the horse owner.",
       completed: false,
       role: "Veterinary Student",
-      roleInfoKey: "getOwnerPrompt"
+      roleInfoKey: "getOwnerPrompt",
+      feedbackPromptKey: "getHistoryFeedbackPrompt"
     },
     {
       id: "stage-2",
@@ -24,7 +25,8 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       description: "Talk to the owner about tests needed to confirm diagnosis",
       completed: false,
       role: "Client (Horse Owner)",
-      roleInfoKey: "getOwnerFollowUpPrompt"
+      roleInfoKey: "getOwnerFollowUpPrompt",
+      feedbackPromptKey: "getOwnerFollowUpFeedbackPrompt"
     },
     {
       id: "stage-4",
