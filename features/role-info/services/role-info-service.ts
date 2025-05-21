@@ -1,17 +1,19 @@
 import { case1RoleInfo } from "../case1";
 import { caseConfig } from "@/features/config/case-config";
+import type { RoleInfo, RoleInfoPromptFn } from "../types";
 
 type CaseId = 'case-1';
 // add more cases here
 
-interface RoleInfo {
-  [key: string]: any;
-}
 const caseRoleInfoMap: Record<CaseId, RoleInfo> = {
   "case-1": case1RoleInfo,
   // "case-2": case2RoleInfo,
 };
 
+/**
+ * Gets a role-specific prompt for the given case and stage.
+ * Only calls the prompt function if it exists and matches the expected signature.
+ */
 export function getRoleInfoPrompt(
   caseId: string,
   stageIndex: number,
@@ -44,8 +46,14 @@ export function getRoleInfoPrompt(
   const promptFunction = roleInfo[stage.roleInfoKey];
 
   // If the prompt function exists and is callable, return the result
-  if (typeof promptFunction === 'function') {
-    return promptFunction(userMessage);
+  if (typeof promptFunction === "function") {
+    return (promptFunction as RoleInfoPromptFn)(userMessage);
+  }
+  // check if the key exists but is not a function
+  if (promptFunction !== undefined) {
+    console.warn(
+      `roleInfoKey "${stage.roleInfoKey}" exists but is not a function in role info for case "${caseId}".`
+    );
   }
 
   return null;
