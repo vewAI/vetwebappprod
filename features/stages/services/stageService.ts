@@ -1,12 +1,7 @@
-import case1StageDefinition from "../case1";
-import type { Stage, StageDefinition } from "../types";
+import { caseConfig } from "@/features/config/case-config";
+import type { Stage } from "../types";
 import type { Message } from "@/features/chat/models/chat";
-
-// Simple mapping of case IDs to their stage definitions
-const caseStageMap: Record<string, StageDefinition> = {
-  "case-1": case1StageDefinition,
-  // Add more cases here as needed in the future
-};
+import { getTransitionMessage as getCase1TransitionMessage } from "../case1";
 
 /**
  * Get the stages for a specific case
@@ -14,31 +9,33 @@ const caseStageMap: Record<string, StageDefinition> = {
  * @returns Array of stages for the specified case
  */
 export function getStagesForCase(caseId: string): Stage[] {
-  const stageDefinition = caseStageMap[caseId];
-  
-  if (!stageDefinition) {
+  const stages = caseConfig[caseId];
+  if (!stages) {
     console.warn(`No stage definition found for case ${caseId}, using case-1 as fallback`);
-    return case1StageDefinition.stages;
+    return caseConfig["case-1"];
   }
-  
-  return stageDefinition.stages;
+  return stages;
 }
 
 /**
  * Get a transition message for a specific stage in a case
- * @param caseId The ID of the case
- * @param stageIndex The index of the stage
- * @returns A message object for the stage transition
+ * Add new cases to the switch below as you expand the app.
  */
 export function getStageTransitionMessage(caseId: string, stageIndex: number): Message {
-  const stageDefinition = caseStageMap[caseId];
-  
-  if (!stageDefinition) {
-    console.warn(`No stage definition found for case ${caseId}, using case-1 as fallback`);
-    return case1StageDefinition.getTransitionMessage(stageIndex);
+  switch (caseId) {
+    case "case-1":
+      return getCase1TransitionMessage(stageIndex);
+    // case "case-2":
+    //   return getCase2TransitionMessage(stageIndex);
+    default:
+      return {
+        id: `stage-transition-${stageIndex}`,
+        role: "system",
+        content: "Transition message not available for this case.",
+        timestamp: new Date().toISOString(),
+        stageIndex,
+      };
   }
-  
-  return stageDefinition.getTransitionMessage(stageIndex);
 }
 
 /**
