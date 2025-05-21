@@ -1,4 +1,6 @@
-export const caseConfig: { [caseId: string]: any } = {
+import type { Stage } from "@/features/stages/types";
+
+export const caseConfig: { [caseId: string]: Stage[] } = {
   "case-1": [
     {
       id: "stage-1",
@@ -6,7 +8,7 @@ export const caseConfig: { [caseId: string]: any } = {
       description: "Take a detailed history from the horse owner.",
       completed: false,
       role: "Veterinary Student",
-      roleInfoKey: "getHistoryPrompt"
+      roleInfoKey: "getOwnerPrompt"
     },
     {
       id: "stage-2",
@@ -14,7 +16,7 @@ export const caseConfig: { [caseId: string]: any } = {
       description: "Perform a physical examination of the horse.",
       completed: false,
       role: "Veterinary Student",
-      roleInfoKey: "getExamPrompt"
+      roleInfoKey: "getPhysicalExamPrompt"
     },
     {
       id: "stage-3",
