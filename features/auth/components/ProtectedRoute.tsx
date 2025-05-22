@@ -3,9 +3,9 @@
 import { useAuth } from '@/features/auth/services/authService'
 import { useRouter, usePathname } from 'next/navigation'
 import { useEffect, ReactNode } from 'react'
-import LoadingScreen from '@/components/ui/loading-screen'
+import { LoadingScreen } from '@/components/ui/loading-screen'
 
-export default function ProtectedRoute({ 
+export function ProtectedRoute({ 
   children 
 }: { 
   children: ReactNode 

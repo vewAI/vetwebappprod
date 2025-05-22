@@ -19,7 +19,7 @@ import {
 // Auth Service
 import { useAuth } from "@/features/auth/services/authService";
 
-export default function LoginForm() {
+export function LoginForm() {
   const router = useRouter();
   const { user, signIn } = useAuth();
   const [email, setEmail] = useState("");

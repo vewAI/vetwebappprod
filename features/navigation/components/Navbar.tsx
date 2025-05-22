@@ -8,7 +8,7 @@ import { useAuth } from '@/features/auth/services/authService'
 import { Button } from '@/components/ui/button'
 import { Menu, X, Home, LayoutDashboard, LogOut } from 'lucide-react'
 
-export default function Navbar() {
+export function Navbar() {
   const { user, signOut } = useAuth()
   const pathname = usePathname()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
