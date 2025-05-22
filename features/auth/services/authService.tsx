@@ -3,8 +3,6 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { User, Session } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
-
-// Import the supabase client from the utility file
 import { supabase } from '@/lib/supabase'
 
 // Define the shape of our auth context
@@ -27,7 +25,6 @@ const AuthContext = createContext<AuthContextType>({
 
 // AuthProvider component that wraps the app and makes auth object available to any child component that calls useAuth()
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
@@ -39,9 +36,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         if (error) {
           console.error('Error getting session:', error.message)
-        } else if (data.session) {
-          setSession(data.session) 
-          setUser(data.session.user)
+        } else {
+          setSession(data.session)
         }
       } catch (error) {
         console.error('Unexpected error during getSession:', error)
@@ -54,10 +50,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Set up a listener for auth state changes
     const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log(`Auth state changed: ${event}`)
-        setSession(session)
-        setUser(session?.user ?? null)
+      async (event, newSession) => {
+
+        setSession(newSession)
         setLoading(false)
         
         // Redirect based on auth state
@@ -99,7 +94,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Provide the auth context value to children
   return (
-    <AuthContext.Provider value={{ user, session, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{
+      user: session?.user ?? null,
+      session,
+      loading,
+      signIn,
+      signOut
+    }}>
       {children}
     </AuthContext.Provider>
   )
