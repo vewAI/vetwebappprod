@@ -4,12 +4,14 @@ import React, { createContext, useContext, useEffect, useState, ReactNode } from
 import { createClient } from '@supabase/supabase-js'
 import { User, Session } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
+import axios from 'axios'
 
 // Define the shape of our auth context
 type AuthContextType = {
   user: User | null
   session: Session | null
   loading: boolean
+  signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
 }
 
@@ -18,6 +20,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   session: null,
   loading: true,
+  signIn: async () => {},
   signOut: async () => {}
 })
 
@@ -74,19 +77,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [router])
 
+  // Sign in function that can be called from any component using useAuth()
+  const signIn = async (email: string, password: string) => {
+    try {
+      // Call the login API route
+      const response = await axios.post('/api/auth/login', { email, password });
+      
+      console.log('Login successful:', response.data);
+      // Navigate to home page after successful login
+      router.push('/');
+    } catch (error) {
+      throw error;
+    }
+  }
+
   // Sign out function that can be called from any component using useAuth()
   const signOut = async () => {
     try {
-      await supabase.auth.signOut()
-      router.push('/login')
+      // Call the signout API route
+      await axios.post('/api/auth/signout');
+      setUser(null);
+      setSession(null);
+      router.push('/login');
     } catch (error) {
-      console.error('Error signing out:', error)
+      console.error('Error signing out:', error);
     }
   }
 
   // Provide the auth context value to children
   return (
-    <AuthContext.Provider value={{ user, session, loading, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   )
