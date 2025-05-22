@@ -9,7 +9,7 @@ import { ProgressSidebar } from "@/features/chat/components/progress-sidebar"
 import { CompletionDialog } from "@/features/feedback/components/completion-dialog"
 import type { Message } from "@/features/chat/models/chat"
 import type { Stage } from "@/features/stages/types"
-import { getStagesForCase, getStageTransitionMessage, initializeStages, markStageCompleted } from "@/features/stages/services/stageService"
+import { getStagesForCase, initializeStages, markStageCompleted } from "@/features/stages/services/stageService"
 
 export default function Case1Page() {
   // Hardcode the case ID for this specific page
@@ -70,22 +70,7 @@ export default function Case1Page() {
   }
 
   // Update the initialMessages to include the first stage transition message
-  const initialMessages: Message[] = [
-    // {
-    //   id: "1",
-    //   role: "system",
-    //   content:
-    //     "Welcome to the OSCE simulation. I will be playing the role of the client and patient. Please proceed with your examination.",
-    //   timestamp: new Date().toISOString(),
-    // },
-    // {
-    //   id: "2",
-    //   role: "assistant",
-    //   content: `Hello, I'm here with my ${caseItem.species.toLowerCase()} who hasn't been feeling well. Can you help us?`,
-    //   timestamp: new Date().toISOString(),
-    // },
-    // getStageTransitionMessage(0),
-  ]
+  const initialMessages: Message[] = []
 
   // State for tracking loading state during feedback generation
   const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false)
@@ -101,12 +86,6 @@ export default function Case1Page() {
       // Move to next stage
       const nextStageIndex = currentStageIndex + 1
       setCurrentStageIndex(nextStageIndex)
-
-      // Add a transition message to the chat
-      const transitionMessage = getStageTransitionMessage(caseId, nextStageIndex)
-      // You would need to add this message to your chat state
-      // For example, if you had a setMessages function:
-      // setMessages(prev => [...prev, transitionMessage]);
     } else {
       // Handle completion of the final stage
       setStages(markStageCompleted(stages, currentStageIndex))
