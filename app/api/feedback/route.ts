@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAi from 'openai'
-import { feedbackPromptRegistry } from '@/features/feedback/feedback-prompts'
 
 const openai = new OpenAi({
   apiKey: process.env.OPENAI_API_KEY
