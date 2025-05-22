@@ -1,6 +1,6 @@
 import OpenAi from 'openai';
 import { NextRequest, NextResponse } from 'next/server';
-import { getRoleInfoPrompt } from '@/features/role-info/services/role-info-service';
+import { getRoleInfoPrompt } from '@/features/role-info/services/roleInfoService';
 
 const openai = new OpenAi({
     apiKey: process.env.OPENAI_API_KEY
