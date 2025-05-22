@@ -1,10 +1,11 @@
 'use client'
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { createClient } from '@supabase/supabase-js'
 import { User, Session } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
-import axios from 'axios'
+
+// Import the supabase client from the utility file
+import { supabase } from '@/lib/supabase'
 
 // Define the shape of our auth context
 type AuthContextType = {
@@ -23,11 +24,6 @@ const AuthContext = createContext<AuthContextType>({
   signIn: async () => {},
   signOut: async () => {}
 })
-
-// Initialise Supabase client
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // AuthProvider component that wraps the app and makes auth object available to any child component that calls useAuth()
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -64,9 +60,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null)
         setLoading(false)
         
-        // Refresh the page on auth changes to update server components
-        if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
-          router.refresh()
+        // Redirect based on auth state
+        if (event === 'SIGNED_IN') {
+          router.push('/')
+        } else if (event === 'SIGNED_OUT') {
+          router.push('/login')
         }
       }
     )
@@ -79,28 +77,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Sign in function that can be called from any component using useAuth()
   const signIn = async (email: string, password: string) => {
-    try {
-      // Call the login API route
-      const response = await axios.post('/api/auth/login', { email, password });
-      
-      console.log('Login successful:', response.data);
-      // Navigate to home page after successful login
-      router.push('/');
-    } catch (error) {
-      throw error;
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    })
+    
+    if (error) {
+      throw error
     }
   }
 
   // Sign out function that can be called from any component using useAuth()
   const signOut = async () => {
-    try {
-      // Call the signout API route
-      await axios.post('/api/auth/signout');
-      setUser(null);
-      setSession(null);
-      router.push('/login');
-    } catch (error) {
-      console.error('Error signing out:', error);
+    const { error } = await supabase.auth.signOut()
+    
+    if (error) {
+      console.error('Error signing out:', error)
+      throw error
     }
   }
 
