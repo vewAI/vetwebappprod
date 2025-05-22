@@ -78,6 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
     
     if (error) {
+      console.error('Error signing in:', error)
       throw error
     }
   }
