@@ -24,7 +24,11 @@ export async function POST(request: Request) {
     // Get the appropriate prompt based on case ID
     let feedbackPrompt
     if (caseId === 'case-1') {
-      feedbackPrompt = case1RoleInfo.getOverallFeedbackPrompt(context)
+      if (typeof case1RoleInfo.getOverallFeedbackPrompt === 'function') {
+        feedbackPrompt = case1RoleInfo.getOverallFeedbackPrompt(context)
+      } else { //use directly as string if not function
+        feedbackPrompt = case1RoleInfo.getOverallFeedbackPrompt
+      }
     } else {
       return NextResponse.json(
         { error: 'Unsupported case ID' },
