@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/features/auth/services/authService";
-import { ProtectedRoute } from "@/features/auth/components/ProtectedRoute";
-import { Navbar } from "@/features/navigation/components/Navbar";
+import { ProtectedRoute } from "@/features/auth/components/protected-route";
+import { Navbar } from "@/features/navigation/components/navbar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
