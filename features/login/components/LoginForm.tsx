@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
 
 // UI Components
 import { Button } from "@/components/ui/button";
@@ -22,7 +21,7 @@ import { useAuth } from "@/features/auth/services/authService";
 
 export default function LoginForm() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -49,24 +48,15 @@ export default function LoginForm() {
     
     try {
       setLoading(true);
-      
-      // Sign in with Supabase
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      
-      if (error) {
-        throw new Error(error.message || 'Failed to sign in');
-      }
-      
-      console.log('Login successful:', data);
-      
+      // Use the signIn function from authService
+      await signIn(email, password);
     } catch (err: any) {
+      // Handle error and display appropriate message
       setError(err.message || "Failed to sign in");
       console.error("Login error:", err);
     } finally {
       setLoading(false);
+      setPassword("");
     }
   };
 
