@@ -7,7 +7,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       title: "History Taking",
       description: "Take a detailed history from the horse owner.",
       completed: false,
-      role: "Veterinary Student",
+      role: "Client (Horse Owner)",
       roleInfoKey: "getOwnerPrompt",
       feedbackPromptKey: "getHistoryFeedbackPrompt"
     },
@@ -16,7 +16,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       title: "Physical Examination",
       description: "Perform a physical examination of the horse.",
       completed: false,
-      role: "Veterinary Student",
+      role: "Veterinarian",
       roleInfoKey: "getPhysicalExamPrompt"
     },
     {
