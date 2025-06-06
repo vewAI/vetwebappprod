@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { ChatMessage } from "@/features/chat/components/chat-message"
 import { Notepad } from "@/features/chat/components/notepad"
 import { FeedbackButton } from "@/features/feedback/components/feedback-button"
+import { SaveAttemptButton } from "@/features/attempts/components/save-attempt-button"
 import type { Message } from "@/features/chat/models/chat"
 import type { Stage } from "@/features/stages/types"
 import { getStageTransitionMessage } from "@/features/stages/services/stageService"
@@ -16,6 +17,7 @@ import axios from "axios"
 
 type ChatInterfaceProps = {
   caseId: string
+  attemptId?: string
   initialMessages?: Message[]
   currentStageIndex: number
   stages: Stage[]
@@ -24,6 +26,7 @@ type ChatInterfaceProps = {
 
 export function ChatInterface({
   caseId,
+  attemptId,
   initialMessages = [],
   currentStageIndex,
   stages,
@@ -33,6 +36,7 @@ export function ChatInterface({
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [showNotepad, setShowNotepad] = useState(false)
+  const [timeSpentSeconds, setTimeSpentSeconds] = useState(0)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -48,6 +52,20 @@ export function ChatInterface({
       textareaRef.current.focus()
     }
   }, [])
+  
+  // Timer to track time spent on the case
+  useEffect(() => {
+    // Only start the timer if we have an attempt ID
+    if (!attemptId) return
+    
+    // Set up a timer that increments every second
+    const timer = setInterval(() => {
+      setTimeSpentSeconds(prev => prev + 1)
+    }, 1000)
+    
+    // Clean up the timer when the component unmounts
+    return () => clearInterval(timer)
+  }, [attemptId])
 
   // Handle stage transitions
   useEffect(() => {
@@ -171,12 +189,23 @@ export function ChatInterface({
               {nextStageTitle}
             </Button>
             
-            <FeedbackButton 
-              messages={messages}
-              stage={stages[currentStageIndex]}
-              stageIndex={currentStageIndex}
-              caseId={caseId}
-            />
+            <div className="flex gap-2">
+              {attemptId && (
+                <SaveAttemptButton
+                  attemptId={attemptId}
+                  stageIndex={currentStageIndex}
+                  messages={messages}
+                  timeSpentSeconds={timeSpentSeconds}
+                />
+              )}
+              
+              <FeedbackButton 
+                messages={messages}
+                stage={stages[currentStageIndex]}
+                stageIndex={currentStageIndex}
+                caseId={caseId}
+              />
+            </div>
           </div>
 
           {/* Input area */}
