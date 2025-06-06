@@ -1,12 +1,14 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import React, { useEffect, useState, useRef } from "react"
 import axios from "axios"
 import { useSearchParams } from "next/navigation"
 import { cases } from "@/features/case-selection/data/card-data"
 import { ChatInterface } from "@/features/chat/components/chat-interface"
 import { ProgressSidebar } from "@/features/chat/components/progress-sidebar"
 import { CompletionDialog } from "@/features/feedback/components/completion-dialog"
+import { createAttempt, completeAttempt } from "@/features/attempts/services/attemptService"
+import { useAuth } from "@/features/auth/services/authService"
 import type { Message } from "@/features/chat/models/chat"
 import type { Stage } from "@/features/stages/types"
 import { getStagesForCase, initializeStages, markStageCompleted } from "@/features/stages/services/stageService"
@@ -16,10 +18,16 @@ export default function Case1Page() {
   const caseId = "case-1"
   const caseItem = cases.find((c) => c.id === caseId)
   const searchParams = useSearchParams()
+  const { user } = useAuth()
   
   const [isMobile, setIsMobile] = useState(false)
   const [showSidebar, setShowSidebar] = useState(true)
   const [currentStageIndex, setCurrentStageIndex] = useState(0)
+  const [attemptId, setAttemptId] = useState<string | null>(null)
+  const [isCreatingAttempt, setIsCreatingAttempt] = useState(false)
+  
+  // Use a ref to track if we've already tried to create an attempt
+  const hasInitializedAttempt = useRef(false)
   
   // Initialise stages
   const [stages, setStages] = useState<Stage[]>(() => {
@@ -32,6 +40,50 @@ export default function Case1Page() {
     setCurrentStageIndex(index)
   }
 
+  // Check for an existing attempt ID in the URL or create a new one
+  useEffect(() => {
+    // Skip if we've already initialized an attempt or if there's no user
+    if (hasInitializedAttempt.current || !user) return
+    
+    // Mark that we've tried to initialize an attempt
+    hasInitializedAttempt.current = true
+    
+    // Check if there's an attempt ID in the URL
+    const existingAttemptId = searchParams.get('attempt')
+    if (existingAttemptId) {
+      console.log('Using existing attempt ID from URL:', existingAttemptId)
+      setAttemptId(existingAttemptId)
+      return
+    }
+    
+    // Otherwise create a new attempt
+    const initializeAttempt = async () => {
+      if (attemptId || isCreatingAttempt) return
+      
+      try {
+        setIsCreatingAttempt(true)
+        console.log('Creating new attempt for case:', caseId)
+        const attempt = await createAttempt(caseId)
+        
+        if (attempt) {
+          console.log('New attempt created:', attempt.id)
+          setAttemptId(attempt.id)
+          
+          // Add the attempt ID to the URL without causing a navigation
+          const url = new URL(window.location.href)
+          url.searchParams.set('attempt', attempt.id)
+          window.history.replaceState({}, '', url)
+        }
+      } catch (error) {
+        console.error('Error creating attempt:', error)
+      } finally {
+        setIsCreatingAttempt(false)
+      }
+    }
+    
+    initializeAttempt()
+  }, [user, caseId, attemptId, isCreatingAttempt, searchParams])
+  
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768)
@@ -104,6 +156,16 @@ export default function Case1Page() {
           
           // Set the feedback content
           setFeedbackContent(response.data.feedback)
+          
+          // Mark the attempt as completed in the database
+          if (attemptId) {
+            try {
+              console.log('Marking attempt as completed:', attemptId)
+              await completeAttempt(attemptId, response.data.feedback)
+            } catch (completeError) {
+              console.error('Error marking attempt as completed:', completeError)
+            }
+          }
         } catch (error) {
           console.error('Error generating feedback:', error)
           setFeedbackContent("<p>Unable to generate feedback at this time. Please try again later.</p>")
@@ -114,6 +176,16 @@ export default function Case1Page() {
         // Fallback if no messages are available
         setShowCompletionDialog(true)
         setFeedbackContent("<p>Examination completed! You've finished all stages.</p>")
+        
+        // Mark the attempt as completed in the database even without feedback
+        if (attemptId) {
+          try {
+            console.log('Marking attempt as completed (no feedback):', attemptId)
+            await completeAttempt(attemptId, "Examination completed!")
+          } catch (completeError) {
+            console.error('Error marking attempt as completed:', completeError)
+          }
+        }
       }
     }
   }
@@ -145,6 +217,7 @@ export default function Case1Page() {
       <div className="flex-1">
         <ChatInterface
           caseId={caseItem.id}
+          attemptId={attemptId || undefined}
           initialMessages={initialMessages}
           currentStageIndex={currentStageIndex}
           stages={stages}
