@@ -65,9 +65,9 @@ export function CaseCard({ caseItem }: CaseCardProps) {
         </div>
       </CardContent>
       <CardFooter>
-        <Link href={`/${caseItem.id}`} className="w-full">
+        <Link href={`/case/${caseItem.id}/instructions`} className="w-full">
           <Button className="w-full">
-            Start Case
+            View Case
             <ChevronRight className="ml-2 h-4 w-4" />
           </Button>
         </Link>
