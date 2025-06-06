@@ -6,7 +6,7 @@ import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/features/auth/services/authService'
 import { Button } from '@/components/ui/button'
-import { Menu, X, Home, LayoutDashboard, LogOut } from 'lucide-react'
+import { Menu, X, Home, LayoutDashboard, LogOut, History } from 'lucide-react'
 
 export function Navbar() {
   const { user, signOut } = useAuth()
@@ -43,6 +43,10 @@ export function Navbar() {
             <Link href="/" className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground hover:text-primary transition-colors">
               <Home className="size-4" />
               <span>Home</span>
+            </Link>
+            <Link href="/attempts" className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground hover:text-primary transition-colors">
+              <History className="size-4" />
+              <span>My Attempts</span>
             </Link>
             <div className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-muted-foreground cursor-not-allowed">
               <LayoutDashboard className="size-4" />
@@ -105,6 +109,14 @@ export function Navbar() {
             >
               <Home className="size-5" />
               <span>Home</span>
+            </Link>
+            <Link 
+              href="/attempts" 
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-base font-medium text-foreground hover:bg-accent hover:text-accent-foreground"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              <History className="size-5" />
+              <span>My Attempts</span>
             </Link>
             <div className="flex items-center gap-2 rounded-md px-3 py-2 text-base font-medium text-muted-foreground cursor-not-allowed">
               <LayoutDashboard className="size-5" />
