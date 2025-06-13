@@ -13,41 +13,6 @@ import type { Attempt, AttemptFeedback } from "@/features/attempts/models/attemp
 import type { Message } from "@/features/chat/models/chat"
 import type { Stage } from "@/features/stages/types"
 
-// Temporary Tabs components until we create the actual ones
-const Tabs = ({ defaultValue, children, className }: { defaultValue: string, children: React.ReactNode, className?: string }) => {
-  const [activeTab, setActiveTab] = useState(defaultValue);
-  
-  // Clone children and pass activeTab to them
-  const childrenWithProps = React.Children.map(children, child => {
-    if (React.isValidElement(child)) {
-      return React.cloneElement(child as React.ReactElement<any>, { activeTab });
-    }
-    return child;
-  });
-  
-  return <div className={className}>{childrenWithProps}</div>;
-};
-
-const TabsList = ({ children, className }: { children: React.ReactNode, className?: string }) => {
-  return <div className={`flex space-x-2 ${className}`}>{children}</div>;
-};
-
-const TabsTrigger = ({ value, children, activeTab, onClick }: { value: string, children: React.ReactNode, activeTab?: string, onClick?: (value: string) => void }) => {
-  return (
-    <button 
-      className={`px-4 py-2 rounded-md ${activeTab === value ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
-      onClick={() => onClick && onClick(value)}
-    >
-      {children}
-    </button>
-  );
-};
-
-const TabsContent = ({ value, children, activeTab }: { value: string, children: React.ReactNode, activeTab?: string }) => {
-  if (activeTab !== value) return null;
-  return <div className="mt-4">{children}</div>;
-};
-
 export default function ViewAttemptPage() {
   const params = useParams()
   const router = useRouter()
@@ -58,7 +23,7 @@ export default function ViewAttemptPage() {
   const [feedback, setFeedback] = useState<AttemptFeedback[]>([])
   const [stages, setStages] = useState<Stage[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState("conversation")
+  const [activeTab, setActiveTab] = useState('conversation')
   const [isDeleting, setIsDeleting] = useState(false)
   
   useEffect(() => {
@@ -231,86 +196,116 @@ export default function ViewAttemptPage() {
         </Button>
       </div>
       
-      <Tabs defaultValue="conversation" className="w-full">
-        <TabsList className="mb-6">
-          <TabsTrigger 
-            value="conversation" 
-            activeTab={activeTab}
-            onClick={setActiveTab}
+      <div className="w-full">
+        {/* Simple tab buttons */}
+        <div className="flex space-x-2 mb-6">
+          <button 
+            className={`px-4 py-2 rounded-md ${activeTab === 'conversation' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
+            onClick={() => setActiveTab('conversation')}
           >
             Conversation
-          </TabsTrigger>
-          <TabsTrigger 
-            value="feedback" 
-            activeTab={activeTab}
-            onClick={setActiveTab}
+          </button>
+          <button 
+            className={`px-4 py-2 rounded-md ${activeTab === 'feedback' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
+            onClick={() => setActiveTab('feedback')}
           >
             Feedback
-          </TabsTrigger>
-        </TabsList>
+          </button>
+        </div>
         
-        <TabsContent value="conversation" activeTab={activeTab}>
-          {messages.length > 0 ? (
-            <div className="border rounded-lg p-4 space-y-4">
-              {messages.map((message) => (
-                <div key={message.id} className={`p-4 rounded-lg ${
-                  message.role === 'user' 
-                    ? 'bg-primary/10 ml-12' 
-                    : 'bg-muted mr-12'
-                }`}>
-                  <div className="flex justify-between mb-2">
-                    <span className="font-medium">{message.displayRole || message.role}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(message.timestamp).toLocaleTimeString()}
-                    </span>
-                  </div>
-                  <div className="prose prose-sm dark:prose-invert max-w-none">
-                    {message.content}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-center py-8 border rounded-lg">
-              No conversation history available for this attempt.
-            </p>
-          )}
-        </TabsContent>
-        
-        <TabsContent value="feedback" activeTab={activeTab}>
-          {feedback.length > 0 || attempt.overallFeedback ? (
-            <div className="space-y-6">
-              {/* Stage-specific feedback */}
-              {feedback.map((item) => {
-                const stageName = stages[item.stageIndex]?.title || `Stage ${item.stageIndex + 1}`
-                
-                return (
-                  <div key={item.id} className="border rounded-lg p-6">
-                    <h3 className="text-xl font-semibold mb-2">{stageName} Feedback</h3>
+        {/* Conversation content */}
+        {activeTab === 'conversation' && (
+          <div className="mt-4">
+            {messages.length > 0 ? (
+              <div className="border rounded-lg p-4 space-y-4">
+                {messages.map((message) => (
+                  <div key={message.id} className={`p-4 rounded-lg ${
+                    message.role === 'user' 
+                      ? 'bg-primary/10 ml-12' 
+                      : 'bg-muted mr-12'
+                  }`}>
+                    <div className="flex justify-between mb-2">
+                      <span className="font-medium">{message.displayRole || message.role}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(message.timestamp).toLocaleTimeString()}
+                      </span>
+                    </div>
                     <div className="prose prose-sm dark:prose-invert max-w-none">
-                      <div dangerouslySetInnerHTML={{ __html: item.feedbackContent }} />
+                      {message.content}
                     </div>
                   </div>
-                )
-              })}
-              
-              {/* Overall feedback */}
-              {attempt.overallFeedback && (
-                <div className="border rounded-lg p-6">
-                  <h3 className="text-xl font-semibold mb-2">Overall Assessment</h3>
+                ))}
+              </div>
+            ) : (
+              <p className="text-center py-8 border rounded-lg">
+                No conversation history available for this attempt.
+              </p>
+            )}
+          </div>
+        )}
+        
+        {/* Feedback content */}
+        {activeTab === 'feedback' && (
+          <div className="mt-4 space-y-6">
+            {/* Stage-specific feedback */}
+            {feedback.length > 0 ? (
+              <div>
+                <h2 className="text-2xl font-bold mb-4">Stage Feedback</h2>
+                {feedback.map((item) => {
+                  const stage = stages[item.stageIndex];
+                  const stageName = stage?.title || `Stage ${item.stageIndex + 1}`;
+                  
+                  return (
+                    <div key={item.id} className="border rounded-lg p-6 mb-6 bg-card">
+                      <div className="flex justify-between items-center mb-3">
+                        <h3 className="text-xl font-semibold">{stageName} Feedback</h3>
+                        <Badge variant="outline" className="text-xs">
+                          {formatDate(item.createdAt)}
+                        </Badge>
+                      </div>
+                      <div className="prose prose-sm dark:prose-invert max-w-none">
+                        <div dangerouslySetInnerHTML={{ __html: item.feedbackContent }} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="border rounded-lg p-8 text-center bg-muted/30">
+                <h3 className="text-lg font-medium mb-2">No Stage Feedback Available</h3>
+                <p className="text-muted-foreground mb-4">
+                  No feedback has been generated for individual stages in this attempt.
+                </p>
+                {attempt.completionStatus === 'in_progress' && (
+                  <p className="text-sm">
+                    You can generate feedback for each stage by clicking the "Generate Feedback" button
+                    during your attempt.
+                  </p>
+                )}
+              </div>
+            )}
+            
+            {/* Overall feedback */}
+            {attempt.overallFeedback ? (
+              <div>
+                <h2 className="text-2xl font-bold mb-4">Overall Assessment</h2>
+                <div className="border rounded-lg p-6 bg-card">
                   <div className="prose prose-sm dark:prose-invert max-w-none">
                     <div dangerouslySetInnerHTML={{ __html: attempt.overallFeedback }} />
                   </div>
                 </div>
-              )}
-            </div>
-          ) : (
-            <p className="text-center py-8 border rounded-lg">
-              No feedback available for this attempt.
-            </p>
-          )}
-        </TabsContent>
-      </Tabs>
+              </div>
+            ) : (
+              <div className="border rounded-lg p-8 text-center bg-muted/30">
+                <h3 className="text-lg font-medium mb-2">No Overall Assessment</h3>
+                <p className="text-muted-foreground">
+                  An overall assessment will be available once you complete this attempt.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
