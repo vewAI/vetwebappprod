@@ -13,9 +13,10 @@ type FeedbackButtonProps = {
   stage: Stage
   stageIndex: number
   caseId: string
+  attemptId: string
 }
 
-export function FeedbackButton({ messages, stage, stageIndex, caseId }: FeedbackButtonProps) {
+export function FeedbackButton({ messages, stage, stageIndex, caseId, attemptId }: FeedbackButtonProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [feedback, setFeedback] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -71,7 +72,8 @@ export function FeedbackButton({ messages, stage, stageIndex, caseId }: Feedback
         stageIndex,
         caseId,
         stageName: stage.title,
-        feedbackPrompt
+        feedbackPrompt,
+        attemptId
       })
 
       setFeedback(response.data.feedback)
