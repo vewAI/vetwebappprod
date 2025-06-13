@@ -204,6 +204,7 @@ export function ChatInterface({
                 stage={stages[currentStageIndex]}
                 stageIndex={currentStageIndex}
                 caseId={caseId}
+                attemptId={attemptId}
               />
             </div>
           </div>
