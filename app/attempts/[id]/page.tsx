@@ -39,17 +39,8 @@ export default function ViewAttemptPage() {
       
       setAttempt(attempt)
       
-      // Transform messages to match the Message interface
-      const transformedMessages = messages.map(msg => ({
-        id: msg.id,
-        role: msg.role,
-        content: msg.content,
-        timestamp: msg.timestamp,
-        stageIndex: msg.stageIndex,
-        displayRole: msg.displayRole
-      }))
-      
-      setMessages(transformedMessages)
+      // Set messages directly since they already match the Message interface
+      setMessages(messages)
       setFeedback(feedback)
       
       // Load stages for this case
