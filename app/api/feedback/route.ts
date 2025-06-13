@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAi from 'openai'
+import { saveFeedback } from '@/features/attempts/services/attemptService'
 
 const openai = new OpenAi({
   apiKey: process.env.OPENAI_API_KEY
@@ -7,11 +8,18 @@ const openai = new OpenAi({
 
 export async function POST(request: NextRequest) {
   try {
-    const { messages, stageIndex, caseId, stageName, feedbackPrompt: feedbackPromptFromClient } = await request.json()
+    const { messages, stageIndex, caseId, stageName, feedbackPrompt: feedbackPromptFromClient, attemptId } = await request.json()
     
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json(
         { error: 'Messages array is required' },
+        { status: 400 }
+      )
+    }
+    
+    if (!attemptId) {
+      return NextResponse.json(
+        { error: 'attemptId is required' },
         { status: 400 }
       )
     }
@@ -76,8 +84,17 @@ export async function POST(request: NextRequest) {
       .replace(/<\/li><\/p>/g, '</li>') // Fix nested paragraph tags
       .replace(/<p><\/p>/g, '') // Remove empty paragraphs
     
+    // Save the feedback to the database
+    const saveResult = await saveFeedback(attemptId, stageIndex, wrappedFeedback)
+    
+    if (!saveResult) {
+      console.error('Failed to save feedback to database')
+      // Continue anyway to return the feedback to the client
+    }
+    
     return NextResponse.json({ 
-      feedback: wrappedFeedback
+      feedback: wrappedFeedback,
+      saved: saveResult
     })
   } catch (error) {
     console.error('Error in feedback API:', error)
