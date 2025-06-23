@@ -165,43 +165,43 @@ export default function ViewAttemptPage() {
         </div>
       </header>
       
-      <div className="flex justify-end mb-6">
-        <Button
-          variant="destructive"
-          size="sm"
-          onClick={handleDeleteAttempt}
-          disabled={isDeleting}
-          className="flex items-center gap-2"
-        >
-          {isDeleting ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Deleting...
-            </>
-          ) : (
-            <>
-              <Trash2 className="h-4 w-4" />
-              Delete Attempt
-            </>
-          )}
-        </Button>
-      </div>
-      
       <div className="w-full">
-        {/* Simple tab buttons */}
-        <div className="flex space-x-2 mb-6">
-          <button 
-            className={`px-4 py-2 rounded-md ${activeTab === 'conversation' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
-            onClick={() => setActiveTab('conversation')}
+        {/* Tab buttons and delete button */}
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex space-x-2">
+            <button 
+              className={`px-4 py-2 rounded-md ${activeTab === 'conversation' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
+              onClick={() => setActiveTab('conversation')}
+            >
+              Conversation
+            </button>
+            <button 
+              className={`px-4 py-2 rounded-md ${activeTab === 'feedback' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
+              onClick={() => setActiveTab('feedback')}
+            >
+              Feedback
+            </button>
+          </div>
+          
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={handleDeleteAttempt}
+            disabled={isDeleting}
+            className="flex items-center gap-2"
           >
-            Conversation
-          </button>
-          <button 
-            className={`px-4 py-2 rounded-md ${activeTab === 'feedback' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
-            onClick={() => setActiveTab('feedback')}
-          >
-            Feedback
-          </button>
+            {isDeleting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Deleting...
+              </>
+            ) : (
+              <>
+                <Trash2 className="h-4 w-4" />
+                Delete Attempt
+              </>
+            )}
+          </Button>
         </div>
         
         {/* Conversation content */}
