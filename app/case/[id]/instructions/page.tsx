@@ -91,10 +91,6 @@ export default function CaseInstructionsPage() {
                   <p className="mt-1">{caseData.species}</p>
                 </div>
                 <div className="rounded-md border p-3">
-                  <h3 className="text-sm font-medium">Condition</h3>
-                  <p className="mt-1">{caseData.condition}</p>
-                </div>
-                <div className="rounded-md border p-3">
                   <h3 className="text-sm font-medium">Category</h3>
                   <p className="mt-1">{caseData.category}</p>
                 </div>
