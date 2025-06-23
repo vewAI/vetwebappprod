@@ -27,6 +27,7 @@ const AuthContext = createContext<AuthContextType>({
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isInitialized, setIsInitialized] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -51,15 +52,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Set up a listener for auth state changes
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
-
         setSession(newSession)
         setLoading(false)
         
-        // Redirect based on auth state
-        if (event === 'SIGNED_IN') {
-          router.push('/')
-        } else if (event === 'SIGNED_OUT') {
-          router.push('/login')
+        // Only handle redirects during initial auth events or explicit sign-in/out actions
+        if (!isInitialized) {
+          setIsInitialized(true)
+          // Initial auth check - redirect only if needed
+          if (!newSession && event === 'INITIAL_SESSION') {
+            router.push('/login')
+          }
+        } else {
+          // Handle explicit auth state changes
+          if (event === 'SIGNED_IN') {
+            router.push('/')
+          } else if (event === 'SIGNED_OUT') {
+            router.push('/login')
+          }
         }
       }
     )
@@ -91,6 +100,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error('Error signing out:', error)
       throw error
     }
+    
+    // Manually redirect to login page after successful logout
+    router.push('/login')
   }
 
   // Provide the auth context value to children
