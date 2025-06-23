@@ -126,7 +126,7 @@ export default function ViewAttemptPage() {
               {attempt.title}
             </h1>
             <p className="mt-1 text-muted-foreground">
-              {caseItem.title} - {caseItem.species}
+              {caseItem.title}
             </p>
           </div>
           
