@@ -3,9 +3,10 @@
 import type React from "react"
 
 import { useState, useRef, useEffect } from "react"
-import { SendIcon, PenLine } from "lucide-react"
+import { SendIcon, PenLine, Mic, MicOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { useSTT } from "@/features/speech/hooks/useSTT"
 import { ChatMessage } from "@/features/chat/components/chat-message"
 import { Notepad } from "@/features/chat/components/notepad"
 import { FeedbackButton } from "@/features/feedback/components/feedback-button"
@@ -37,6 +38,16 @@ export function ChatInterface({
   const [isLoading, setIsLoading] = useState(false)
   const [showNotepad, setShowNotepad] = useState(false)
   const [timeSpentSeconds, setTimeSpentSeconds] = useState(0)
+  
+  // Speech-to-text functionality
+  const { isListening, transcript, interimTranscript, start, stop } = useSTT()
+  
+  // Update input when transcript changes
+  useEffect(() => {
+    if (transcript) {
+      setInput(transcript)
+    }
+  }, [transcript])
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -204,7 +215,7 @@ export function ChatInterface({
                 stage={stages[currentStageIndex]}
                 stageIndex={currentStageIndex}
                 caseId={caseId}
-                attemptId={attemptId}
+                attemptId={attemptId || ""}
               />
             </div>
           </div>
@@ -216,10 +227,23 @@ export function ChatInterface({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Type your message..."
-              className="min-h-[60px] w-full resize-none pr-12"
+              placeholder={isListening ? `${interimTranscript || 'Listening...'}` : "Type or record your message..."}
+              className="min-h-[60px] w-full resize-none pr-24"
               rows={1}
             />
+            {/* Mic button */}
+            <Button
+              type="button"
+              size="icon"
+              onClick={() => isListening ? stop() : start()}
+              className={`absolute bottom-2 right-12 ${isListening 
+                ? 'bg-red-500 hover:bg-red-600 text-white' 
+                : 'bg-blue-400 hover:bg-blue-500 text-white'}`}
+              title={isListening ? "Stop recording" : "Start recording"}
+            >
+              {isListening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+            </Button>
+            {/* Send button */}
             <Button
               type="submit"
               size="icon"
