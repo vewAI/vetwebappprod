@@ -40,7 +40,7 @@ export function ChatInterface({
   const [timeSpentSeconds, setTimeSpentSeconds] = useState(0)
   
   // Speech-to-text functionality
-  const { isListening, transcript, interimTranscript, start, stop } = useSTT()
+  const { isListening, transcript, interimTranscript, start, stop, reset } = useSTT()
   
   // Update input when transcript changes
   useEffect(() => {
@@ -235,7 +235,15 @@ export function ChatInterface({
             <Button
               type="button"
               size="icon"
-              onClick={() => isListening ? stop() : start()}
+              onClick={() => {
+                if (isListening) {
+                  stop()
+                } else {
+                  reset()
+                  setInput("")
+                  start()
+                }
+              }}
               className={`absolute bottom-2 right-12 ${isListening 
                 ? 'bg-red-500 hover:bg-red-600 text-white' 
                 : 'bg-blue-400 hover:bg-blue-500 text-white'}`}
