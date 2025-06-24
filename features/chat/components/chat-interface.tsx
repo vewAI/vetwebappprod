@@ -235,21 +235,50 @@ export function ChatInterface({
             <Button
               type="button"
               size="icon"
-              onClick={() => {
+              onMouseDown={() => {
+                reset()
+                setInput("")
+                start()
+              }}
+              onMouseUp={() => {
                 if (isListening) {
                   stop()
-                } else {
-                  reset()
-                  setInput("")
-                  start()
+                  // Focus the textarea after a short delay
+                  setTimeout(() => {
+                    if (textareaRef.current) {
+                      textareaRef.current.focus()
+                    }
+                  }, 100)
+                }
+              }}
+              onMouseLeave={() => {
+                if (isListening) {
+                  stop()
+                }
+              }}
+              // Touch support for mobile devices
+              onTouchStart={() => {
+                reset()
+                setInput("")
+                start()
+              }}
+              onTouchEnd={() => {
+                if (isListening) {
+                  stop()
+                  // Focus the textarea after a short delay to allow transcript to update
+                  setTimeout(() => {
+                    if (textareaRef.current) {
+                      textareaRef.current.focus()
+                    }
+                  }, 100)
                 }
               }}
               className={`absolute bottom-2 right-12 ${isListening 
                 ? 'bg-red-500 hover:bg-red-600 text-white' 
                 : 'bg-blue-400 hover:bg-blue-500 text-white'}`}
-              title={isListening ? "Stop recording" : "Start recording"}
+              title="Hold to record, release to send"
             >
-              {isListening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+              <Mic className="h-5 w-5" />
             </Button>
             {/* Send button */}
             <Button
