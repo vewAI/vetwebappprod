@@ -7,6 +7,7 @@ import { SendIcon, PenLine, Mic, MicOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { useSTT } from "@/features/speech/hooks/useSTT"
+import { useMicButton } from "@/features/speech/hooks/useMicButton"
 import { ChatMessage } from "@/features/chat/components/chat-message"
 import { Notepad } from "@/features/chat/components/notepad"
 import { FeedbackButton } from "@/features/feedback/components/feedback-button"
@@ -14,7 +15,7 @@ import { SaveAttemptButton } from "@/features/attempts/components/save-attempt-b
 import type { Message } from "@/features/chat/models/chat"
 import type { Stage } from "@/features/stages/types"
 import { getStageTransitionMessage } from "@/features/stages/services/stageService"
-import axios from "axios"
+import { chatService } from "@/features/chat/services/chatService"
 
 type ChatInterfaceProps = {
   caseId: string
@@ -39,8 +40,21 @@ export function ChatInterface({
   const [showNotepad, setShowNotepad] = useState(false)
   const [timeSpentSeconds, setTimeSpentSeconds] = useState(0)
   
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  
   // Speech-to-text functionality
   const { isListening, transcript, interimTranscript, start, stop, reset } = useSTT()
+  
+  // Microphone button handlers
+  const { handleStart, handleStop, handleCancel } = useMicButton(
+    textareaRef,
+    isListening,
+    start,
+    stop,
+    reset,
+    setInput
+  )
   
   // Update input when transcript changes
   useEffect(() => {
@@ -48,9 +62,6 @@ export function ChatInterface({
       setInput(transcript)
     }
   }, [transcript])
-
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -84,12 +95,14 @@ export function ChatInterface({
       // Get the custom transition message for this case and stage
       const transitionMessage = getStageTransitionMessage(caseId, currentStageIndex);
       
-      // Add the transition message to the chat
-      setMessages((prev) => [...prev, {
+      // Add the transition message to the chat with a unique ID
+      const displayMessage = {
         ...transitionMessage,
         id: `${transitionMessage.id}-${Date.now()}`,
         displayRole: "Virtual Examiner"
-      }]);
+      };
+      
+      setMessages((prev) => [...prev, displayMessage]);
     }
   }, [currentStageIndex, caseId]);
 
@@ -97,56 +110,35 @@ export function ChatInterface({
     e.preventDefault()
     if (!input.trim() || isLoading) return
 
-    // Add user message
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: input,
-      timestamp: new Date().toISOString(),
-      stageIndex: currentStageIndex,
-      displayRole: "You"
-    }
+    // Create user message using the chatService
+    const userMessage = chatService.createUserMessage(input, currentStageIndex)
 
+    // Add user message to the chat
     setMessages((prev) => [...prev, userMessage])
     setInput("")
     setIsLoading(true)
 
     try {
-      // Format messages for the API
-      const apiMessages = messages.concat(userMessage).map(msg => ({
-        role: msg.role as 'system' | 'user' | 'assistant',
-        content: msg.content
-      }));
+      // Send message to API using chatService
+      const response = await chatService.sendMessage(
+        messages.concat(userMessage),
+        currentStageIndex,
+        caseId
+      );
   
-      // Call the API using axios instead of fetch
-      const response = await axios.post('/api/chat', {
-        messages: apiMessages,
-        stageIndex: currentStageIndex,
-        caseId: caseId,
-      });
-  
-      // Add AI response to messages
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: response.data.content,
-        timestamp: new Date().toISOString(),
-        stageIndex: currentStageIndex,
-        displayRole: stages[currentStageIndex].role
-      }
+      // Create and add AI response to messages
+      const aiMessage = chatService.createAssistantMessage(
+        response.content,
+        currentStageIndex,
+        stages[currentStageIndex].role
+      )
+      
       setMessages((prev) => [...prev, aiMessage])
     } catch (error) {
       console.error('Error getting chat response:', error);
       
-      // Add error message
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "system",
-        content: "Sorry, there was an error processing your request. Please try again.",
-        timestamp: new Date().toISOString(),
-        stageIndex: currentStageIndex,
-        displayRole: "Virtual Examiner"
-      }
+      // Create and add error message using the chatService
+      const errorMessage = chatService.createErrorMessage(error, currentStageIndex);
       setMessages((prev) => [...prev, errorMessage])
     } finally {
       setIsLoading(false)
@@ -235,44 +227,12 @@ export function ChatInterface({
             <Button
               type="button"
               size="icon"
-              onMouseDown={() => {
-                reset()
-                setInput("")
-                start()
-              }}
-              onMouseUp={() => {
-                if (isListening) {
-                  stop()
-                  // Focus the textarea after a short delay
-                  setTimeout(() => {
-                    if (textareaRef.current) {
-                      textareaRef.current.focus()
-                    }
-                  }, 100)
-                }
-              }}
-              onMouseLeave={() => {
-                if (isListening) {
-                  stop()
-                }
-              }}
+              onMouseDown={handleStart}
+              onMouseUp={handleStop}
+              onMouseLeave={handleCancel}
               // Touch support for mobile devices
-              onTouchStart={() => {
-                reset()
-                setInput("")
-                start()
-              }}
-              onTouchEnd={() => {
-                if (isListening) {
-                  stop()
-                  // Focus the textarea after a short delay to allow transcript to update
-                  setTimeout(() => {
-                    if (textareaRef.current) {
-                      textareaRef.current.focus()
-                    }
-                  }, 100)
-                }
-              }}
+              onTouchStart={handleStart}
+              onTouchEnd={handleStop}
               className={`absolute bottom-2 right-12 ${isListening 
                 ? 'bg-red-500 hover:bg-red-600 text-white' 
                 : 'bg-blue-400 hover:bg-blue-500 text-white'}`}
