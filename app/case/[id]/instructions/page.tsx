@@ -181,7 +181,7 @@ export default function CaseInstructionsPage() {
               </div>
             ) : (
               <p className="text-center py-4 text-muted-foreground">
-                You haven't attempted this case yet.
+                You haven&apos;t attempted this case yet.
               </p>
             )}
           </div>

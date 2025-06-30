@@ -39,7 +39,7 @@ export default function CaseChatPage() {
       <div className="rounded-lg border p-6 shadow-sm">
         <h2 className="mb-4 text-xl font-semibold">Chat Interface Coming Soon</h2>
         <p>This is where the OSCE chat interface will be implemented.</p>
-        <p className="mt-4 text-muted-foreground">You've selected: {caseItem.title}</p>
+        <p className="mt-4 text-muted-foreground">You&apos;ve selected: {caseItem.title}</p>
       </div>
     </div>
   )

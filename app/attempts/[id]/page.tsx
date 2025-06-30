@@ -269,7 +269,7 @@ export default function ViewAttemptPage() {
                 </p>
                 {attempt.completionStatus === 'in_progress' && (
                   <p className="text-sm">
-                    You can generate feedback for each stage by clicking the "Generate Feedback" button
+                    You can generate feedback for each stage by clicking the &quot;Generate Feedback&quot; button
                     during your attempt.
                   </p>
                 )}
