@@ -32,18 +32,6 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Format the conversation context
-    let context = ""
-    messages.forEach(msg => {
-      if (msg.role === "user") {
-        context += `Student: ${msg.content}\n\n`
-      } else if (msg.role === "assistant" && msg.useStageRole) {
-        // Use the stage role or a default role based on stage type
-        const roleLabel = stageName === "History Taking" ? "Client" : "Patient/Assistant"
-        context += `${roleLabel}: ${msg.content}\n\n`
-      }
-    })
-    
     // Require the prompt to be provided by the client
     const feedbackPrompt = feedbackPromptFromClient;
     if (!feedbackPrompt) {
