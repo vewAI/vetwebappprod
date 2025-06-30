@@ -98,6 +98,11 @@ export default function Case1Page() {
     }
   }, [])
   
+  // State for tracking loading state during feedback generation
+  const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false)
+  const [showCompletionDialog, setShowCompletionDialog] = useState(false)
+  const [feedbackContent, setFeedbackContent] = useState("")
+
   // Check for reset parameter and reset the state if present
   useEffect(() => {
     const reset = searchParams.get('reset')
@@ -123,11 +128,6 @@ export default function Case1Page() {
 
   // Update the initialMessages to include the first stage transition message
   const initialMessages: Message[] = []
-
-  // State for tracking loading state during feedback generation
-  const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false)
-  const [showCompletionDialog, setShowCompletionDialog] = useState(false)
-  const [feedbackContent, setFeedbackContent] = useState("")
 
   // Update the handleProceedToNextStage function to add a transition message and handle completion
   const handleProceedToNextStage = async (messages?: Message[]) => {
