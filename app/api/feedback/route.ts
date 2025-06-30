@@ -8,7 +8,7 @@ const openai = new OpenAi({
 
 export async function POST(request: NextRequest) {
   try {
-    const { messages, stageIndex, caseId, stageName, feedbackPrompt: feedbackPromptFromClient, attemptId } = await request.json()
+    const { messages, stageIndex, caseId, feedbackPrompt: feedbackPromptFromClient, attemptId } = await request.json()
     
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json(
