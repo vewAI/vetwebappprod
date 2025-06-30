@@ -39,7 +39,7 @@ const Select = ({ children, value, onValueChange }: { children: React.ReactNode,
 const SelectItem = ({ value, children }: { value: string, children: React.ReactNode }) => <option value={value}>{children}</option>;
 
 export default function AttemptsPage() {
-  const { user, loading: authLoading } = useAuth()
+  const { user } = useAuth()
   const [attempts, setAttempts] = useState<Attempt[]>([])
   const [filteredAttempts, setFilteredAttempts] = useState<Attempt[]>([])
   const [isLoading, setIsLoading] = useState(true)
