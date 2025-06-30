@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
         }
         
         const lastUserMessage = [...messages].reverse().find(msg => msg.role === 'user');
-        let enhancedMessages = [...messages];
+        const enhancedMessages = [...messages];
         
         // If we have a valid caseId, stageIndex and a user message, try to get role info prompt
         if (caseId && stageIndex !== undefined && lastUserMessage) {
