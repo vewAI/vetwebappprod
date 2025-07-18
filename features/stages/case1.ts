@@ -22,7 +22,7 @@ export function getTransitionMessage(stageIndex: number): Message {
       break;
     case 4:
       content =
-        "Now, develop a treatment plan for this horse. What medications, procedures, or management changes would you recommend?";
+        "Based on the test results, prepare to communicate your diagnosis and treatment plan to the client. Consider what information they need to know.";
       break;
     case 5:
       content =
