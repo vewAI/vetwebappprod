@@ -30,26 +30,19 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
     },
     {
       id: "stage-4",
-      title: "Diagnostic Plan",
-      description: "Develop a diagnostic plan based on tests results",
+      title: "Test Results",
+      description: "Consult with the laboratory technician about test results",
       completed: false,
       role: "Laboratory Technician",
       roleInfoKey: "getDiagnosticPrompt"
     },
     {
       id: "stage-5",
-      title: "Treatment Plan",
-      description: "Develop a treatment plan",
-      completed: false,
-      role: "Client (Horse Owner)",
-      roleInfoKey: "getOwnerDiagnosisPrompt"
-    },
-    {
-      id: "stage-6",
       title: "Client Communication",
       description: "Communicate findings and recommendations",
       completed: false,
-      role: "Client (Horse Owner)"
+      role: "Client (Horse Owner)",
+      roleInfoKey: "getOwnerDiagnosisPrompt"
     }
   ]
 };
