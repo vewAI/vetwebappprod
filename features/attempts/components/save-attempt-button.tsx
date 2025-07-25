@@ -1,10 +1,9 @@
 "use client"
 
-import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Save, CheckCircle } from "lucide-react"
-import { saveAttemptProgress } from "@/features/attempts/services/attemptService"
 import type { Message } from "@/features/chat/models/chat"
+import { useSaveAttempt } from "../hooks/useSaveAttempt"
 
 type SaveAttemptButtonProps = {
   attemptId: string
@@ -23,36 +22,10 @@ export function SaveAttemptButton({
   variant = "outline",
   size = "sm"
 }: SaveAttemptButtonProps) {
-  const [isSaving, setIsSaving] = useState(false)
-  const [saveSuccess, setSaveSuccess] = useState(false)
+  const { saveProgress, isSaving, saveSuccess } = useSaveAttempt(attemptId)
   
   const handleSave = async () => {
-    if (isSaving) return
-    
-    setIsSaving(true)
-    setSaveSuccess(false)
-    
-    try {
-      const success = await saveAttemptProgress(
-        attemptId,
-        stageIndex,
-        messages,
-        timeSpentSeconds
-      )
-      
-      if (success) {
-        setSaveSuccess(true)
-        
-        // Reset success status after 3 seconds
-        setTimeout(() => {
-          setSaveSuccess(false)
-        }, 3000)
-      }
-    } catch (error) {
-      console.error("Error saving attempt progress:", error)
-    } finally {
-      setIsSaving(false)
-    }
+    await saveProgress(stageIndex, messages, timeSpentSeconds)
   }
   
   return (
