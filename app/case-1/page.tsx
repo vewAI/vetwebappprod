@@ -8,6 +8,7 @@ import { ChatInterface } from "@/features/chat/components/chat-interface"
 import { ProgressSidebar } from "@/features/chat/components/progress-sidebar"
 import { CompletionDialog } from "@/features/feedback/components/completion-dialog"
 import { createAttempt, completeAttempt } from "@/features/attempts/services/attemptService"
+import { useSaveAttempt } from "@/features/attempts/hooks/useSaveAttempt"
 import { useAuth } from "@/features/auth/services/authService"
 import type { Message } from "@/features/chat/models/chat"
 import type { Stage } from "@/features/stages/types"
@@ -25,6 +26,9 @@ export default function Case1Page() {
   const [currentStageIndex, setCurrentStageIndex] = useState(0)
   const [attemptId, setAttemptId] = useState<string | null>(null)
   const [isCreatingAttempt, setIsCreatingAttempt] = useState(false)
+  
+  // Use our custom hook for saving attempt progress
+  const { saveProgress } = useSaveAttempt(attemptId)
   
   // Use a ref to track if we've already tried to create an attempt
   const hasInitializedAttempt = useRef(false)
@@ -130,7 +134,16 @@ export default function Case1Page() {
   const initialMessages: Message[] = []
 
   // Update the handleProceedToNextStage function to add a transition message and handle completion
-  const handleProceedToNextStage = async (messages?: Message[]) => {
+  const handleProceedToNextStage = async (messages?: Message[], timeSpentSeconds: number = 0) => {
+    // Save progress if we have messages
+    if (attemptId && messages && messages.length > 0) {
+      try {
+        console.log('Automatically saving progress before stage transition:', attemptId);
+        await saveProgress(currentStageIndex, messages, timeSpentSeconds);
+      } catch (saveError) {
+        console.error('Error saving attempt progress during stage transition:', saveError);
+      }
+    }
     if (currentStageIndex < stages.length - 1) {
       // Mark current stage as completed
       setStages(markStageCompleted(stages, currentStageIndex))
