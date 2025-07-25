@@ -23,7 +23,7 @@ type ChatInterfaceProps = {
   initialMessages?: Message[]
   currentStageIndex: number
   stages: Stage[]
-  onProceedToNextStage: (messages?: Message[]) => void
+  onProceedToNextStage: (messages?: Message[], timeSpentSeconds?: number) => void
 }
 
 export function ChatInterface({
@@ -181,7 +181,7 @@ export function ChatInterface({
         <div className="mx-auto max-w-3xl">
           <div className="flex justify-between items-center mb-4 gap-4">
             <Button 
-              onClick={() => onProceedToNextStage(messages)} 
+              onClick={() => onProceedToNextStage(messages, timeSpentSeconds)} 
               disabled={false} 
               className={`flex-1 ${isLastStage 
                 ? "bg-gradient-to-l from-green-500 to-teal-500 hover:from-green-600 hover:to-teal-600" 
