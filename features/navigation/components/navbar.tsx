@@ -48,10 +48,10 @@ export function Navbar() {
               <History className="size-4" />
               <span>My Attempts</span>
             </Link>
-            <div className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-muted-foreground cursor-not-allowed">
+            <Link href="/admin" className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground hover:text-primary transition-colors">
               <LayoutDashboard className="size-4" />
               <span>Admin</span>
-            </div>
+            </Link>
             <Button 
               variant="ghost" 
               size="sm" 
@@ -118,10 +118,14 @@ export function Navbar() {
               <History className="size-5" />
               <span>My Attempts</span>
             </Link>
-            <div className="flex items-center gap-2 rounded-md px-3 py-2 text-base font-medium text-muted-foreground cursor-not-allowed">
+            <Link 
+              href="/admin" 
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-base font-medium text-foreground hover:bg-accent hover:text-accent-foreground"
+              onClick={() => setIsMenuOpen(false)}
+            >
               <LayoutDashboard className="size-5" />
               <span>Admin</span>
-            </div>
+            </Link>
             <button 
               onClick={() => {
                 setIsMenuOpen(false)
