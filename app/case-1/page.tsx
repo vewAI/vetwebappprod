@@ -42,23 +42,15 @@ export default function Case1Page() {
 
   const [isMobile, setIsMobile] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
-                // Set the feedback content
-                setFeedbackContent((response.data as { feedback: string }).feedback);
   const [isCreatingAttempt, setIsCreatingAttempt] = useState(false);
-
-  // Use our custom hook for saving attempt progress
+  const [attemptId, setAttemptId] = useState<string | null>(null);
   const { saveProgress } = useSaveAttempt(attemptId);
-
-  // Use a ref to track if we've already tried to create an attempt
   const hasInitializedAttempt = useRef(false);
-
-  // Initialise stages
   const [stages, setStages] = useState<Stage[]>(() => {
     const caseStages = getStagesForCase(caseId);
     return initializeStages(caseStages);
   });
-
-  // Add a function to handle selecting a specific stage
+  const [currentStageIndex, setCurrentStageIndex] = useState(0);
   const handleStageSelect = (index: number) => {
     setCurrentStageIndex(index);
   };
@@ -105,7 +97,7 @@ export default function Case1Page() {
     };
 
     initializeAttempt();
-  }, [user, caseId, attemptId, isCreatingAttempt, searchParams]);
+  }, [user, caseId, isCreatingAttempt, searchParams]);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -209,7 +201,10 @@ export default function Case1Page() {
           if (attemptId) {
             try {
               console.log("Marking attempt as completed:", attemptId);
-              await completeAttempt(attemptId, response.data.feedback);
+              await completeAttempt(
+                attemptId,
+                (response.data as { feedback: string }).feedback
+              );
             } catch (completeError) {
               console.error(
                 "Error marking attempt as completed:",
