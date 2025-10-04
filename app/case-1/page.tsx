@@ -42,8 +42,8 @@ export default function Case1Page() {
 
   const [isMobile, setIsMobile] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
-  const [currentStageIndex, setCurrentStageIndex] = useState(0);
-  const [attemptId, setAttemptId] = useState<string | null>(null);
+                // Set the feedback content
+                setFeedbackContent((response.data as { feedback: string }).feedback);
   const [isCreatingAttempt, setIsCreatingAttempt] = useState(false);
 
   // Use our custom hook for saving attempt progress
