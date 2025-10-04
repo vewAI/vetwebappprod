@@ -203,7 +203,7 @@ export default function Case1Page() {
           });
 
           // Set the feedback content
-          setFeedbackContent(response.data.feedback);
+          setFeedbackContent((response.data as { feedback: string }).feedback);
 
           // Mark the attempt as completed in the database
           if (attemptId) {

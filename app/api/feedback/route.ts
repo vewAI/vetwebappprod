@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
       messages,
       stageIndex,
       feedbackPrompt: feedbackPromptFromClient,
-      attemptId
+      attemptId,
     } = await request.json();
 
     if (!messages || !Array.isArray(messages)) {
