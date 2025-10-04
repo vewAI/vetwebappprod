@@ -53,7 +53,7 @@ export default function CaseEntryForm() {
     "get_owner_follow_up_prompt",
     "get_owner_follow_up_feedback_prompt",
     "get_owner_diagnosis_prompt",
-    "get_overall_feedback_prompt"
+    "get_overall_feedback_prompt",
   ];
   const [expandedField, setExpandedField] = useState<string | null>(null);
   const [form, setForm] = useState(initialFormState);
@@ -102,7 +102,11 @@ export default function CaseEntryForm() {
                   className="w-full"
                   rows={3}
                 />
-                <Button type="button" size="sm" onClick={() => setExpandedField(key)}>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => setExpandedField(key)}
+                >
                   Expand
                 </Button>
               </div>
@@ -126,7 +130,9 @@ export default function CaseEntryForm() {
       {expandedField && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg max-w-2xl w-full p-6">
-            <h2 className="text-lg font-bold mb-2">{expandedField.replace(/_/g, " ")}</h2>
+            <h2 className="text-lg font-bold mb-2">
+              {expandedField.replace(/_/g, " ")}
+            </h2>
             <Textarea
               value={form[expandedField as keyof typeof form]}
               onChange={handleChange}
