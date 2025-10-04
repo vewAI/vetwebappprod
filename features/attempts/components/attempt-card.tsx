@@ -1,49 +1,61 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import Link from "next/link"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Clock, Calendar, ChevronRight, Trash2 } from "lucide-react"
-import type { Attempt } from "../models/attempt"
-import { cases } from "@/features/case-selection/data/card-data"
+import { useState } from "react";
+import Link from "next/link";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Clock, Calendar, ChevronRight, Trash2 } from "lucide-react";
+import type { Attempt } from "../models/attempt";
+
+import type { Case } from "@/features/case-selection/models/case";
 
 type AttemptCardProps = {
-  attempt: Attempt
-  onDelete: () => void
-}
+  attempt: Attempt;
+  caseItem?: Case;
+  onDelete: () => void;
+};
 
-export function AttemptCard({ attempt, onDelete }: AttemptCardProps) {
-  const [isDeleting, setIsDeleting] = useState(false)
-  const caseItem = cases.find(c => c.id === attempt.caseId)
-  
+export function AttemptCard({ attempt, caseItem, onDelete }: AttemptCardProps) {
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // Format date
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+    return new Date(dateString).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
-  }
-  
+  };
+
   // Format time spent
   const formatTimeSpent = (seconds: number) => {
     if (seconds < 60) return `${seconds} sec`;
     const minutes = Math.floor(seconds / 60);
-    return `${minutes} min${minutes !== 1 ? 's' : ''}`;
-  }
+    return `${minutes} min${minutes !== 1 ? "s" : ""}`;
+  };
 
   // Handle delete confirmation
   const handleDeleteClick = () => {
-    if (window.confirm(`Are you sure you want to delete "${attempt.title}"? This action cannot be undone.`)) {
+    if (
+      window.confirm(
+        `Are you sure you want to delete "${attempt.title}"? This action cannot be undone.`
+      )
+    ) {
       setIsDeleting(true);
       onDelete();
     }
-  }
-  
+  };
+
   return (
     <Card className="overflow-hidden transition-all duration-300 hover:shadow-lg">
       <CardHeader>
@@ -51,7 +63,7 @@ export function AttemptCard({ attempt, onDelete }: AttemptCardProps) {
           <div>
             <CardTitle className="line-clamp-1">{attempt.title}</CardTitle>
             <CardDescription>
-              {caseItem?.title || 'Unknown Case'}
+              {caseItem?.title || "Unknown Case"}
             </CardDescription>
           </div>
           <Badge
@@ -59,15 +71,15 @@ export function AttemptCard({ attempt, onDelete }: AttemptCardProps) {
               attempt.completionStatus === "completed"
                 ? "success"
                 : attempt.completionStatus === "in_progress"
-                  ? "warning"
-                  : "destructive"
+                ? "warning"
+                : "destructive"
             }
           >
             {attempt.completionStatus === "completed"
               ? "Completed"
               : attempt.completionStatus === "in_progress"
-                ? "In Progress"
-                : "Abandoned"}
+              ? "In Progress"
+              : "Abandoned"}
           </Badge>
         </div>
       </CardHeader>
@@ -100,7 +112,7 @@ export function AttemptCard({ attempt, onDelete }: AttemptCardProps) {
             </>
           )}
         </Button>
-        
+
         <Link href={`/attempts/${attempt.id}`}>
           <Button size="sm">
             View Attempt
@@ -109,5 +121,5 @@ export function AttemptCard({ attempt, onDelete }: AttemptCardProps) {
         </Link>
       </CardFooter>
     </Card>
-  )
+  );
 }
