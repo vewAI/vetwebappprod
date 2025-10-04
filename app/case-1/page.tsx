@@ -97,7 +97,7 @@ export default function Case1Page() {
     };
 
     initializeAttempt();
-  }, [user, caseId, isCreatingAttempt, searchParams]);
+  }, [user, caseId, isCreatingAttempt, searchParams, attemptId]);
 
   useEffect(() => {
     const checkMobile = () => {

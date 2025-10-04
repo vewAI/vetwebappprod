@@ -31,7 +31,7 @@ export const chatService = {
         caseId,
       });
   
-      return response.data;
+  return response.data as { content: string };
     } catch (error) {
       console.error('Error getting chat response:', error);
       throw error;
