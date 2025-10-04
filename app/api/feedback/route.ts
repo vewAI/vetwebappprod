@@ -11,7 +11,6 @@ export async function POST(request: NextRequest) {
     const {
       messages,
       stageIndex,
-      caseId,
       feedbackPrompt: feedbackPromptFromClient,
       attemptId,
     } = await request.json();
@@ -94,10 +93,7 @@ export async function POST(request: NextRequest) {
       {
         feedback: errorMessage,
         error: "Failed to generate feedback",
-        details:
-          typeof error === "object" && error !== null && "message" in error
-            ? (error as any).message
-            : String(error),
+        details: error instanceof Error ? error.message : String(error),
       },
       { status: 500 }
     );
