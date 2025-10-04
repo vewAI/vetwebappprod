@@ -13,27 +13,27 @@ export const chatService = {
    * @returns The AI response content
    */
   sendMessage: async (
-    messages: Message[], 
-    stageIndex: number, 
+    messages: Message[],
+    stageIndex: number,
     caseId: string
   ): Promise<{ content: string }> => {
     try {
       // Format messages for the API
-      const apiMessages = messages.map(msg => ({
-        role: msg.role as 'system' | 'user' | 'assistant',
-        content: msg.content
+      const apiMessages = messages.map((msg) => ({
+        role: msg.role as "system" | "user" | "assistant",
+        content: msg.content,
       }));
-  
+
       // Call the API using axios
-      const response = await axios.post('/api/chat', {
+      const response = await axios.post("/api/chat", {
         messages: apiMessages,
         stageIndex,
         caseId,
       });
-  
-  return response.data as { content: string };
+
+      return response.data as { content: string };
     } catch (error) {
-      console.error('Error getting chat response:', error);
+      console.error("Error getting chat response:", error);
       throw error;
     }
   },
@@ -50,7 +50,7 @@ export const chatService = {
     content,
     timestamp: new Date().toISOString(),
     stageIndex,
-    displayRole: "You"
+    displayRole: "You",
   }),
 
   /**
@@ -60,13 +60,17 @@ export const chatService = {
    * @param roleName Display role name for the message
    * @returns Assistant message object
    */
-  createAssistantMessage: (content: string, stageIndex: number, roleName: string): Message => ({
+  createAssistantMessage: (
+    content: string,
+    stageIndex: number,
+    roleName: string
+  ): Message => ({
     id: (Date.now() + 1).toString(),
     role: "assistant",
     content,
     timestamp: new Date().toISOString(),
     stageIndex,
-    displayRole: roleName
+    displayRole: roleName,
   }),
 
   /**
@@ -81,7 +85,7 @@ export const chatService = {
     content,
     timestamp: new Date().toISOString(),
     stageIndex,
-    displayRole: "Virtual Examiner"
+    displayRole: "Virtual Examiner",
   }),
 
   /**
@@ -93,11 +97,12 @@ export const chatService = {
   createErrorMessage: (error: unknown, stageIndex: number): Message => ({
     id: `error-${Date.now()}`,
     role: "system",
-    content: typeof error === "string" 
-      ? error 
-      : "Sorry, there was an error processing your request. Please try again.",
+    content:
+      typeof error === "string"
+        ? error
+        : "Sorry, there was an error processing your request. Please try again.",
     timestamp: new Date().toISOString(),
     stageIndex,
-    displayRole: "Virtual Examiner"
-  })
+    displayRole: "Virtual Examiner",
+  }),
 };

@@ -76,7 +76,7 @@ export function FeedbackButton({ messages, stage, stageIndex, caseId, attemptId 
         attemptId
       })
 
-      setFeedback(response.data.feedback)
+  setFeedback((response.data as { feedback: string }).feedback)
     } catch (error) {
       console.error('Error generating feedback:', error)
       setFeedback("Sorry, there was an error generating feedback. Please try again.")
