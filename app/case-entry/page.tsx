@@ -35,6 +35,27 @@ const initialFormState = {
 };
 
 export default function CaseEntryForm() {
+  // List of fields considered long text
+  const longTextFields = [
+    "description",
+    "details",
+    "physical_exam_findings",
+    "diagnostic_findings",
+    "owner_background",
+    "history_feedback",
+    "owner_follow_up",
+    "owner_follow_up_feedback",
+    "owner_diagnosis",
+    "get_owner_prompt",
+    "get_history_feedback_prompt",
+    "get_physical_exam_prompt",
+    "get_diagnostic_prompt",
+    "get_owner_follow_up_prompt",
+    "get_owner_follow_up_feedback_prompt",
+    "get_owner_diagnosis_prompt",
+    "get_overall_feedback_prompt"
+  ];
+  const [expandedField, setExpandedField] = useState<string | null>(null);
   const [form, setForm] = useState(initialFormState);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState("");
@@ -72,14 +93,19 @@ export default function CaseEntryForm() {
             <label className="block font-medium mb-1" htmlFor={key}>
               {key.replace(/_/g, " ")}
             </label>
-            {key === "details" ? (
-              <Textarea
-                name={key}
-                value={form[key as keyof typeof form]}
-                onChange={handleChange}
-                className="w-full"
-                rows={3}
-              />
+            {longTextFields.includes(key) ? (
+              <div className="flex gap-2 items-center">
+                <Textarea
+                  name={key}
+                  value={form[key as keyof typeof form]}
+                  onChange={handleChange}
+                  className="w-full"
+                  rows={3}
+                />
+                <Button type="button" size="sm" onClick={() => setExpandedField(key)}>
+                  Expand
+                </Button>
+              </div>
             ) : (
               <Input
                 name={key}
@@ -96,6 +122,26 @@ export default function CaseEntryForm() {
         {success && <div className="text-green-600 mt-2">{success}</div>}
         {error && <div className="text-red-600 mt-2">{error}</div>}
       </form>
+      {/* Modal for expanded field */}
+      {expandedField && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg max-w-2xl w-full p-6">
+            <h2 className="text-lg font-bold mb-2">{expandedField.replace(/_/g, " ")}</h2>
+            <Textarea
+              value={form[expandedField as keyof typeof form]}
+              onChange={handleChange}
+              name={expandedField}
+              className="w-full h-64"
+              rows={12}
+            />
+            <div className="flex justify-end mt-4">
+              <Button type="button" onClick={() => setExpandedField(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
