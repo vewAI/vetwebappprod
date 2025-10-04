@@ -115,7 +115,7 @@ export default function AttemptsPage() {
 
     setFilteredAttempts(filtered);
     setCurrentPage(1); // Reset to first page when filters change
-  }, [attempts, searchQuery, statusFilter]);
+  }, [attempts, searchQuery, statusFilter, cases]);
 
   const handleDeleteAttempt = async (attemptId: string) => {
     const success = await deleteAttempt(attemptId);
