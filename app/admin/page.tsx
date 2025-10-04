@@ -16,6 +16,12 @@ export default function AdminPage() {
       >
         Go to Case Entry Form
       </Button>
+      <Button
+        className="mb-4 ml-2"
+        onClick={() => router.push("/case-viewer")}
+      >
+        View Cases
+      </Button>
       {/* Add other admin controls here */}
     </div>
   );
