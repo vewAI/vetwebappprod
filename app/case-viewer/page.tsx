@@ -22,7 +22,7 @@ export default function CaseViewerPage() {
     "get_owner_follow_up_prompt",
     "get_owner_follow_up_feedback_prompt",
     "get_owner_diagnosis_prompt",
-    "get_overall_feedback_prompt"
+    "get_overall_feedback_prompt",
   ];
   const [expandedField, setExpandedField] = useState<string | null>(null);
   const [cases, setCases] = useState<any[]>([]);
@@ -56,7 +56,8 @@ export default function CaseViewerPage() {
 
   if (loading) return <div className="p-8 text-center">Loading cases...</div>;
   if (error) return <div className="p-8 text-center text-red-600">{error}</div>;
-  if (!cases.length) return <div className="p-8 text-center">No cases found.</div>;
+  if (!cases.length)
+    return <div className="p-8 text-center">No cases found.</div>;
 
   const currentCase = cases[currentIndex];
 
@@ -67,24 +68,41 @@ export default function CaseViewerPage() {
         <Button onClick={handlePrev} disabled={currentIndex === 0}>
           ← Prev
         </Button>
-        <span className="font-semibold">Case {currentIndex + 1} of {cases.length}</span>
-        <Button onClick={handleNext} disabled={currentIndex === cases.length - 1}>
+        <span className="font-semibold">
+          Case {currentIndex + 1} of {cases.length}
+        </span>
+        <Button
+          onClick={handleNext}
+          disabled={currentIndex === cases.length - 1}
+        >
           Next →
         </Button>
       </div>
       <form className="space-y-4">
         {Object.entries(currentCase).map(([key, value]) => (
           <div key={key}>
-            <label className="block font-medium mb-1" htmlFor={key}>{key.replace(/_/g, " ")}</label>
+            <label className="block font-medium mb-1" htmlFor={key}>
+              {key.replace(/_/g, " ")}
+            </label>
             {longTextFields.includes(key) ? (
               <div className="flex gap-2 items-center">
                 <textarea
-                  value={typeof value === "object" && value !== null ? JSON.stringify(value) : value !== undefined ? String(value) : ""}
+                  value={
+                    typeof value === "object" && value !== null
+                      ? JSON.stringify(value)
+                      : value !== undefined
+                      ? String(value)
+                      : ""
+                  }
                   readOnly
                   className="w-full bg-gray-100 dark:bg-gray-900 border rounded px-2 py-1"
                   rows={3}
                 />
-                <Button type="button" size="sm" onClick={() => setExpandedField(key)}>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => setExpandedField(key)}
+                >
                   Expand
                 </Button>
               </div>
@@ -92,32 +110,47 @@ export default function CaseViewerPage() {
               <input
                 type="text"
                 name={key}
-                value={typeof value === "object" && value !== null ? JSON.stringify(value) : value !== undefined ? String(value) : ""}
+                value={
+                  typeof value === "object" && value !== null
+                    ? JSON.stringify(value)
+                    : value !== undefined
+                    ? String(value)
+                    : ""
+                }
                 readOnly
                 className="w-full bg-gray-100 dark:bg-gray-900 border rounded px-2 py-1"
               />
             )}
           </div>
         ))}
-      {/* Modal for expanded field */}
-      {expandedField && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg max-w-2xl w-full p-6">
-            <h2 className="text-lg font-bold mb-2">{expandedField.replace(/_/g, " ")}</h2>
-            <textarea
-              value={typeof currentCase[expandedField] === "object" && currentCase[expandedField] !== null ? JSON.stringify(currentCase[expandedField]) : currentCase[expandedField] !== undefined ? String(currentCase[expandedField]) : ""}
-              readOnly
-              className="w-full h-64"
-              rows={12}
-            />
-            <div className="flex justify-end mt-4">
-              <Button type="button" onClick={() => setExpandedField(null)}>
-                Close
-              </Button>
+        {/* Modal for expanded field */}
+        {expandedField && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg max-w-2xl w-full p-6">
+              <h2 className="text-lg font-bold mb-2">
+                {expandedField.replace(/_/g, " ")}
+              </h2>
+              <textarea
+                value={
+                  typeof currentCase[expandedField] === "object" &&
+                  currentCase[expandedField] !== null
+                    ? JSON.stringify(currentCase[expandedField])
+                    : currentCase[expandedField] !== undefined
+                    ? String(currentCase[expandedField])
+                    : ""
+                }
+                readOnly
+                className="w-full h-64"
+                rows={12}
+              />
+              <div className="flex justify-end mt-4">
+                <Button type="button" onClick={() => setExpandedField(null)}>
+                  Close
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
       </form>
     </div>
   );
