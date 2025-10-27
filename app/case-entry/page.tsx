@@ -77,10 +77,11 @@ export default function CaseEntryForm() {
       await axios.post("/api/cases", form);
       setSuccess("Case added successfully!");
       setForm(initialFormState);
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Prefer server-provided error message when available
-      const serverMsg = err?.response?.data?.error || err?.message;
-      setError(serverMsg || "Error adding case. Please try again.");
+      const e = err as { response?: { data?: { error?: string } }; message?: string };
+      const serverMsg = e?.response?.data?.error ?? e?.message ?? (typeof err === "string" ? err : undefined);
+      setError(serverMsg ?? "Error adding case. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -90,7 +91,7 @@ export default function CaseEntryForm() {
     <div className="max-w-2xl mx-auto p-8">
       <h1 className="text-2xl font-bold mb-6">Add New Case</h1>
       <form onSubmit={handleSubmit} className="space-y-4">
-        {Object.entries(initialFormState).map(([key, _]) => (
+  {Object.entries(initialFormState).map(([key]) => (
           <div key={key}>
             <label className="block font-medium mb-1" htmlFor={key}>
               {key.replace(/_/g, " ")}

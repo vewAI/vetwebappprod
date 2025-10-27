@@ -25,7 +25,7 @@ export default function CaseViewerPage() {
     "get_overall_feedback_prompt",
   ];
   const [expandedField, setExpandedField] = useState<string | null>(null);
-  const [cases, setCases] = useState<any[]>([]);
+  const [cases, setCases] = useState<Record<string, unknown>[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -37,9 +37,10 @@ export default function CaseViewerPage() {
       try {
         // You may need to adjust the API endpoint for Supabase
         const response = await axios.get("/api/cases");
-        setCases(response.data as any[]);
-      } catch (err) {
-        setError("Error loading cases.");
+        setCases(response.data as Record<string, unknown>[]);
+      } catch (error: unknown) {
+        const e = error instanceof Error ? error.message : String(error);
+        setError(`Error loading cases: ${e}`);
       } finally {
         setLoading(false);
       }

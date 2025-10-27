@@ -54,7 +54,9 @@ export async function POST(req: Request) {
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/(^-|-$)/g, "");
-      const suffix = crypto?.randomUUID ? crypto.randomUUID().split("-")[0] : String(Date.now());
+      const suffix = crypto?.randomUUID
+        ? crypto.randomUUID().split("-")[0]
+        : String(Date.now());
       body.id = `${slug}-${suffix}`;
     }
 
@@ -64,10 +66,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
     return NextResponse.json({ success: true, data });
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: err.message || "Unknown error" },
-      { status: 500 }
-    );
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg || "Unknown error" }, { status: 500 });
   }
 }
