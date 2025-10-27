@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import crypto from "crypto";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -43,11 +44,18 @@ export async function POST(req: Request) {
     }
 
     // Validate required fields (customize as needed)
-    if (!body.id || !body.title) {
-      return NextResponse.json(
-        { error: "id and title are required" },
-        { status: 400 }
-      );
+    // If no id provided, generate one from title or uuid so the UI doesn't have to supply it.
+    if (!body.title) {
+      return NextResponse.json({ error: "title is required" }, { status: 400 });
+    }
+    if (!body.id || body.id === "") {
+      // generate a safe id: slug of title + random suffix
+      const slug = (body.title as string)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "");
+      const suffix = crypto?.randomUUID ? crypto.randomUUID().split("-")[0] : String(Date.now());
+      body.id = `${slug}-${suffix}`;
     }
 
     // Insert into Supabase

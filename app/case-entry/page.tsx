@@ -78,7 +78,9 @@ export default function CaseEntryForm() {
       setSuccess("Case added successfully!");
       setForm(initialFormState);
     } catch (err: any) {
-      setError("Error adding case. Please try again.");
+      // Prefer server-provided error message when available
+      const serverMsg = err?.response?.data?.error || err?.message;
+      setError(serverMsg || "Error adding case. Please try again.");
     } finally {
       setLoading(false);
     }
