@@ -45,7 +45,11 @@ export const chatService = {
    * @returns User message object
    */
   createUserMessage: (content: string, stageIndex: number): Message => ({
-    id: Date.now().toString(),
+    // Use crypto.randomUUID when available to avoid server/client hydration differences
+    id:
+      typeof crypto !== "undefined" && (crypto as any).randomUUID
+        ? (crypto as any).randomUUID()
+        : Date.now().toString(),
     role: "user",
     content,
     timestamp: new Date().toISOString(),
@@ -65,7 +69,10 @@ export const chatService = {
     stageIndex: number,
     roleName: string
   ): Message => ({
-    id: (Date.now() + 1).toString(),
+    id:
+      typeof crypto !== "undefined" && (crypto as any).randomUUID
+        ? `${(crypto as any).randomUUID()}`
+        : (Date.now() + 1).toString(),
     role: "assistant",
     content,
     timestamp: new Date().toISOString(),
@@ -80,7 +87,10 @@ export const chatService = {
    * @returns System message object
    */
   createSystemMessage: (content: string, stageIndex: number): Message => ({
-    id: `system-${Date.now()}`,
+    id:
+      typeof crypto !== "undefined" && (crypto as any).randomUUID
+        ? `system-${(crypto as any).randomUUID()}`
+        : `system-${Date.now()}`,
     role: "system",
     content,
     timestamp: new Date().toISOString(),
@@ -95,7 +105,10 @@ export const chatService = {
    * @returns Error message object
    */
   createErrorMessage: (error: unknown, stageIndex: number): Message => ({
-    id: `error-${Date.now()}`,
+    id:
+      typeof crypto !== "undefined" && (crypto as any).randomUUID
+        ? `error-${(crypto as any).randomUUID()}`
+        : `error-${Date.now()}`,
     role: "system",
     content:
       typeof error === "string"

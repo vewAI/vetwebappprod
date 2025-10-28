@@ -27,6 +27,11 @@ export default function CaseViewerPage() {
   const [expandedField, setExpandedField] = useState<string | null>(null);
   const [cases, setCases] = useState<Record<string, unknown>[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [editable, setEditable] = useState(false);
+  const [formState, setFormState] = useState<Record<string, any> | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteStep, setDeleteStep] = useState<1 | 2>(1);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -37,7 +42,12 @@ export default function CaseViewerPage() {
       try {
         // You may need to adjust the API endpoint for Supabase
         const response = await axios.get("/api/cases");
-        setCases(response.data as Record<string, unknown>[]);
+        const data = response.data as any;
+        setCases(data as Record<string, unknown>[]);
+        // initialize formState for first case
+        if (Array.isArray(data) && data.length > 0) {
+          setFormState(data[0] as Record<string, any>);
+        }
       } catch (error: unknown) {
         const e = error instanceof Error ? error.message : String(error);
         setError(`Error loading cases: ${e}`);
@@ -55,6 +65,12 @@ export default function CaseViewerPage() {
     setCurrentIndex((i) => (i < cases.length - 1 ? i + 1 : i));
   }
 
+  // Sync formState when currentIndex changes
+  useEffect(() => {
+    if (!cases || cases.length === 0) return;
+    setFormState(cases[currentIndex] as Record<string, any>);
+  }, [currentIndex, cases]);
+
   if (loading) return <div className="p-8 text-center">Loading cases...</div>;
   if (error) return <div className="p-8 text-center text-red-600">{error}</div>;
   if (!cases.length)
@@ -65,65 +81,117 @@ export default function CaseViewerPage() {
   return (
     <div className="max-w-2xl mx-auto p-8">
       <h1 className="text-2xl font-bold mb-6">Case Viewer</h1>
-      <div className="mb-4 flex justify-between">
-        <Button onClick={handlePrev} disabled={currentIndex === 0}>
-          ← Prev
-        </Button>
-        <span className="font-semibold">
-          Case {currentIndex + 1} of {cases.length}
-        </span>
-        <Button
-          onClick={handleNext}
-          disabled={currentIndex === cases.length - 1}
-        >
-          Next →
-        </Button>
+      <div className="mb-4 flex justify-between items-center">
+        <div className="flex items-center gap-3">
+          <Button onClick={handlePrev} disabled={currentIndex === 0}>
+            ← Prev
+          </Button>
+          <span className="font-semibold">
+            Case {currentIndex + 1} of {cases.length}
+          </span>
+          <Button
+            onClick={handleNext}
+            disabled={currentIndex === cases.length - 1}
+          >
+            Next →
+          </Button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant={editable ? "ghost" : "default"}
+            onClick={() => setEditable((v) => !v)}
+          >
+            {editable ? "Lock" : "Edit"}
+          </Button>
+          <Button
+            onClick={async () => {
+              if (!formState) return;
+              try {
+                const resp = await axios.put("/api/cases", formState);
+                // update local cases list with returned row
+                const respData = resp.data as any;
+                if (respData && respData.data) {
+                  const updated = respData.data as any;
+                  const nextCases = [...cases];
+                  nextCases[currentIndex] = updated;
+                  setCases(nextCases);
+                  setFormState(updated as Record<string, any>);
+                  setEditable(false);
+                }
+              } catch (err) {
+                console.error("Error saving case:", err);
+                alert("Error saving case. See console for details.");
+              }
+            }}
+          >
+            Save
+          </Button>
+          <Button
+            className="bg-red-600 text-white hover:bg-red-700"
+            onClick={() => {
+              setDeleteStep(1);
+              setShowDeleteModal(true);
+            }}
+          >
+            Delete
+          </Button>
+        </div>
       </div>
       <form className="space-y-4">
-        {Object.entries(currentCase).map(([key, value]) => (
-          <div key={key}>
-            <label className="block font-medium mb-1" htmlFor={key}>
-              {key.replace(/_/g, " ")}
-            </label>
-            {longTextFields.includes(key) ? (
-              <div className="flex gap-2 items-center">
-                <textarea
+        {formState &&
+          Object.entries(formState).map(([key, value]) => (
+            <div key={key}>
+              <label className="block font-medium mb-1" htmlFor={key}>
+                {key.replace(/_/g, " ")}
+              </label>
+              {longTextFields.includes(key) ? (
+                <div className="flex gap-2 items-center">
+                  <textarea
+                    value={
+                      typeof formState[key] === "object" &&
+                      formState[key] !== null
+                        ? JSON.stringify(formState[key])
+                        : formState[key] !== undefined
+                        ? String(formState[key])
+                        : ""
+                    }
+                    readOnly={!editable}
+                    onChange={(e) =>
+                      setFormState({ ...formState, [key]: e.target.value })
+                    }
+                    className="w-full bg-white border rounded px-2 py-1"
+                    rows={3}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => setExpandedField(key)}
+                  >
+                    Expand
+                  </Button>
+                </div>
+              ) : (
+                <input
+                  type="text"
+                  name={key}
                   value={
-                    typeof value === "object" && value !== null
-                      ? JSON.stringify(value)
-                      : value !== undefined
-                      ? String(value)
+                    typeof formState[key] === "object" &&
+                    formState[key] !== null
+                      ? JSON.stringify(formState[key])
+                      : formState[key] !== undefined
+                      ? String(formState[key])
                       : ""
                   }
-                  readOnly
-                  className="w-full bg-gray-100 dark:bg-gray-900 border rounded px-2 py-1"
-                  rows={3}
+                  readOnly={!editable}
+                  onChange={(e) =>
+                    setFormState({ ...formState, [key]: e.target.value })
+                  }
+                  className="w-full bg-white border rounded px-2 py-1"
                 />
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => setExpandedField(key)}
-                >
-                  Expand
-                </Button>
-              </div>
-            ) : (
-              <input
-                type="text"
-                name={key}
-                value={
-                  typeof value === "object" && value !== null
-                    ? JSON.stringify(value)
-                    : value !== undefined
-                    ? String(value)
-                    : ""
-                }
-                readOnly
-                className="w-full bg-gray-100 dark:bg-gray-900 border rounded px-2 py-1"
-              />
-            )}
-          </div>
-        ))}
+              )}
+            </div>
+          ))}
         {/* Modal for expanded field */}
         {expandedField && (
           <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
@@ -133,14 +201,21 @@ export default function CaseViewerPage() {
               </h2>
               <textarea
                 value={
-                  typeof currentCase[expandedField] === "object" &&
-                  currentCase[expandedField] !== null
-                    ? JSON.stringify(currentCase[expandedField])
-                    : currentCase[expandedField] !== undefined
-                    ? String(currentCase[expandedField])
+                  formState &&
+                  typeof formState[expandedField] === "object" &&
+                  formState[expandedField] !== null
+                    ? JSON.stringify(formState[expandedField], null, 2)
+                    : formState && formState[expandedField] !== undefined
+                    ? String(formState[expandedField])
                     : ""
                 }
-                readOnly
+                readOnly={!editable}
+                onChange={(e) =>
+                  setFormState({
+                    ...formState,
+                    [expandedField]: e.target.value,
+                  })
+                }
                 className="w-full h-64"
                 rows={12}
               />
@@ -149,6 +224,67 @@ export default function CaseViewerPage() {
                   Close
                 </Button>
               </div>
+            </div>
+          </div>
+        )}
+        {/* Delete confirmation modal (two-step) */}
+        {showDeleteModal && formState && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+            <div className={`rounded-lg shadow-lg max-w-md w-full p-6 ${deleteStep === 2 ? "bg-red-600 text-white" : "bg-white text-black"}`}>
+              {deleteStep === 1 ? (
+                <>
+                  <h3 className="text-xl font-bold mb-2">Confirm Delete</h3>
+                  <p className="mb-4">Are you sure you want to delete the case <strong>{String(formState.id)}</strong>?</p>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="ghost" onClick={() => setShowDeleteModal(false)}>Cancel</Button>
+                    <Button
+                      className="bg-yellow-500 text-black hover:bg-yellow-600"
+                      onClick={() => setDeleteStep(2)}
+                    >
+                      Proceed to Delete
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-xl font-bold mb-2">Final Confirmation</h3>
+                  <p className="mb-4">This action is irreversible. Deleting the case will remove it from the system permanently.</p>
+                  <div className="flex gap-2">
+                    <Button variant="ghost" onClick={() => { setDeleteStep(1); }}>Back</Button>
+                    <Button
+                      className="ml-auto bg-white text-red-600 hover:bg-red-100"
+                      onClick={async () => {
+                        if (!formState?.id) return;
+                        try {
+                          setIsDeleting(true);
+                          const resp = await axios.delete(`/api/cases?id=${encodeURIComponent(String(formState.id))}`);
+                          const respData = resp.data as any;
+                          if (respData && respData.success) {
+                            // remove from local list
+                            const next = cases.filter((c) => String((c as any).id) !== String(formState.id));
+                            setCases(next as Record<string, unknown>[]);
+                            const newIndex = Math.max(0, Math.min(currentIndex, next.length - 1));
+                            setCurrentIndex(newIndex);
+                            setFormState(next[newIndex] ? (next[newIndex] as Record<string, any>) : null);
+                            setShowDeleteModal(false);
+                            setEditable(false);
+                          } else {
+                            throw new Error(respData?.error || 'Delete failed');
+                          }
+                        } catch (err) {
+                          console.error('Error deleting case:', err);
+                          alert('Error deleting case. See console for details.');
+                        } finally {
+                          setIsDeleting(false);
+                        }
+                      }}
+                      disabled={isDeleting}
+                    >
+                      {isDeleting ? 'Deleting...' : 'Delete Case'}
+                    </Button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}

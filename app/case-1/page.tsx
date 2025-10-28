@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import axios from "axios";
-import { useSearchParams } from "next/navigation";
+// note: avoid useSearchParams to prevent CSR/prerender mismatch; use window.location inside effects
 import { fetchCaseById } from "@/features/case-selection/services/caseService";
 import type { Case } from "@/features/case-selection/models/case";
 import { ChatInterface } from "@/features/chat/components/chat-interface";
@@ -22,6 +22,8 @@ import {
   markStageCompleted,
 } from "@/features/stages/services/stageService";
 
+export const dynamic = "force-dynamic";
+
 export default function Case1Page() {
   // Hardcode the case ID for this specific page
   const caseId = "case-1";
@@ -37,7 +39,6 @@ export default function Case1Page() {
     }
     loadCase();
   }, [caseId]);
-  const searchParams = useSearchParams();
   const { user } = useAuth();
 
   const [isMobile, setIsMobile] = useState(false);
@@ -64,7 +65,10 @@ export default function Case1Page() {
     hasInitializedAttempt.current = true;
 
     // Check if there's an attempt ID in the URL
-    const existingAttemptId = searchParams.get("attempt");
+    const existingAttemptId =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("attempt")
+        : null;
     if (existingAttemptId) {
       console.log("Using existing attempt ID from URL:", existingAttemptId);
       setAttemptId(existingAttemptId);
@@ -97,7 +101,7 @@ export default function Case1Page() {
     };
 
     initializeAttempt();
-  }, [user, caseId, isCreatingAttempt, searchParams, attemptId]);
+  }, [user, caseId, isCreatingAttempt, attemptId]);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -120,7 +124,10 @@ export default function Case1Page() {
 
   // Check for reset parameter and reset the state if present
   useEffect(() => {
-    const reset = searchParams.get("reset");
+    const reset =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("reset")
+        : null;
     if (reset === "true") {
       // Reset to initial state
       setCurrentStageIndex(0);
@@ -134,7 +141,7 @@ export default function Case1Page() {
       url.searchParams.delete("reset");
       window.history.replaceState({}, "", url);
     }
-  }, [searchParams, caseId]);
+  }, [caseId]);
 
   if (loading) {
     return <div className="p-8 text-center">Loading case...</div>;

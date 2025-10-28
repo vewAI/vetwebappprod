@@ -15,13 +15,38 @@ export async function fetchCases(): Promise<Case[]> {
 }
 
 export async function fetchCaseById(id: string): Promise<Case | null> {
-  const { data, error } = await supabase
-    .from("cases")
-    .select("*")
-    .eq("id", id)
-    .single();
-  if (error) return null;
-  return data ? mapDbCaseToCase(data) : null;
+  // Try exact match first
+  try {
+    let { data } = await supabase
+      .from("cases")
+      .select("*")
+      .eq("id", id)
+      .single();
+    if (data) return mapDbCaseToCase(data);
+
+    // Next try a slug column (if you have one) so URLs like /test-case-2 work
+    const { data: bySlug } = await supabase
+      .from("cases")
+      .select("*")
+      .eq("slug", id)
+      .single();
+    if (bySlug) return mapDbCaseToCase(bySlug);
+
+    // Fallback: try prefix match on id (helps when DB ids include suffixes)
+    const { data: prefixMatch } = await supabase
+      .from("cases")
+      .select("*")
+      .ilike("id", `${id}%`)
+      .limit(1);
+    if (prefixMatch && prefixMatch.length > 0)
+      return mapDbCaseToCase(prefixMatch[0]);
+
+    return null;
+  } catch (e) {
+    // On any error, return null (page will show notFound). Consider logging during debugging.
+    console.error("fetchCaseById error:", e);
+    return null;
+  }
 }
 
 function mapDbCaseToCase(dbCase: any): Case {
