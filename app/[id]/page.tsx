@@ -4,9 +4,7 @@ import { notFound } from "next/navigation";
 import React, { useEffect, useState, useRef } from "react";
 import type { Case } from "@/features/case-selection/models/case";
 import { fetchCaseById } from "@/features/case-selection/services/caseService";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { ChevronLeft } from "lucide-react";
+// Removed unused imports (Link, Button, ChevronLeft) to satisfy lint rules.
 import { useParams } from "next/navigation";
 
 import { ChatInterface } from "@/features/chat/components/chat-interface";

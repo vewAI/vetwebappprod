@@ -75,17 +75,24 @@ export default function CaseEntryForm() {
     setError("");
     try {
       // Prepare payload and merge in case-specific structured fields when empty
-      const payload: Record<string, any> = { ...form };
+      const payload: Record<string, unknown> = { ...form };
 
       // Helper to inject default text only when empty
       const ensure = (key: string, value: string) => {
-        if (!payload[key] || String(payload[key]).trim() === "") {
+        const v = payload[key];
+        if (
+          v === undefined ||
+          v === null ||
+          (typeof v === "string" && v.trim() === "")
+        ) {
           payload[key] = value;
         }
       };
 
       // Basic case-specific defaults based on id/title
-      const horseName = payload.title || payload.id || "the patient";
+      const horseName = String(
+        payload["title"] ?? payload["id"] ?? "the patient"
+      );
 
       const diagnostic_findings_template = `Note: Only provide results for tests specifically requested by the student. If they request other tests not listed here, results should be within normal range but note these may be unnecessary tests.`;
 

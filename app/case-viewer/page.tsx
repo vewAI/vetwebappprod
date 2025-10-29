@@ -29,7 +29,9 @@ export default function CaseViewerPage() {
   const [cases, setCases] = useState<Record<string, unknown>[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [editable, setEditable] = useState(false);
-  const [formState, setFormState] = useState<Record<string, any> | null>(null);
+  const [formState, setFormState] = useState<Record<string, unknown> | null>(
+    null
+  );
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteStep, setDeleteStep] = useState<1 | 2>(1);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -43,11 +45,11 @@ export default function CaseViewerPage() {
       try {
         // You may need to adjust the API endpoint for Supabase
         const response = await axios.get("/api/cases");
-        const data = response.data as any;
-        setCases(data as Record<string, unknown>[]);
+        const data = response.data as unknown;
+        setCases((data as Record<string, unknown>[]) || []);
         // initialize formState for first case
         if (Array.isArray(data) && data.length > 0) {
-          setFormState(data[0] as Record<string, any>);
+          setFormState(data[0] as Record<string, unknown>);
         }
       } catch (error: unknown) {
         const e = error instanceof Error ? error.message : String(error);
@@ -69,20 +71,18 @@ export default function CaseViewerPage() {
   // Sync formState when currentIndex changes
   useEffect(() => {
     if (!cases || cases.length === 0) return;
-    setFormState(cases[currentIndex] as Record<string, any>);
+    setFormState(cases[currentIndex] as Record<string, unknown>);
   }, [currentIndex, cases]);
   if (loading) return <div className="p-8 text-center">Loading cases...</div>;
   if (error) return <div className="p-8 text-center text-red-600">{error}</div>;
   if (!cases.length)
     return <div className="p-8 text-center">No cases found.</div>;
 
-  const currentCase = cases[currentIndex];
-
   return (
     <div className="max-w-2xl mx-auto p-8">
       <h1 className="text-2xl font-bold mb-6">Case Viewer</h1>
       {/* Show image if available */}
-      {formState && formState.image_url && (
+      {formState && Boolean(formState["image_url"]) && (
         <div className="mb-4 bg-gray-100 rounded overflow-hidden">
           <img
             src={String(formState.image_url)}
@@ -120,13 +120,14 @@ export default function CaseViewerPage() {
               try {
                 const resp = await axios.put("/api/cases", formState);
                 // update local cases list with returned row
-                const respData = resp.data as any;
-                if (respData && respData.data) {
-                  const updated = respData.data as any;
+                const respData = resp.data as unknown;
+                const respObj = respData as Record<string, unknown>;
+                if (respObj && respObj["data"]) {
+                  const updated = respObj["data"] as Record<string, unknown>;
                   const nextCases = [...cases];
                   nextCases[currentIndex] = updated;
                   setCases(nextCases);
-                  setFormState(updated as Record<string, any>);
+                  setFormState(updated as Record<string, unknown>);
                   setEditable(false);
                 }
               } catch (err) {
@@ -150,7 +151,7 @@ export default function CaseViewerPage() {
       </div>
       <form className="space-y-4">
         {formState &&
-          Object.entries(formState).map(([key, value]) => (
+          Object.entries(formState).map(([key]) => (
             <div key={key}>
               <label className="block font-medium mb-1" htmlFor={key}>
                 {key.replace(/_/g, " ")}
@@ -288,7 +289,10 @@ export default function CaseViewerPage() {
                   <h3 className="text-xl font-bold mb-2">Confirm Delete</h3>
                   <p className="mb-4">
                     Are you sure you want to delete the case{" "}
-                    <strong>{String(formState.id)}</strong>?
+                    <strong>
+                      {String((formState as Record<string, unknown>)["id"])}
+                    </strong>
+                    ?
                   </p>
                   <div className="flex justify-end gap-2">
                     <Button
@@ -329,15 +333,19 @@ export default function CaseViewerPage() {
                           setIsDeleting(true);
                           const resp = await axios.delete(
                             `/api/cases?id=${encodeURIComponent(
-                              String(formState.id)
+                              String(
+                                (formState as Record<string, unknown>)["id"]
+                              )
                             )}`
                           );
-                          const respData = resp.data as any;
-                          if (respData && respData.success) {
+                          const respData = resp.data as unknown;
+                          const respObj = respData as Record<string, unknown>;
+                          if (respObj && respObj["success"]) {
                             // remove from local list
                             const next = cases.filter(
                               (c) =>
-                                String((c as any).id) !== String(formState.id)
+                                String((c as Record<string, unknown>)["id"]) !==
+                                String(formState.id)
                             );
                             setCases(next as Record<string, unknown>[]);
                             const newIndex = Math.max(
@@ -347,13 +355,17 @@ export default function CaseViewerPage() {
                             setCurrentIndex(newIndex);
                             setFormState(
                               next[newIndex]
-                                ? (next[newIndex] as Record<string, any>)
+                                ? (next[newIndex] as Record<string, unknown>)
                                 : null
                             );
                             setShowDeleteModal(false);
                             setEditable(false);
                           } else {
-                            throw new Error(respData?.error || "Delete failed");
+                            const errMsg =
+                              typeof respObj["error"] === "string"
+                                ? String(respObj["error"])
+                                : undefined;
+                            throw new Error(errMsg ?? "Delete failed");
                           }
                         } catch (err) {
                           console.error("Error deleting case:", err);

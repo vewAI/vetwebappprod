@@ -26,34 +26,35 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Redirect if user is already logged in
   useEffect(() => {
     if (user) {
-      router.push('/');
+      router.push("/");
     }
   }, [user, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Reset error state
     setError(null);
-    
+
     // Validate inputs
     if (!email || !password) {
       setError("Please enter both email and password");
       return;
     }
-    
+
     try {
       setLoading(true);
       // Use the signIn function from authService
       await signIn(email, password);
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Handle error and display appropriate message
-      setError(err.message || "Failed to sign in");
-      console.error("Login error:", err);
+      const e = err instanceof Error ? err : new Error(String(err));
+      setError(e.message || "Failed to sign in");
+      console.error("Login error:", e);
     } finally {
       setLoading(false);
       setPassword("");
@@ -69,7 +70,7 @@ export function LoginForm() {
             Enter your email and password to access your account
           </CardDescription>
         </CardHeader>
-        
+
         <form onSubmit={handleLogin}>
           <CardContent className="space-y-4">
             {/* Error message */}
@@ -78,7 +79,7 @@ export function LoginForm() {
                 {error}
               </div>
             )}
-            
+
             {/* Email field */}
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
@@ -92,7 +93,7 @@ export function LoginForm() {
                 disabled={loading}
               />
             </div>
-            
+
             {/* Password field */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -108,13 +109,9 @@ export function LoginForm() {
               />
             </div>
           </CardContent>
-          
+
           <CardFooter className="flex flex-col space-y-6 pt-4">
-            <Button 
-              className="w-full" 
-              type="submit"
-              disabled={loading}
-            >
+            <Button className="w-full" type="submit" disabled={loading}>
               {loading ? "Signing in..." : "Sign in"}
             </Button>
             <div className="text-center text-sm text-muted-foreground">

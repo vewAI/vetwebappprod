@@ -58,14 +58,15 @@ export async function GET(req: Request) {
 
     // If multiple rows match, return a per-row report
     const rows: Array<{
-      case: any;
+      case: Record<string, unknown>;
       missing: Record<string, string>;
       missingCount: number;
     }> = [];
     for (const row of data) {
       const missing: Record<string, string> = {};
+      const r = row as Record<string, unknown>;
       for (const field of promptFields) {
-        const val = row[field as keyof typeof row];
+        const val = r[field];
         if (
           val === null ||
           val === undefined ||
@@ -75,7 +76,7 @@ export async function GET(req: Request) {
         }
       }
       rows.push({
-        case: row,
+        case: r,
         missing,
         missingCount: Object.keys(missing).length,
       });

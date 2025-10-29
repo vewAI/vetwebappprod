@@ -7,6 +7,37 @@ import type {
 } from "../models/attempt";
 import type { Message } from "@/features/chat/models/chat";
 
+type DbAttempt = {
+  id?: string;
+  user_id?: string;
+  case_id?: string;
+  title?: string;
+  created_at?: string;
+  completed_at?: string | null;
+  completion_status?: string;
+  overall_feedback?: string | null;
+  last_stage_index?: number;
+  time_spent_seconds?: number;
+};
+
+type DbMessage = {
+  id?: string;
+  attempt_id?: string;
+  role?: string;
+  content?: string;
+  timestamp?: string;
+  stage_index?: number;
+  display_role?: string | null;
+};
+
+type DbFeedback = {
+  id?: string;
+  attempt_id?: string;
+  stage_index?: number;
+  feedback_content?: string;
+  created_at?: string;
+};
+
 // Create a new attempt
 export async function createAttempt(caseId: string): Promise<Attempt | null> {
   try {
@@ -326,39 +357,44 @@ export async function saveAttemptProgress(
 }
 
 // Helper functions to transform database objects to our interfaces
-function transformAttempt(data: any): Attempt {
+function transformAttempt(data: DbAttempt): Attempt {
   return {
-    id: data.id,
-    userId: data.user_id,
-    caseId: data.case_id,
-    title: data.title,
-    createdAt: data.created_at,
-    completedAt: data.completed_at,
-    completionStatus: data.completion_status,
-    overallFeedback: data.overall_feedback,
-    lastStageIndex: data.last_stage_index,
-    timeSpentSeconds: data.time_spent_seconds,
+    id: data.id ?? "",
+    userId: data.user_id ?? "",
+    caseId: data.case_id ?? "",
+    title: data.title ?? "",
+    createdAt: data.created_at ?? "",
+    completedAt: data.completed_at ?? undefined,
+    completionStatus: (() => {
+      const cs = String(data.completion_status ?? "in_progress");
+      if (cs === "completed") return "completed" as const;
+      if (cs === "abandoned") return "abandoned" as const;
+      return "in_progress" as const;
+    })(),
+    overallFeedback: data.overall_feedback ?? undefined,
+    lastStageIndex: Number(data.last_stage_index ?? 0),
+    timeSpentSeconds: Number(data.time_spent_seconds ?? 0),
   };
 }
 
-function transformMessage(data: any): AttemptMessage {
+function transformMessage(data: DbMessage): AttemptMessage {
   return {
-    id: data.id,
-    attemptId: data.attempt_id,
-    role: data.role,
-    content: data.content,
-    timestamp: data.timestamp,
-    stageIndex: data.stage_index,
-    displayRole: data.display_role,
+    id: data.id ?? "",
+    attemptId: data.attempt_id ?? "",
+    role: (data.role as "user" | "assistant" | "system") ?? "system",
+    content: data.content ?? "",
+    timestamp: data.timestamp ?? new Date().toISOString(),
+    stageIndex: Number(data.stage_index ?? 0),
+    displayRole: data.display_role ?? undefined,
   };
 }
 
-function transformFeedback(data: any): AttemptFeedback {
+function transformFeedback(data: DbFeedback): AttemptFeedback {
   return {
-    id: data.id,
-    attemptId: data.attempt_id,
-    stageIndex: data.stage_index,
-    feedbackContent: data.feedback_content,
-    createdAt: data.created_at,
+    id: data.id ?? "",
+    attemptId: data.attempt_id ?? "",
+    stageIndex: Number(data.stage_index ?? 0),
+    feedbackContent: data.feedback_content ?? "",
+    createdAt: data.created_at ?? "",
   };
 }

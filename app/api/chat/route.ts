@@ -34,8 +34,8 @@ export async function POST(request: NextRequest) {
 
     // If we have a valid caseId, fetch owner_background and roleInfo and prepend them
     // so the LLM is influenced by the owner's personality plus any stage-specific role info.
+    let ownerBackground: string | null = null;
     if (caseId) {
-      let ownerBackground: string | null = null;
       try {
         const { data: caseRow, error: caseErr } = await supabase
           .from("cases")
