@@ -13,27 +13,28 @@ export const chatService = {
    * @returns The AI response content
    */
   sendMessage: async (
-    messages: Message[], 
-    stageIndex: number, 
+    messages: Message[],
+    stageIndex: number,
     caseId: string
-  ): Promise<{ content: string }> => {
+  ): Promise<{ content: string; displayRole?: string }> => {
     try {
       // Format messages for the API
-      const apiMessages = messages.map(msg => ({
-        role: msg.role as 'system' | 'user' | 'assistant',
-        content: msg.content
+      const apiMessages = messages.map((msg) => ({
+        role: msg.role as "system" | "user" | "assistant",
+        content: msg.content,
       }));
-  
+
       // Call the API using axios
-      const response = await axios.post('/api/chat', {
+      const response = await axios.post("/api/chat", {
         messages: apiMessages,
         stageIndex,
         caseId,
       });
-  
-      return response.data;
+
+      // Response now may include displayRole (per-case label) in addition to content
+      return response.data as { content: string; displayRole?: string };
     } catch (error) {
-      console.error('Error getting chat response:', error);
+      console.error("Error getting chat response:", error);
       throw error;
     }
   },
@@ -45,12 +46,16 @@ export const chatService = {
    * @returns User message object
    */
   createUserMessage: (content: string, stageIndex: number): Message => ({
-    id: Date.now().toString(),
+    // Use crypto.randomUUID when available to avoid server/client hydration differences
+    id:
+      typeof crypto !== "undefined" && (crypto as any).randomUUID
+        ? (crypto as any).randomUUID()
+        : Date.now().toString(),
     role: "user",
     content,
     timestamp: new Date().toISOString(),
     stageIndex,
-    displayRole: "You"
+    displayRole: "You",
   }),
 
   /**
@@ -60,13 +65,20 @@ export const chatService = {
    * @param roleName Display role name for the message
    * @returns Assistant message object
    */
-  createAssistantMessage: (content: string, stageIndex: number, roleName: string): Message => ({
-    id: (Date.now() + 1).toString(),
+  createAssistantMessage: (
+    content: string,
+    stageIndex: number,
+    roleName: string
+  ): Message => ({
+    id:
+      typeof crypto !== "undefined" && (crypto as any).randomUUID
+        ? `${(crypto as any).randomUUID()}`
+        : (Date.now() + 1).toString(),
     role: "assistant",
     content,
     timestamp: new Date().toISOString(),
     stageIndex,
-    displayRole: roleName
+    displayRole: roleName,
   }),
 
   /**
@@ -76,12 +88,15 @@ export const chatService = {
    * @returns System message object
    */
   createSystemMessage: (content: string, stageIndex: number): Message => ({
-    id: `system-${Date.now()}`,
+    id:
+      typeof crypto !== "undefined" && (crypto as any).randomUUID
+        ? `system-${(crypto as any).randomUUID()}`
+        : `system-${Date.now()}`,
     role: "system",
     content,
     timestamp: new Date().toISOString(),
     stageIndex,
-    displayRole: "Virtual Examiner"
+    displayRole: "Virtual Examiner",
   }),
 
   /**
@@ -91,13 +106,17 @@ export const chatService = {
    * @returns Error message object
    */
   createErrorMessage: (error: unknown, stageIndex: number): Message => ({
-    id: `error-${Date.now()}`,
+    id:
+      typeof crypto !== "undefined" && (crypto as any).randomUUID
+        ? `error-${(crypto as any).randomUUID()}`
+        : `error-${Date.now()}`,
     role: "system",
-    content: typeof error === "string" 
-      ? error 
-      : "Sorry, there was an error processing your request. Please try again.",
+    content:
+      typeof error === "string"
+        ? error
+        : "Sorry, there was an error processing your request. Please try again.",
     timestamp: new Date().toISOString(),
     stageIndex,
-    displayRole: "Virtual Examiner"
-  })
+    displayRole: "Virtual Examiner",
+  }),
 };

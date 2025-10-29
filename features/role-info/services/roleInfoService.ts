@@ -2,7 +2,7 @@ import { case1RoleInfo } from "../case1";
 import { caseConfig } from "@/features/config/case-config";
 import type { RoleInfo, RoleInfoPromptFn } from "../types";
 
-type CaseId = 'case-1';
+type CaseId = "case-1";
 // add more cases here
 
 const caseRoleInfoMap: Record<CaseId, RoleInfo> = {

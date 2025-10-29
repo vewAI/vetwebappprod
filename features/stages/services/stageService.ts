@@ -11,7 +11,9 @@ import { getTransitionMessage as getCase1TransitionMessage } from "../case1";
 export function getStagesForCase(caseId: string): Stage[] {
   const stages = caseConfig[caseId];
   if (!stages) {
-    console.warn(`No stage definition found for case ${caseId}, using case-1 as fallback`);
+    console.warn(
+      `No stage definition found for case ${caseId}, using case-1 as fallback`
+    );
     return caseConfig["case-1"];
   }
   return stages;
@@ -21,17 +23,27 @@ export function getStagesForCase(caseId: string): Stage[] {
  * Get a transition message for a specific stage in a case
  * Add new cases to the switch below as you expand the app.
  */
-export function getStageTransitionMessage(caseId: string, stageIndex: number): Message {
+export function getStageTransitionMessage(
+  caseId: string,
+  stageIndex: number
+): Message {
   switch (caseId) {
     case "case-1":
       return getCase1TransitionMessage(stageIndex);
     // case "case-2":
     //   return getCase2TransitionMessage(stageIndex);
     default:
+      // Provide a sensible generic transition message using the case config
+      // so all cases have a transition when a stage button is pushed.
+      const stages = getStagesForCase(caseId);
+      const stage = stages && stages[stageIndex];
+      const title = stage?.title ?? `Stage ${stageIndex + 1}`;
+      const desc =
+        stage?.description ?? "Proceed to the next part of the case.";
       return {
         id: `stage-transition-${stageIndex}`,
         role: "system",
-        content: "Transition message not available for this case.",
+        content: `Proceeding to ${title}. ${desc}`,
         timestamp: new Date().toISOString(),
         stageIndex,
       };
@@ -45,10 +57,10 @@ export function getStageTransitionMessage(caseId: string, stageIndex: number): M
  */
 export function initializeStages(stages: Stage[]): Stage[] {
   if (stages.length === 0) return [];
-  
+
   const initializedStages = [...stages];
   initializedStages[0] = { ...initializedStages[0], completed: true };
-  
+
   return initializedStages;
 }
 
@@ -58,13 +70,16 @@ export function initializeStages(stages: Stage[]): Stage[] {
  * @param stageIndex Index of the stage to mark as completed
  * @returns New array with the specified stage marked as completed
  */
-export function markStageCompleted(stages: Stage[], stageIndex: number): Stage[] {
+export function markStageCompleted(
+  stages: Stage[],
+  stageIndex: number
+): Stage[] {
   if (stageIndex < 0 || stageIndex >= stages.length) {
     return stages;
   }
-  
+
   const updatedStages = [...stages];
   updatedStages[stageIndex] = { ...updatedStages[stageIndex], completed: true };
-  
+
   return updatedStages;
 }

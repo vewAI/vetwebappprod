@@ -1,27 +1,33 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { Message } from "@/features/chat/models/chat"
-import { Stage } from "@/features/stages/types"
-import { Loader2, X } from "lucide-react"
-import axios from "axios"
-import { feedbackPromptRegistry } from "@/features/feedback/feedback-prompts"
+import { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Message } from "@/features/chat/models/chat";
+import { Stage } from "@/features/stages/types";
+import { Loader2, X } from "lucide-react";
+import axios from "axios";
+import { feedbackPromptRegistry } from "@/features/feedback/feedback-prompts";
 
 type FeedbackButtonProps = {
-  messages: Message[]
-  stage: Stage
-  stageIndex: number
-  caseId: string
-  attemptId: string
-}
+  messages: Message[];
+  stage: Stage;
+  stageIndex: number;
+  caseId: string;
+  attemptId: string;
+};
 
-export function FeedbackButton({ messages, stage, stageIndex, caseId, attemptId }: FeedbackButtonProps) {
-  const [isOpen, setIsOpen] = useState(false)
-  const [feedback, setFeedback] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [isFeedbackAvailable, setIsFeedbackAvailable] = useState(true)
-  
+export function FeedbackButton({
+  messages,
+  stage,
+  stageIndex,
+  caseId,
+  attemptId,
+}: FeedbackButtonProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isFeedbackAvailable, setIsFeedbackAvailable] = useState(true);
+
   // Helper to get the feedback prompt function for a given stage and case
   function getPromptFn(stage: Stage, caseId: string) {
     const promptKey = stage.feedbackPromptKey;
@@ -36,26 +42,30 @@ export function FeedbackButton({ messages, stage, stageIndex, caseId, attemptId 
         const promptFn = getPromptFn(stage, caseId);
         setIsFeedbackAvailable(typeof promptFn === "function");
       } catch (error) {
-        console.error("Error checking feedback availability:", error)
+        console.error("Error checking feedback availability:", error);
         setIsFeedbackAvailable(false);
       }
-    }
-    
-    checkFeedbackAvailability()
-  }, [stage, caseId])
-  
+    };
+
+    checkFeedbackAvailability();
+  }, [stage, caseId]);
+
   const handleGenerateFeedback = async () => {
-    setIsOpen(true)
-    setIsLoading(true)
-    
+    setIsOpen(true);
+    setIsLoading(true);
+
     try {
       // Filter messages relevant to this stage
-      const stageMessages = messages.filter(msg => 
-        msg.stageIndex === stageIndex
-      )
+      const stageMessages = messages.filter(
+        (msg) => msg.stageIndex === stageIndex
+      );
 
       // Generate conversation context string for the prompt
-      const context = stageMessages.map(m => `${m.role === 'user' ? 'Student' : 'Examiner'}: ${m.content}`).join('\n')
+      const context = stageMessages
+        .map(
+          (m) => `${m.role === "user" ? "Student" : "Examiner"}: ${m.content}`
+        )
+        .join("\n");
 
       // Look up feedback prompt function using helper
       const promptFn = getPromptFn(stage, caseId);
@@ -67,49 +77,53 @@ export function FeedbackButton({ messages, stage, stageIndex, caseId, attemptId 
       const feedbackPrompt = promptFn(context);
 
       // Call the feedback API
-      const response = await axios.post('/api/feedback', {
+      const response = await axios.post("/api/feedback", {
         messages: stageMessages,
         stageIndex,
         caseId,
         stageName: stage.title,
         feedbackPrompt,
-        attemptId
-      })
+        attemptId,
+      });
 
-      setFeedback(response.data.feedback)
+      setFeedback((response.data as { feedback: string }).feedback);
     } catch (error) {
-      console.error('Error generating feedback:', error)
-      setFeedback("Sorry, there was an error generating feedback. Please try again.")
+      console.error("Error generating feedback:", error);
+      setFeedback(
+        "Sorry, there was an error generating feedback. Please try again."
+      );
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
-  
+  };
+
   return (
     <>
-      <Button 
+      <Button
         onClick={handleGenerateFeedback}
-        variant="outline" 
+        variant="outline"
         className="text-sm bg-gradient-to-l from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 border-none"
         disabled={!isFeedbackAvailable}
       >
         Generate Feedback
       </Button>
-      
+
       {isOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg max-w-3xl w-full max-h-[80vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
                 <div>
-                  <h2 className="text-xl font-semibold">Feedback: {stage.title}</h2>
+                  <h2 className="text-xl font-semibold">
+                    Feedback: {stage.title}
+                  </h2>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
                     Assessment of your performance in this stage
                   </p>
                 </div>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => setIsOpen(false)}
                   className="h-8 w-8 p-0"
                 >
@@ -117,7 +131,7 @@ export function FeedbackButton({ messages, stage, stageIndex, caseId, attemptId 
                   <span className="sr-only">Close</span>
                 </Button>
               </div>
-              
+
               {isLoading ? (
                 <div className="flex justify-center items-center py-8">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -133,5 +147,5 @@ export function FeedbackButton({ messages, stage, stageIndex, caseId, attemptId 
         </div>
       )}
     </>
-  )
+  );
 }

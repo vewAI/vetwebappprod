@@ -1,33 +1,52 @@
-"use client"
+"use client";
 
-import React, { useState, useEffect } from "react"
-import { useAuth } from "@/features/auth/services/authService"
-import { getUserAttempts, deleteAttempt } from "@/features/attempts/services/attemptService"
-import { AttemptCard } from "@/features/attempts/components/attempt-card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Loader2, Search, Filter, Home } from "lucide-react"
-import Link from "next/link"
-import type { Attempt } from "@/features/attempts/models/attempt"
-import { cases } from "@/features/case-selection/data/card-data"
+import React, { useState, useEffect } from "react";
+import { useAuth } from "@/features/auth/services/authService";
+import {
+  getUserAttempts,
+  deleteAttempt,
+} from "@/features/attempts/services/attemptService";
+import { AttemptCard } from "@/features/attempts/components/attempt-card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Loader2, Search, Filter, Home } from "lucide-react";
+import Link from "next/link";
+import type { Attempt } from "@/features/attempts/models/attempt";
+import { fetchCases } from "@/features/case-selection/services/caseService";
+import type { Case } from "@/features/case-selection/models/case";
 
 // Temporary UI components until we create the actual ones
-const Select = ({ children, value, onValueChange }: { children: React.ReactNode, value: string, onValueChange: (value: string) => void }) => {
+const Select = ({
+  children,
+  value,
+  onValueChange,
+}: {
+  children: React.ReactNode;
+  value: string;
+  onValueChange: (value: string) => void;
+}) => {
   const options = React.Children.toArray(children).filter(
     (child) => React.isValidElement(child) && child.type === SelectItem
   );
-  
+
   return (
     <div className="relative">
       <div className="flex items-center p-2 border rounded-md bg-background">
         <Filter className="mr-2 h-4 w-4" />
-        <span>{value === 'all' ? 'All Statuses' : 
-               value === 'completed' ? 'Completed' : 
-               value === 'in_progress' ? 'In Progress' : 
-               value === 'abandoned' ? 'Abandoned' : 'Filter by status'}</span>
+        <span>
+          {value === "all"
+            ? "All Statuses"
+            : value === "completed"
+            ? "Completed"
+            : value === "in_progress"
+            ? "In Progress"
+            : value === "abandoned"
+            ? "Abandoned"
+            : "Filter by status"}
+        </span>
       </div>
-      <select 
-        value={value} 
+      <select
+        value={value}
         onChange={(e) => onValueChange(e.target.value)}
         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
       >
@@ -36,71 +55,87 @@ const Select = ({ children, value, onValueChange }: { children: React.ReactNode,
     </div>
   );
 };
-const SelectItem = ({ value, children }: { value: string, children: React.ReactNode }) => <option value={value}>{children}</option>;
+const SelectItem = ({
+  value,
+  children,
+}: {
+  value: string;
+  children: React.ReactNode;
+}) => <option value={value}>{children}</option>;
 
 export default function AttemptsPage() {
-  const { user } = useAuth()
-  const [attempts, setAttempts] = useState<Attempt[]>([])
-  const [filteredAttempts, setFilteredAttempts] = useState<Attempt[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [searchQuery, setSearchQuery] = useState("")
-  const [statusFilter, setStatusFilter] = useState("all")
-  const [currentPage, setCurrentPage] = useState(1)
-  const attemptsPerPage = 9 // 3x3 grid on desktop
-  
+  const { user } = useAuth();
+  const [attempts, setAttempts] = useState<Attempt[]>([]);
+  const [filteredAttempts, setFilteredAttempts] = useState<Attempt[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const attemptsPerPage = 9; // 3x3 grid on desktop
+  const [cases, setCases] = useState<Case[]>([]);
+
   useEffect(() => {
-    const loadAttempts = async () => {
-      if (!user) return
-      
-      setIsLoading(true)
-      const userAttempts = await getUserAttempts()
-      setAttempts(userAttempts)
-      setFilteredAttempts(userAttempts)
-      setIsLoading(false)
-    }
-    
-    loadAttempts()
-  }, [user])
-  
+    const loadAttemptsAndCases = async () => {
+      if (!user) return;
+      setIsLoading(true);
+      const [userAttempts, fetchedCases] = await Promise.all([
+        getUserAttempts(),
+        fetchCases(),
+      ]);
+      setAttempts(userAttempts);
+      setFilteredAttempts(userAttempts);
+      setCases(fetchedCases);
+      setIsLoading(false);
+    };
+    loadAttemptsAndCases();
+  }, [user]);
+
   useEffect(() => {
     // Apply filters
-    let filtered = [...attempts]
-    
+    let filtered = [...attempts];
+
     // Apply search filter
     if (searchQuery) {
-      filtered = filtered.filter(attempt => 
-        attempt.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        cases.find((c: { id: string, title: string }) => c.id === attempt.caseId)?.title.toLowerCase().includes(searchQuery.toLowerCase())
-      )
+      filtered = filtered.filter(
+        (attempt) =>
+          attempt.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          cases
+            .find((c) => c.id === attempt.caseId)
+            ?.title.toLowerCase()
+            .includes(searchQuery.toLowerCase())
+      );
     }
-    
+
     // Apply status filter
     if (statusFilter !== "all") {
-      filtered = filtered.filter(attempt => 
-        attempt.completionStatus === statusFilter
-      )
+      filtered = filtered.filter(
+        (attempt) => attempt.completionStatus === statusFilter
+      );
     }
-    
-    setFilteredAttempts(filtered)
-    setCurrentPage(1) // Reset to first page when filters change
-  }, [attempts, searchQuery, statusFilter])
-  
+
+    setFilteredAttempts(filtered);
+    setCurrentPage(1); // Reset to first page when filters change
+  }, [attempts, searchQuery, statusFilter, cases]);
+
   const handleDeleteAttempt = async (attemptId: string) => {
-    const success = await deleteAttempt(attemptId)
-    
+    const success = await deleteAttempt(attemptId);
+
     if (success) {
-      setAttempts(prev => prev.filter(a => a.id !== attemptId))
+      setAttempts((prev) => prev.filter((a) => a.id !== attemptId));
     }
-  }
-  
+  };
+
   // Pagination logic
-  const indexOfLastAttempt = currentPage * attemptsPerPage
-  const indexOfFirstAttempt = indexOfLastAttempt - attemptsPerPage
-  const currentAttempts = filteredAttempts.slice(indexOfFirstAttempt, indexOfLastAttempt)
-  const totalPages = Math.ceil(filteredAttempts.length / attemptsPerPage)
-  
-  const paginate = (pageNumber: number) => setCurrentPage(pageNumber)
-  
+  const indexOfLastAttempt = currentPage * attemptsPerPage;
+  const indexOfFirstAttempt = indexOfLastAttempt - attemptsPerPage;
+  const currentAttempts = filteredAttempts.slice(
+    indexOfFirstAttempt,
+    indexOfLastAttempt
+  );
+  const totalPages = Math.ceil(filteredAttempts.length / attemptsPerPage);
+
+  const paginate = (pageNumber: number) => setCurrentPage(pageNumber);
+
   return (
     <div className="container mx-auto px-4 py-8">
       <header className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -113,13 +148,15 @@ export default function AttemptsPage() {
           </p>
         </div>
         <Link href="/">
-          <Button variant="outline" className="flex items-center gap-2 whitespace-nowrap">
+          <Button
+            variant="outline"
+            className="flex items-center gap-2 whitespace-nowrap"
+          >
             <Home className="h-4 w-4" />
             Browse Cases
           </Button>
         </Link>
       </header>
-      
       {/* Filters */}
       <div className="mb-6 flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1">
@@ -131,7 +168,7 @@ export default function AttemptsPage() {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-        
+
         <div className="w-full sm:w-48">
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectItem value="all">All Statuses</SelectItem>
@@ -141,7 +178,7 @@ export default function AttemptsPage() {
           </Select>
         </div>
       </div>
-      
+
       {isLoading ? (
         <div className="flex justify-center items-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-primary mr-2" />
@@ -150,30 +187,36 @@ export default function AttemptsPage() {
       ) : filteredAttempts.length > 0 ? (
         <>
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {currentAttempts.map((attempt) => (
-              <AttemptCard
-                key={attempt.id}
-                attempt={attempt}
-                onDelete={() => handleDeleteAttempt(attempt.id)}
-              />
-            ))}
+            {currentAttempts.map((attempt) => {
+              const caseItem = cases.find((c) => c.id === attempt.caseId);
+              return (
+                <AttemptCard
+                  key={attempt.id}
+                  attempt={attempt}
+                  caseItem={caseItem}
+                  onDelete={() => handleDeleteAttempt(attempt.id)}
+                />
+              );
+            })}
           </div>
-          
+
           {/* Pagination */}
           {totalPages > 1 && (
             <div className="flex justify-center mt-8">
               <nav className="flex space-x-2" aria-label="Pagination">
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                  <Button
-                    key={page}
-                    variant={currentPage === page ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => paginate(page)}
-                    className="w-10 h-10"
-                  >
-                    {page}
-                  </Button>
-                ))}
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(
+                  (page) => (
+                    <Button
+                      key={page}
+                      variant={currentPage === page ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => paginate(page)}
+                      className="w-10 h-10"
+                    >
+                      {page}
+                    </Button>
+                  )
+                )}
               </nav>
             </div>
           )}
@@ -189,5 +232,5 @@ export default function AttemptsPage() {
         </div>
       )}
     </div>
-  )
+  );
 }

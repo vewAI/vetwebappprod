@@ -1,20 +1,26 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import Link from "next/link"
-import Image from "next/image"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Clock, Tag, ChevronRight } from "lucide-react"
-import type { Case } from "@/features/case-selection/models/case"
+import { useState } from "react";
+import Link from "next/link";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Clock, Tag, ChevronRight } from "lucide-react";
+import type { Case } from "@/features/case-selection/models/case";
 
 type CaseCardProps = {
-  caseItem: Case
-}
+  caseItem: Case;
+};
 
 export function CaseCard({ caseItem }: CaseCardProps) {
-  const [isHovered, setIsHovered] = useState(false)
+  const [isHovered, setIsHovered] = useState(false);
 
   return (
     <Card
@@ -22,12 +28,17 @@ export function CaseCard({ caseItem }: CaseCardProps) {
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <div className="relative h-48 w-full overflow-hidden">
-        <Image
-          src={caseItem.imageUrl || "/placeholder.svg"}
+      <div className="relative h-48 w-full overflow-hidden bg-gray-100">
+        <img
+          src={
+            /^https?:\/\//.test(String(caseItem.imageUrl ?? ""))
+              ? String(caseItem.imageUrl)
+              : "/placeholder.svg"
+          }
           alt={caseItem.title}
-          fill
-          className={`object-cover transition-transform duration-500 ${isHovered ? "scale-105" : "scale-100"}`}
+          className={`w-full h-full object-contain object-center transition-transform duration-500 ${
+            isHovered ? "scale-105" : "scale-100"
+          }`}
         />
         {caseItem.difficulty && (
           <div className="absolute right-3 top-3">
@@ -36,8 +47,8 @@ export function CaseCard({ caseItem }: CaseCardProps) {
                 caseItem.difficulty === "Easy"
                   ? "success"
                   : caseItem.difficulty === "Medium"
-                    ? "warning"
-                    : "destructive"
+                  ? "warning"
+                  : "destructive"
               }
             >
               {caseItem.difficulty}
@@ -52,17 +63,9 @@ export function CaseCard({ caseItem }: CaseCardProps) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <p className="line-clamp-2 text-sm text-muted-foreground">{caseItem.description}</p>
-        <div className="mt-4 flex items-center gap-4 text-sm text-muted-foreground">
-          <div className="flex items-center gap-1">
-            <Clock className="h-4 w-4" />
-            <span>{caseItem.estimatedTime} min</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <Tag className="h-4 w-4" />
-            <span>{caseItem.category}</span>
-          </div>
-        </div>
+        <p className="line-clamp-2 text-sm text-muted-foreground">
+          {caseItem.description}
+        </p>
       </CardContent>
       <CardFooter>
         <Link href={`/case/${caseItem.id}/instructions`} className="w-full">
@@ -73,5 +76,5 @@ export function CaseCard({ caseItem }: CaseCardProps) {
         </Link>
       </CardFooter>
     </Card>
-  )
+  );
 }
