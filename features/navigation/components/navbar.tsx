@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Menu, X, Home, LayoutDashboard, LogOut, History } from "lucide-react";
 
 export function Navbar() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, isAdmin, role, profileLoading } = useAuth();
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
@@ -54,13 +54,15 @@ export function Navbar() {
               <History className="size-4" />
               <span>My Attempts</span>
             </Link>
-            <Link
-              href="/admin"
-              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground hover:text-primary transition-colors"
-            >
-              <LayoutDashboard className="size-4" />
-              <span>Admin</span>
-            </Link>
+            {isAdmin && (
+              <Link
+                href="/admin"
+                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground hover:text-primary transition-colors"
+              >
+                <LayoutDashboard className="size-4" />
+                <span>Admin</span>
+              </Link>
+            )}
             <Button
               variant="ghost"
               size="sm"
@@ -75,9 +77,19 @@ export function Navbar() {
           <div className="hidden md:flex md:items-center">
             {user && (
               <div className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-foreground">
-                <span className="font-medium">
-                  Hello, {user.email?.split("@")[0] || "User"}
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="font-medium">
+                    Hello, {user.email?.split("@")[0] || "User"}
+                  </span>
+                  {/* Debug: show role/profile loading state */}
+                  <span className="text-xs text-muted-foreground">
+                    {profileLoading
+                      ? "(loading role...)"
+                      : role
+                      ? `(${role})`
+                      : "(no role)"}
+                  </span>
+                </div>
               </div>
             )}
           </div>
@@ -129,14 +141,16 @@ export function Navbar() {
               <History className="size-5" />
               <span>My Attempts</span>
             </Link>
-            <Link
-              href="/admin"
-              className="flex items-center gap-2 rounded-md px-3 py-2 text-base font-medium text-foreground hover:bg-accent hover:text-accent-foreground"
-              onClick={() => setIsMenuOpen(false)}
-            >
-              <LayoutDashboard className="size-5" />
-              <span>Admin</span>
-            </Link>
+            {isAdmin && (
+              <Link
+                href="/admin"
+                className="flex items-center gap-2 rounded-md px-3 py-2 text-base font-medium text-foreground hover:bg-accent hover:text-accent-foreground"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                <LayoutDashboard className="size-5" />
+                <span>Admin</span>
+              </Link>
+            )}
             <button
               onClick={() => {
                 setIsMenuOpen(false);

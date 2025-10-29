@@ -16,7 +16,7 @@ export const chatService = {
     messages: Message[],
     stageIndex: number,
     caseId: string
-  ): Promise<{ content: string }> => {
+  ): Promise<{ content: string; displayRole?: string }> => {
     try {
       // Format messages for the API
       const apiMessages = messages.map((msg) => ({
@@ -31,7 +31,8 @@ export const chatService = {
         caseId,
       });
 
-      return response.data as { content: string };
+      // Response now may include displayRole (per-case label) in addition to content
+      return response.data as { content: string; displayRole?: string };
     } catch (error) {
       console.error("Error getting chat response:", error);
       throw error;

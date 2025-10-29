@@ -209,11 +209,14 @@ export function ChatInterface({
         caseId
       );
 
-      // Create and add AI response to messages
+      // Create and add AI response to messages. Use per-case displayRole when provided
+      // by the server (derived from owner_background) otherwise fall back to the
+      // static stage role.
+      const roleName = response.displayRole ?? stages[currentStageIndex].role;
       const aiMessage = chatService.createAssistantMessage(
         response.content,
         currentStageIndex,
-        stages[currentStageIndex].role
+        roleName
       );
 
       setMessages((prev) => [...prev, aiMessage]);

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import axios from "axios";
+import ImageUploader from "@/components/ui/image-uploader";
 
 const initialFormState = {
   id: "",
@@ -169,7 +170,20 @@ export default function CaseEntryForm() {
             <label className="block font-medium mb-1" htmlFor={key}>
               {key.replace(/_/g, " ")}
             </label>
-            {longTextFields.includes(key) ? (
+            {key === "image_url" ? (
+              <div>
+                <ImageUploader
+                  existingUrl={form.image_url}
+                  onUpload={(url) => setForm({ ...form, image_url: url })}
+                />
+                <Input
+                  name={key}
+                  value={form[key as keyof typeof form]}
+                  onChange={handleChange}
+                  className="w-full mt-2"
+                />
+              </div>
+            ) : longTextFields.includes(key) ? (
               <div className="flex gap-2 items-center">
                 <Textarea
                   name={key}
