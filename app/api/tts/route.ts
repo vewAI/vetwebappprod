@@ -51,9 +51,11 @@ export async function POST(req: Request) {
         "Content-Type": openAiRes.headers.get("content-type") ?? "audio/mpeg",
       },
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
+    // Avoid using `any` in catch; normalize unknown to a string message
+    const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
-      { error: "server error", message: String(err?.message ?? err) },
+      { error: "server error", message },
       { status: 500 }
     );
   }
