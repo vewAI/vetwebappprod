@@ -194,6 +194,7 @@ export default function CaseEntryForm() {
               <div className="flex gap-2 items-center">
                 <Textarea
                   name={key}
+                  autoComplete="off"
                   value={form[key as keyof typeof form]}
                   onChange={handleChange}
                   className="w-full"
@@ -234,6 +235,7 @@ export default function CaseEntryForm() {
               value={form[expandedField as keyof typeof form]}
               onChange={handleChange}
               name={expandedField}
+              autoComplete="off"
               className="w-full h-64"
               rows={12}
             />

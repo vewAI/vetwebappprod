@@ -1,32 +1,32 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { X } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
+import { useState, useEffect } from "react";
+import { X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 
 type NotepadProps = {
-  isOpen: boolean
-  onClose: () => void
-}
+  isOpen: boolean;
+  onClose: () => void;
+};
 
 export function Notepad({ isOpen, onClose }: NotepadProps) {
-  const [notes, setNotes] = useState("")
+  const [notes, setNotes] = useState("");
 
   // Load notes from localStorage when component mounts
   useEffect(() => {
-    const savedNotes = localStorage.getItem("osce-notes")
+    const savedNotes = localStorage.getItem("osce-notes");
     if (savedNotes) {
-      setNotes(savedNotes)
+      setNotes(savedNotes);
     }
-  }, [])
+  }, []);
 
   // Save notes to localStorage when they change
   useEffect(() => {
-    localStorage.setItem("osce-notes", notes)
-  }, [notes])
+    localStorage.setItem("osce-notes", notes);
+  }, [notes]);
 
-  if (!isOpen) return null
+  if (!isOpen) return null;
 
   return (
     <div className="fixed bottom-[80px] right-4 z-50 w-80 rounded-lg border bg-background shadow-lg md:w-96">
@@ -38,14 +38,18 @@ export function Notepad({ isOpen, onClose }: NotepadProps) {
       </div>
       <div className="p-3">
         <Textarea
+          id="clinical-notes"
+          name="clinical-notes"
+          autoComplete="off"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           placeholder="Take notes during your examination..."
           className="min-h-[200px] resize-none"
         />
-        <p className="mt-2 text-xs text-muted-foreground">Notes are automatically saved to your browser</p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Notes are automatically saved to your browser
+        </p>
       </div>
     </div>
-  )
+  );
 }
-

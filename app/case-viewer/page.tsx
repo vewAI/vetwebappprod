@@ -203,6 +203,9 @@ export default function CaseViewerPage() {
                         ? String(formState[key])
                         : ""
                     }
+                    id={key}
+                    name={key}
+                    autoComplete="off"
                     readOnly={!editable}
                     onChange={(e) =>
                       setFormState({ ...formState, [key]: e.target.value })
@@ -256,6 +259,9 @@ export default function CaseViewerPage() {
                     ? String(formState[expandedField])
                     : ""
                 }
+                id={`${expandedField}-expanded`}
+                name={expandedField || "expanded-field"}
+                autoComplete="off"
                 readOnly={!editable}
                 onChange={(e) =>
                   setFormState({

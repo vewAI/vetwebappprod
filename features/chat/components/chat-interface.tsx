@@ -3,11 +3,13 @@
 import type React from "react";
 
 import { useState, useRef, useEffect } from "react";
-import { SendIcon, PenLine, Mic, MicOff } from "lucide-react";
+import { SendIcon, PenLine, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useSTT } from "@/features/speech/hooks/useSTT";
 import { useMicButton } from "@/features/speech/hooks/useMicButton";
+import { useTTS } from "@/features/speech/hooks/useTTS";
+import { speakRemote } from "@/features/speech/services/ttsService";
 import { ChatMessage } from "@/features/chat/components/chat-message";
 import { Notepad } from "@/features/chat/components/notepad";
 import { FeedbackButton } from "@/features/feedback/components/feedback-button";
@@ -43,13 +45,72 @@ export function ChatInterface({
   const [isLoading, setIsLoading] = useState(false);
   const [showNotepad, setShowNotepad] = useState(false);
   const [timeSpentSeconds, setTimeSpentSeconds] = useState(0);
+  const [ttsEnabled, setTtsEnabled] = useState(true);
+  const [voiceMode, setVoiceMode] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Speech-to-text functionality
+  // Speech-to-text functionality. Provide an onFinal handler to auto-send when
+  // voiceMode is active.
+
+  // Refs to manage auto-send timer and pending final text
+  const autoSendTimerRef = useRef<number | null>(null);
+  const autoSendPendingTextRef = useRef<string | null>(null);
+
   const { isListening, transcript, interimTranscript, start, stop, reset } =
-    useSTT();
+    useSTT((finalText: string) => {
+      console.debug(
+        "STT onFinal fired, voiceMode=",
+        voiceMode,
+        "finalText=",
+        finalText
+      );
+      if (voiceMode && finalText && finalText.trim()) {
+        const trimmed = finalText.trim();
+        // Clear any pending timer and pending buffer
+        if (autoSendTimerRef.current) {
+          window.clearTimeout(autoSendTimerRef.current);
+          autoSendTimerRef.current = null;
+        }
+        autoSendPendingTextRef.current = null;
+
+        // Immediately send the final transcript when voiceMode is active.
+        // This emulates pressing the send button as soon as speech is
+        // transcribed to a final chunk.
+        try {
+          console.debug("Auto-send (immediate) firing with text:", trimmed);
+          // Trigger auto-send with visual flash on the send button
+          void triggerAutoSend(trimmed);
+        } catch (e) {
+          console.error("Failed to auto-send final transcript:", e);
+        }
+      }
+    });
+
+  // clear timers on unmount
+  useEffect(() => {
+    return () => {
+      if (autoSendTimerRef.current) {
+        window.clearTimeout(autoSendTimerRef.current);
+        autoSendTimerRef.current = null;
+      }
+      autoSendPendingTextRef.current = null;
+    };
+  }, []);
+
+  // Text-to-speech
+  const {
+    available: ttsAvailable,
+    isSpeaking,
+    speak,
+    speakAsync,
+    cancel,
+  } = useTTS();
+
+  // When TTS plays we may want to temporarily stop STT so the assistant voice
+  // is not transcribed. Use a ref to remember whether we should resume.
+  const resumeListeningRef = useRef<boolean>(false);
 
   // Microphone button handlers
   const { handleStart, handleStop, handleCancel } = useMicButton(
@@ -60,6 +121,143 @@ export function ChatInterface({
     reset,
     setInput
   );
+
+  // Helper: stop listening and (when voiceMode is active) send the current
+  // transcript automatically. Uses a short delay to allow STT final event to
+  // flush into `transcript` state when necessary.
+  const stopAndMaybeSend = () => {
+    try {
+      stop();
+    } catch (e) {
+      // ignore
+    }
+    // Give STT a short moment to emit final transcript
+    setTimeout(() => {
+      try {
+        const t = transcript?.trim();
+        if (voiceMode && t) {
+          // Use the trigger wrapper so the send button flashes when auto-sent
+          void triggerAutoSend(t);
+        }
+      } catch (e) {
+        console.error("Error auto-sending after stop:", e);
+      }
+    }, 150);
+  };
+
+  // sendUserMessage helper (used by manual submit and auto-send)
+  const sendUserMessage = async (text: string) => {
+    const trimmed = String(text ?? "").trim();
+    if (!trimmed || isLoading) return;
+
+    const userMessage = chatService.createUserMessage(
+      trimmed,
+      currentStageIndex
+    );
+    const snapshot = [...messages, userMessage];
+    setMessages(snapshot);
+    setInput("");
+    setIsLoading(true);
+
+    try {
+      const response = await chatService.sendMessage(
+        snapshot,
+        currentStageIndex,
+        caseId
+      );
+      const roleName = response.displayRole ?? stages[currentStageIndex].role;
+      const aiMessage = chatService.createAssistantMessage(
+        response.content,
+        currentStageIndex,
+        roleName
+      );
+      setMessages((prev) => [...prev, aiMessage]);
+
+      // Speak the assistant response when TTS is enabled. Prefer server TTS
+      if (ttsEnabled && response.content) {
+        try {
+          // If we're currently listening, stop to avoid transcribing the
+          // assistant's spoken reply. Remember to resume afterwards only if
+          // voiceMode is active.
+          if (isListening) {
+            resumeListeningRef.current = true;
+            stop();
+          }
+
+          // Prefer server TTS and await playback completion
+          try {
+            await speakRemote(response.content);
+          } catch (err) {
+            // Fallback to browser TTS and await completion when available
+            try {
+              if (ttsAvailable && speakAsync) {
+                await speakAsync(response.content);
+              } else if (ttsAvailable) {
+                // speak() is fire-and-forget; call it but we won't await
+                speak(response.content);
+              }
+            } catch (e) {
+              console.error("TTS failed:", e);
+            }
+          }
+
+          // After TTS completes, resume listening if we previously stopped and
+          // voiceMode is still active.
+          if (resumeListeningRef.current) {
+            resumeListeningRef.current = false;
+            if (voiceMode) {
+              // small delay to ensure audio resources are released
+              setTimeout(() => start(), 50);
+            }
+          }
+        } catch (e) {
+          console.error("Error during TTS handling:", e);
+        }
+      }
+    } catch (error) {
+      console.error("Error getting chat response (auto-send):", error);
+      const errorMessage = chatService.createErrorMessage(
+        error,
+        currentStageIndex
+      );
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+      // Reset interim transcripts after a send
+      reset();
+    }
+  };
+
+  // Trigger an auto-send that also flashes the Send button briefly so the
+  // user sees that the message was submitted automatically.
+  const [autoSendFlash, setAutoSendFlash] = useState(false);
+  const triggerAutoSend = async (text: string) => {
+    try {
+      // flash briefly
+      setAutoSendFlash(true);
+      window.setTimeout(() => setAutoSendFlash(false), 600);
+    } catch (e) {
+      // ignore
+    }
+    return sendUserMessage(text);
+  };
+
+  // Toggle voice mode (persistent listening until toggled off)
+  const toggleVoiceMode = () => {
+    setVoiceMode((v) => {
+      const next = !v;
+      if (next) {
+        // enable voice mode -> start listening
+        reset();
+        setInput("");
+        start();
+      } else {
+        // disable voice mode -> stop listening and auto-send transcript
+        stopAndMaybeSend();
+      }
+      return next;
+    });
+  };
 
   // Update input when transcript changes
   useEffect(() => {
@@ -191,47 +389,8 @@ export function ChatInterface({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
-
-    // Create user message using the chatService
-    const userMessage = chatService.createUserMessage(input, currentStageIndex);
-
-    // Add user message to the chat
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
-    setIsLoading(true);
-
-    try {
-      // Send message to API using chatService
-      const response = await chatService.sendMessage(
-        messages.concat(userMessage),
-        currentStageIndex,
-        caseId
-      );
-
-      // Create and add AI response to messages. Use per-case displayRole when provided
-      // by the server (derived from owner_background) otherwise fall back to the
-      // static stage role.
-      const roleName = response.displayRole ?? stages[currentStageIndex].role;
-      const aiMessage = chatService.createAssistantMessage(
-        response.content,
-        currentStageIndex,
-        roleName
-      );
-
-      setMessages((prev) => [...prev, aiMessage]);
-    } catch (error) {
-      console.error("Error getting chat response:", error);
-
-      // Create and add error message using the chatService
-      const errorMessage = chatService.createErrorMessage(
-        error,
-        currentStageIndex
-      );
-      setMessages((prev) => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
-    }
+    // Delegate to shared sendUserMessage helper
+    await sendUserMessage(input);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -281,7 +440,24 @@ export function ChatInterface({
               {nextStageTitle}
             </Button>
 
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
+              {/* Big voice-mode toggle */}
+              <Button
+                type="button"
+                size="sm"
+                variant={voiceMode ? "destructive" : "secondary"}
+                className="flex items-center gap-2 px-4"
+                onClick={toggleVoiceMode}
+                title={
+                  voiceMode
+                    ? "Disable voice mode"
+                    : "Enable voice mode (toggle)"
+                }
+              >
+                <Mic className="h-4 w-4" />
+                {voiceMode ? "Voice Mode: On" : "Voice Mode: Off"}
+              </Button>
+
               {attemptId && (
                 <SaveAttemptButton
                   attemptId={attemptId}
@@ -290,6 +466,28 @@ export function ChatInterface({
                   timeSpentSeconds={timeSpentSeconds}
                 />
               )}
+
+              {/* TTS toggle */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="flex items-center gap-1 text-xs"
+                onClick={() => {
+                  // When disabling, cancel any in-progress speech
+                  setTtsEnabled((v) => {
+                    const next = !v;
+                    if (!next) cancel();
+                    return next;
+                  });
+                }}
+                title={ttsEnabled ? "Disable speech" : "Enable speech"}
+              >
+                {ttsEnabled ? (
+                  <Volume2 className="h-4 w-4" />
+                ) : (
+                  <VolumeX className="h-4 w-4" />
+                )}
+              </Button>
 
               <FeedbackButton
                 messages={messages}
@@ -301,9 +499,14 @@ export function ChatInterface({
             </div>
           </div>
 
+          {/* ...existing UI above the input area... */}
+
           {/* Input area */}
           <form onSubmit={handleSubmit} className="relative">
             <Textarea
+              id="chat-input"
+              name="chat-message"
+              autoComplete="off"
               ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -320,29 +523,49 @@ export function ChatInterface({
             <Button
               type="button"
               size="icon"
-              onMouseDown={handleStart}
-              onMouseUp={handleStop}
-              onMouseLeave={handleCancel}
-              // Touch support for mobile devices
-              onTouchStart={handleStart}
-              onTouchEnd={handleStop}
+              onClick={() => {
+                // When voiceMode is enabled the big toggle controls listening and
+                // the mic button should be passive (no click toggle required).
+                if (voiceMode) return;
+              }}
+              onMouseDown={!voiceMode ? handleStart : undefined}
+              onMouseUp={!voiceMode ? handleStop : undefined}
+              onMouseLeave={!voiceMode ? handleCancel : undefined}
+              // Touch support for mobile devices when not in toggle mode
+              onTouchStart={!voiceMode ? handleStart : undefined}
+              onTouchEnd={!voiceMode ? handleStop : undefined}
               className={`absolute bottom-2 right-12 ${
                 isListening
                   ? "bg-red-500 hover:bg-red-600 text-white"
                   : "bg-blue-400 hover:bg-blue-500 text-white"
               }`}
-              title="Hold to record, release to send"
+              title={
+                voiceMode
+                  ? isListening
+                    ? "Stop listening"
+                    : "Start listening"
+                  : "Hold to record, release to send"
+              }
             >
-              <Mic className="h-5 w-5" />
+              {isListening ? (
+                <MicOff className="h-5 w-5" />
+              ) : (
+                <Mic className="h-5 w-5" />
+              )}
             </Button>
             {/* Send button */}
             <Button
               type="submit"
+              id="send-button"
               size="icon"
               disabled={isLoading || !input.trim()}
               className={`absolute bottom-2 right-2 ${
                 input.trim()
                   ? "bg-gradient-to-l from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600 border-none"
+                  : ""
+              } ${
+                autoSendFlash
+                  ? "animate-pulse ring-2 ring-offset-1 ring-blue-300"
                   : ""
               }`}
             >

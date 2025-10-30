@@ -97,7 +97,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const fetchProfile = async () => {
       setProfileLoading(true);
-      if (!session?.user?.id) {
+      // If we don't have a user id or an access token, skip fetching
+      if (!session?.user?.id || !session?.access_token) {
         setRole(null);
         setProfileLoading(false);
         return;
@@ -134,7 +135,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    fetchProfile();
+    // Call fetchProfile and guard against any unhandled promise rejection
+    // (e.g. network failure "Failed to fetch") by attaching an explicit
+    // catch handler. The function itself already handles expected errors,
+    // but this ensures any unexpected rejection is logged and doesn't
+    // surface as an uncaught TypeError in the console.
+    fetchProfile().catch((err) => {
+      console.error("fetchProfile unexpected rejection:", err);
+      setRole(null);
+      setProfileLoading(false);
+    });
   }, [session]);
 
   // Sign in function that can be called from any component using useAuth()

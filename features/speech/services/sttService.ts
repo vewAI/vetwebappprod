@@ -2,14 +2,8 @@
 type _ResultRow = Record<string, unknown>;
 type _ResultList = { [index: number]: unknown };
 
-let recognition: {
-  lang?: string;
-  continuous?: boolean;
-  interimResults?: boolean;
-  start: () => void;
-  stop: () => void;
-  onresult?: (e: { results: _ResultList; resultIndex: number }) => void;
-} | null = null;
+// Use a loose typing for the browser SpeechRecognition instance
+let recognition: any = null;
 
 /**
  * Start speech recognition
@@ -37,18 +31,42 @@ export function startListening(
     recognition.continuous = true;
     recognition.interimResults = true;
 
-    // Handle results
-    recognition.onresult = (event) => {
-      const results = event.results as _ResultList;
-      const idx = event.resultIndex ?? 0;
-      const row = results[idx] as _ResultRow | undefined;
-      const transcript = row
-        ? String((row as Record<string, unknown>)["transcript"] ?? "")
-        : "";
-      const isFinal = Boolean(
-        row ? (row as Record<string, unknown>)["isFinal"] : false
-      );
-      callback(transcript, isFinal);
+    // Handle results: aggregate interim and final transcripts
+    recognition.onresult = (event: any) => {
+      try {
+        let interim = "";
+        let finalT = "";
+        // event.results is a SpeechRecognitionResultList
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i];
+          const transcript =
+            result[0] && result[0].transcript
+              ? String(result[0].transcript)
+              : "";
+          if (result.isFinal) {
+            finalT += transcript + " ";
+          } else {
+            interim += transcript + " ";
+          }
+        }
+
+        if (interim.trim()) callback(interim.trim(), false);
+        if (finalT.trim()) callback(finalT.trim(), true);
+      } catch (e) {
+        console.error("STT parse error", e);
+      }
+    };
+
+    // Some browsers stop recognition unexpectedly; restart if not intentionally stopped
+    recognition.onend = () => {
+      try {
+        // If recognition still exists, restart to maintain continuous listening
+        if (recognition) {
+          recognition.start();
+        }
+      } catch (e) {
+        // ignore restart errors
+      }
     };
   }
 
