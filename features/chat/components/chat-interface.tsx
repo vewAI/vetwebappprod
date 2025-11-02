@@ -9,7 +9,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { useSTT } from "@/features/speech/hooks/useSTT";
 import { useMicButton } from "@/features/speech/hooks/useMicButton";
 import { useTTS } from "@/features/speech/hooks/useTTS";
-import { speakRemote } from "@/features/speech/services/ttsService";
+import {
+  speakRemote,
+  speakRemoteStream,
+} from "@/features/speech/services/ttsService";
 import { ChatMessage } from "@/features/chat/components/chat-message";
 import { Notepad } from "@/features/chat/components/notepad";
 import { FeedbackButton } from "@/features/feedback/components/feedback-button";
@@ -45,8 +48,17 @@ export function ChatInterface({
   const [isLoading, setIsLoading] = useState(false);
   const [showNotepad, setShowNotepad] = useState(false);
   const [timeSpentSeconds, setTimeSpentSeconds] = useState(0);
-  const [ttsEnabled, setTtsEnabled] = useState(true);
-  const [voiceMode, setVoiceMode] = useState(false);
+  const [ttsEnabled, setTtsEnabled] = useState<boolean>(
+    () => Boolean(attemptId) || true
+  );
+  // When true, the assistant will speak first and the message text will only
+  // appear after the voice playback completes. This helps focus attention on
+  // the audio but may cause users to read ahead — make it optional.
+  const [voiceFirst, setVoiceFirst] = useState<boolean>(
+    () => Boolean(attemptId) || true
+  );
+  // Voice Mode (mic) should default ON when an attempt is open; otherwise off.
+  const [voiceMode, setVoiceMode] = useState<boolean>(() => Boolean(attemptId));
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -146,16 +158,25 @@ export function ChatInterface({
   };
 
   // sendUserMessage helper (used by manual submit and auto-send)
-  const sendUserMessage = async (text: string) => {
+  const sendUserMessage = async (text: string, existingMessageId?: string) => {
     const trimmed = String(text ?? "").trim();
     if (!trimmed || isLoading) return;
 
-    const userMessage = chatService.createUserMessage(
-      trimmed,
-      currentStageIndex
-    );
-    const snapshot = [...messages, userMessage];
-    setMessages(snapshot);
+    let userMessage = null as Message | null;
+    let snapshot: Message[] = [];
+
+    if (existingMessageId) {
+      // Mark existing message as pending and reuse it
+      snapshot = messages.map((m) =>
+        m.id === existingMessageId ? { ...m, status: "pending" } : m
+      );
+      setMessages(snapshot);
+      userMessage = snapshot.find((m) => m.id === existingMessageId) ?? null;
+    } else {
+      userMessage = chatService.createUserMessage(trimmed, currentStageIndex);
+      snapshot = [...messages, userMessage];
+      setMessages(snapshot);
+    }
     setInput("");
     setIsLoading(true);
 
@@ -171,33 +192,66 @@ export function ChatInterface({
         currentStageIndex,
         roleName
       );
-      setMessages((prev) => [...prev, aiMessage]);
 
-      // Speak the assistant response when TTS is enabled. Prefer server TTS
+      // Speak the assistant response when TTS is enabled. We support a
+      // "voice-first" mode where the spoken audio plays first and the
+      // message text is appended after playback completes.
       if (ttsEnabled && response.content) {
         try {
-          // If we're currently listening, stop to avoid transcribing the
-          // assistant's spoken reply. Remember to resume afterwards only if
-          // voiceMode is active.
           if (isListening) {
             resumeListeningRef.current = true;
             stop();
           }
 
-          // Prefer server TTS and await playback completion
-          try {
-            await speakRemote(response.content);
-          } catch (err) {
-            // Fallback to browser TTS and await completion when available
+          // If voice-first is enabled, attempt streaming playback and only
+          // append the assistant text after playback completes. If streaming
+          // fails we fall back to showing the text immediately and then
+          // trying other TTS fallbacks.
+          if (voiceFirst) {
             try {
-              if (ttsAvailable && speakAsync) {
-                await speakAsync(response.content);
-              } else if (ttsAvailable) {
-                // speak() is fire-and-forget; call it but we won't await
-                speak(response.content);
+              await speakRemoteStream(response.content);
+              // Append the message only after playback completed
+              setMessages((prev) => [...prev, aiMessage]);
+            } catch (streamErr) {
+              console.warn(
+                "Streaming TTS failed, falling back to text-first:",
+                streamErr
+              );
+              // Show text immediately and try non-streamed/fallback TTS
+              setMessages((prev) => [...prev, aiMessage]);
+              try {
+                await speakRemote(response.content);
+              } catch (err) {
+                try {
+                  if (ttsAvailable && speakAsync) {
+                    await speakAsync(response.content);
+                  } else if (ttsAvailable) {
+                    speak(response.content);
+                  }
+                } catch (e) {
+                  console.error("TTS failed:", e);
+                }
               }
-            } catch (e) {
-              console.error("TTS failed:", e);
+            }
+          } else {
+            // Default behavior: show the text immediately, then play audio
+            setMessages((prev) => [...prev, aiMessage]);
+            try {
+              // Prefer streaming variant for faster start when available
+              await speakRemoteStream(response.content).catch(() =>
+                speakRemote(response.content)
+              );
+            } catch (err) {
+              // Last-resort fallback to browser TTS
+              try {
+                if (ttsAvailable && speakAsync) {
+                  await speakAsync(response.content);
+                } else if (ttsAvailable) {
+                  speak(response.content);
+                }
+              } catch (e) {
+                console.error("TTS failed:", e);
+              }
             }
           }
 
@@ -206,16 +260,44 @@ export function ChatInterface({
           if (resumeListeningRef.current) {
             resumeListeningRef.current = false;
             if (voiceMode) {
-              // small delay to ensure audio resources are released
               setTimeout(() => start(), 50);
             }
           }
+          // Mark the user message as sent (clear pending)
+          if (userMessage) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === userMessage!.id ? { ...m, status: "sent" } : m
+              )
+            );
+          }
         } catch (e) {
           console.error("Error during TTS handling:", e);
+          // If anything falls through, ensure message is visible
+          setMessages((prev) => [...prev, aiMessage]);
+        }
+      } else {
+        // TTS disabled — just show the message
+        setMessages((prev) => [...prev, aiMessage]);
+        // Mark user message as sent
+        if (userMessage) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === userMessage!.id ? { ...m, status: "sent" } : m
+            )
+          );
         }
       }
     } catch (error) {
       console.error("Error getting chat response (auto-send):", error);
+      // Mark the user message as failed so the UI can offer retry
+      if (userMessage) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === userMessage!.id ? { ...m, status: "failed" } : m
+          )
+        );
+      }
       const errorMessage = chatService.createErrorMessage(
         error,
         currentStageIndex
@@ -226,6 +308,12 @@ export function ChatInterface({
       // Reset interim transcripts after a send
       reset();
     }
+  };
+
+  const retryUserMessage = async (messageId: string) => {
+    const msg = messages.find((m) => m.id === messageId);
+    if (!msg) return;
+    await sendUserMessage(msg.content, messageId);
   };
 
   // Trigger an auto-send that also flashes the Send button briefly so the
@@ -253,23 +341,60 @@ export function ChatInterface({
         start();
       } else {
         // disable voice mode -> stop listening and auto-send transcript
+        // Also disable TTS so the related UI toggles off automatically.
         stopAndMaybeSend();
+        try {
+          // Cancel any playing speech and turn off TTS toggle
+          cancel();
+        } catch (e) {
+          // ignore
+        }
+        setTtsEnabled(false);
       }
       return next;
     });
   };
 
   // Update input when transcript changes
+  // Update input when interim or final transcripts arrive. When listening,
+  // show the live interim transcript in the textarea so users see dictation
+  // as it happens. When interim is empty, show the last final transcript.
   useEffect(() => {
-    if (transcript) {
-      setInput(transcript);
+    if (isListening) {
+      if (interimTranscript && interimTranscript.trim()) {
+        setInput(interimTranscript);
+        return;
+      }
+      if (transcript && transcript.trim()) {
+        setInput(transcript);
+      }
     }
-  }, [transcript]);
+  }, [interimTranscript, transcript, isListening]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Intro toast: central, non-blocking pop-up shown when an attempt opens.
+  const introShownRef = useRef(false);
+  const [introMounted, setIntroMounted] = useState(false);
+  const [showIntroToast, setShowIntroToast] = useState(false);
+  useEffect(() => {
+    if (!attemptId) return;
+    if (introShownRef.current) return;
+    introShownRef.current = true;
+    setIntroMounted(true);
+    setShowIntroToast(true);
+    // Hide after 7s (fade handled by CSS transition)
+    const t1 = window.setTimeout(() => setShowIntroToast(false), 7000);
+    // Remove from DOM after fade (0.8s)
+    const t2 = window.setTimeout(() => setIntroMounted(false), 7800);
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+  }, [attemptId]);
 
   // Auto-focus textarea when loaded
   useEffect(() => {
@@ -277,6 +402,44 @@ export function ChatInterface({
       textareaRef.current.focus();
     }
   }, []);
+
+  // Ensure Voice Mode becomes active when an attempt opens (attemptId
+  // appears). If the attempt opens after mount, enable voiceMode and start
+  // listening. Use a ref to avoid repeated starts.
+  const startedListeningRef = useRef(false);
+  const prevAttemptIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!attemptId) return;
+
+    // Only initialize voice mode once per attemptId. Some hooks (start/reset)
+    // may change identity during runtime which could re-run this effect and
+    // inadvertently re-enable voice mode after the user explicitly toggled
+    // it off. Use prevAttemptIdRef to ensure we only run this initialization
+    // when the attemptId actually changes.
+    if (prevAttemptIdRef.current === attemptId) return;
+    prevAttemptIdRef.current = attemptId;
+
+    // Ensure voiceMode state is ON when an attempt opens
+    setVoiceMode(true);
+
+    // Start listening once when an attempt opens. Don't gate on the
+    // `voiceMode` state variable (it may not have updated yet in this
+    // render), instead use the startedListeningRef to ensure we only start
+    // once.
+    if (!startedListeningRef.current) {
+      try {
+        reset();
+        setInput("");
+        start();
+        startedListeningRef.current = true;
+      } catch (e) {
+        console.error("Failed to start STT after attempt opened:", e);
+      }
+    }
+    // Run only when attemptId changes; intentionally omit start/reset from
+    // the dependency list to avoid re-running due to identity changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attemptId]);
 
   // Timer to track time spent on the case
   useEffect(() => {
@@ -407,11 +570,49 @@ export function ChatInterface({
 
   return (
     <div className="relative flex h-full flex-col">
+      {/* Intro toast (central, non-blocking) */}
+      {introMounted && (
+        <div className="fixed inset-0 flex items-start justify-center pt-24 pointer-events-none z-50">
+          <div
+            // Allow clicks inside the card so the user can dismiss it early.
+            className={`max-w-xl w-full mx-4 transition-opacity duration-700 ${
+              showIntroToast ? "opacity-100" : "opacity-0"
+            }`}
+          >
+            <div
+              role="status"
+              aria-live="polite"
+              onClick={() => {
+                // Start fade-out immediately, then remove from DOM after the
+                // transition completes (matching the 0.8s fade used earlier).
+                setShowIntroToast(false);
+                window.setTimeout(() => setIntroMounted(false), 800);
+              }}
+              className="cursor-pointer pointer-events-auto bg-orange-500 text-white px-6 py-4 rounded-lg shadow-lg text-center"
+            >
+              <div className="text-sm leading-relaxed">
+                You are about to start the clinical interview. Greet the owner,
+                then proceed with history-taking and physical exam questions.
+                <div className="mt-2 font-semibold">Voice Mode is enabled:</div>
+                <div className="text-xs mt-1">
+                  the app will listen and speak. To switch to text-only, click
+                  the 'Voice Mode' button to disable listening and speaking.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Chat messages area */}
       <div className="flex-1 overflow-y-auto p-4">
         <div className="mx-auto max-w-3xl space-y-4">
           {messages.map((message) => (
-            <ChatMessage key={message.id} message={message} stages={stages} />
+            <ChatMessage
+              key={message.id}
+              message={message}
+              stages={stages}
+              onRetry={retryUserMessage}
+            />
           ))}
           {isLoading && (
             <div className="flex items-center space-x-2 text-sm text-muted-foreground">
@@ -487,6 +688,21 @@ export function ChatInterface({
                 ) : (
                   <VolumeX className="h-4 w-4" />
                 )}
+              </Button>
+
+              {/* Voice-first toggle: when enabled, play audio first and show text after */}
+              <Button
+                variant={voiceFirst ? "destructive" : "secondary"}
+                size="sm"
+                className="flex items-center gap-1 text-xs"
+                onClick={() => setVoiceFirst((v) => !v)}
+                title={
+                  voiceFirst
+                    ? "Voice-first: audio plays before text"
+                    : "Text-first: show text immediately"
+                }
+              >
+                {voiceFirst ? "Voice-first: On" : "Voice-first: Off"}
               </Button>
 
               <FeedbackButton

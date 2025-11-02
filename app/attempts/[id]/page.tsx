@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   getAttemptById,
@@ -19,6 +19,7 @@ import type {
 } from "@/features/attempts/models/attempt";
 import type { Message } from "@/features/chat/models/chat";
 import type { Stage } from "@/features/stages/types";
+import { ChatInterface } from "@/features/chat/components/chat-interface";
 
 export default function ViewAttemptPage() {
   const params = useParams();
@@ -61,6 +62,10 @@ export default function ViewAttemptPage() {
   }, [attemptId, router]);
 
   const [caseItem, setCaseItem] = useState<Case | null>(null);
+  const searchParams = useSearchParams();
+  const chatMode = Boolean(
+    searchParams?.get("chat") === "1" || searchParams?.get("chat") === "true"
+  );
 
   useEffect(() => {
     if (attempt && attempt.caseId) {
@@ -227,39 +232,57 @@ export default function ViewAttemptPage() {
           </Button>
         </div>
 
-        {/* Conversation content */}
+        {/* Conversation content or interactive chat */}
         {activeTab === "conversation" && (
           <div className="mt-4">
-            {messages.length > 0 ? (
-              <div className="border rounded-lg p-4 space-y-4">
-                {messages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`p-4 rounded-lg ${
-                      message.role === "user"
-                        ? "bg-primary/10 ml-12"
-                        : "bg-muted mr-12"
-                    }`}
-                  >
-                    <div className="flex justify-between mb-2">
-                      <span className="font-medium">
-                        {message.displayRole || message.role}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(message.timestamp).toLocaleTimeString()}
-                      </span>
+            {(() => {
+              if (chatMode) {
+                return (
+                  <ChatInterface
+                    caseId={attempt.caseId}
+                    attemptId={attempt.id}
+                    initialMessages={messages}
+                    currentStageIndex={attempt.lastStageIndex}
+                    stages={stages}
+                    onProceedToNextStage={() => {
+                      /* minimal handler: reload page to reflect stage change */
+                      window.location.reload();
+                    }}
+                  />
+                );
+              }
+
+              return messages.length > 0 ? (
+                <div className="border rounded-lg p-4 space-y-4">
+                  {messages.map((message) => (
+                    <div
+                      key={message.id}
+                      className={`p-4 rounded-lg ${
+                        message.role === "user"
+                          ? "bg-primary/10 ml-12"
+                          : "bg-muted mr-12"
+                      }`}
+                    >
+                      <div className="flex justify-between mb-2">
+                        <span className="font-medium">
+                          {message.displayRole || message.role}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(message.timestamp).toLocaleTimeString()}
+                        </span>
+                      </div>
+                      <div className="prose prose-sm dark:prose-invert max-w-none">
+                        {message.content}
+                      </div>
                     </div>
-                    <div className="prose prose-sm dark:prose-invert max-w-none">
-                      {message.content}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-center py-8 border rounded-lg">
-                No conversation history available for this attempt.
-              </p>
-            )}
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center py-8 border rounded-lg">
+                  No conversation history available for this attempt.
+                </p>
+              );
+            })()}
           </div>
         )}
 

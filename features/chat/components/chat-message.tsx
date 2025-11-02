@@ -7,9 +7,10 @@ import type { Stage } from "@/features/stages/types";
 type ChatMessageProps = {
   message: Message;
   stages: Stage[];
+  onRetry?: (id: string) => void;
 };
 
-export function ChatMessage({ message, stages }: ChatMessageProps) {
+export function ChatMessage({ message, stages, onRetry }: ChatMessageProps) {
   const isUser = message.role === "user";
   const [formattedTime, setFormattedTime] = useState<string>("");
 
@@ -60,6 +61,20 @@ export function ChatMessage({ message, stages }: ChatMessageProps) {
         <div className="flex items-center gap-2">
           <div className="font-medium">{roleName}</div>
           <div className="text-xs text-muted-foreground">{formattedTime}</div>
+          {isUser && message.status === "failed" && (
+            <button
+              className="ml-2 text-xs text-red-600 hover:underline"
+              onClick={() => onRetry && onRetry(message.id)}
+            >
+              Retry
+            </button>
+          )}
+          {isUser && message.status === "pending" && (
+            <div className="ml-2 text-xs text-muted-foreground">Sending…</div>
+          )}
+          {isUser && message.status === "sent" && (
+            <div className="ml-2 text-xs text-muted-foreground">Sent</div>
+          )}
         </div>
         <div className="whitespace-pre-wrap text-sm">{message.content}</div>
       </div>

@@ -64,3 +64,66 @@ export async function speakRemote(
     }
   });
 }
+
+/**
+ * Streamed variant: set an <audio> src to the streaming endpoint so the
+ * browser can begin playback as soon as chunks arrive. This uses a GET
+ * query-based endpoint for simplicity; note that very long texts may hit
+ * URL length limits — if you expect long inputs, consider a POST-to-init
+ * pattern or a signed URL approach.
+ */
+export async function speakRemoteStream(
+  text: string,
+  voice?: string
+): Promise<HTMLAudioElement> {
+  if (!text) throw new Error("text required");
+
+  // POST-init flow: request a short streaming URL from the server so we avoid
+  // very long GET URLs. The server will return a short url that proxies the
+  // upstream provider and supports streaming audio.
+  const initResp = await fetch("/api/tts/init", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, voice }),
+  });
+
+  if (!initResp.ok) {
+    const body = await initResp.text().catch(() => "");
+    throw new Error(`TTS init failed: ${initResp.status} ${body}`);
+  }
+
+  const initData = await initResp.json().catch(() => ({} as any));
+  const url = String(
+    initData?.url ?? initData?.streamUrl ?? `/api/tts/stream?id=${initData?.id}`
+  );
+
+  const audio = new Audio(url);
+
+  return await new Promise<HTMLAudioElement>((resolve, reject) => {
+    const onEnded = () => {
+      cleanup();
+      resolve(audio);
+    };
+
+    const onError = (ev: any) => {
+      cleanup();
+      reject(ev ?? new Error("Streamed audio playback error"));
+    };
+
+    const cleanup = () => {
+      audio.removeEventListener("ended", onEnded);
+      audio.removeEventListener("error", onError);
+    };
+
+    audio.addEventListener("ended", onEnded);
+    audio.addEventListener("error", onError);
+
+    const playPromise = audio.play();
+    if (playPromise && typeof playPromise.then === "function") {
+      playPromise.catch((e) => {
+        // Autoplay may be blocked; caller can call audio.play() on user gesture.
+        console.warn("Playback blocked by autoplay policy (stream):", e);
+      });
+    }
+  });
+}

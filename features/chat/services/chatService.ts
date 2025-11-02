@@ -23,19 +23,54 @@ export const chatService = {
         role: msg.role as "system" | "user" | "assistant",
         content: msg.content,
       }));
+      // If the browser is offline, throw immediately to avoid noisy network
+      // errors from the XHR layer.
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        throw new Error("Network unavailable - please check your connection.");
+      }
 
-      // Call the API using axios
-      const response = await axios.post("/api/chat", {
-        messages: apiMessages,
-        stageIndex,
-        caseId,
-      });
+      // Call the API using axios with a small retry loop for transient
+      // network errors (no response). This reduces noisy "Network Error"
+      // console traces when the dev server briefly hiccups.
+      const maxAttempts = 3;
+      let attempt = 0;
+      let lastErr: unknown = null;
+      while (attempt < maxAttempts) {
+        try {
+          const response = await axios.post("/api/chat", {
+            messages: apiMessages,
+            stageIndex,
+            caseId,
+          });
+          return response.data as { content: string; displayRole?: string };
+        } catch (err) {
+          lastErr = err;
+          // If the error looks like an HTTP response from the server,
+          // rethrow (don't retry) so callers get the server status/message.
+          const aerr = err as any;
+          if (aerr && aerr.response) {
+            throw err;
+          }
 
-      // Response now may include displayRole (per-case label) in addition to content
-      return response.data as { content: string; displayRole?: string };
+          // Otherwise it's likely a network/transient error. Backoff then retry.
+          attempt += 1;
+          const backoffMs = 200 * attempt; // 200ms, 400ms, ...
+          await new Promise((res) => setTimeout(res, backoffMs));
+        }
+      }
+
+      // If we exhausted retries, throw a normalized error so callers don't
+      // receive an AxiosError object with noisy stack traces in console.
+      const msg =
+        lastErr && (lastErr as any)?.message
+          ? String((lastErr as any).message)
+          : "Network Error";
+      throw new Error(msg);
     } catch (error) {
       console.error("Error getting chat response:", error);
-      throw error;
+      // Normalize to Error for callers
+      if (error instanceof Error) throw error;
+      throw new Error(String(error));
     }
   },
 
@@ -56,6 +91,7 @@ export const chatService = {
     timestamp: new Date().toISOString(),
     stageIndex,
     displayRole: "You",
+    status: "pending",
   }),
 
   /**

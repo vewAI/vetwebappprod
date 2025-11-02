@@ -113,12 +113,18 @@ export function AttemptCard({ attempt, caseItem, onDelete }: AttemptCardProps) {
           )}
         </Button>
 
-        <Link href={`/attempts/${attempt.id}`}>
-          <Button size="sm">
-            View Attempt
-            <ChevronRight className="ml-1 h-4 w-4" />
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href={`/attempts/${attempt.id}?chat=1`}>
+            <Button size="sm">Open in Chat</Button>
+          </Link>
+
+          <Link href={`/attempts/${attempt.id}`}>
+            <Button size="sm">
+              View Attempt
+              <ChevronRight className="ml-1 h-4 w-4" />
+            </Button>
+          </Link>
+        </div>
       </CardFooter>
     </Card>
   );
