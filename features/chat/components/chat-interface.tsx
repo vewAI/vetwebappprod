@@ -22,6 +22,7 @@ import type { Message } from "@/features/chat/models/chat";
 import type { Stage } from "@/features/stages/types";
 import { getStageTransitionMessage } from "@/features/stages/services/stageService";
 import { chatService } from "@/features/chat/services/chatService";
+import { getOrAssignVoiceForRole } from "@/features/speech/services/voiceMap";
 
 type ChatInterfaceProps = {
   caseId: string;
@@ -62,13 +63,73 @@ export function ChatInterface({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Keep a base input buffer (committed text from prior finals or manual typing)
+  const baseInputRef = useRef<string>("");
+  // Remember whether we've already started listening for this attempt to
+  // avoid repeatedly calling `start()` due to hook identity changes.
+  const startedListeningRef = useRef<boolean>(false);
+  // Track the previous attemptId so initialization runs only once per
+  // attempt change.
+  const prevAttemptIdRef = useRef<string | null>(null);
 
   // Speech-to-text functionality. Provide an onFinal handler to auto-send when
   // voiceMode is active.
 
   // Refs to manage auto-send timer and pending final text
   const autoSendTimerRef = useRef<number | null>(null);
+  // A separate timer for finals that should not be cancelled by interims.
+  // Some STT engines emit interims after a final; this final timer ensures
+  // we always auto-send after a true final transcript arrives.
+  const autoSendFinalTimerRef = useRef<number | null>(null);
   const autoSendPendingTextRef = useRef<string | null>(null);
+  // Track the last final transcript that onFinal handled so we don't
+  // duplicate it when the `transcript` state also updates.
+  const lastFinalHandledRef = useRef<string | null>(null);
+  // Track last appended chunk and time to avoid rapid duplicate appends
+  const lastAppendedTextRef = useRef<string | null>(null);
+  const lastAppendTimeRef = useRef<number>(0);
+
+  // Collapse immediate repeated phrases in a final transcript. Some STT
+  // engines occasionally emit duplicated chunks (the same phrase twice in a
+  // row). This attempts a conservative de-dup: if the final transcript
+  // contains an immediate repeat of the first k words (for k>=3), keep the
+  // first occurrence only.
+  const collapseImmediateRepeat = (s: string) => {
+    if (!s) return s;
+    const words = s.trim().split(/\s+/);
+    const L = words.length;
+    // Only attempt on reasonably long phrases
+    if (L < 6) return s;
+    for (let k = Math.floor(L / 2); k >= 3; k--) {
+      // check if first k words repeat immediately
+      let repeat = true;
+      for (let i = 0; i < k; i++) {
+        if (words[i] !== words[i + k]) {
+          repeat = false;
+          break;
+        }
+      }
+      if (repeat) {
+        // keep the first k words and append any remaining words beyond 2k
+        const remainder = words.slice(2 * k);
+        return [...words.slice(0, k), ...remainder].join(" ");
+      }
+    }
+    // Also check for a repeated trailing segment (e.g., '... a b a b')
+    for (let k = Math.floor(L / 2); k >= 3; k--) {
+      let repeat = true;
+      for (let i = 0; i < k; i++) {
+        if (words[L - 1 - i] !== words[L - 1 - i - k]) {
+          repeat = false;
+          break;
+        }
+      }
+      if (repeat) {
+        return words.slice(0, L - k).join(" ");
+      }
+    }
+    return s;
+  };
 
   const { isListening, transcript, interimTranscript, start, stop, reset } =
     useSTT((finalText: string) => {
@@ -79,24 +140,78 @@ export function ChatInterface({
         finalText
       );
       if (voiceMode && finalText && finalText.trim()) {
-        const trimmed = finalText.trim();
-        // Clear any pending timer and pending buffer
+        // Trim and attempt to de-duplicate obvious repeats from STT finals
+        const trimmed = collapseImmediateRepeat(finalText.trim());
+        const now = Date.now();
+
+        // Avoid duplicating identical final chunks that may be emitted
+        // multiple times by the STT engine or overlap with recently
+        // displayed interim text. If we've appended the same chunk within
+        // the last 3s, skip it.
+        if (
+          lastAppendedTextRef.current === trimmed &&
+          now - (lastAppendTimeRef.current || 0) < 3000
+        ) {
+          // Mark handled so transcript effect doesn't re-append
+          lastFinalHandledRef.current = trimmed;
+          return;
+        }
+        // Clear any previously scheduled short-timeout auto-send (non-final)
         if (autoSendTimerRef.current) {
           window.clearTimeout(autoSendTimerRef.current);
           autoSendTimerRef.current = null;
         }
-        autoSendPendingTextRef.current = null;
-
-        // Immediately send the final transcript when voiceMode is active.
-        // This emulates pressing the send button as soon as speech is
-        // transcribed to a final chunk.
-        try {
-          console.debug("Auto-send (immediate) firing with text:", trimmed);
-          // Trigger auto-send with visual flash on the send button
-          void triggerAutoSend(trimmed);
-        } catch (e) {
-          console.error("Failed to auto-send final transcript:", e);
+        // Clear any existing final timer before scheduling a fresh one
+        if (autoSendFinalTimerRef.current) {
+          window.clearTimeout(autoSendFinalTimerRef.current);
+          autoSendFinalTimerRef.current = null;
         }
+
+        // Append the final trimmed text to the committed base input so
+        // pauses do not erase earlier content. Maintain spacing. Also
+        // guard against the base already ending with the same text.
+        if (
+          baseInputRef.current &&
+          baseInputRef.current.trim().length > 0 &&
+          !baseInputRef.current.trim().endsWith(trimmed)
+        ) {
+          baseInputRef.current = `${baseInputRef.current.trim()} ${trimmed}`;
+        } else if (
+          !baseInputRef.current ||
+          baseInputRef.current.trim().length === 0
+        ) {
+          baseInputRef.current = trimmed;
+        }
+        // Reflect in the visible textarea immediately
+        setInput(baseInputRef.current);
+
+        // Store pending final text and schedule an auto-send after a short
+        // silence tolerance window. This lets brief pauses in user speech
+        // (e.g., thinking pauses) not immediately trigger a send.
+        autoSendPendingTextRef.current = trimmed;
+        // Remember we've handled this final so the transcript effect can
+        // ignore it and avoid double-appending.
+        lastFinalHandledRef.current = trimmed;
+        // Remember last appended chunk and time
+        lastAppendedTextRef.current = trimmed;
+        lastAppendTimeRef.current = now;
+        // Schedule a final-only timer which should not be cancelled by
+        // subsequent interim updates. This ensures that after a true
+        // final transcript the text is always sent even if interims arrive
+        // briefly after. Use a short delay to allow any minor buffering.
+        autoSendFinalTimerRef.current = window.setTimeout(() => {
+          autoSendFinalTimerRef.current = null;
+          autoSendPendingTextRef.current = null;
+          try {
+            console.debug(
+              "Auto-send (final) firing with text:",
+              baseInputRef.current
+            );
+            void triggerAutoSend(baseInputRef.current);
+          } catch (e) {
+            console.error("Failed to auto-send final transcript:", e);
+          }
+        }, 500);
       }
     });
 
@@ -106,6 +221,10 @@ export function ChatInterface({
       if (autoSendTimerRef.current) {
         window.clearTimeout(autoSendTimerRef.current);
         autoSendTimerRef.current = null;
+      }
+      if (autoSendFinalTimerRef.current) {
+        window.clearTimeout(autoSendFinalTimerRef.current);
+        autoSendFinalTimerRef.current = null;
       }
       autoSendPendingTextRef.current = null;
     };
@@ -123,6 +242,81 @@ export function ChatInterface({
   // When TTS plays we may want to temporarily stop STT so the assistant voice
   // is not transcribed. Use a ref to remember whether we should resume.
   const resumeListeningRef = useRef<boolean>(false);
+
+  // Helper to play TTS while ensuring STT is paused during playback so the
+  // assistant's voice isn't captured. Resumes listening if it was active
+  // before playback.
+  // Sanitize text for TTS playback: remove symbol characters that should not
+  // be pronounced (e.g. '*' or '#') while preserving normal punctuation.
+  const sanitizeForTts = (s: string) => {
+    if (!s) return s;
+    try {
+      // Remove symbols but keep letters, numbers, common punctuation and whitespace.
+      // Use Unicode property escapes to include accented letters where available.
+      // Fallback: if the runtime doesn't support \p escapes, fall back to a
+      // conservative ASCII-safe removal.
+      try {
+        // Conservative removal of common symbol characters that should not be
+        // spoken. Keep letters, numbers, punctuation like . , ? ! : ; and
+        // common grouping characters but strip symbols like *, #, @, etc.
+        const cleaned = s.replace(/[@#\$%\^&\*\[\]\{\}<>\|`~\\\/+=]/g, "");
+        return cleaned.replace(/\s+/g, " ").trim();
+      } catch (e) {
+        return s;
+      }
+    } catch (e) {
+      return s;
+    }
+  };
+
+  const playTtsAndPauseStt = async (text: string, voice?: string) => {
+    if (!text) return;
+    let stoppedForPlayback = false;
+    try {
+      if (isListening) {
+        stoppedForPlayback = true;
+        resumeListeningRef.current = true;
+        try {
+          stop();
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      // Try streaming first for low latency, fall back to buffered playback
+      // and finally to browser TTS if needed.
+      // Use a sanitized version for TTS so the speech engine does not try
+      // to pronounce raw symbols; keep the original text for the message
+      // content shown in the chat.
+      const ttsText = sanitizeForTts(text);
+      try {
+        await speakRemoteStream(ttsText, voice);
+      } catch (streamErr) {
+        try {
+          await speakRemote(ttsText, voice);
+        } catch (bufErr) {
+          try {
+            if (ttsAvailable && speakAsync) {
+              await speakAsync(ttsText);
+            } else if (ttsAvailable) {
+              speak(ttsText);
+            }
+          } catch (e) {
+            console.error("TTS playback failed:", e);
+          }
+        }
+      }
+    } finally {
+      // Resume listening if we previously stopped for playback and voiceMode
+      // is still enabled.
+      if (stoppedForPlayback && resumeListeningRef.current) {
+        resumeListeningRef.current = false;
+        if (voiceMode) {
+          setTimeout(() => start(), 50);
+        }
+      }
+    }
+  };
 
   // Microphone button handlers
   const { handleStart, handleStop, handleCancel } = useMicButton(
@@ -143,18 +337,28 @@ export function ChatInterface({
     } catch (e) {
       // ignore
     }
-    // Give STT a short moment to emit final transcript
+    // Allow a slightly longer pause here as well so that manual stops
+    // tolerate short thinking pauses before auto-sending.
     setTimeout(() => {
       try {
+        // Cancel any final-timer since we're forcing a send after manual stop
+        if (autoSendFinalTimerRef.current) {
+          window.clearTimeout(autoSendFinalTimerRef.current);
+          autoSendFinalTimerRef.current = null;
+        }
         const t = transcript?.trim();
-        if (voiceMode && t) {
+        const toSend =
+          baseInputRef.current && baseInputRef.current.trim().length > 0
+            ? baseInputRef.current
+            : t;
+        if (voiceMode && toSend) {
           // Use the trigger wrapper so the send button flashes when auto-sent
-          void triggerAutoSend(t);
+          void triggerAutoSend(toSend);
         }
       } catch (e) {
         console.error("Error auto-sending after stop:", e);
       }
-    }, 150);
+    }, 600);
   };
 
   // sendUserMessage helper (used by manual submit and auto-send)
@@ -199,59 +403,50 @@ export function ChatInterface({
       if (ttsEnabled && response.content) {
         try {
           if (isListening) {
+            // Remember to resume after TTS finishes.
             resumeListeningRef.current = true;
-            stop();
+            try {
+              // Stop listening synchronously; some STT implementations
+              // may take a moment to fully stop the microphone stream,
+              // so wait briefly before starting playback to avoid the
+              // assistant audio being picked up.
+              stop();
+            } catch (e) {
+              /* ignore */
+            }
+            // Small settle delay to let the microphone/hardware stop.
+            await new Promise((res) => setTimeout(res, 150));
           }
 
-          // If voice-first is enabled, attempt streaming playback and only
-          // append the assistant text after playback completes. If streaming
-          // fails we fall back to showing the text immediately and then
-          // trying other TTS fallbacks.
+          // Choose voice based on the assistant role (displayRole or stage role)
+          const voiceForRole = getOrAssignVoiceForRole(
+            String(roleName ?? "assistant"),
+            attemptId
+          );
+
           if (voiceFirst) {
             try {
-              await speakRemoteStream(response.content);
-              // Append the message only after playback completed
+              await playTtsAndPauseStt(response.content, voiceForRole);
               setMessages((prev) => [...prev, aiMessage]);
             } catch (streamErr) {
               console.warn(
                 "Streaming TTS failed, falling back to text-first:",
                 streamErr
               );
-              // Show text immediately and try non-streamed/fallback TTS
               setMessages((prev) => [...prev, aiMessage]);
               try {
-                await speakRemote(response.content);
+                await playTtsAndPauseStt(response.content, voiceForRole);
               } catch (err) {
-                try {
-                  if (ttsAvailable && speakAsync) {
-                    await speakAsync(response.content);
-                  } else if (ttsAvailable) {
-                    speak(response.content);
-                  }
-                } catch (e) {
-                  console.error("TTS failed:", e);
-                }
+                console.error("TTS failed:", err);
               }
             }
           } else {
             // Default behavior: show the text immediately, then play audio
             setMessages((prev) => [...prev, aiMessage]);
             try {
-              // Prefer streaming variant for faster start when available
-              await speakRemoteStream(response.content).catch(() =>
-                speakRemote(response.content)
-              );
+              await playTtsAndPauseStt(response.content, voiceForRole);
             } catch (err) {
-              // Last-resort fallback to browser TTS
-              try {
-                if (ttsAvailable && speakAsync) {
-                  await speakAsync(response.content);
-                } else if (ttsAvailable) {
-                  speak(response.content);
-                }
-              } catch (e) {
-                console.error("TTS failed:", e);
-              }
+              console.error("TTS failed:", err);
             }
           }
 
@@ -307,6 +502,9 @@ export function ChatInterface({
       setIsLoading(false);
       // Reset interim transcripts after a send
       reset();
+      // Clear base input buffer after a send so future dictation starts
+      // from an empty buffer.
+      baseInputRef.current = "";
     }
   };
 
@@ -330,16 +528,27 @@ export function ChatInterface({
     return sendUserMessage(text);
   };
 
+  // Track whether the user explicitly toggled voice off for this attempt.
+  // Declared here before any handlers that reference it (toggleVoiceMode,
+  // initialization effects) so it's available when used.
+  const userToggledOffRef = useRef(false);
+
   // Toggle voice mode (persistent listening until toggled off)
   const toggleVoiceMode = () => {
     setVoiceMode((v) => {
       const next = !v;
       if (next) {
+        // User enabled voice mode -> clear the "user toggled off" flag
+        userToggledOffRef.current = false;
         // enable voice mode -> start listening
         reset();
         setInput("");
+        baseInputRef.current = "";
         start();
       } else {
+        // User disabled voice mode -> mark that choice so auto-init doesn't
+        // re-enable it automatically for this attempt.
+        userToggledOffRef.current = true;
         // disable voice mode -> stop listening and auto-send transcript
         // Also disable TTS so the related UI toggles off automatically.
         stopAndMaybeSend();
@@ -361,12 +570,87 @@ export function ChatInterface({
   // as it happens. When interim is empty, show the last final transcript.
   useEffect(() => {
     if (isListening) {
+      // If there's live interim text, cancel any pending auto-send because
+      // the user is still speaking. Show interim appended to committed base.
       if (interimTranscript && interimTranscript.trim()) {
-        setInput(interimTranscript);
+        if (autoSendTimerRef.current) {
+          window.clearTimeout(autoSendTimerRef.current);
+          autoSendTimerRef.current = null;
+          autoSendPendingTextRef.current = null;
+        }
+        const combined =
+          baseInputRef.current && baseInputRef.current.trim().length > 0
+            ? `${baseInputRef.current.trim()} ${interimTranscript.trim()}`
+            : interimTranscript;
+        setInput(combined);
         return;
       }
       if (transcript && transcript.trim()) {
-        setInput(transcript);
+        const finalTrim = transcript.trim();
+        const now = Date.now();
+
+        // If onFinal already handled this exact final transcript, avoid
+        // appending it again here. Clear the marker and ensure visible
+        // input reflects the base buffer.
+        if (
+          lastFinalHandledRef.current &&
+          lastFinalHandledRef.current === finalTrim
+        ) {
+          lastFinalHandledRef.current = null;
+          setInput(baseInputRef.current);
+          return;
+        }
+
+        // If we recently appended the same chunk, skip to avoid duplicates
+        if (
+          lastAppendedTextRef.current === finalTrim &&
+          now - (lastAppendTimeRef.current || 0) < 3000
+        ) {
+          setInput(baseInputRef.current);
+          return;
+        }
+
+        // When a final transcript arrives that wasn't already appended via
+        // the onFinal handler (safety), ensure it's reflected in baseInput.
+        if (
+          !baseInputRef.current ||
+          !baseInputRef.current.includes(finalTrim)
+        ) {
+          if (
+            baseInputRef.current &&
+            baseInputRef.current.trim().length > 0 &&
+            !baseInputRef.current.trim().endsWith(finalTrim)
+          ) {
+            baseInputRef.current = `${baseInputRef.current.trim()} ${finalTrim}`;
+          } else {
+            baseInputRef.current = finalTrim;
+          }
+          lastAppendedTextRef.current = finalTrim;
+          lastAppendTimeRef.current = now;
+        }
+        setInput(baseInputRef.current);
+
+        // If the STT engine exposed the final via the `transcript` state
+        // rather than the onFinal callback, ensure we still schedule the
+        // final-only auto-send timer so the message doesn't get stuck.
+        if (voiceMode && !autoSendFinalTimerRef.current) {
+          autoSendFinalTimerRef.current = window.setTimeout(() => {
+            autoSendFinalTimerRef.current = null;
+            autoSendPendingTextRef.current = null;
+            try {
+              console.debug(
+                "Auto-send (final via transcript) firing with text:",
+                baseInputRef.current
+              );
+              void triggerAutoSend(baseInputRef.current);
+            } catch (err) {
+              console.error(
+                "Failed to auto-send final transcript (via transcript):",
+                err
+              );
+            }
+          }, 500);
+        }
       }
     }
   }, [interimTranscript, transcript, isListening]);
@@ -396,18 +680,37 @@ export function ChatInterface({
     };
   }, [attemptId]);
 
+  // Ensure STT is active when an attempt is open. This effect covers cases
+  // where `attemptId` didn't change but the component mounted or `isListening`
+  // changed (e.g. due to hook identity differences). Do not auto-start if
+  // the user explicitly toggled voice off for this attempt.
+  useEffect(() => {
+    if (!attemptId) return;
+    if (userToggledOffRef.current) return;
+    if (voiceMode && !isListening && !startedListeningRef.current) {
+      try {
+        // Auto-start listening for the attempt. We clear the input and the
+        // committed base buffer so dictation starts fresh.
+        reset();
+        setInput("");
+        baseInputRef.current = "";
+        start();
+        startedListeningRef.current = true;
+      } catch (e) {
+        console.error("Failed to auto-start STT:", e);
+      }
+    }
+  }, [attemptId, voiceMode, isListening, reset, start]);
+
   // Auto-focus textarea when loaded
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.focus();
     }
+    // attemptId changes or other hooks update.
   }, []);
 
-  // Ensure Voice Mode becomes active when an attempt opens (attemptId
-  // appears). If the attempt opens after mount, enable voiceMode and start
-  // listening. Use a ref to avoid repeated starts.
-  const startedListeningRef = useRef(false);
-  const prevAttemptIdRef = useRef<string | null>(null);
+  // attemptId changes or other hooks update.
   useEffect(() => {
     if (!attemptId) return;
 
@@ -430,6 +733,7 @@ export function ChatInterface({
       try {
         reset();
         setInput("");
+        baseInputRef.current = "";
         start();
         startedListeningRef.current = true;
       } catch (e) {
@@ -568,6 +872,95 @@ export function ChatInterface({
     ? "Complete Examination"
     : `Proceed to ${stages[currentStageIndex + 1]?.title || "Next Stage"}`;
 
+  // Helper to produce a short assistant intro when proceeding to a new stage
+  const getStageAssistantIntro = (targetStageIndex: number) => {
+    const title = stages[targetStageIndex]?.title || "next stage";
+    const role = String(stages[targetStageIndex]?.role || "").toLowerCase();
+    // If the upcoming stage expects interaction with the owner/client,
+    // have the intro come from the owner (roleplay) rather than the
+    // veterinary assistant so the student hears the owner prompt.
+    if (role.includes("owner") || role.includes("client")) {
+      // A brief, natural owner prompt that invites the student to report
+      // findings or ask follow-up questions. Keep it short so the student
+      // can respond.
+      return `Hi Doc, do you have any news for me?`;
+    }
+
+    return `I am a veterinary assistant. I'm here to help with the ${title.toLowerCase()} and to provide information about findings and tests when requested. Please let me know how I can assist.`;
+  };
+
+  const handleProceed = async () => {
+    const targetIndex = Math.min(currentStageIndex + 1, stages.length - 1);
+
+    const introText = getStageAssistantIntro(targetIndex);
+    // Choose a display role based on the configured stage role so the UI
+    // labels the speaker appropriately (e.g., Owner, Laboratory Technician)
+    const stageRole = stages[targetIndex]?.role ?? "Virtual Assistant";
+    const roleName = String(stageRole);
+
+    // Create assistant message using the roleName as displayRole so the
+    // client sees the correct speaker (owner vs assistant vs lab tech).
+    const assistantMsg = chatService.createAssistantMessage(
+      introText,
+      targetIndex,
+      roleName
+    );
+
+    // Append assistant message immediately so user sees it
+    setMessages((prev) => [...prev, assistantMsg]);
+
+    // Speak if tts enabled; stop listening first so the assistant audio
+    // isn't picked up by STT, then resume listening after TTS completes.
+    if (ttsEnabled && introText) {
+      try {
+        // If currently listening, stop and remember to resume. Wait a
+        // short moment to ensure the mic stream is stopped before playback.
+        if (isListening) {
+          resumeListeningRef.current = true;
+          try {
+            stop();
+          } catch (e) {
+            /* ignore */
+          }
+          await new Promise((res) => setTimeout(res, 150));
+        }
+
+        // Use per-role voice for the assistant intro as well
+        const introVoice = getOrAssignVoiceForRole(
+          "Virtual Assistant",
+          attemptId
+        );
+        await playTtsAndPauseStt(introText, introVoice);
+      } catch (e) {
+        try {
+          if (ttsAvailable && speakAsync) {
+            await speakAsync(introText);
+          } else if (ttsAvailable) {
+            speak(introText);
+          }
+        } catch (err) {
+          console.error("Intro TTS failed:", err);
+        }
+      } finally {
+        if (resumeListeningRef.current) {
+          resumeListeningRef.current = false;
+          if (voiceMode) {
+            // Resume after a short delay so mic hardware settles
+            setTimeout(() => start(), 150);
+          }
+        }
+      }
+    }
+
+    // After speaking (or immediately if TTS off), call parent handler to
+    // actually advance the stage. Pass the current messages snapshot.
+    try {
+      onProceedToNextStage(messages, timeSpentSeconds);
+    } catch (e) {
+      console.error("Error in onProceedToNextStage:", e);
+    }
+  };
+
   return (
     <div className="relative flex h-full flex-col">
       {/* Intro toast (central, non-blocking) */}
@@ -628,7 +1021,7 @@ export function ChatInterface({
         <div className="mx-auto max-w-3xl">
           <div className="flex justify-between items-center mb-4 gap-4">
             <Button
-              onClick={() => onProceedToNextStage(messages, timeSpentSeconds)}
+              onClick={handleProceed}
               disabled={false}
               className={`flex-1 ${
                 isLastStage
@@ -725,7 +1118,10 @@ export function ChatInterface({
               autoComplete="off"
               ref={textareaRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                baseInputRef.current = e.target.value;
+                setInput(e.target.value);
+              }}
               onKeyDown={handleKeyDown}
               placeholder={
                 isListening

@@ -62,10 +62,22 @@ async function redisGetAndDel(id: string) {
     return v;
   }
   try {
-    // GET then DEL (not strictly atomic but acceptable for this use-case).
-    const raw = await client.get(key);
+    // Perform an atomic GET+DEL using EVAL to avoid race conditions where
+    // another consumer might read the key at the same time.
+    const script =
+      "local v = redis.call('GET', KEYS[1]); if v then redis.call('DEL', KEYS[1]); end; return v";
+    // Some redis clients expose `eval` with this signature. Cast to a small
+    // interface to avoid using `any` and satisfy eslint/TS rules.
+    const evalClient = client as unknown as {
+      eval: (
+        script: string,
+        opts: { keys: string[]; arguments?: string[] }
+      ) => Promise<string | null>;
+    };
+    const raw = (await evalClient.eval(script, { keys: [key] })) as
+      | string
+      | null;
     if (!raw) return null;
-    await client.del(key);
     const parsed = JSON.parse(raw) as Payload;
     if (parsed.expiresAt <= Date.now()) return null;
     return parsed;

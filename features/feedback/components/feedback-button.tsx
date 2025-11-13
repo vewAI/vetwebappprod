@@ -62,9 +62,17 @@ export function FeedbackButton({
 
       // Generate conversation context string for the prompt
       const context = stageMessages
-        .map(
-          (m) => `${m.role === "user" ? "Student" : "Examiner"}: ${m.content}`
-        )
+        .map((m) => {
+          // Prefer any displayRole (e.g., "Owner (Catalina)") when present
+          const speaker = m.displayRole
+            ? m.displayRole
+            : m.role === "user"
+            ? "Student"
+            : m.role === "assistant"
+            ? "Assistant"
+            : "System";
+          return `${speaker}: ${m.content}`;
+        })
         .join("\n");
 
       // Look up feedback prompt function using helper

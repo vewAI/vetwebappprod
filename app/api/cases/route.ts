@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import OpenAi from "openai";
 import crypto from "crypto";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -11,6 +12,8 @@ const supabase = createClient(
   supabaseUrl,
   supabaseServiceKey ?? supabaseAnonKey
 );
+
+const openai = new OpenAi({ apiKey: process.env.OPENAI_API_KEY });
 
 // OpenAI client intentionally removed from this route when unused to satisfy lint rules.
 
@@ -170,7 +173,7 @@ export async function POST(req: Request) {
       physical_exam_findings_template = `Physical exam within expected limits for ${species}. Note any localised pain or abnormal vital signs.`;
     }
 
-    const owner_background_template = `Role: Horse Owner (Female, initially worried but responsive to reassurance)\nHorse: ${horseName}\n\nPrimary Concern:\n- ${horseName} is off colour and not eating well\n\nClinical Information (ONLY PROVIDE WHEN SPECIFICALLY REQUESTED):\n1. Current Symptoms:\n- Poor appetite\n- Quieter than usual\n- No nasal discharge noticed\n\n2. Living Situation (ONLY PROVIDE WHEN SPECIFICALLY REQUESTED):\n- Housed at a large yard with other horses\n\nImportant Character Notes:\n- Initially hesitant about sharing information but cooperative once asked. Use non-technical language.`;
+    const owner_background_template = `Role: Horse Owner (Female, initially worried but cooperative)\nHorse: ${horseName}\n\nPrimary Concern:\n- ${horseName} is off colour and not eating well\n\nClinical Information (ONLY PROVIDE WHEN SPECIFICALLY REQUESTED):\n1. Current Symptoms:\n- Poor appetite\n- Quieter than usual\n- No nasal discharge noticed\n\n2. Living Situation (ONLY PROVIDE WHEN SPECIFICALLY REQUESTED):\n- Housed at a large yard with other horses\n\nImportant Character Notes:\n- Always provide your name when asked by the student (do not withhold identifying information).\n- May be cautious about sharing other details with yard manager/other owners but will provide identifying information when requested. Use non-technical language.`;
 
     const history_feedback_template = `You are an experienced veterinary educator providing feedback on a student's history-taking during this case. Focus on whether critical information was collected and give structured, actionable feedback.`;
 
@@ -234,6 +237,72 @@ export async function POST(req: Request) {
     );
     ensure("get_owner_diagnosis_prompt", get_owner_diagnosis_prompt_template);
     ensure("get_overall_feedback_prompt", get_overall_feedback_prompt_template);
+
+    // Attempt to enrich and expand case fields by asking the LLM to complete
+    // any missing or terse fields (e.g., physical_exam_findings,
+    // diagnostic_findings, owner_background, prompts, etc.). The model is
+    // asked to return a JSON object with the same keys. This is best-effort
+    // — failures here will not block insertion.
+    try {
+      const promptSystem = `You are an expert veterinary educator and clinician. Given a partially-filled case record in JSON, expand and complete each field to produce a high-quality, evidence-informed, educational case. Use clear clinical language suitable for students and make the case a challenging but fair learning scenario. Return a single JSON object containing the expanded fields (only JSON, no commentary). Respond using up-to-date veterinary reasoning and include clinically-relevant physical exam findings, likely diagnostic considerations, and concise owner background and role prompts suitable for a simulated owner. Do not include explanatory text outside the JSON.`;
+
+      const userContent = JSON.stringify(body);
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: promptSystem },
+          { role: "user", content: userContent },
+        ],
+        temperature: 0.2,
+        max_tokens: 1200,
+      });
+
+      const content = String(completion.choices?.[0]?.message?.content ?? "");
+      // Try parsing the returned JSON. The model was instructed to return
+      // JSON only, but be defensive in parsing.
+      let parsedFromModel: unknown = null;
+      try {
+        parsedFromModel = JSON.parse(content);
+      } catch {
+        // Attempt to extract a JSON block from the content
+        const m = content.match(/\{[\s\S]*\}/);
+        if (m) {
+          try {
+            parsedFromModel = JSON.parse(m[0]);
+          } catch (e2) {
+            console.warn("Could not parse JSON from model completion", e2);
+            parsedFromModel = null;
+          }
+        }
+      }
+
+      if (
+        parsedFromModel &&
+        typeof parsedFromModel === "object" &&
+        !Array.isArray(parsedFromModel)
+      ) {
+        // Treat the parsed result as a plain object and merge fields into the
+        // body. We use a Record<string, unknown> to avoid `any`.
+        const parsedObj = parsedFromModel as Record<string, unknown>;
+        for (const k of Object.keys(parsedObj)) {
+          // Only overwrite if model provided a non-empty value
+          const v = parsedObj[k];
+          if (
+            v !== undefined &&
+            v !== null &&
+            !(typeof v === "string" && v.trim() === "")
+          ) {
+            // Safe to assign into `body` which is a loose JS object representing
+            // the case fields coming from the request.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (body as Record<string, any>)[k] = v;
+          }
+        }
+      }
+    } catch (llmErr) {
+      console.warn("LLM enrichment failed for new case:", llmErr);
+    }
 
     // Insert into Supabase and request the inserted row(s) back
     // using .select() so the response contains the inserted record instead of null.
