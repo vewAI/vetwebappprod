@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
 
       // Stage-specific role info
       if (stageIndex !== undefined && lastUserMessage) {
-        const roleInfoPrompt = getRoleInfoPrompt(
+        const roleInfoPrompt = await getRoleInfoPrompt(
           caseId,
           stageIndex,
           lastUserMessage.content

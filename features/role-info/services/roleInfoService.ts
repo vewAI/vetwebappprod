@@ -1,6 +1,7 @@
 import { case1RoleInfo } from "../case1";
 import { caseConfig } from "@/features/config/case-config";
 import type { RoleInfo, RoleInfoPromptFn } from "../types";
+import { supabase } from "@/lib/supabase";
 
 type CaseId = "case-1";
 // add more cases here
@@ -14,11 +15,11 @@ const caseRoleInfoMap: Record<CaseId, RoleInfo> = {
  * Gets a role-specific prompt for the given case and stage.
  * Only calls the prompt function if it exists and matches the expected signature.
  */
-export function getRoleInfoPrompt(
+export async function getRoleInfoPrompt(
   caseId: string,
   stageIndex: number,
   userMessage: string
-): string | null {
+): Promise<string | null> {
   // Check if the caseId is valid
   if (!isCaseIdValid(caseId)) {
     console.warn(`Invalid case ID: ${caseId}`);
@@ -42,12 +43,37 @@ export function getRoleInfoPrompt(
     return null;
   }
 
+  // Fetch case-specific row from Supabase in case templates want injected data
+  let caseRow: Record<string, any> | null = null;
+  try {
+    const { data, error } = await supabase
+      .from("cases")
+      .select("*")
+      .eq("id", caseId)
+      .maybeSingle();
+    if (!error && data) {
+      caseRow = data as Record<string, any>;
+    }
+  } catch (e) {
+    console.warn("Error fetching case row for role info prompts:", e);
+  }
+
   // Get the prompt function using the roleInfoKey
   const promptFunction = roleInfo[stage.roleInfoKey];
 
-  // If the prompt function exists and is callable, return the result
+  // If the prompt function exists and is callable, invoke it.
   if (typeof promptFunction === "function") {
-    return (promptFunction as RoleInfoPromptFn)(userMessage);
+    try {
+      // If the prompt function declares two parameters (caseData, context), call with caseRow
+      if ((promptFunction as Function).length >= 2) {
+        return (promptFunction as any)(caseRow, userMessage);
+      }
+      // Otherwise call with the old single-argument signature
+      return (promptFunction as RoleInfoPromptFn)(userMessage);
+    } catch (err) {
+      console.warn("Error executing role info prompt function:", err);
+      return null;
+    }
   }
   // check if the key exists but is not a function
   if (promptFunction !== undefined) {

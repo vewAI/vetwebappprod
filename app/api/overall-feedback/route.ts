@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { OpenAI } from "openai";
 import { case1RoleInfo } from "@/features/role-info/case1";
+import { createClient } from "@supabase/supabase-js";
 import type { Message } from "@/features/chat/models/chat";
 
 const openai = new OpenAI({
@@ -22,14 +23,43 @@ export async function POST(request: Request) {
       })
       .join("\n\n");
 
+    // Fetch case row so we can inject case-specific prompts when available
+    let caseRow: Record<string, unknown> | null = null;
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+      const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      const supabase = createClient(
+        supabaseUrl,
+        supabaseServiceKey ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ""
+      );
+      const { data, error } = await supabase
+        .from("cases")
+        .select("*")
+        .eq("id", caseId)
+        .maybeSingle();
+      if (!error && data) caseRow = data as Record<string, unknown>;
+    } catch (e) {
+      console.warn("Could not fetch case row for overall feedback:", e);
+    }
+
     // Get the appropriate prompt based on case ID
-    let feedbackPrompt;
+    let feedbackPrompt: string | undefined;
     if (caseId === "case-1") {
       if (typeof case1RoleInfo.getOverallFeedbackPrompt === "function") {
-        feedbackPrompt = case1RoleInfo.getOverallFeedbackPrompt(context);
+        // If the function accepts two args, pass caseRow first
+        const fn = case1RoleInfo.getOverallFeedbackPrompt as unknown;
+        if (typeof fn === "function") {
+          const typedFn = fn as (...args: unknown[]) => string;
+          if (typedFn.length >= 2) {
+            feedbackPrompt = typedFn(caseRow, context);
+          } else {
+            feedbackPrompt = typedFn(context);
+          }
+        }
       } else {
         //use directly as string if not function
-        feedbackPrompt = case1RoleInfo.getOverallFeedbackPrompt;
+        feedbackPrompt =
+          case1RoleInfo.getOverallFeedbackPrompt as unknown as string;
       }
     } else {
       return NextResponse.json(
@@ -50,9 +80,12 @@ export async function POST(request: Request) {
     // Generate feedback using OpenAI (wrapped in try/catch to allow fallback)
     let feedbackContent = "";
     try {
+      const promptToSend =
+        feedbackPrompt ??
+        `Please provide constructive feedback for the student's performance using the context below:\n\n${context}`;
       const response = await openai.chat.completions.create({
         model: "gpt-4o-mini",
-        messages: [{ role: "system", content: feedbackPrompt }],
+        messages: [{ role: "system", content: promptToSend }],
         temperature: 0.7,
         max_tokens: 2000,
       });

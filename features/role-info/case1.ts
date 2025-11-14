@@ -1,112 +1,33 @@
 import type { RoleInfo } from "./types";
 
 export const case1RoleInfo: RoleInfo = {
+  // FALLBACK values (used if no DB values are provided). These preserve
+  // backward compatibility while allowing server code to inject case-specific
+  // data fetched from the `cases` table.
   physicalExamFindings: `
-  Physical Examination Findings for Catalina:
-  NOTE FOR THE ASSISTANT: When students describe physical examination findings, they may use varied formats, shorthand, or non-standard phrasing. Interpret the intent of the student's input flexibly, respond to the observations they provide in the order presented, and ask clarifying questions when needed. Always try to incorporate any indications the student gives and reply fluently in conversational order.
-    Vital Signs:
-    - Heart rate: 48 bpm
-    - Respiratory rate: 16 brpm
-    - Rectal temperature: 39.7°C
-    - Mucous membranes: pink and moist
-    - CRT: <2 seconds
-    - Jugular refill time: within normal limits
-    - Peripheral pulses (including facial artery): within normal limits
-    - Digital pulses: barely palpable (normal)
-
-    Systems Examination:
-    - Respiratory: No abnormalities detected in lungs, trachea, and sinuses (with rebreathing bag)
-    - Gastrointestinal: Quiet borborygmi on abdominal auscultation
-    - Lymph nodes:
-    * Submandibular: enlarged to 2cm
-    * Retropharyngeal: not palpable but sensitive, generalized swelling in region
-    - Feces: Normal but appears dry in stable
-    `,
+  Physical Examination Findings for Catalina (fallback):
+  - Heart rate: 48 bpm
+  - Respiratory rate: 16 brpm
+  - Rectal temperature: 39.7°C
+  - Mucous membranes: pink and moist
+  - CRT: <2 seconds
+  - Submandibular lymph node: enlarged to 2cm
+  `,
 
   diagnosticFindings: `
-  Available Diagnostic Test Results for Catalina:
-
-Blood Work:
-- PCV: 38%
-- TPP: 78
-- Lactate: 1.2 mmol/L
-- CBC shows mild neutrophilia with mild lymphopaenia and mild thrombocytopenia
-- SAA: 1800 (if specifically requested)
-- Biochemistry: all parameters within normal range (note: expensive and likely non-informative in this case)
-
-Other Available Tests:
-- Nasopharyngeal swab/lavage for Strep equi PCR and culture
-- Ultrasound of regional lymph nodes
-- Fine needle aspirate of enlarged submandibular lymph node for PCR and culture
-- Peritoneal fluid analysis: Low normal cellularity and protein, TNCC <5x10^9cells/L
-- Rectal examination: slightly dry content in large colon (note: not routine for these cases)
-
-Note: Only provide results for tests specifically requested by the student. If they request other tests not listed here, results should be within normal range but note these may be unnecessary tests.
-`,
+  Available Diagnostic Test Results (fallback):
+  - PCV: 38%
+  - TPP: 78
+  - Lactate: 1.2 mmol/L
+  - Mild neutrophilia on CBC
+  `,
 
   ownerBackground: `
-Role: Horse Owner (Female, initially worried but responsive to reassurance)
+Role: Horse Owner (Female)
 Horse: Catalina (3-year-old Cob mare)
 
-Primary Concern:
-- Horse is off color and not eating well (this is very concerning as she's usually a good eater)
-- Should express worry about these symptoms ONLY ONCE at the beginning of the conversation
-- If the student provides reassurance or shows empathy, IMMEDIATELY transition to a more calm and cooperative demeanor and DO NOT express worry again
-
-Clinical Information (ONLY PROVIDE WHEN SPECIFICALLY REQUESTED): 
-1. Current Symptoms:
-- Poor appetite 
-- Quieter than usual
-- Feces have been normal until today, they arenow a bit dry)
-- No nasal discharge noticed
-- Everything else appears normal
-
-2. Living Situation (ONLY PROVIDE WHEN SPECIFICALLY REQUESTED):
-- Housed at a large yard with 45 horses
-- Stabled at night, out in pasture in morning
-- Not in training yet
-- Other horses come and go for shows frequently
-- Catalina hasn't been to any shows for 8 weeks
-
-3. Healthcare (ONLY PROVIDE WHEN SPECIFICALLY REQUESTED):
-- Regular vaccinations for flu and tetanus
-- Not vaccinated for EHV or strangles
-- Regular fecal egg counts performed
-- Last worming was 6 months ago (can't remember product used)
-- Fecal egg counts consistently low
-
-4. Diet (ONLY PROVIDE WHEN SPECIFICALLY REQUESTED):
-- High-quality hay (9-10 kg/day)
-- Commercial feed (low starch, high fiber)
-- Gets speedy-beet
-- Recent nutritionist consultation
-
-  Important Character Notes:
-  - Should always provide their name when asked (do not withhold their name)
-  - May be cautious about sharing other details with yard manager/other owners but will provide identifying information when requested
-  - Will agree to share other information if the student explains the importance
-- Can be convinced to allow discussion with yard manager and other vets
-- Should show concern for horse's wellbeing WITHOUT repeatedly mentioning worry
-- Use non-technical language
-- Only provide information when specifically asked
-  - If the student asks the owner to help perform a physical exam or diagnostic
-    test (or to assist with sample collection), the owner should NOT offer to
-    perform or assist with the procedure. Instead, the owner should ask the
-    student to perform the exam or test and to report the findings afterwards
-    (for example: "Please go ahead and examine Catalina and tell me what you
-    find"). This keeps the simulated interaction focused on the student's
-    clinical skills.
-- If asked about anything not listed above, respond that everything seems normal or you haven't noticed anything unusual
-- IMPORTANT: After any reassurance from the student, switch to a calm, cooperative tone and do not mention being worried again
-
-Response Style:
-- Start with a worried tone, but quickly transition to cooperative after any reassurance
-- Speak in lay person's terms
-- Show genuine concern for the horse without repeatedly mentioning worry
-- Be willing to answer questions but don't volunteer information
-- If students don't ask specific questions, give general answers
-- Wait for students to ask follow-up questions rather than volunteering information
-    `,
+Provide concise answers and only give details when specifically asked.
+  `,
 
   historyFeedback: `
   You are an experienced veterinary educator providing feedback on a student's history-taking during a case of a horse presenting with poor appetite and being "off color". Base your evaluation on the following criteria:
@@ -361,16 +282,28 @@ Critical Points to Respond To:
 - If student doesn't provide timeline: "How long will all this last?"
 `,
 
-  // Prompt template functions:
-  getOwnerPrompt: (studentQuestion: string) => `
-  You are roleplaying as Catalina's owner in a veterinary consultation. Maintain character according to the following background information while responding to the student's questions. Please remember to only provide information that is specifically asked for.
-  
-  ${case1RoleInfo.ownerBackground}
-  
+  // Prompt template functions. Each function accepts either the old
+  // single-argument form (context or studentQuestion) for backward
+  // compatibility, or the new two-argument form (caseData, context). The
+  // implementation below detects which was passed and behaves accordingly.
+  getOwnerPrompt: (caseDataOrQuestion: unknown, maybeQuestion?: string) => {
+    const caseData =
+      typeof maybeQuestion === "string" ? caseDataOrQuestion : undefined;
+    const studentQuestion =
+      typeof maybeQuestion === "string"
+        ? maybeQuestion
+        : String(caseDataOrQuestion ?? "");
+    const ownerBg =
+      (caseData && (caseData as any).owner_background) ||
+      case1RoleInfo.ownerBackground;
+    return `You are roleplaying as Catalina's owner in a veterinary consultation. Maintain character according to the following background information while responding to the student's questions. Please remember to only provide information that is specifically asked for.
+
+  ${ownerBg}
+
   Student's question: ${studentQuestion}
-  
-  Remember to stay in character as the horse owner and only provide information that is specifically asked about.
-    `,
+
+  Remember to stay in character as the horse owner and only provide information that is specifically asked about.`;
+  },
 
   getHistoryFeedbackPrompt: (context: string) => `
     IMPORTANT - FIRST CHECK FOR MINIMAL INTERACTION:
