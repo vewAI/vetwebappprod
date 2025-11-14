@@ -269,7 +269,7 @@ export function ChatInterface({
     }
   };
 
-  const playTtsAndPauseStt = async (text: string, voice?: string) => {
+  const playTtsAndPauseStt = async (text: string, voice?: string, role?: string, displayRole?: string) => {
     if (!text) return;
     let stoppedForPlayback = false;
     try {
@@ -327,25 +327,6 @@ export function ChatInterface({
     reset,
     setInput
   );
-
-  // Helper: stop listening and (when voiceMode is active) send the current
-  // transcript automatically. Uses a short delay to allow STT final event to
-  // flush into `transcript` state when necessary.
-  const stopAndMaybeSend = () => {
-    try {
-      stop();
-    } catch (e) {
-      // ignore
-    }
-    // Allow a slightly longer pause here as well so that manual stops
-    // tolerate short thinking pauses before auto-sending.
-    setTimeout(() => {
-      try {
-        // Cancel any final-timer since we're forcing a send after manual stop
-        if (autoSendFinalTimerRef.current) {
-          window.clearTimeout(autoSendFinalTimerRef.current);
-          autoSendFinalTimerRef.current = null;
-        }
         const t = transcript?.trim();
         const toSend =
           baseInputRef.current && baseInputRef.current.trim().length > 0
@@ -426,7 +407,7 @@ export function ChatInterface({
 
           if (voiceFirst) {
             try {
-              await playTtsAndPauseStt(response.content, voiceForRole);
+              await playTtsAndPauseStt(response.content, voiceForRole, roleName, roleName);
               setMessages((prev) => [...prev, aiMessage]);
             } catch (streamErr) {
               console.warn(
@@ -435,7 +416,7 @@ export function ChatInterface({
               );
               setMessages((prev) => [...prev, aiMessage]);
               try {
-                await playTtsAndPauseStt(response.content, voiceForRole);
+                await playTtsAndPauseStt(response.content, voiceForRole, roleName, roleName);
               } catch (err) {
                 console.error("TTS failed:", err);
               }
@@ -444,7 +425,7 @@ export function ChatInterface({
             // Default behavior: show the text immediately, then play audio
             setMessages((prev) => [...prev, aiMessage]);
             try {
-              await playTtsAndPauseStt(response.content, voiceForRole);
+              await playTtsAndPauseStt(response.content, voiceForRole, roleName, roleName);
             } catch (err) {
               console.error("TTS failed:", err);
             }
@@ -930,7 +911,7 @@ export function ChatInterface({
           "Virtual Assistant",
           attemptId
         );
-        await playTtsAndPauseStt(introText, introVoice);
+        await playTtsAndPauseStt(introText, introVoice, roleName, roleName);
       } catch (e) {
         try {
           if (ttsAvailable && speakAsync) {

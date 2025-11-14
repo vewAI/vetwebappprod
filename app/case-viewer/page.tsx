@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 // ImageUploader intentionally not used here to allow manual image_url input in edit mode.
 import axios from "axios";
+import { fieldMeta } from "@/features/cases/fieldMeta";
 
 export default function CaseViewerPage() {
   const longTextFields = [
@@ -154,7 +155,7 @@ export default function CaseViewerPage() {
           Object.entries(formState).map(([key]) => (
             <div key={key}>
               <label className="block font-medium mb-1" htmlFor={key}>
-                {key.replace(/_/g, " ")}
+                {fieldMeta[key]?.label ?? key.replace(/_/g, " ")}
               </label>
               {key === "image_url" ? (
                 <div>
@@ -212,6 +213,7 @@ export default function CaseViewerPage() {
                     }
                     className="w-full bg-white border rounded px-2 py-1"
                     rows={3}
+                    placeholder={fieldMeta[key]?.placeholder}
                   />
                   <Button
                     type="button"
@@ -238,7 +240,13 @@ export default function CaseViewerPage() {
                     setFormState({ ...formState, [key]: e.target.value })
                   }
                   className="w-full bg-white border rounded px-2 py-1"
+                  placeholder={fieldMeta[key]?.placeholder}
                 />
+                {fieldMeta[key]?.help && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {fieldMeta[key]!.help}
+                  </div>
+                )}
               )}
             </div>
           ))}

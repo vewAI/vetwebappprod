@@ -4,7 +4,7 @@
 export async function speakRemote(
   text: string,
   voice?: string
-): Promise<HTMLAudioElement> {
+): Promise<{ audio: HTMLAudioElement; waitForEnd: Promise<HTMLAudioElement> }> {
   if (!text) throw new Error("text required");
 
   const res = await fetch("/api/tts", {
@@ -24,45 +24,55 @@ export async function speakRemote(
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
 
-  // Return a promise that resolves when playback ends (or rejects on error)
-  return new Promise<HTMLAudioElement>((resolve, reject) => {
-    const cleanup = () => {
-      try {
-        URL.revokeObjectURL(url);
-      } catch (e) {
-        // ignore
-      }
-      audio.removeEventListener("ended", onEnded);
-      audio.removeEventListener("error", onError);
-    };
-
-    const onEnded = () => {
-      cleanup();
-      resolve(audio);
-    };
-
-    const onError = (e: any) => {
-      cleanup();
-      reject(e ?? new Error("Audio playback error"));
-    };
-
-    audio.addEventListener("ended", onEnded);
-    audio.addEventListener("error", onError);
-
-    // Try to start playback. If autoplay is blocked, the caller may need to
-    // trigger play via a user gesture — handle that by resolving when play
-    // successfully starts and then waiting for ended.
-    const playPromise = audio.play();
-    if (playPromise && typeof playPromise.then === "function") {
-      playPromise.catch((e) => {
-        // Autoplay prevented. Let the caller handle a subsequent user gesture.
-        console.warn("Playback blocked by browser autoplay policy:", e);
-        // Still resolve with audio so caller can call audio.play() later.
-        // We do not resolve here; instead leave the promise to be resolved
-        // when the audio actually ends (onEnded) or reject on error.
-      });
-    }
+  let resolveEnd: (a: HTMLAudioElement) => void;
+  let rejectEnd: (e: any) => void;
+  const waitForEnd = new Promise<HTMLAudioElement>((resolve, reject) => {
+    resolveEnd = resolve;
+    rejectEnd = reject;
   });
+
+  const cleanup = () => {
+    try {
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      // ignore
+    }
+    audio.removeEventListener("ended", onEnded);
+    audio.removeEventListener("error", onError);
+  };
+
+  const onEnded = () => {
+    cleanup();
+    resolveEnd(audio);
+  };
+
+  const onError = (e: any) => {
+    cleanup();
+    try {
+      const detail =
+        (e && e.message) ||
+        (e && e.error && e.error.message) ||
+        (e && e.target && e.target.error && e.target.error.message) ||
+        String(e);
+      rejectEnd(new Error(`Audio playback error: ${detail}`));
+    } catch (err) {
+      rejectEnd(new Error("Audio playback error"));
+    }
+  };
+
+  audio.addEventListener("ended", onEnded);
+  audio.addEventListener("error", onError);
+
+  const playPromise = audio.play();
+  if (playPromise && typeof playPromise.then === "function") {
+    playPromise.catch((e) => {
+      console.warn("Playback blocked by browser autoplay policy:", e);
+      // Do not reject here; leave waitForEnd to resolve/reject via
+      // the audio element events so callers can still inspect the element.
+    });
+  }
+
+  return { audio, waitForEnd };
 }
 
 /**
@@ -75,7 +85,7 @@ export async function speakRemote(
 export async function speakRemoteStream(
   text: string,
   voice?: string
-): Promise<HTMLAudioElement> {
+): Promise<{ audio: HTMLAudioElement; waitForEnd: Promise<HTMLAudioElement> }> {
   if (!text) throw new Error("text required");
 
   // POST-init flow: request a short streaming URL from the server so we avoid
@@ -93,37 +103,62 @@ export async function speakRemoteStream(
   }
 
   const initData = await initResp.json().catch(() => ({} as any));
+
+  // Validate initData to avoid creating an invalid stream URL (which
+  // results in opaque media errors that are hard to debug).
+  const hasUrl = Boolean(initData?.url || initData?.streamUrl || initData?.id);
+  if (!hasUrl) {
+    const bodyText = JSON.stringify(initData);
+    throw new Error(`TTS init returned no URL or id: ${bodyText}`);
+  }
+
   const url = String(
     initData?.url ?? initData?.streamUrl ?? `/api/tts/stream?id=${initData?.id}`
   );
 
   const audio = new Audio(url);
 
-  return await new Promise<HTMLAudioElement>((resolve, reject) => {
-    const onEnded = () => {
-      cleanup();
-      resolve(audio);
-    };
-
-    const onError = (ev: any) => {
-      cleanup();
-      reject(ev ?? new Error("Streamed audio playback error"));
-    };
-
-    const cleanup = () => {
-      audio.removeEventListener("ended", onEnded);
-      audio.removeEventListener("error", onError);
-    };
-
-    audio.addEventListener("ended", onEnded);
-    audio.addEventListener("error", onError);
-
-    const playPromise = audio.play();
-    if (playPromise && typeof playPromise.then === "function") {
-      playPromise.catch((e) => {
-        // Autoplay may be blocked; caller can call audio.play() on user gesture.
-        console.warn("Playback blocked by autoplay policy (stream):", e);
-      });
-    }
+  let resolveEnd: (a: HTMLAudioElement) => void;
+  let rejectEnd: (e: any) => void;
+  const waitForEnd = new Promise<HTMLAudioElement>((resolve, reject) => {
+    resolveEnd = resolve;
+    rejectEnd = reject;
   });
+
+  const onEnded = () => {
+    cleanup();
+    resolveEnd(audio);
+  };
+
+  const onError = (ev: any) => {
+    cleanup();
+    try {
+      const detail =
+        (ev && ev.message) ||
+        (ev && ev.error && ev.error.message) ||
+        (ev && ev.target && ev.target.error && ev.target.error.message) ||
+        String(ev);
+      rejectEnd(new Error(`Streamed audio playback error: ${detail}`));
+    } catch (err) {
+      rejectEnd(new Error("Streamed audio playback error"));
+    }
+  };
+
+  const cleanup = () => {
+    audio.removeEventListener("ended", onEnded);
+    audio.removeEventListener("error", onError);
+  };
+
+  audio.addEventListener("ended", onEnded);
+  audio.addEventListener("error", onError);
+
+  const playPromise = audio.play();
+  if (playPromise && typeof playPromise.then === "function") {
+    playPromise.catch((e) => {
+      // Autoplay may be blocked; caller can call audio.play() on user gesture.
+      console.warn("Playback blocked by autoplay policy (stream):", e);
+    });
+  }
+
+  return { audio, waitForEnd };
 }

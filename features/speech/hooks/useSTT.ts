@@ -8,6 +8,7 @@ export function useSTT(onFinal?: (text: string) => void, debounceMs = 700) {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
+  const pausedByTtsRef = useRef(false);
 
   // Buffer for final chunks and debounce timer to merge nearby final events
   const pendingFinalRef = useRef<string>("");
@@ -37,6 +38,7 @@ export function useSTT(onFinal?: (text: string) => void, debounceMs = 700) {
       pendingFinalRef.current = "";
       timerRef.current = null;
       try {
+        console.debug("useSTT.scheduleOnFinal: sending final chunk=", toSend);
         const cb = onFinalRef.current;
         if (cb && toSend) cb(toSend);
       } catch (e) {
@@ -48,6 +50,7 @@ export function useSTT(onFinal?: (text: string) => void, debounceMs = 700) {
   // Handle speech recognition results
   const handleResult = useCallback(
     (text: string, isFinal: boolean) => {
+      console.debug("useSTT.handleResult: isFinal=", isFinal, "text=", text);
       if (isFinal) {
         setTranscript((prev) => (prev + " " + text).trim());
         setInterimTranscript("");
@@ -66,12 +69,14 @@ export function useSTT(onFinal?: (text: string) => void, debounceMs = 700) {
 
   // Start speech recognition
   const start = useCallback(() => {
+    console.debug("useSTT.start: starting recognition");
     setIsListening(true);
     startListening(handleResult);
   }, [handleResult]);
 
   // Stop speech recognition
   const stop = useCallback(() => {
+    console.debug("useSTT.stop: stopping recognition");
     stopListening();
     setIsListening(false);
     setInterimTranscript("");
@@ -103,6 +108,48 @@ export function useSTT(onFinal?: (text: string) => void, debounceMs = 700) {
       stopListening();
     };
   }, []);
+
+  // Listen for global TTS pause/resume events so the STT hook can be
+  // temporarily suspended while TTS playback occurs and resume afterwards.
+  useEffect(() => {
+    const onPause = () => {
+      try {
+        if (isListening) {
+          pausedByTtsRef.current = true;
+          stop();
+          console.debug("useSTT: paused due to TTS");
+        }
+      } catch (e) {
+        console.error("useSTT pause handler error", e);
+      }
+    };
+
+    const onResume = () => {
+      try {
+        if (pausedByTtsRef.current) {
+          pausedByTtsRef.current = false;
+          // small delay to allow audio hardware to settle
+          setTimeout(() => {
+            try {
+              start();
+              console.debug("useSTT: resumed after TTS");
+            } catch (e) {
+              console.error("useSTT resume start failed", e);
+            }
+          }, 80);
+        }
+      } catch (e) {
+        console.error("useSTT resume handler error", e);
+      }
+    };
+
+    window.addEventListener("vw:tts-pause-stt", onPause);
+    window.addEventListener("vw:tts-resume-stt", onResume);
+    return () => {
+      window.removeEventListener("vw:tts-pause-stt", onPause);
+      window.removeEventListener("vw:tts-resume-stt", onResume);
+    };
+  }, [isListening, start, stop]);
 
   return {
     start,

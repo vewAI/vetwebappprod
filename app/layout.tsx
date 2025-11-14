@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/features/auth/services/authService";
+import TtsOverlay from "@/features/speech/components/tts-overlay";
 import { ProtectedRoute } from "@/features/auth/components/protected-route";
 import { Navbar } from "@/features/navigation/components/navbar";
 
@@ -31,22 +32,20 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <AuthProvider>
-          {process.env.NEXT_PUBLIC_ENABLE_AUTH_PROTECTION === 'true' ? (
+          {process.env.NEXT_PUBLIC_ENABLE_AUTH_PROTECTION === "true" ? (
             <ProtectedRoute>
               <Navbar />
-              <main>
-                {children}
-              </main>
+              <main>{children}</main>
             </ProtectedRoute>
           ) : (
             <>
               <Navbar />
-              <main>
-                {children}
-              </main>
+              <main>{children}</main>
             </>
           )}
         </AuthProvider>
+        {/* Client-only TTS analyser + talking avatar overlay. Loaded dynamically */}
+        <TtsOverlay />
       </body>
     </html>
   );

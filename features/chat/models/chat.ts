@@ -7,4 +7,6 @@ export interface Message {
   displayRole?: string;
   // optional status for UI (pending, failed, sent)
   status?: "pending" | "failed" | "sent";
+  // optional hidden content (e.g., detailed owner info withheld until requested)
+  hiddenContent?: string;
 }

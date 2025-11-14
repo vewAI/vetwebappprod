@@ -6,6 +6,8 @@ import Link from "next/link";
 import {
   getAttemptById,
   deleteAttempt,
+  saveAttemptProgress,
+  completeAttempt,
 } from "@/features/attempts/services/attemptService";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -244,9 +246,50 @@ export default function ViewAttemptPage() {
                     initialMessages={messages}
                     currentStageIndex={attempt.lastStageIndex}
                     stages={stages}
-                    onProceedToNextStage={() => {
-                      /* minimal handler: reload page to reflect stage change */
-                      window.location.reload();
+                    onProceedToNextStage={async (
+                      msgs?: Message[],
+                      timeSpentSeconds = 0
+                    ) => {
+                      try {
+                        const currentIndex = attempt.lastStageIndex ?? 0;
+                        // If not at final stage, advance
+                        if (currentIndex < stages.length - 1) {
+                          const nextIndex = currentIndex + 1;
+                          // Save progress (updates last_stage_index and messages)
+                          await saveAttemptProgress(
+                            attempt.id,
+                            nextIndex,
+                            msgs ?? messages,
+                            timeSpentSeconds
+                          );
+                          // Refresh attempt and messages
+                          const {
+                            attempt: refreshedAttempt,
+                            messages: refreshedMessages,
+                          } = await getAttemptById(attempt.id);
+                          if (refreshedAttempt) setAttempt(refreshedAttempt);
+                          if (refreshedMessages) setMessages(refreshedMessages);
+                        } else {
+                          // Final stage -> mark completed
+                          await completeAttempt(
+                            attempt.id,
+                            "Examination completed!"
+                          );
+                          const {
+                            attempt: refreshedAttempt,
+                            messages: refreshedMessages,
+                          } = await getAttemptById(attempt.id);
+                          if (refreshedAttempt) setAttempt(refreshedAttempt);
+                          if (refreshedMessages) setMessages(refreshedMessages);
+                        }
+                      } catch (err) {
+                        console.error(
+                          "Error advancing stage for attempt:",
+                          err
+                        );
+                        // Fallback: reload to ensure UI sync
+                        window.location.reload();
+                      }
                     }}
                   />
                 );
