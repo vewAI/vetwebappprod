@@ -1,142 +1,163 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
 import { useTtsAnalyser } from "@/features/speech/hooks/useTtsAnalyser";
+import { useAvatarPresence } from "@/features/avatar/context/avatar-presence";
+import type { AvatarProfile } from "@/features/avatar/models/avatar";
+import {
+  fetchAvatarProfiles,
+  getFallbackAvatarProfiles,
+} from "@/features/avatar/services/avatarConfigService";
+import { normalizeRoleKey } from "@/features/avatar/utils/role-utils";
 
 export default function TalkingAvatar() {
   const { amplitude } = useTtsAnalyser();
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [speakerLabel, setSpeakerLabel] = useState<string | null>(null);
-  const [colorSeed, setColorSeed] = useState<number>(0);
+  const {
+    activeDisplayName,
+    activeCaseId,
+    activeRoleKey,
+    isSpeaking,
+    lastSpokenAt,
+  } = useAvatarPresence();
+  const [isVisible, setIsVisible] = useState(false);
+  const [colorSeed, setColorSeed] = useState(() => Date.now());
+  const [profiles, setProfiles] = useState<AvatarProfile[]>(() =>
+    getFallbackAvatarProfiles()
+  );
 
   useEffect(() => {
-    function onStart(e: Event) {
-      try {
-        const detail = (e as CustomEvent).detail as
-          | { audio?: HTMLAudioElement; role?: string; displayRole?: string }
-          | undefined;
-        const el = detail?.audio;
-        const role = detail?.displayRole || detail?.role || null;
-        setSpeakerLabel(role);
-        setColorSeed(hashCode(String(role ?? Date.now())) % 360);
-        setIsSpeaking(true);
-        if (!el) return;
-        const onStop = () => setIsSpeaking(false);
-        el.addEventListener("ended", onStop);
-        el.addEventListener("pause", onStop);
-        // Cleanup
-        const cleanup = () => {
-          try {
-            el.removeEventListener("ended", onStop);
-            el.removeEventListener("pause", onStop);
-          } catch (e) {}
-        };
-        // Ensure we clean up when a new TTS starts
-        window.addEventListener("vw:tts-end-temp-cleanup", cleanup, {
-          once: true,
-        });
-      } catch (e) {
-        console.error("TalkingAvatar onStart error", e);
-      }
+    let cancelled = false;
+
+    if (!activeCaseId) {
+      setProfiles(getFallbackAvatarProfiles());
+      return () => {
+        cancelled = true;
+      };
     }
 
-    window.addEventListener("vw:tts-start", onStart as EventListener);
+    (async () => {
+      try {
+        const list = await fetchAvatarProfiles(activeCaseId);
+        if (!cancelled && Array.isArray(list) && list.length > 0) {
+          setProfiles(list);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.warn("Falling back to default avatars", err);
+          setProfiles(getFallbackAvatarProfiles(activeCaseId));
+        }
+      }
+    })();
+
     return () => {
-      window.removeEventListener("vw:tts-start", onStart as EventListener);
+      cancelled = true;
     };
-  }, []);
+  }, [activeCaseId]);
 
-  // Map amplitude (0..1) to mouth open (0..1) with smoothing
-  const mouthOpen = Math.max(0, Math.min(1, amplitude));
+  useEffect(() => {
+    if (isSpeaking) {
+      setIsVisible(true);
+      setColorSeed(Date.now());
+      return;
+    }
 
-  // Simple deterministic color from seed
-  const avatarColor = `linear-gradient(180deg,hsl(${colorSeed} 80% 70%) 0%, hsl(${
-    (colorSeed + 30) % 360
-  } 60% 60%) 100%)`;
+    if (!lastSpokenAt) {
+      setIsVisible(false);
+      return;
+    }
 
-  const rotateDeg = speakerLabel ? (hashCode(speakerLabel) % 11) - 5 : 0;
+    const elapsed = Date.now() - lastSpokenAt;
+    const remaining = Math.max(120, 480 - elapsed);
+    const timeout = window.setTimeout(() => {
+      setIsVisible(false);
+    }, remaining);
+    return () => window.clearTimeout(timeout);
+  }, [isSpeaking, lastSpokenAt]);
+
+  const activeProfile = useMemo(() => {
+    if (!profiles.length) return undefined;
+    if (activeRoleKey) {
+      const normalized = normalizeRoleKey(activeRoleKey);
+      const match = profiles.find(
+        (profile) => normalizeRoleKey(profile.roleKey) === normalized
+      );
+      if (match) return match;
+    }
+    return profiles[0];
+  }, [profiles, activeRoleKey]);
+
+  const speakerLabel = useMemo(() => {
+    return (
+      activeDisplayName ?? activeProfile?.displayName ?? "Virtual Assistant"
+    );
+  }, [activeDisplayName, activeProfile?.displayName]);
+
+  const mouthOpen = useMemo(() => {
+    const clamped = Math.max(0, Math.min(1, amplitude * 1.4));
+    return 0.25 + clamped * 1.1;
+  }, [amplitude]);
+
+  const avatarColor = useMemo(() => {
+    if (activeProfile?.primaryColor && activeProfile?.secondaryColor) {
+      return `linear-gradient(180deg, ${activeProfile.primaryColor} 0%, ${activeProfile.secondaryColor} 100%)`;
+    }
+    if (activeProfile?.primaryColor) {
+      return activeProfile.primaryColor;
+    }
+    const hue = Math.abs(colorSeed % 360);
+    return `linear-gradient(180deg, hsl(${hue} 80% 70%) 0%, hsl(${
+      (hue + 30) % 360
+    } 65% 55%) 100%)`;
+  }, [activeProfile?.primaryColor, activeProfile?.secondaryColor, colorSeed]);
+
+  if (!isVisible) return null;
 
   return (
     <div
       aria-hidden
-      className={`fixed right-6 bottom-6 z-50 pointer-events-none`}
-      style={{ width: 120, height: 120 }}
+      className="pointer-events-none fixed bottom-6 right-6 z-50"
+      style={{ width: 128, height: 128 }}
     >
       <div
+        className="relative flex h-full w-full items-center justify-center rounded-full shadow-2xl"
         style={{
-          width: "100%",
-          height: "100%",
-          borderRadius: 9999,
           background: avatarColor,
-          boxShadow: "0 8px 28px rgba(0,0,0,0.18)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          transform: `rotate(${rotateDeg}deg)`,
-          transition: "transform 220ms ease",
+          transition: "transform 240ms ease",
+          transform: `rotate(${(colorSeed % 10) - 5}deg)`,
         }}
       >
-        <svg width="68" height="68" viewBox="0 0 68 68" aria-hidden>
-          <defs>
-            <linearGradient id="g" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#fff" stopOpacity="0.6" />
-              <stop offset="100%" stopColor="#000" stopOpacity="0.05" />
-            </linearGradient>
-          </defs>
-          {/* Simple head */}
-          <circle
-            cx="34"
-            cy="30"
-            r="24"
-            fill="#fff"
-            stroke="rgba(0,0,0,0.06)"
-          />
-          {/* Eyes */}
-          <circle cx="24" cy="26" r="3.6" fill="#111827" />
-          <circle cx="44" cy="26" r="3.6" fill="#111827" />
-          {/* Mouth: scaleY based on amplitude */}
-          <g transform={`translate(34,40)`}>
+        <svg width="78" height="78" viewBox="0 0 78 78" aria-hidden>
+          <circle cx="39" cy="34" r="26" fill="#fff" opacity={0.95} />
+          <circle cx="27" cy="30" r="4" fill="#0f172a" />
+          <circle cx="51" cy="30" r="4" fill="#0f172a" />
+          <g transform="translate(39 46)">
             <rect
-              x={-14}
-              y={-6}
-              width={28}
-              height={12}
-              rx={8}
-              fill="#111827"
+              x={-16}
+              y={-7}
+              width={32}
+              height={14}
+              rx={9}
+              fill="#0f172a"
               style={{
                 transformOrigin: "center",
-                transform: `scaleY(${0.25 + mouthOpen * 1.2})`,
+                transform: `scaleY(${mouthOpen.toFixed(2)})`,
                 transition: "transform 80ms linear",
               }}
             />
           </g>
         </svg>
-        {/* Label */}
         {speakerLabel && (
-          <div
-            style={{
-              position: "absolute",
-              bottom: -18,
-              fontSize: 11,
-              color: "#111827",
-              background: "rgba(255,255,255,0.9)",
-              padding: "2px 6px",
-              borderRadius: 6,
-            }}
-          >
+          <div className="absolute -bottom-7 rounded-lg bg-white/90 px-3 py-1 text-xs font-medium text-slate-700">
             {speakerLabel}
+            {activeProfile?.fallback && (
+              <span className="ml-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                beta
+              </span>
+            )}
           </div>
         )}
       </div>
     </div>
   );
-}
-
-function hashCode(s: string) {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) {
-    h = (h << 5) - h + s.charCodeAt(i);
-    h |= 0;
-  }
-  return Math.abs(h);
 }

@@ -1,20 +1,13 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { GeistSans, GeistMono } from "geist/font";
 import "./globals.css";
 import { AuthProvider } from "@/features/auth/services/authService";
-import TtsOverlay from "@/features/speech/components/tts-overlay";
 import { ProtectedRoute } from "@/features/auth/components/protected-route";
 import { Navbar } from "@/features/navigation/components/navbar";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
+const geistSans = GeistSans;
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const geistMono = GeistMono;
 
 export const metadata: Metadata = {
   title: "Create Next App",
@@ -44,8 +37,6 @@ export default function RootLayout({
             </>
           )}
         </AuthProvider>
-        {/* Client-only TTS analyser + talking avatar overlay. Loaded dynamically */}
-        <TtsOverlay />
       </body>
     </html>
   );

@@ -6,7 +6,8 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "seed:cases": "tsx scripts/seed-cases.ts"
   },
   "dependencies": {
     "@next/env": "^15.2.4",
@@ -17,12 +18,13 @@
     "axios": "^1.12.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "geist": "^1.5.1",
     "lucide-react": "^0.479.0",
     "next": "^15.2.4",
     "openai": "^4.91.1",
-    "redis": "^4.6.7",
     "react": "^19.2.0",
     "react-dom": "^19.0.0",
+    "redis": "^4.6.7",
     "tailwind-merge": "^3.0.2",
     "tailwindcss-animate": "^1.0.7"
   },
@@ -36,6 +38,7 @@
     "eslint": "^9",
     "eslint-config-next": "15.2.2",
     "tailwindcss": "^4",
+    "tsx": "^4.20.6",
     "typescript": "^5"
   }
 }

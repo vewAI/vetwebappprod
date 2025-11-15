@@ -1,14 +1,11 @@
 import { case1RoleInfo } from "../case1";
+import { dbRoleInfo } from "../db-role-info";
 import { caseConfig } from "@/features/config/case-config";
 import type { RoleInfo, RoleInfoPromptFn } from "../types";
 import { supabase } from "@/lib/supabase";
 
-type CaseId = "case-1";
-// add more cases here
-
-const caseRoleInfoMap: Record<CaseId, RoleInfo> = {
+const caseRoleInfoMap: Record<string, RoleInfo> = {
   "case-1": case1RoleInfo,
-  // "case-2": case2RoleInfo,
 };
 
 /**
@@ -27,10 +24,7 @@ export async function getRoleInfoPrompt(
   }
 
   // Get the role info object for this case (with type assertion)
-  const roleInfo = caseRoleInfoMap[caseId as CaseId];
-  if (!roleInfo) {
-    return null;
-  }
+  const roleInfo = caseRoleInfoMap[caseId] ?? dbRoleInfo;
 
   // Get the stages for this case from the config
   const caseStages = caseConfig[caseId];
@@ -86,11 +80,13 @@ export async function getRoleInfoPrompt(
 }
 
 // Function to check if the caseId is valid
-function isCaseIdValid(caseId: string): caseId is CaseId {
-  return Object.keys(caseRoleInfoMap).includes(caseId);
+function isCaseIdValid(caseId: string): boolean {
+  return Boolean(caseConfig[caseId]) || Boolean(caseRoleInfoMap[caseId]);
 }
 
 // Function to get all available case IDs
 export function getAvailableCaseIds(): string[] {
-  return Object.keys(caseRoleInfoMap);
+  const configuredIds = Object.keys(caseConfig ?? {});
+  const explicitIds = Object.keys(caseRoleInfoMap);
+  return Array.from(new Set([...configuredIds, ...explicitIds]));
 }

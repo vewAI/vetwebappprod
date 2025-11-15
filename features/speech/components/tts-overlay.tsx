@@ -1,8 +1,10 @@
 "use client";
 
 import React from "react";
-import { TtsAnalyserProvider } from "@/features/speech/hooks/useTtsAnalyser";
 import dynamic from "next/dynamic";
+
+import { TtsAnalyserProvider } from "@/features/speech/hooks/useTtsAnalyser";
+import { AvatarPresenceProvider } from "@/features/avatar/context/avatar-presence";
 
 const TalkingAvatar = dynamic(() => import("./talking-avatar"), {
   ssr: false,
@@ -10,8 +12,10 @@ const TalkingAvatar = dynamic(() => import("./talking-avatar"), {
 
 export default function TtsOverlay() {
   return (
-    <TtsAnalyserProvider>
-      <TalkingAvatar />
-    </TtsAnalyserProvider>
+    <AvatarPresenceProvider>
+      <TtsAnalyserProvider>
+        <TalkingAvatar />
+      </TtsAnalyserProvider>
+    </AvatarPresenceProvider>
   );
 }

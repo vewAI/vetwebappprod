@@ -4,21 +4,11 @@ type _ResultList = { [index: number]: unknown };
 
 // Use a loose typing for the browser SpeechRecognition instance
 let recognition: any = null;
-// Whether the service should attempt to automatically restart recognition
-// when the underlying recognition instance ends. This prevents uncontrolled
-// restarts when the app intentionally stops listening.
-let shouldAutoRestart = false;
-
-/**
- * Allow callers to enable/disable automatic restart behaviour.
- * When disabled, recognition.onend will not attempt to restart.
- */
-export function setAutoRestart(enabled: boolean) {
-  shouldAutoRestart = Boolean(enabled);
-  try {
-    console.debug("sttService.setAutoRestart:", shouldAutoRestart);
-  } catch (e) {}
-}
+// Whether we should auto-restart recognition when it ends (true while
+// the app intends continuous listening). Cleared by stopListening().
+let shouldRestart = false;
+// Small guard to avoid re-entrant start calls
+let starting = false;
 
 /**
  * Start speech recognition
@@ -26,8 +16,8 @@ export function setAutoRestart(enabled: boolean) {
  */
 export function startListening(
   callback: (text: string, isFinal: boolean) => void
-): void {
-  // Stop any ongoing recognition (ensure previous instance won't auto-restart)
+): boolean {
+  // Stop any ongoing recognition to ensure a fresh instance
   stopListening();
 
   // Check browser support
@@ -36,11 +26,13 @@ export function startListening(
     (window as any).webkitSpeechRecognition;
   if (!SpeechRecognition) {
     console.error("Speech recognition not supported");
-    return;
+    return false;
   }
 
   // Create and configure recognition
   recognition = new (SpeechRecognition as any)();
+  shouldRestart = true;
+
   if (recognition) {
     recognition.lang = "en-US";
     recognition.continuous = true;
@@ -49,13 +41,6 @@ export function startListening(
     // Handle results: aggregate interim and final transcripts
     recognition.onresult = (event: any) => {
       try {
-        // Debug: show number of result entries
-        console.debug(
-          "sttService.onresult: resultIndex=",
-          event.resultIndex,
-          "resultsLength=",
-          event.results?.length
-        );
         let interim = "";
         let finalT = "";
         // event.results is a SpeechRecognitionResultList
@@ -79,25 +64,23 @@ export function startListening(
       }
     };
 
-    // Some browsers stop recognition unexpectedly; restart only when
-    // we explicitly asked for auto-restart. This avoids restarting after
-    // the app has called stopListening().
+    // Some browsers stop recognition unexpectedly; restart only when we
+    // expect continuous listening (shouldRestart). Guard against calling
+    // start while a start is already in progress.
     recognition.onend = () => {
       try {
-        console.debug(
-          "sttService.onend: recognition ended; shouldAutoRestart=",
-          shouldAutoRestart
-        );
-        if (shouldAutoRestart && recognition) {
-          try {
-            recognition.start();
-            console.debug("sttService.onend: restarted recognition");
-          } catch (e) {
-            console.error("sttService.onend restart error", e);
-          }
+        if (!shouldRestart) return;
+        if (starting) return;
+        try {
+          starting = true;
+          recognition.start();
+        } catch (e) {
+          // ignore restart errors
+        } finally {
+          starting = false;
         }
       } catch (e) {
-        console.error("sttService.onend error", e);
+        // ignore
       }
     };
   }
@@ -105,25 +88,29 @@ export function startListening(
   // Start listening
   try {
     if (recognition) {
-      shouldAutoRestart = true;
-      recognition.start();
-      console.debug("sttService.startListening: recognition started");
+      if (!starting) {
+        starting = true;
+        recognition.start();
+        starting = false;
+      }
+      return true;
     }
   } catch (error) {
     console.error("Error starting speech recognition:", error);
   }
+  return false;
 }
 
 /**
  * Stop listening for speech input
  */
 export function stopListening(): void {
-  // Prevent the onend handler from restarting the instance, then stop it.
-  shouldAutoRestart = false;
+  // Prevent the onend handler from auto-restarting
+  shouldRestart = false;
+  starting = false;
   if (recognition) {
     try {
       recognition.stop();
-      console.debug("sttService.stopListening: recognition.stop() called");
     } catch (e) {
       // Ignore errors when stopping
     }

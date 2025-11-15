@@ -12,6 +12,7 @@ import { useTTS } from "@/features/speech/hooks/useTTS";
 import {
   speakRemote,
   speakRemoteStream,
+  stopActiveTtsPlayback,
 } from "@/features/speech/services/ttsService";
 import { ChatMessage } from "@/features/chat/components/chat-message";
 import { Notepad } from "@/features/chat/components/notepad";
@@ -23,6 +24,8 @@ import type { Stage } from "@/features/stages/types";
 import { getStageTransitionMessage } from "@/features/stages/services/stageService";
 import { chatService } from "@/features/chat/services/chatService";
 import { getOrAssignVoiceForRole } from "@/features/speech/services/voiceMap";
+import type { TtsEventDetail } from "@/features/speech/models/tts-events";
+import { normalizeRoleKey } from "@/features/avatar/utils/role-utils";
 
 type ChatInterfaceProps = {
   caseId: string;
@@ -47,6 +50,7 @@ export function ChatInterface({
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [connectionNotice, setConnectionNotice] = useState<string | null>(null);
   const [showNotepad, setShowNotepad] = useState(false);
   const [timeSpentSeconds, setTimeSpentSeconds] = useState(0);
   const [ttsEnabled, setTtsEnabled] = useState<boolean>(
@@ -242,6 +246,7 @@ export function ChatInterface({
   // When TTS plays we may want to temporarily stop STT so the assistant voice
   // is not transcribed. Use a ref to remember whether we should resume.
   const resumeListeningRef = useRef<boolean>(false);
+  const pendingFlushIntervalRef = useRef<number | null>(null);
 
   // Helper to play TTS while ensuring STT is paused during playback so the
   // assistant's voice isn't captured. Resumes listening if it was active
@@ -269,8 +274,15 @@ export function ChatInterface({
     }
   };
 
-  const playTtsAndPauseStt = async (text: string, voice?: string, role?: string, displayRole?: string) => {
+  type TtsPlaybackMeta = Omit<TtsEventDetail, "audio"> | undefined;
+
+  const playTtsAndPauseStt = async (
+    text: string,
+    voice?: string,
+    meta?: TtsPlaybackMeta
+  ) => {
     if (!text) return;
+    stopActiveTtsPlayback();
     let stoppedForPlayback = false;
     try {
       if (isListening) {
@@ -290,10 +302,10 @@ export function ChatInterface({
       // content shown in the chat.
       const ttsText = sanitizeForTts(text);
       try {
-        await speakRemoteStream(ttsText, voice);
+        await speakRemoteStream(ttsText, voice, meta);
       } catch (streamErr) {
         try {
-          await speakRemote(ttsText, voice);
+          await speakRemote(ttsText, voice, meta);
         } catch (bufErr) {
           try {
             if (ttsAvailable && speakAsync) {
@@ -327,6 +339,25 @@ export function ChatInterface({
     reset,
     setInput
   );
+
+  // Helper: stop listening and (when voiceMode is active) send the current
+  // transcript automatically. Uses a short delay to allow STT final event to
+  // flush into `transcript` state when necessary.
+  const stopAndMaybeSend = () => {
+    try {
+      stop();
+    } catch (e) {
+      // ignore
+    }
+    // Allow a slightly longer pause here as well so that manual stops
+    // tolerate short thinking pauses before auto-sending.
+    setTimeout(() => {
+      try {
+        // Cancel any final-timer since we're forcing a send after manual stop
+        if (autoSendFinalTimerRef.current) {
+          window.clearTimeout(autoSendFinalTimerRef.current);
+          autoSendFinalTimerRef.current = null;
+        }
         const t = transcript?.trim();
         const toSend =
           baseInputRef.current && baseInputRef.current.trim().length > 0
@@ -371,7 +402,8 @@ export function ChatInterface({
         currentStageIndex,
         caseId
       );
-      const roleName = response.displayRole ?? stages[currentStageIndex].role;
+      const stage = stages[currentStageIndex] ?? stages[0];
+      const roleName = response.displayRole ?? stage?.role ?? "assistant";
       const aiMessage = chatService.createAssistantMessage(
         response.content,
         currentStageIndex,
@@ -405,9 +437,24 @@ export function ChatInterface({
             attemptId
           );
 
+          const normalizedRoleKey =
+            normalizeRoleKey(roleName ?? stage?.role ?? "assistant") ??
+            undefined;
+          const ttsMeta = {
+            roleKey: normalizedRoleKey,
+            displayRole: roleName ?? stage?.role,
+            role: stage?.role ?? roleName,
+            caseId,
+            messageId: aiMessage.id,
+            metadata: {
+              stageId: stage?.id,
+              attemptId: attemptId ?? undefined,
+            },
+          } satisfies Omit<TtsEventDetail, "audio">;
+
           if (voiceFirst) {
             try {
-              await playTtsAndPauseStt(response.content, voiceForRole, roleName, roleName);
+              await playTtsAndPauseStt(response.content, voiceForRole, ttsMeta);
               setMessages((prev) => [...prev, aiMessage]);
             } catch (streamErr) {
               console.warn(
@@ -416,7 +463,11 @@ export function ChatInterface({
               );
               setMessages((prev) => [...prev, aiMessage]);
               try {
-                await playTtsAndPauseStt(response.content, voiceForRole, roleName, roleName);
+                await playTtsAndPauseStt(
+                  response.content,
+                  voiceForRole,
+                  ttsMeta
+                );
               } catch (err) {
                 console.error("TTS failed:", err);
               }
@@ -425,7 +476,7 @@ export function ChatInterface({
             // Default behavior: show the text immediately, then play audio
             setMessages((prev) => [...prev, aiMessage]);
             try {
-              await playTtsAndPauseStt(response.content, voiceForRole, roleName, roleName);
+              await playTtsAndPauseStt(response.content, voiceForRole, ttsMeta);
             } catch (err) {
               console.error("TTS failed:", err);
             }
@@ -466,14 +517,33 @@ export function ChatInterface({
       }
     } catch (error) {
       console.error("Error getting chat response (auto-send):", error);
-      // Mark the user message as failed so the UI can offer retry
+      // If the error looks like network/unavailable, enqueue for background retry
+      const maybeNetwork =
+        (error &&
+          (error as any).message &&
+          String((error as any).message)
+            .toLowerCase()
+            .includes("network")) ||
+        (typeof navigator !== "undefined" && !navigator.onLine) ||
+        (error &&
+          (error as any).response &&
+          (error as any).response.status >= 500);
+
       if (userMessage) {
+        // mark failed locally
         setMessages((prev) =>
           prev.map((m) =>
             m.id === userMessage!.id ? { ...m, status: "failed" } : m
           )
         );
+        if (maybeNetwork) {
+          enqueuePendingMessage(userMessage, currentStageIndex, caseId);
+          setConnectionNotice(
+            "Connection interrupted — your message will be retried automatically."
+          );
+        }
       }
+
       const errorMessage = chatService.createErrorMessage(
         error,
         currentStageIndex
@@ -509,6 +579,152 @@ export function ChatInterface({
     return sendUserMessage(text);
   };
 
+  // --- Pending message queue (localStorage-backed) -----------------
+  const PENDING_KEY = "vw_pending_messages";
+
+  const readPending = (): Array<any> => {
+    try {
+      const raw = localStorage.getItem(PENDING_KEY);
+      if (!raw) return [];
+      return JSON.parse(raw) as Array<any>;
+    } catch (e) {
+      console.warn("Failed to read pending messages from storage:", e);
+      return [];
+    }
+  };
+
+  const writePending = (list: Array<any>) => {
+    try {
+      localStorage.setItem(PENDING_KEY, JSON.stringify(list));
+    } catch (e) {
+      console.warn("Failed to write pending messages to storage:", e);
+    }
+  };
+
+  const enqueuePendingMessage = (
+    msg: Message,
+    stageIdx: number,
+    caseIdLocal: string
+  ) => {
+    try {
+      const list = readPending();
+      // Keep only essential fields to minimize storage
+      const entry = {
+        id: msg.id,
+        content: msg.content,
+        stageIndex: stageIdx,
+        caseId: caseIdLocal,
+        timestamp: msg.timestamp,
+      };
+      list.push(entry);
+      writePending(list);
+      // ensure flush is scheduled
+      schedulePendingFlush();
+    } catch (e) {
+      console.warn("Failed to enqueue pending message:", e);
+    }
+  };
+
+  const dequeuePendingById = (id: string) => {
+    try {
+      const list = readPending().filter((p) => p.id !== id);
+      writePending(list);
+    } catch (e) {
+      console.warn("Failed to dequeue pending message:", e);
+    }
+  };
+
+  const flushPendingQueue = async () => {
+    const list = readPending();
+    if (!list || list.length === 0) return;
+    if (typeof navigator !== "undefined" && !navigator.onLine) return;
+
+    for (const p of list.slice()) {
+      try {
+        // construct a minimal messages array with the user's pending content
+        const apiMsg = [{ role: "user", content: p.content }];
+        // call same endpoint via chatService to preserve behavior
+        const response = await chatService.sendMessage(
+          [
+            // create a Message-like object so sendMessage accepts it
+            {
+              id: p.id,
+              role: "user",
+              content: p.content,
+              timestamp: p.timestamp,
+              stageIndex: p.stageIndex,
+              displayRole: "You",
+            },
+          ] as Message[],
+          p.stageIndex,
+          p.caseId
+        );
+
+        // Append assistant reply into chat UI
+        const roleName = response.displayRole ?? stages[currentStageIndex].role;
+        const aiMessage = chatService.createAssistantMessage(
+          response.content,
+          p.stageIndex,
+          String(roleName ?? "assistant")
+        );
+        setMessages((prev) => [...prev, aiMessage]);
+        // remove from pending store
+        dequeuePendingById(p.id);
+        // optionally clear any connection notice when successful
+        setConnectionNotice(null);
+      } catch (err) {
+        // keep it in queue and try later; record notice
+        console.warn("Pending flush failed for message", p.id, err);
+        setConnectionNotice(
+          "Connection interrupted — will keep retrying in the background."
+        );
+      }
+    }
+  };
+
+  const schedulePendingFlush = () => {
+    // Start periodic flush attempts if not already running
+    if (pendingFlushIntervalRef.current) return;
+    // Try every 10s
+    const id = window.setInterval(() => {
+      void flushPendingQueue();
+    }, 10000);
+    pendingFlushIntervalRef.current = id as unknown as number;
+  };
+
+  const stopPendingFlush = () => {
+    if (pendingFlushIntervalRef.current) {
+      window.clearInterval(pendingFlushIntervalRef.current);
+      pendingFlushIntervalRef.current = null;
+    }
+  };
+
+  // Keep an effect to flush when connection returns and to wire online/offline UI
+  useEffect(() => {
+    const onOnline = () => {
+      setConnectionNotice(null);
+      void flushPendingQueue();
+      schedulePendingFlush();
+    };
+    const onOffline = () => {
+      setConnectionNotice("Connection lost — working offline.");
+      schedulePendingFlush();
+    };
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+
+    // flush immediately on mount in case there are pending items
+    void flushPendingQueue();
+    schedulePendingFlush();
+
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+      stopPendingFlush();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Track whether the user explicitly toggled voice off for this attempt.
   // Declared here before any handlers that reference it (toggleVoiceMode,
   // initialization effects) so it's available when used.
@@ -533,6 +749,7 @@ export function ChatInterface({
         // disable voice mode -> stop listening and auto-send transcript
         // Also disable TTS so the related UI toggles off automatically.
         stopAndMaybeSend();
+        stopActiveTtsPlayback();
         try {
           // Cancel any playing speech and turn off TTS toggle
           cancel();
@@ -748,8 +965,8 @@ export function ChatInterface({
   useEffect(() => {
     if (!attemptId) return;
 
-    const intervalMs = 30_000; // auto-save every 30s
-    const throttleMs = 15_000; // don't save more often than every 15s
+    const intervalMs = 30000; // auto-save every 30s
+    const throttleMs = 15000; // don't save more often than every 15s
 
     let mounted = true;
 
@@ -911,7 +1128,17 @@ export function ChatInterface({
           "Virtual Assistant",
           attemptId
         );
-        await playTtsAndPauseStt(introText, introVoice, roleName, roleName);
+        const introMeta = {
+          roleKey: normalizeRoleKey(roleName) ?? undefined,
+          displayRole: roleName,
+          role: roleName,
+          caseId,
+          metadata: {
+            stageId: stages[targetIndex]?.id,
+            stageIntro: true,
+          },
+        } satisfies Omit<TtsEventDetail, "audio">;
+        await playTtsAndPauseStt(introText, introVoice, introMeta);
       } catch (e) {
         try {
           if (ttsAvailable && speakAsync) {
@@ -944,6 +1171,12 @@ export function ChatInterface({
 
   return (
     <div className="relative flex h-full flex-col">
+      {/* Connection notice banner */}
+      {connectionNotice && (
+        <div className="w-full bg-yellow-200 text-yellow-900 px-4 py-2 text-sm text-center z-40">
+          {connectionNotice}
+        </div>
+      )}
       {/* Intro toast (central, non-blocking) */}
       {introMounted && (
         <div className="fixed inset-0 flex items-start justify-center pt-24 pointer-events-none z-50">
@@ -1051,7 +1284,10 @@ export function ChatInterface({
                   // When disabling, cancel any in-progress speech
                   setTtsEnabled((v) => {
                     const next = !v;
-                    if (!next) cancel();
+                    if (!next) {
+                      stopActiveTtsPlayback();
+                      cancel();
+                    }
                     return next;
                   });
                 }}

@@ -1,12 +1,21 @@
 "use client";
 
-import React, {
+import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
+
+import type { TtsEventDetail } from "@/features/speech/models/tts-events";
+
+declare global {
+  interface Window {
+    webkitAudioContext?: typeof AudioContext;
+  }
+}
 
 type TtsAnalyserContextValue = {
   amplitude: number;
@@ -16,148 +25,109 @@ const TtsAnalyserContext = createContext<TtsAnalyserContextValue>({
   amplitude: 0,
 });
 
-export const TtsAnalyserProvider: React.FC<React.PropsWithChildren<{}>> = ({
+type TtsStartDetail = Pick<TtsEventDetail, "audio">;
+
+export const TtsAnalyserProvider: React.FC<React.PropsWithChildren> = ({
   children,
 }) => {
   const [amplitude, setAmplitude] = useState(0);
-
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const rafRef = useRef<number | null>(null);
 
   useEffect(() => {
-    function onStart(e: Event) {
+    const handleStart = (event: Event) => {
+      const detail = (event as CustomEvent<TtsStartDetail>).detail;
+      const audioEl = detail?.audio;
+      if (!audioEl) return;
+
       try {
-        const detail = (e as CustomEvent).detail as
-          | { audio?: HTMLAudioElement }
-          | undefined;
-        const el = detail?.audio;
-        if (!el) return;
-
-        // Clean up old
-        if (rafRef.current) {
-          cancelAnimationFrame(rafRef.current);
-          rafRef.current = null;
-        }
-        try {
-          if (sourceRef.current) {
-            sourceRef.current.disconnect();
-            sourceRef.current = null;
-          }
-        } catch (e) {}
-        try {
-          if (analyserRef.current) {
-            analyserRef.current.disconnect();
-            analyserRef.current = null;
-          }
-        } catch (e) {}
-
-        const AudioCtx =
-          window.AudioContext || (window as any).webkitAudioContext;
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
         if (!AudioCtx) return;
-        const ctx = new AudioCtx();
-        audioCtxRef.current = ctx;
-        const source = ctx.createMediaElementSource(el);
-        sourceRef.current = source;
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 2048;
-        analyserRef.current = analyser;
-        source.connect(analyser);
-        analyser.connect(ctx.destination);
+        if (!audioCtxRef.current) {
+          audioCtxRef.current = new AudioCtx();
+        }
+        const audioCtx = audioCtxRef.current;
+        if (!audioCtx) return;
 
-        const data = new Float32Array(analyser.fftSize);
+        if (sourceRef.current) {
+          sourceRef.current.disconnect();
+          sourceRef.current = null;
+        }
+        if (analyserRef.current) {
+          analyserRef.current.disconnect();
+          analyserRef.current = null;
+        }
+
+        const sourceNode = audioCtx.createMediaElementSource(audioEl);
+        const analyserNode = audioCtx.createAnalyser();
+        analyserNode.fftSize = 2048;
+        sourceNode.connect(analyserNode);
+        analyserNode.connect(audioCtx.destination);
+
+        sourceRef.current = sourceNode;
+        analyserRef.current = analyserNode;
+
+        const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
 
         const tick = () => {
-          try {
-            analyser.getFloatTimeDomainData(data);
-            let sum = 0;
-            for (let i = 0; i < data.length; i++) {
-              const v = data[i];
-              sum += v * v;
-            }
-            const rms = Math.sqrt(sum / data.length);
-            // Normalize RMS to 0..1 (typical human speech ~0.02-0.2)
-            const norm = Math.min(1, rms * 10);
-            setAmplitude((prev) => {
-              // Smooth with simple lerp
-              return prev * 0.85 + norm * 0.15;
-            });
-          } catch (e) {
-            // ignore
-          }
+          if (!analyserRef.current) return;
+          analyserRef.current.getByteFrequencyData(dataArray);
+          const avg =
+            dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
+          setAmplitude(avg / 255);
           rafRef.current = requestAnimationFrame(tick);
         };
 
-        // Start animation loop
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
         rafRef.current = requestAnimationFrame(tick);
 
-        // Stop when audio ends
-        const onEnded = () => {
-          setTimeout(() => setAmplitude(0), 50);
+        const cleanup = () => {
           if (rafRef.current) {
             cancelAnimationFrame(rafRef.current);
             rafRef.current = null;
           }
-          try {
-            if (sourceRef.current) {
-              sourceRef.current.disconnect();
-              sourceRef.current = null;
-            }
-            if (analyserRef.current) {
-              analyserRef.current.disconnect();
-              analyserRef.current = null;
-            }
-          } catch (e) {}
-          try {
-            if (audioCtxRef.current) {
-              audioCtxRef.current.close();
-            }
-          } catch (e) {}
-          audioCtxRef.current = null;
+          setAmplitude(0);
         };
 
-        el.addEventListener("ended", onEnded);
-        el.addEventListener("pause", onEnded);
-        // In case the element is already playing, ensure tick runs
-
-        // Clean up listeners when audio element is removed or new starts
-        const cleanupElement = () => {
-          try {
-            el.removeEventListener("ended", onEnded);
-            el.removeEventListener("pause", onEnded);
-          } catch (e) {}
-        };
-
-        // When the audio element is garbage collected / replaced we still
-        // rely on the ended/pause handlers to stop the analyser.
-        // Return nothing — global cleanup handled in outer cleanup.
-      } catch (e) {
-        // ignore
+        audioEl.addEventListener("ended", cleanup, { once: true });
+        audioEl.addEventListener("pause", cleanup, { once: true });
+      } catch (error) {
+        console.warn("Failed to initialise TTS analyser", error);
       }
-    }
+    };
 
-    window.addEventListener("vw:tts-start", onStart as EventListener);
+    window.addEventListener("vw:tts-start", handleStart as EventListener);
 
     return () => {
-      window.removeEventListener("vw:tts-start", onStart as EventListener);
+      window.removeEventListener("vw:tts-start", handleStart as EventListener);
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
       }
       try {
-        if (sourceRef.current) sourceRef.current.disconnect();
-      } catch (e) {}
-      try {
-        if (analyserRef.current) analyserRef.current.disconnect();
-      } catch (e) {}
-      try {
-        if (audioCtxRef.current) audioCtxRef.current.close();
-      } catch (e) {}
+        sourceRef.current?.disconnect();
+        analyserRef.current?.disconnect();
+      } catch (error) {
+        console.warn("TTS analyser disconnect error", error);
+      }
+      sourceRef.current = null;
+      analyserRef.current = null;
+      if (audioCtxRef.current) {
+        audioCtxRef.current.close().catch(() => undefined);
+        audioCtxRef.current = null;
+      }
     };
   }, []);
 
+  const value = useMemo<TtsAnalyserContextValue>(
+    () => ({ amplitude }),
+    [amplitude]
+  );
+
   return (
-    <TtsAnalyserContext.Provider value={{ amplitude }}>
+    <TtsAnalyserContext.Provider value={value}>
       {children}
     </TtsAnalyserContext.Provider>
   );

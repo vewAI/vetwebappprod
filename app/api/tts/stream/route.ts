@@ -17,8 +17,8 @@ export async function GET(req: Request) {
     let voice = String(url.searchParams.get("voice") ?? "alloy");
 
     if (id) {
-      // consume stored payload (single-use)
-      const payload = (await takeAsync(id)) ?? (await peekAsync(id));
+      // Peek so fallback fetches can reuse the payload until a successful stream
+      const payload = await peekAsync(id);
       if (!payload) {
         return NextResponse.json(
           { error: "invalid or expired id" },
@@ -66,6 +66,11 @@ export async function GET(req: Request) {
 
     // Forward the streaming body. Use the upstream content-type when available.
     const contentType = providerRes.headers.get("content-type") ?? "audio/mpeg";
+
+    if (id) {
+      // Clean up the stored payload now that the stream is ready
+      void takeAsync(id);
+    }
 
     // Return a streaming Response by directly returning the provider's body.
     return new Response(providerRes.body, {

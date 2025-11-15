@@ -1,10 +1,53 @@
+import type { TtsEventDetail } from "@/features/speech/models/tts-events";
+import {
+  dispatchTtsEnd,
+  dispatchTtsStart,
+} from "@/features/speech/models/tts-events";
+
+type TtsMeta = Omit<TtsEventDetail, "audio"> | undefined;
+
+type ActivePlaybackHandle = {
+  audio: HTMLAudioElement;
+  stop: () => void;
+};
+
+let activePlayback: ActivePlaybackHandle | null = null;
+
+function registerActivePlayback(handle: ActivePlaybackHandle) {
+  if (activePlayback && activePlayback.audio !== handle.audio) {
+    try {
+      activePlayback.stop();
+    } catch (error) {
+      console.warn("Failed to stop previous TTS playback", error);
+    }
+  }
+  activePlayback = handle;
+}
+
+function clearActivePlayback(audio: HTMLAudioElement) {
+  if (activePlayback && activePlayback.audio === audio) {
+    activePlayback = null;
+  }
+}
+
+export function stopActiveTtsPlayback() {
+  if (!activePlayback) return;
+  const handle = activePlayback;
+  activePlayback = null;
+  try {
+    handle.stop();
+  } catch (error) {
+    console.warn("Failed to stop active TTS playback", error);
+  }
+}
 /**
  * Client helper to call the server TTS route and play the returned audio.
  */
 export async function speakRemote(
   text: string,
-  voice?: string
-): Promise<{ audio: HTMLAudioElement; waitForEnd: Promise<HTMLAudioElement> }> {
+  voice?: string,
+  meta?: TtsMeta
+): Promise<HTMLAudioElement> {
   if (!text) throw new Error("text required");
 
   const res = await fetch("/api/tts", {
@@ -24,55 +67,71 @@ export async function speakRemote(
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
 
-  let resolveEnd: (a: HTMLAudioElement) => void;
-  let rejectEnd: (e: any) => void;
-  const waitForEnd = new Promise<HTMLAudioElement>((resolve, reject) => {
-    resolveEnd = resolve;
-    rejectEnd = reject;
-  });
+  // Return a promise that resolves when playback ends (or rejects on error)
+  return new Promise<HTMLAudioElement>((resolve, reject) => {
+    const endLifecycle = trackTtsLifecycle(audio, meta);
 
-  const cleanup = () => {
-    try {
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      // ignore
+    function cleanup() {
+      clearActivePlayback(audio);
+      try {
+        audio.pause();
+        audio.currentTime = 0;
+      } catch (e) {
+        /* ignore */
+      }
+      try {
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        // ignore
+      }
+      audio.removeEventListener("ended", onEnded);
+      audio.removeEventListener("error", onError);
+      endLifecycle();
     }
-    audio.removeEventListener("ended", onEnded);
-    audio.removeEventListener("error", onError);
-  };
 
-  const onEnded = () => {
-    cleanup();
-    resolveEnd(audio);
-  };
-
-  const onError = (e: any) => {
-    cleanup();
-    try {
-      const detail =
-        (e && e.message) ||
-        (e && e.error && e.error.message) ||
-        (e && e.target && e.target.error && e.target.error.message) ||
-        String(e);
-      rejectEnd(new Error(`Audio playback error: ${detail}`));
-    } catch (err) {
-      rejectEnd(new Error("Audio playback error"));
+    function onEnded() {
+      cleanup();
+      resolve(audio);
     }
-  };
 
-  audio.addEventListener("ended", onEnded);
-  audio.addEventListener("error", onError);
+    function onError(e: any) {
+      cleanup();
+      // Normalize media errors/events into Error with useful detail
+      try {
+        const detail =
+          (e && e.message) ||
+          (e && e.error && e.error.message) ||
+          (e && e.target && e.target.error && e.target.error.message) ||
+          String(e);
+        reject(new Error(`Audio playback error: ${detail}`));
+      } catch (err) {
+        reject(new Error("Audio playback error"));
+      }
+    }
 
-  const playPromise = audio.play();
-  if (playPromise && typeof playPromise.then === "function") {
-    playPromise.catch((e) => {
-      console.warn("Playback blocked by browser autoplay policy:", e);
-      // Do not reject here; leave waitForEnd to resolve/reject via
-      // the audio element events so callers can still inspect the element.
+    audio.addEventListener("ended", onEnded);
+    audio.addEventListener("error", onError as EventListener);
+
+    registerActivePlayback({
+      audio,
+      stop: () => {
+        cleanup();
+        resolve(audio);
+      },
     });
-  }
 
-  return { audio, waitForEnd };
+    // Try to start playback. If autoplay is blocked, the caller may need to
+    // trigger play via a user gesture — handle that by warning and allow the
+    // caller to attempt playback later via the returned Audio element.
+    const playPromise = audio.play();
+    if (playPromise && typeof playPromise.then === "function") {
+      playPromise.catch((e) => {
+        console.warn("Playback blocked by browser autoplay policy:", e);
+        // Do not reject here; leave the promise to resolve/reject via
+        // the audio element events so callers can still inspect the element.
+      });
+    }
+  });
 }
 
 /**
@@ -84,8 +143,9 @@ export async function speakRemote(
  */
 export async function speakRemoteStream(
   text: string,
-  voice?: string
-): Promise<{ audio: HTMLAudioElement; waitForEnd: Promise<HTMLAudioElement> }> {
+  voice?: string,
+  meta?: TtsMeta
+): Promise<HTMLAudioElement> {
   if (!text) throw new Error("text required");
 
   // POST-init flow: request a short streaming URL from the server so we avoid
@@ -118,47 +178,161 @@ export async function speakRemoteStream(
 
   const audio = new Audio(url);
 
-  let resolveEnd: (a: HTMLAudioElement) => void;
-  let rejectEnd: (e: any) => void;
-  const waitForEnd = new Promise<HTMLAudioElement>((resolve, reject) => {
-    resolveEnd = resolve;
-    rejectEnd = reject;
-  });
+  return await new Promise<HTMLAudioElement>((resolve, reject) => {
+    const endLifecycle = trackTtsLifecycle(audio, meta);
 
-  const onEnded = () => {
-    cleanup();
-    resolveEnd(audio);
-  };
-
-  const onError = (ev: any) => {
-    cleanup();
-    try {
-      const detail =
-        (ev && ev.message) ||
-        (ev && ev.error && ev.error.message) ||
-        (ev && ev.target && ev.target.error && ev.target.error.message) ||
-        String(ev);
-      rejectEnd(new Error(`Streamed audio playback error: ${detail}`));
-    } catch (err) {
-      rejectEnd(new Error("Streamed audio playback error"));
+    function cleanup() {
+      clearActivePlayback(audio);
+      try {
+        audio.pause();
+        audio.currentTime = 0;
+      } catch (e) {
+        /* ignore */
+      }
+      audio.removeEventListener("ended", onEnded);
+      audio.removeEventListener("error", onError);
+      endLifecycle();
     }
-  };
 
-  const cleanup = () => {
-    audio.removeEventListener("ended", onEnded);
-    audio.removeEventListener("error", onError);
-  };
+    function onEnded() {
+      cleanup();
+      resolve(audio);
+    }
 
-  audio.addEventListener("ended", onEnded);
-  audio.addEventListener("error", onError);
+    function onError(ev: any) {
+      cleanup();
+      void attemptBufferedFallback(ev);
+    }
 
-  const playPromise = audio.play();
-  if (playPromise && typeof playPromise.then === "function") {
-    playPromise.catch((e) => {
-      // Autoplay may be blocked; caller can call audio.play() on user gesture.
-      console.warn("Playback blocked by autoplay policy (stream):", e);
+    async function attemptBufferedFallback(ev: any) {
+      try {
+        console.warn(
+          "Streamed audio failed, attempting buffered fallback:",
+          ev
+        );
+        const resp = await fetch(url, { cache: "no-store" });
+        if (!resp.ok) {
+          const txt = await resp.text().catch(() => "");
+          throw new Error(`Fallback fetch failed: ${resp.status} ${txt}`);
+        }
+        const buf = await resp.arrayBuffer();
+        const contentType = resp.headers.get("content-type") ?? "audio/mpeg";
+        const blob = new Blob([buf], { type: contentType });
+        const objUrl = URL.createObjectURL(blob);
+
+        const fallbackAudio = new Audio(objUrl);
+        const fallbackMeta = meta
+          ? {
+              ...meta,
+              metadata: {
+                ...(meta.metadata ?? {}),
+                playbackVariant: "buffered-fallback",
+              },
+            }
+          : { metadata: { playbackVariant: "buffered-fallback" } };
+        const endFallbackLifecycle = trackTtsLifecycle(
+          fallbackAudio,
+          fallbackMeta
+        );
+
+        function cleanupFallback() {
+          clearActivePlayback(fallbackAudio);
+          try {
+            fallbackAudio.pause();
+            fallbackAudio.currentTime = 0;
+          } catch (e) {
+            /* ignore */
+          }
+          fallbackAudio.removeEventListener("ended", onFallbackEnd);
+          fallbackAudio.removeEventListener("error", onFallbackError);
+          endFallbackLifecycle();
+          try {
+            URL.revokeObjectURL(objUrl);
+          } catch (e) {
+            /* ignore */
+          }
+        }
+
+        function onFallbackEnd() {
+          cleanupFallback();
+          resolve(fallbackAudio);
+        }
+
+        function onFallbackError(e: any) {
+          cleanupFallback();
+          const detail =
+            (e && e.message) ||
+            (e && e.error && e.error.message) ||
+            (e && e.target && e.target.error && e.target.error.message) ||
+            String(e);
+          reject(new Error(`Streamed audio fallback failed: ${detail}`));
+        }
+
+        fallbackAudio.addEventListener("ended", onFallbackEnd);
+        fallbackAudio.addEventListener(
+          "error",
+          onFallbackError as EventListener
+        );
+        registerActivePlayback({
+          audio: fallbackAudio,
+          stop: () => {
+            cleanupFallback();
+            resolve(fallbackAudio);
+          },
+        });
+        const p = fallbackAudio.play();
+        if (p && typeof p.then === "function") {
+          p.catch((playErr) => {
+            console.warn(
+              "Fallback playback blocked by autoplay policy:",
+              playErr
+            );
+          });
+        }
+      } catch (fallbackErr) {
+        try {
+          const detail =
+            (fallbackErr && fallbackErr.message) ||
+            (ev && ev.message) ||
+            String(fallbackErr);
+          reject(new Error(`Streamed audio playback error: ${detail}`));
+        } catch (err) {
+          reject(new Error("Streamed audio playback error"));
+        }
+      }
+    }
+
+    audio.addEventListener("ended", onEnded);
+    audio.addEventListener("error", onError as EventListener);
+
+    registerActivePlayback({
+      audio,
+      stop: () => {
+        cleanup();
+        resolve(audio);
+      },
     });
-  }
 
-  return { audio, waitForEnd };
+    const playPromise = audio.play();
+    if (playPromise && typeof playPromise.then === "function") {
+      playPromise.catch((e) => {
+        // Autoplay may be blocked; caller can call audio.play() on user gesture.
+        console.warn("Playback blocked by autoplay policy (stream):", e);
+      });
+    }
+  });
+}
+
+function trackTtsLifecycle(
+  audio: HTMLAudioElement,
+  meta?: TtsMeta
+): () => void {
+  const detail: TtsEventDetail = { ...(meta ?? {}), audio };
+  let finished = false;
+  dispatchTtsStart(detail);
+  return () => {
+    if (finished) return;
+    finished = true;
+    dispatchTtsEnd(detail);
+  };
 }
