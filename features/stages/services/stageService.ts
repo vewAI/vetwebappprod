@@ -2,7 +2,6 @@ import { caseConfig } from "@/features/config/case-config";
 import type { Stage } from "../types";
 import type { Message } from "@/features/chat/models/chat";
 import { getTransitionMessage as getCase1TransitionMessage } from "../case1";
-import { getInstruction as getCase1Instruction } from "../case1";
 
 /**
  * Get the stages for a specific case
@@ -48,27 +47,6 @@ export function getStageTransitionMessage(
         timestamp: new Date().toISOString(),
         stageIndex,
       };
-  }
-}
-
-/**
- * Return a short, actionable instruction string for the given case/stage.
- */
-export function getStageInstruction(
-  caseId: string,
-  stageIndex: number
-): string {
-  switch (caseId) {
-    case "case-1":
-      return getCase1Instruction(stageIndex);
-    default: {
-      const stages = getStagesForCase(caseId);
-      const stage = stages && stages[stageIndex];
-      return (
-        stage?.description ??
-        `Proceed to ${stage?.title ?? `stage ${stageIndex + 1}`}`
-      );
-    }
   }
 }
 

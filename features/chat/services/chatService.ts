@@ -104,8 +104,7 @@ export const chatService = {
   createAssistantMessage: (
     content: string,
     stageIndex: number,
-    roleName: string,
-    hiddenContent?: string
+    roleName: string
   ): Message => ({
     id:
       typeof crypto !== "undefined" && (crypto as any).randomUUID
@@ -116,7 +115,6 @@ export const chatService = {
     timestamp: new Date().toISOString(),
     stageIndex,
     displayRole: roleName,
-    hiddenContent,
   }),
 
   /**

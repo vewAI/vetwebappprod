@@ -38,30 +38,24 @@ const initialFormState = {
 export default function CaseEntryForm() {
   // List of fields considered long text
   const longTextFields = [
-  import { fieldMeta } from "@/features/cases/fieldMeta";
     "description",
     "details",
-    // fieldMeta imported from shared module
-      label: "Owner follow-up prompt",
-      placeholder: "Prompt template for follow-up roleplay",
-      help: "Used to build owner follow-up messages.",
-    },
-    get_owner_follow_up_feedback_prompt: {
-      label: "Owner follow-up feedback prompt",
-      placeholder: "Prompt template for follow-up feedback",
-      help: "Used by the feedback generator for the follow-up stage.",
-    },
-    get_owner_diagnosis_prompt: {
-      label: "Owner diagnosis prompt",
-      placeholder: "Prompt template for owner diagnosis communication",
-      help: "Template that formats how the diagnosis should be explained.",
-    },
-    get_overall_feedback_prompt: {
-      label: "Overall feedback prompt",
-      placeholder: "Prompt template for end-to-end performance feedback",
-      help: "Used to generate the final overall feedback for the attempt.",
-    },
-  };
+    "physical_exam_findings",
+    "diagnostic_findings",
+    "owner_background",
+    "history_feedback",
+    "owner_follow_up",
+    "owner_follow_up_feedback",
+    "owner_diagnosis",
+    "get_owner_prompt",
+    "get_history_feedback_prompt",
+    "get_physical_exam_prompt",
+    "get_diagnostic_prompt",
+    "get_owner_follow_up_prompt",
+    "get_owner_follow_up_feedback_prompt",
+    "get_owner_diagnosis_prompt",
+    "get_overall_feedback_prompt",
+  ];
   const [expandedField, setExpandedField] = useState<string | null>(null);
   const [form, setForm] = useState(initialFormState);
   const [loading, setLoading] = useState(false);
@@ -181,7 +175,7 @@ export default function CaseEntryForm() {
         {Object.entries(initialFormState).map(([key]) => (
           <div key={key}>
             <label className="block font-medium mb-1" htmlFor={key}>
-              {fieldMeta[key]?.label ?? key.replace(/_/g, " ")}
+              {key.replace(/_/g, " ")}
             </label>
             {key === "image_url" ? (
               <div>
@@ -194,7 +188,6 @@ export default function CaseEntryForm() {
                   value={form[key as keyof typeof form]}
                   onChange={handleChange}
                   className="w-full mt-2"
-                  placeholder={fieldMeta[key]?.placeholder}
                 />
               </div>
             ) : longTextFields.includes(key) ? (
@@ -205,7 +198,6 @@ export default function CaseEntryForm() {
                   value={form[key as keyof typeof form]}
                   onChange={handleChange}
                   className="w-full"
-                  placeholder={fieldMeta[key]?.placeholder}
                   rows={3}
                 />
                 <Button
@@ -217,20 +209,12 @@ export default function CaseEntryForm() {
                 </Button>
               </div>
             ) : (
-              <>
-                <Input
-                  name={key}
-                  value={form[key as keyof typeof form]}
-                  onChange={handleChange}
-                  className="w-full"
-                  placeholder={fieldMeta[key]?.placeholder}
-                />
-                {fieldMeta[key]?.help && (
-                  <div className="text-xs text-muted-foreground mt-1">
-                    {fieldMeta[key]!.help}
-                  </div>
-                )}
-              </>
+              <Input
+                name={key}
+                value={form[key as keyof typeof form]}
+                onChange={handleChange}
+                className="w-full"
+              />
             )}
           </div>
         ))}

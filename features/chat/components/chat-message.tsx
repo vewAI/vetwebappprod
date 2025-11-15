@@ -3,23 +3,14 @@ import { cn } from "@/lib/utils";
 import type { Message } from "@/features/chat/models/chat";
 import { useEffect, useState } from "react";
 import type { Stage } from "@/features/stages/types";
-import Avatar from "./avatar";
 
 type ChatMessageProps = {
   message: Message;
   stages: Stage[];
   onRetry?: (id: string) => void;
-  isSpeaking?: boolean;
-  amplitude?: number;
 };
 
-export function ChatMessage({
-  message,
-  stages,
-  onRetry,
-  isSpeaking,
-  amplitude = 0,
-}: ChatMessageProps) {
+export function ChatMessage({ message, stages, onRetry }: ChatMessageProps) {
   const isUser = message.role === "user";
   const [formattedTime, setFormattedTime] = useState<string>("");
 
@@ -58,14 +49,13 @@ export function ChatMessage({
         isUser ? "bg-muted/50" : "bg-background"
       )}
     >
-      <div className="flex-shrink-0">
-        <Avatar
-          name={message.displayRole || undefined}
-          role={message.role}
-          size={40}
-          isSpeaking={Boolean(isSpeaking)}
-          amplitude={isSpeaking ? amplitude : 0}
-        />
+      <div
+        className={cn(
+          "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
+          isUser ? "bg-primary text-primary-foreground" : "bg-muted"
+        )}
+      >
+        {isUser ? <User className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
       </div>
       <div className="flex-1 space-y-2">
         <div className="flex items-center gap-2">
@@ -86,42 +76,8 @@ export function ChatMessage({
             <div className="ml-2 text-xs text-muted-foreground">Sent</div>
           )}
         </div>
-        <div className="whitespace-pre-wrap text-sm">
-          {message.hiddenContent ? (
-            <OwnerContent
-              content={message.content}
-              hidden={message.hiddenContent}
-            />
-          ) : (
-            message.content
-          )}
-        </div>
+        <div className="whitespace-pre-wrap text-sm">{message.content}</div>
       </div>
-    </div>
-  );
-}
-
-function OwnerContent({
-  content,
-  hidden,
-}: {
-  content: string;
-  hidden?: string;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  if (!hidden) return <>{content}</>;
-  return (
-    <div>
-      <div>{expanded ? hidden : content}</div>
-      {!expanded && (
-        <button
-          className="mt-2 text-xs text-blue-600 hover:underline"
-          onClick={() => setExpanded(true)}
-          aria-label="Reveal additional owner details"
-        >
-          Show more from owner
-        </button>
-      )}
     </div>
   );
 }

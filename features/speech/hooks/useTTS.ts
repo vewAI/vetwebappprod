@@ -34,35 +34,10 @@ export function useTTS() {
     try {
       // Cancel any existing speech
       window.speechSynthesis.cancel();
-      // Notify listeners that TTS is about to start and STT should pause
-      try {
-        window.dispatchEvent(new CustomEvent("vw:tts-pause-stt"));
-        window.dispatchEvent(
-          new CustomEvent("vw:tts-start", { detail: { source: "webspeech" } })
-        );
-      } catch (e) {}
       const u = new SpeechSynthesisUtterance(text);
       u.lang = lang;
-      u.onend = () => {
-        setIsSpeaking(false);
-        try {
-          window.dispatchEvent(
-            new CustomEvent("vw:tts-end", { detail: { source: "webspeech" } })
-          );
-          window.dispatchEvent(new CustomEvent("vw:tts-resume-stt"));
-        } catch (e) {}
-      };
-      u.onerror = () => {
-        setIsSpeaking(false);
-        try {
-          window.dispatchEvent(
-            new CustomEvent("vw:tts-end", {
-              detail: { source: "webspeech", error: true },
-            })
-          );
-          window.dispatchEvent(new CustomEvent("vw:tts-resume-stt"));
-        } catch (e) {}
-      };
+      u.onend = () => setIsSpeaking(false);
+      u.onerror = () => setIsSpeaking(false);
       utterRef.current = u;
       setIsSpeaking(true);
       window.speechSynthesis.speak(u);
@@ -79,34 +54,14 @@ export function useTTS() {
     return new Promise<void>((resolve, reject) => {
       try {
         window.speechSynthesis.cancel();
-        try {
-          window.dispatchEvent(new CustomEvent("vw:tts-pause-stt"));
-          window.dispatchEvent(
-            new CustomEvent("vw:tts-start", { detail: { source: "webspeech" } })
-          );
-        } catch (e) {}
         const u = new SpeechSynthesisUtterance(text);
         u.lang = lang;
         u.onend = () => {
           setIsSpeaking(false);
-          try {
-            window.dispatchEvent(
-              new CustomEvent("vw:tts-end", { detail: { source: "webspeech" } })
-            );
-            window.dispatchEvent(new CustomEvent("vw:tts-resume-stt"));
-          } catch (e) {}
           resolve();
         };
         u.onerror = (e) => {
           setIsSpeaking(false);
-          try {
-            window.dispatchEvent(
-              new CustomEvent("vw:tts-end", {
-                detail: { source: "webspeech", error: true },
-              })
-            );
-            window.dispatchEvent(new CustomEvent("vw:tts-resume-stt"));
-          } catch (err) {}
           reject(e ?? new Error("TTS error"));
         };
         utterRef.current = u;
@@ -123,14 +78,6 @@ export function useTTS() {
     if (!available) return;
     try {
       window.speechSynthesis.cancel();
-      try {
-        window.dispatchEvent(
-          new CustomEvent("vw:tts-end", {
-            detail: { source: "webspeech", cancelled: true },
-          })
-        );
-        window.dispatchEvent(new CustomEvent("vw:tts-resume-stt"));
-      } catch (e) {}
     } catch (e) {
       // ignore
     }
