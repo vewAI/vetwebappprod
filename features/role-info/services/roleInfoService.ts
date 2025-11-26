@@ -60,10 +60,13 @@ export async function getRoleInfoPrompt(
     try {
       // If the prompt function declares two parameters (caseData, context), call with caseRow
       if ((promptFunction as Function).length >= 2) {
-        return (promptFunction as any)(caseRow, userMessage);
+        return (promptFunction as (caseData: Record<string, unknown> | null, input: string) => string)(
+          caseRow,
+          userMessage
+        );
       }
       // Otherwise call with the old single-argument signature
-      return (promptFunction as RoleInfoPromptFn)(userMessage);
+      return (promptFunction as (input: string) => string)(userMessage);
     } catch (err) {
       console.warn("Error executing role info prompt function:", err);
       return null;

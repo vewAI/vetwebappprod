@@ -50,6 +50,46 @@ export function getStageTransitionMessage(
   }
 }
 
+const STAGE_TIP_FALLBACKS: Record<string, string> = {
+  history:
+    "Stage tip: Share the recorded presenting complaint and observations that fit the documented condition, and answer follow-up questions openly (without offering diagnoses).",
+  physical:
+    "Stage tip: Report the documented physical examination findings exactly as requested.",
+  diagnostics:
+    "Stage tip: Provide the requested diagnostic data without suggesting additional steps.",
+  lab:
+    "Stage tip: Give the precise laboratory results that have already been recorded when asked.",
+  plan:
+    "Stage tip: State the recorded assessment and plan only when the student or client asks.",
+  communication:
+    "Stage tip: Respond to client questions with the documented diagnosis and instructions—no unsolicited advice.",
+};
+
+function classifyStageForTip(title: string | undefined, description: string | undefined): keyof typeof STAGE_TIP_FALLBACKS {
+  const source = `${title ?? ""} ${description ?? ""}`.toLowerCase();
+  if (source.includes("history")) return "history";
+  if (source.includes("physical")) return "physical";
+  if (source.includes("lab") || source.includes("test")) return "lab";
+  if (source.includes("diagnostic") || source.includes("follow-up")) return "diagnostics";
+  if (source.includes("plan") || source.includes("treatment") || source.includes("diagnosis")) return "plan";
+  if (source.includes("communication")) return "communication";
+  return "plan";
+}
+
+export function getStageTip(caseId: string, stageIndex: number): string {
+  const stages = getStagesForCase(caseId);
+  const stage = stages?.[stageIndex];
+  const tipSource = stage?.description?.trim();
+  if (tipSource) {
+    return tipSource.startsWith("Stage tip:")
+      ? tipSource
+      : `Stage tip: ${tipSource}`;
+  }
+
+  const fallbackKey = classifyStageForTip(stage?.title, stage?.description);
+  return STAGE_TIP_FALLBACKS[fallbackKey];
+}
+
 /**
  * Initialise stages with the first stage marked as completed
  * @param stages Array of stages to initialise

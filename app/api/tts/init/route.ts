@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
+
+import { requireUser } from "@/app/api/_lib/auth";
 import { put } from "../store";
 
 // POST /api/tts/init
 // Body: { text, voice }
 // Returns: { id, url }
 export async function POST(req: Request) {
+  const auth = await requireUser(req);
+  if ("error" in auth) {
+    return auth.error;
+  }
   try {
     const body = await req.json().catch(() => ({}));
     const text = String(body?.text ?? "").trim();

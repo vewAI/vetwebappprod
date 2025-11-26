@@ -46,7 +46,7 @@ export default function CaseChatPage() {
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
 
   const { saveProgress } = useSaveAttempt(attemptId);
-  const { user } = useAuth();
+  const { user, session } = useAuth();
 
   useEffect(() => {
     async function loadCase() {
@@ -134,9 +134,18 @@ export default function CaseChatPage() {
         try {
           setIsGeneratingFeedback(true);
           setShowCompletionDialog(true);
+          if (!session?.access_token) {
+            console.error("Cannot request overall feedback without auth token");
+            setIsGeneratingFeedback(false);
+            return;
+          }
+          const feedbackHeaders: Record<string, string> = {
+            "Content-Type": "application/json",
+          };
+          feedbackHeaders.Authorization = `Bearer ${session.access_token}`;
           const resp = await fetch("/api/overall-feedback", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: feedbackHeaders,
             body: JSON.stringify({ caseId: id, messages }),
           });
           const data = await resp.json();

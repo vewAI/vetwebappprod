@@ -1,21 +1,19 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import OpenAI from "openai";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+import { generateCaseImage } from "@/features/cases/services/caseImageService";
+import { requireUser } from "@/app/api/_lib/auth";
 
-if (!supabaseServiceKey) {
-  // Fail fast in dev so we don't silently attempt anon updates that RLS will reject.
-  console.error(
-    "SUPABASE_SERVICE_ROLE_KEY is not set. /api/cases/image requires a service role key."
-  );
-}
+const openaiKey = process.env.OPENAI_API_KEY;
 
-const _supabaseKey =
-  supabaseServiceKey ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-const supabase = createClient(supabaseUrl, _supabaseKey);
+const openai = openaiKey ? new OpenAI({ apiKey: openaiKey }) : null;
 
 export async function PUT(req: Request) {
+  const auth = await requireUser(req, { requireAdmin: true });
+  if ("error" in auth) {
+    return auth.error;
+  }
+  const { supabase } = auth;
   try {
     const body = await req.json();
     console.log("[api/cases/image] incoming body:", body);
@@ -43,6 +41,72 @@ export async function PUT(req: Request) {
     }
 
     return NextResponse.json({ success: true, data });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json(
+      { error: msg || "Unknown error" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(req: Request) {
+  if (!openai) {
+    return NextResponse.json(
+      { error: "OPENAI_API_KEY is not configured for image generation." },
+      { status: 500 }
+    );
+  }
+
+  try {
+    const auth = await requireUser(req, { requireAdmin: true });
+    if ("error" in auth) {
+      return auth.error;
+    }
+    const { supabase } = auth;
+    const body = await req.json();
+    const idRaw = body?.id;
+    const forceRaw = body?.force;
+
+    const id = typeof idRaw === "string" ? idRaw.trim() : "";
+    const force = forceRaw === undefined ? true : Boolean(forceRaw);
+
+    if (!id) {
+      return NextResponse.json({ error: "id is required" }, { status: 400 });
+    }
+
+    const { data: caseRow, error: caseError } = await supabase
+      .from("cases")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (caseError) {
+      return NextResponse.json(
+        { error: caseError.message ?? "Failed to load case" },
+        { status: 500 }
+      );
+    }
+
+    if (!caseRow) {
+      return NextResponse.json({ error: "Case not found" }, { status: 404 });
+    }
+
+    const imageUrl = await generateCaseImage(
+      supabase,
+      openai,
+      caseRow as Record<string, unknown>,
+      { force }
+    );
+
+    if (!imageUrl) {
+      return NextResponse.json(
+        { error: "Image generation did not produce a URL." },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true, data: { image_url: imageUrl } });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json(

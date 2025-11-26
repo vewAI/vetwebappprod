@@ -1,17 +1,14 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-const supabase = createClient(
-  supabaseUrl,
-  supabaseServiceKey ?? supabaseAnonKey
-);
+import { requireUser } from "@/app/api/_lib/auth";
 
 // Delete an attempt by id (query param ?id=...)
 export async function DELETE(req: Request) {
+  const auth = await requireUser(req);
+  if ("error" in auth) {
+    return auth.error;
+  }
+  const { supabase } = auth;
   try {
     const url = new URL(req.url);
     const id = url.searchParams.get("id");

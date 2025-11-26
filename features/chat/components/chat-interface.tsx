@@ -2,7 +2,7 @@
 
 import type React from "react";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { SendIcon, PenLine, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -21,11 +21,28 @@ import { SaveAttemptButton } from "@/features/attempts/components/save-attempt-b
 import { useSaveAttempt } from "@/features/attempts/hooks/useSaveAttempt";
 import type { Message } from "@/features/chat/models/chat";
 import type { Stage } from "@/features/stages/types";
-import { getStageTransitionMessage } from "@/features/stages/services/stageService";
+import { getStageTip } from "@/features/stages/services/stageService";
 import { chatService } from "@/features/chat/services/chatService";
 import { getOrAssignVoiceForRole } from "@/features/speech/services/voiceMap";
 import type { TtsEventDetail } from "@/features/speech/models/tts-events";
 import { normalizeRoleKey } from "@/features/avatar/utils/role-utils";
+
+const STAGE_KEYWORD_SYNONYMS: Record<string, string[]> = {
+  examination: ["exam"],
+  exam: ["examination", "assessment"],
+  physical: ["exam", "examination", "assessment"],
+  history: ["anamnesis", "intake"],
+  diagnostic: ["diagnostics", "tests", "testing", "workup"],
+  diagnostics: ["diagnostic", "tests", "testing", "workup"],
+  laboratory: ["lab", "labwork", "results"],
+  lab: ["laboratory", "labwork", "results"],
+  owner: ["client", "caretaker", "producer"],
+  client: ["owner", "producer"],
+  producer: ["owner", "client"],
+  communication: ["discussion", "counseling", "consult"],
+  follow: ["follow-up", "followup"],
+  plan: ["treatment", "management", "strategy"],
+};
 
 type ChatInterfaceProps = {
   caseId: string;
@@ -37,6 +54,13 @@ type ChatInterfaceProps = {
     messages?: Message[],
     timeSpentSeconds?: number
   ) => void;
+};
+
+type PersonaDirectoryEntry = {
+  displayName?: string;
+  portraitUrl?: string;
+  voiceId?: string;
+  sex?: string;
 };
 
 export function ChatInterface({
@@ -64,6 +88,79 @@ export function ChatInterface({
   );
   // Voice Mode (mic) should default ON when an attempt is open; otherwise off.
   const [voiceMode, setVoiceMode] = useState<boolean>(() => Boolean(attemptId));
+  const [personaDirectory, setPersonaDirectory] = useState<
+    Record<string, PersonaDirectoryEntry>
+  >({});
+  const [stageIndicator, setStageIndicator] = useState<
+    { title: string; body: string } | null
+  >(null);
+  const stageKeywordSets = useMemo(() => {
+    return stages.map((stage, index) => {
+      const keywords = new Set<string>();
+
+      const addLabel = (label?: string | null) => {
+        if (!label) return;
+        const normalized = label.toLowerCase().trim();
+        if (!normalized) return;
+        keywords.add(normalized);
+
+        const tokens = normalized
+          .split(/[^a-z0-9]+/)
+          .filter((token) => token.length >= 3);
+
+        tokens.forEach((token) => {
+          keywords.add(token);
+          const synonyms = STAGE_KEYWORD_SYNONYMS[token];
+          if (synonyms) {
+            synonyms.forEach((syn) => {
+              if (syn) {
+                keywords.add(syn.toLowerCase());
+              }
+            });
+          }
+        });
+
+        for (let i = 0; i < tokens.length - 1; i++) {
+          const pair = `${tokens[i]} ${tokens[i + 1]}`.trim();
+          if (pair) {
+            keywords.add(pair);
+          }
+        }
+      };
+
+      addLabel(stage?.title);
+      addLabel(stage?.role);
+
+      const stageNumber = index + 1;
+      keywords.add(`stage ${stageNumber}`);
+      keywords.add(`section ${stageNumber}`);
+      keywords.add(`part ${stageNumber}`);
+
+      return Array.from(keywords).filter(Boolean);
+    });
+  }, [stages]);
+  const isAdvancingRef = useRef<boolean>(false);
+  const nextStageIntentTimeoutRef = useRef<number | null>(null);
+  const handleProceedRef = useRef<(() => Promise<void>) | null>(null);
+  const scheduleAutoProceedRef = useRef<(() => void) | null>(null);
+
+  const upsertPersonaDirectory = useCallback(
+    (roleKey: string | null | undefined, entry: PersonaDirectoryEntry) => {
+      if (!roleKey) return;
+      const normalized = normalizeRoleKey(roleKey) ?? roleKey;
+      setPersonaDirectory((prev) => {
+        const existing = prev[normalized] ?? {};
+        return {
+          ...prev,
+          [normalized]: {
+            ...existing,
+            ...entry,
+          },
+        };
+      });
+    },
+    []
+  );
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -92,6 +189,13 @@ export function ChatInterface({
   // Track last appended chunk and time to avoid rapid duplicate appends
   const lastAppendedTextRef = useRef<string | null>(null);
   const lastAppendTimeRef = useRef<number>(0);
+
+  const resetNextStageIntent = useCallback(() => {
+    if (nextStageIntentTimeoutRef.current) {
+      window.clearTimeout(nextStageIntentTimeoutRef.current);
+      nextStageIntentTimeoutRef.current = null;
+    }
+  }, []);
 
   // Collapse immediate repeated phrases in a final transcript. Some STT
   // engines occasionally emit duplicated chunks (the same phrase twice in a
@@ -231,8 +335,75 @@ export function ChatInterface({
         autoSendFinalTimerRef.current = null;
       }
       autoSendPendingTextRef.current = null;
+      resetNextStageIntent();
     };
-  }, []);
+  }, [resetNextStageIntent]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadPersonaDirectory() {
+      try {
+        const response = await fetch(
+          `/api/personas?caseId=${encodeURIComponent(caseId)}`
+        );
+        if (!response.ok) {
+          throw new Error(`Failed to load personas: ${response.status}`);
+        }
+        const payload = await response.json().catch(() => ({ personas: [] }));
+        const personas = Array.isArray(payload?.personas)
+          ? payload.personas
+          : [];
+        const next: Record<string, PersonaDirectoryEntry> = {};
+        for (const row of personas) {
+          const rawKey = typeof row?.role_key === "string" ? row.role_key : "";
+          const normalizedKey = normalizeRoleKey(rawKey) ?? rawKey;
+          if (!normalizedKey) continue;
+          const metadata =
+            row && typeof row.metadata === "object" && row.metadata !== null
+              ? (row.metadata as Record<string, unknown>)
+              : {};
+          const identity =
+            metadata && typeof metadata.identity === "object"
+              ? (metadata.identity as {
+                  fullName?: string;
+                  voiceId?: string;
+                  sex?: string;
+                })
+              : undefined;
+          next[normalizedKey] = {
+            displayName:
+              typeof row?.display_name === "string"
+                ? row.display_name
+                : identity?.fullName,
+            portraitUrl:
+              typeof row?.image_url === "string" ? row.image_url : undefined,
+            voiceId:
+              typeof metadata?.voiceId === "string"
+                ? (metadata.voiceId as string)
+                : typeof identity?.voiceId === "string"
+                  ? identity.voiceId
+                  : undefined,
+            sex:
+              typeof metadata?.sex === "string"
+                ? (metadata.sex as string)
+                : typeof identity?.sex === "string"
+                  ? identity.sex
+                  : undefined,
+          };
+        }
+        if (!cancelled) {
+          setPersonaDirectory(next);
+        }
+      } catch (err) {
+        console.warn("Failed to load persona directory", err);
+      }
+    }
+
+    void loadPersonaDirectory();
+    return () => {
+      cancelled = true;
+    };
+  }, [caseId]);
 
   // Text-to-speech
   const {
@@ -394,6 +565,25 @@ export function ChatInterface({
       setMessages(snapshot);
     }
     setInput("");
+
+    const hasNextStage = currentStageIndex < stages.length - 1;
+    const shouldAutoAdvance =
+      hasNextStage && detectNextStageIntent(trimmed);
+
+    if (shouldAutoAdvance) {
+      if (userMessage) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === userMessage!.id ? { ...m, status: "sent" } : m
+          )
+        );
+      }
+      reset();
+      baseInputRef.current = "";
+      scheduleAutoProceedRef.current?.();
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -404,11 +594,26 @@ export function ChatInterface({
       );
       const stage = stages[currentStageIndex] ?? stages[0];
       const roleName = response.displayRole ?? stage?.role ?? "assistant";
+      const portraitUrl = response.portraitUrl;
       const aiMessage = chatService.createAssistantMessage(
         response.content,
         currentStageIndex,
-        roleName
+        roleName,
+        portraitUrl,
+        response.voiceId,
+        response.personaSex,
+        response.personaRoleKey
       );
+      const finalAssistantContent = aiMessage.content;
+      const normalizedPersonaKey =
+        aiMessage.personaRoleKey ??
+        (roleName ? normalizeRoleKey(roleName) ?? undefined : undefined);
+      upsertPersonaDirectory(normalizedPersonaKey, {
+        displayName: aiMessage.displayRole,
+        portraitUrl,
+        voiceId: response.voiceId,
+        sex: response.personaSex,
+      });
 
       // Speak the assistant response when TTS is enabled. We support a
       // "voice-first" mode where the spoken audio plays first and the
@@ -431,13 +636,24 @@ export function ChatInterface({
             await new Promise((res) => setTimeout(res, 150));
           }
 
-          // Choose voice based on the assistant role (displayRole or stage role)
+          const preferredVoice = aiMessage.voiceId ?? response.voiceId;
+          const voiceSex: "male" | "female" | "neutral" =
+            response.personaSex === "male" ||
+            response.personaSex === "female" ||
+            response.personaSex === "neutral"
+              ? response.personaSex
+              : "neutral";
           const voiceForRole = getOrAssignVoiceForRole(
             String(roleName ?? "assistant"),
-            attemptId
+            attemptId,
+            {
+              preferredVoice,
+              sex: voiceSex,
+            }
           );
 
           const normalizedRoleKey =
+            response.personaRoleKey ??
             normalizeRoleKey(roleName ?? stage?.role ?? "assistant") ??
             undefined;
           const ttsMeta = {
@@ -453,30 +669,44 @@ export function ChatInterface({
           } satisfies Omit<TtsEventDetail, "audio">;
 
           if (voiceFirst) {
+            const placeholderMessage: Message = {
+              ...aiMessage,
+              content: "",
+            };
+            setMessages((prev) => [...prev, placeholderMessage]);
+            // Ensure React renders the placeholder before audio playback starts.
+            await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+            let playbackError: unknown = null;
             try {
-              await playTtsAndPauseStt(response.content, voiceForRole, ttsMeta);
-              setMessages((prev) => [...prev, aiMessage]);
-            } catch (streamErr) {
-              console.warn(
-                "Streaming TTS failed, falling back to text-first:",
-                streamErr
+              await playTtsAndPauseStt(
+                response.content,
+                aiMessage.voiceId ?? voiceForRole,
+                ttsMeta
               );
-              setMessages((prev) => [...prev, aiMessage]);
-              try {
-                await playTtsAndPauseStt(
-                  response.content,
-                  voiceForRole,
-                  ttsMeta
-                );
-              } catch (err) {
-                console.error("TTS failed:", err);
+            } catch (streamErr) {
+              playbackError = streamErr;
+              console.warn("Voice-first TTS playback encountered an error:", streamErr);
+            } finally {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === placeholderMessage.id
+                    ? { ...m, content: finalAssistantContent }
+                    : m
+                )
+              );
+              if (playbackError) {
+                console.error("TTS playback failed after voice-first attempt:", playbackError);
               }
             }
           } else {
             // Default behavior: show the text immediately, then play audio
             setMessages((prev) => [...prev, aiMessage]);
             try {
-              await playTtsAndPauseStt(response.content, voiceForRole, ttsMeta);
+              await playTtsAndPauseStt(
+                response.content,
+                aiMessage.voiceId ?? voiceForRole,
+                ttsMeta
+              );
             } catch (err) {
               console.error("TTS failed:", err);
             }
@@ -539,7 +769,7 @@ export function ChatInterface({
         if (maybeNetwork) {
           enqueuePendingMessage(userMessage, currentStageIndex, caseId);
           setConnectionNotice(
-            "Connection interrupted — your message will be retried automatically."
+            "Connection interrupted. We'll save your message and retry automatically."
           );
         }
       }
@@ -563,6 +793,109 @@ export function ChatInterface({
     const msg = messages.find((m) => m.id === messageId);
     if (!msg) return;
     await sendUserMessage(msg.content, messageId);
+  };
+
+  const detectNextStageIntent = (content: string) => {
+    const nextIndex = currentStageIndex + 1;
+    const nextStage = stages[nextIndex];
+    if (!nextStage) return false;
+
+    const normalized = content.toLowerCase().replace(/\s+/g, " ").trim();
+    if (!normalized) return false;
+
+    const isQuestion = /\b(what|which|who|where|when|why|how)\b/.test(normalized);
+    const postponeIntent = /\b(later|after|eventually)\b/.test(normalized);
+
+    const directionWords = [
+      "go",
+      "move",
+      "proceed",
+      "advance",
+      "continue",
+      "switch",
+      "jump",
+      "head",
+      "start",
+      "begin",
+      "shift",
+    ];
+    const directionPhrases = ["let's", "lets", "ready to", "time to", "we should"];
+    const hasDirectionWord = directionWords.some((word) =>
+      new RegExp(`\\b${word}\\b`).test(normalized)
+    );
+    const hasDirectionPhrase = directionPhrases.some((phrase) =>
+      normalized.includes(phrase)
+    );
+    const hasDirection = hasDirectionWord || hasDirectionPhrase;
+
+    const mentionsNextStagePhrase = /\bnext\s+(stage|section|part|step)\b/.test(normalized);
+    const stageNumber = nextIndex + 1;
+    const mentionsStageNumber = new RegExp(
+      `\\b(stage|section|part)\\s*${stageNumber}\\b`
+    ).test(normalized);
+
+    if (mentionsNextStagePhrase && !isQuestion && !postponeIntent) {
+      const shortDirectCommand = /^(next\s+(stage|section|part|step))(\s+(please|now))?$/.test(
+        normalized
+      );
+      if (hasDirection || /\bplease\b/.test(normalized) || shortDirectCommand) {
+        return true;
+      }
+    }
+
+    if (
+      mentionsStageNumber &&
+      !isQuestion &&
+      !postponeIntent &&
+      (hasDirection || /\bplease\b/.test(normalized) || /\bnow\b/.test(normalized))
+    ) {
+      return true;
+    }
+
+    if (!isQuestion) {
+      const numericShortCommand = new RegExp(
+        `^(stage|section|part)\\s*${stageNumber}(\\s+(please|now))?$`
+      ).test(normalized);
+      if (numericShortCommand && !postponeIntent) {
+        return true;
+      }
+    }
+
+    const nextKeywords = stageKeywordSets[nextIndex] ?? [];
+    const mentionsNextKeywords = nextKeywords.some((keyword) => {
+      if (!keyword) return false;
+      const candidate = keyword.trim();
+      if (!candidate) return false;
+      return normalized.includes(candidate.toLowerCase());
+    });
+
+    if (!mentionsNextKeywords) {
+      return false;
+    }
+
+    if ((hasDirection || mentionsNextStagePhrase) && !isQuestion && !postponeIntent) {
+      return true;
+    }
+
+    const immediateCue =
+      !isQuestion && (/(^now\b|\bnow$)/.test(normalized) || /\bplease\b/.test(normalized));
+    if (immediateCue && !postponeIntent) {
+      const keywordMatchesEdge = nextKeywords.some((keyword) => {
+        if (!keyword) return false;
+        const candidate = keyword.toLowerCase();
+        return (
+          normalized.startsWith(candidate) ||
+          normalized.endsWith(`${candidate} now`) ||
+          normalized.includes(`${candidate} now`) ||
+          normalized.includes(`now ${candidate}`)
+        );
+      });
+      if (keywordMatchesEdge) {
+        return true;
+      }
+    }
+
+    return false;
   };
 
   // Trigger an auto-send that also flashes the Send button briefly so the
@@ -665,8 +998,21 @@ export function ChatInterface({
         const aiMessage = chatService.createAssistantMessage(
           response.content,
           p.stageIndex,
-          String(roleName ?? "assistant")
+          String(roleName ?? "assistant"),
+          response.portraitUrl,
+          response.voiceId,
+          response.personaSex,
+          response.personaRoleKey
         );
+        const normalizedPersonaKey =
+          aiMessage.personaRoleKey ??
+          (roleName ? normalizeRoleKey(String(roleName)) ?? undefined : undefined);
+        upsertPersonaDirectory(normalizedPersonaKey, {
+          displayName: aiMessage.displayRole,
+          portraitUrl: response.portraitUrl,
+          voiceId: response.voiceId,
+          sex: response.personaSex,
+        });
         setMessages((prev) => [...prev, aiMessage]);
         // remove from pending store
         dequeuePendingById(p.id);
@@ -676,7 +1022,7 @@ export function ChatInterface({
         // keep it in queue and try later; record notice
         console.warn("Pending flush failed for message", p.id, err);
         setConnectionNotice(
-          "Connection interrupted — will keep retrying in the background."
+          "Connection interrupted. We'll keep trying in the background."
         );
       }
     }
@@ -707,7 +1053,9 @@ export function ChatInterface({
       schedulePendingFlush();
     };
     const onOffline = () => {
-      setConnectionNotice("Connection lost — working offline.");
+      setConnectionNotice(
+        "Connection lost. We'll keep your progress safe and retry when you're back online."
+      );
       schedulePendingFlush();
     };
     window.addEventListener("online", onOnline);
@@ -1032,25 +1380,15 @@ export function ChatInterface({
     };
   }, [attemptId, messages, currentStageIndex, timeSpentSeconds, saveProgress]);
 
-  // Handle stage transitions
   useEffect(() => {
-    if (currentStageIndex > 0) {
-      // Get the custom transition message for this case and stage
-      const transitionMessage = getStageTransitionMessage(
-        caseId,
-        currentStageIndex
-      );
-
-      // Add the transition message to the chat with a unique ID
-      const displayMessage = {
-        ...transitionMessage,
-        id: `${transitionMessage.id}-${Date.now()}`,
-        displayRole: "Virtual Examiner",
-      };
-
-      setMessages((prev) => [...prev, displayMessage]);
-    }
-  }, [currentStageIndex, caseId]);
+    const stage = stages[currentStageIndex];
+    const stageTitle = stage?.title ?? `Stage ${currentStageIndex + 1}`;
+    const tip = getStageTip(caseId, currentStageIndex);
+    setStageIndicator({
+      title: stageTitle,
+      body: tip,
+    });
+  }, [caseId, currentStageIndex, stages]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1088,6 +1426,11 @@ export function ChatInterface({
   };
 
   const handleProceed = async () => {
+    resetNextStageIntent();
+    if (isAdvancingRef.current) {
+      return;
+    }
+    isAdvancingRef.current = true;
     const targetIndex = Math.min(currentStageIndex + 1, stages.length - 1);
 
     const introText = getStageAssistantIntro(targetIndex);
@@ -1095,14 +1438,44 @@ export function ChatInterface({
     // labels the speaker appropriately (e.g., Owner, Laboratory Technician)
     const stageRole = stages[targetIndex]?.role ?? "Virtual Assistant";
     const roleName = String(stageRole);
+    const normalizedRoleKey = normalizeRoleKey(roleName ?? "assistant") ?? undefined;
+    const personaMeta = normalizedRoleKey
+      ? personaDirectory[normalizedRoleKey]
+      : undefined;
 
-    // Create assistant message using the roleName as displayRole so the
-    // client sees the correct speaker (owner vs assistant vs lab tech).
+    // Create assistant message using persona metadata when available so the
+    // client sees the correct speaker (owner vs assistant vs lab tech) with
+    // a consistent portrait and voice.
+    const voiceSex: "male" | "female" | "neutral" =
+      personaMeta?.sex === "male" ||
+      personaMeta?.sex === "female" ||
+      personaMeta?.sex === "neutral"
+        ? personaMeta.sex
+        : "neutral";
+
+    const voiceForRole = getOrAssignVoiceForRole(
+      roleName,
+      attemptId,
+      {
+        preferredVoice: personaMeta?.voiceId,
+        sex: voiceSex,
+      }
+    );
     const assistantMsg = chatService.createAssistantMessage(
       introText,
       targetIndex,
-      roleName
+      personaMeta?.displayName ?? roleName,
+      personaMeta?.portraitUrl,
+      voiceForRole,
+      personaMeta?.sex,
+      normalizedRoleKey
     );
+    upsertPersonaDirectory(normalizedRoleKey, {
+      displayName: personaMeta?.displayName ?? roleName,
+      portraitUrl: personaMeta?.portraitUrl,
+      voiceId: voiceForRole,
+      sex: personaMeta?.sex,
+    });
 
     // Append assistant message immediately so user sees it
     setMessages((prev) => [...prev, assistantMsg]);
@@ -1124,13 +1497,9 @@ export function ChatInterface({
         }
 
         // Use per-role voice for the assistant intro as well
-        const introVoice = getOrAssignVoiceForRole(
-          "Virtual Assistant",
-          attemptId
-        );
         const introMeta = {
-          roleKey: normalizeRoleKey(roleName) ?? undefined,
-          displayRole: roleName,
+          roleKey: normalizedRoleKey,
+          displayRole: assistantMsg.displayRole,
           role: roleName,
           caseId,
           metadata: {
@@ -1138,7 +1507,11 @@ export function ChatInterface({
             stageIntro: true,
           },
         } satisfies Omit<TtsEventDetail, "audio">;
-        await playTtsAndPauseStt(introText, introVoice, introMeta);
+        await playTtsAndPauseStt(
+          introText,
+          assistantMsg.voiceId ?? voiceForRole,
+          introMeta
+        );
       } catch (e) {
         try {
           if (ttsAvailable && speakAsync) {
@@ -1166,8 +1539,32 @@ export function ChatInterface({
       onProceedToNextStage(messages, timeSpentSeconds);
     } catch (e) {
       console.error("Error in onProceedToNextStage:", e);
+    } finally {
+      isAdvancingRef.current = false;
     }
   };
+
+  handleProceedRef.current = handleProceed;
+
+  const scheduleAutomaticProceed = useCallback(() => {
+    resetNextStageIntent();
+    if (typeof window === "undefined") {
+      return;
+    }
+    nextStageIntentTimeoutRef.current = window.setTimeout(async () => {
+      nextStageIntentTimeoutRef.current = null;
+      if (handleProceedRef.current && !isAdvancingRef.current) {
+        try {
+          await handleProceedRef.current();
+        } catch (err) {
+          console.error("Automatic stage advance failed:", err);
+        }
+      }
+    }, 400);
+  }, [resetNextStageIntent]);
+
+  scheduleAutoProceedRef.current = scheduleAutomaticProceed;
+
 
   return (
     <div className="relative flex h-full flex-col">
@@ -1213,6 +1610,16 @@ export function ChatInterface({
       {/* Chat messages area */}
       <div className="flex-1 overflow-y-auto p-4">
         <div className="mx-auto max-w-3xl space-y-4">
+          {stageIndicator && (
+            <div className="flex justify-center">
+              <div className="flex items-start gap-2 rounded-xl border border-border bg-muted/50 px-4 py-2 text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">
+                  {stageIndicator.title}
+                </span>
+                <span>{stageIndicator.body}</span>
+              </div>
+            </div>
+          )}
           {messages.map((message) => (
             <ChatMessage
               key={message.id}

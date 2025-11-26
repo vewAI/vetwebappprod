@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabase = createClient(
-  supabaseUrl,
-  supabaseServiceKey ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ""
-);
+import { requireAdmin } from "@/app/api/_lib/auth";
 
 export async function POST(req: Request) {
+  const auth = await requireAdmin(req);
+  if ("error" in auth) {
+    return auth.error;
+  }
   try {
+    const { supabase } = auth;
     const body = await req.json();
     const caseId = body?.case_id ?? null;
     const payload = body?.payload ?? null;

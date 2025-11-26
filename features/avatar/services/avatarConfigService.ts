@@ -34,7 +34,7 @@ export async function fetchAvatarProfiles(
 
   try {
     const { data, error } = await supabase
-      .from<CaseAvatarRow>("case_avatars")
+      .from("case_avatars")
       .select("*")
       .eq("case_id", caseId)
       .order("display_name", { ascending: true });
@@ -46,7 +46,7 @@ export async function fetchAvatarProfiles(
       return fallback;
     }
 
-    const mapped = mapRowsToProfiles(data ?? [], caseId);
+    const mapped = mapRowsToProfiles((data ?? []) as CaseAvatarRow[], caseId);
     if (mapped.length === 0) {
       const fallback = createFallbackProfiles(caseId);
       cache.set(caseId, fallback);

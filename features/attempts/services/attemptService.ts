@@ -1,5 +1,6 @@
 // /features/attempts/services/attemptService.ts
 import { supabase } from "@/lib/supabase";
+import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
 import type {
   Attempt,
   AttemptMessage,
@@ -75,63 +76,6 @@ export async function createAttempt(caseId: string): Promise<Attempt | null> {
   } catch (error) {
     console.error("Unexpected error creating attempt:", error);
     return null;
-  }
-}
-
-// Save messages to an attempt
-export async function saveMessages(
-  attemptId: string,
-  messages: Message[]
-): Promise<boolean> {
-  const transformedMessages = messages.map((msg) => ({
-    attempt_id: attemptId,
-    role: msg.role,
-    content: msg.content,
-    timestamp: msg.timestamp,
-    stage_index: msg.stageIndex || 0,
-    display_role: msg.displayRole,
-  }));
-
-  try {
-    // Log payload for debugging
-    console.debug("Saving attempt messages:", transformedMessages);
-
-    // Remove any existing messages for this attempt to avoid duplicate inserts
-    // (we'll re-insert the full current conversation)
-    const { error: delError } = await supabase
-      .from("attempt_messages")
-      .delete()
-      .eq("attempt_id", attemptId);
-
-    if (delError) {
-      console.error("Error deleting existing attempt messages:", delError);
-      // proceed to attempt insert anyway
-    }
-
-    const { data, error } = await supabase
-      .from("attempt_messages")
-      .insert(transformedMessages)
-      .select();
-
-    if (error) {
-      // Try to serialize error details safely
-      try {
-        console.error(
-          "Error saving messages:",
-          error,
-          JSON.stringify(error, Object.getOwnPropertyNames(error), 2)
-        );
-      } catch (serErr) {
-        console.error("Error saving messages (non-serializable):", error);
-      }
-      return false;
-    }
-
-    console.debug("Saved messages result:", data);
-    return true;
-  } catch (err) {
-    console.error("Unexpected exception saving messages:", err);
-    return false;
   }
 }
 
@@ -300,11 +244,17 @@ export async function getAttemptById(attemptId: string): Promise<{
 // Delete an attempt
 export async function deleteAttempt(attemptId: string): Promise<boolean> {
   try {
+    const token = await getAccessToken();
+    if (!token) {
+      console.error("Cannot delete attempt: missing auth token");
+      return false;
+    }
     // Call server-side API to delete attempt and related rows using service role key
     const resp = await fetch(
       `/api/attempts?id=${encodeURIComponent(attemptId)}`,
       {
         method: "DELETE",
+        headers: await buildAuthHeaders({}, token),
       }
     );
 
@@ -332,24 +282,62 @@ export async function saveAttemptProgress(
   timeSpentSeconds: number
 ): Promise<boolean> {
   try {
-    // First update the attempt record
-    const { error: updateError } = await supabase
-      .from("attempts")
-      .update({
-        last_stage_index: stageIndex,
-        time_spent_seconds: timeSpentSeconds,
-      })
-      .eq("id", attemptId);
+    const token = await getAccessToken();
+    if (!token) {
+      console.error("Cannot save attempt progress: missing auth token");
+      return false;
+    }
+    const normalizedStageIndex = Number.isFinite(stageIndex)
+      ? Math.max(0, Math.floor(stageIndex))
+      : 0;
+    const normalizedTime = Number.isFinite(timeSpentSeconds)
+      ? Math.max(0, Math.floor(timeSpentSeconds))
+      : 0;
 
-    if (updateError) {
-      console.error("Error updating attempt progress:", updateError);
+    const response = await fetch("/api/attempts/progress", {
+      method: "POST",
+      headers: {
+        ...(await buildAuthHeaders({ "Content-Type": "application/json" }, token)),
+      },
+      body: JSON.stringify({
+        attemptId,
+        stageIndex: normalizedStageIndex,
+        timeSpentSeconds: normalizedTime,
+        messages,
+      }),
+    });
+
+    let body: unknown = null;
+    try {
+      body = await response.json();
+    } catch (parseError) {
+      if (response.ok) {
+        console.error(
+          "Attempt progress API returned a non-JSON response",
+          parseError
+        );
+      }
+    }
+
+    if (!response.ok) {
+      console.error(
+        "Failed to save attempt progress via API:",
+        response.status,
+        body ?? {}
+      );
       return false;
     }
 
-    // Then save the messages
-    const success = await saveMessages(attemptId, messages);
+    if (
+      !body ||
+      typeof body !== "object" ||
+      !(body as { success?: boolean }).success
+    ) {
+      console.error("Attempt progress API returned unexpected body:", body);
+      return false;
+    }
 
-    return success;
+    return true;
   } catch (error) {
     console.error("Unexpected error saving attempt progress:", error);
     return false;

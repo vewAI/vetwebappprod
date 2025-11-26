@@ -69,7 +69,12 @@ export const CASE_SEEDS: CaseSeed[] = [
     get_owner_follow_up_prompt: `Roleplay a concerned owner weighing the cost and practicality of diagnostics versus immediate treatment.`,
     get_owner_follow_up_feedback_prompt: `Judge how well the student justified diagnostics, discussed isolation logistics, and handled financial concerns.`,
     get_owner_diagnosis_prompt: `React as an owner processing a strangles diagnosis: relief to have answers, but anxious about spread and future competitions.`,
-    get_overall_feedback_prompt: `Summarise communication, clinical reasoning, and professionalism shown throughout the equine strangles case.`,
+    get_overall_feedback_prompt: `Focus on whether the student:
+  - Collected exposure history (recent arrivals, vaccination status, other horses affected) and signalment data.
+  - Conducted or at least outlined a systematic physical exam for an equine infectious-disease case.
+  - Proposed appropriate diagnostics (CBC, fibrinogen, PCR/culture, imaging) with rationale.
+  - Addressed isolation/biosecurity instructions and client logistics.
+  When any element is missing from the transcript, flag it explicitly as a deficiency.`,
   },
   {
     id: "case-2",
@@ -109,7 +114,12 @@ export const CASE_SEEDS: CaseSeed[] = [
     get_owner_follow_up_prompt: `Challenge the student (politely) to justify 24/7 care, discuss financial planning, and describe what will happen each day in hospital.`,
     get_owner_follow_up_feedback_prompt: `Score the student on triage communication, discussion of isolation, and how they framed prognosis.`,
     get_owner_diagnosis_prompt: `React to the confirmed parvo diagnosis. Ask about relapse risk, long-term GI issues, and protecting other dogs in the building.`,
-    get_overall_feedback_prompt: `Provide a balanced summary of the student's medical reasoning and bedside manner throughout Milo's case.`,
+    get_overall_feedback_prompt: `Focus on whether the student:
+  - Investigated vaccination status, exposure risks, and home management in the history.
+  - Performed or described a complete physical exam with emphasis on hydration and abdominal pain.
+  - Prioritised appropriate diagnostics (SNAP parvo test, CBC, electrolytes, ultrasound) and explained the rationale and urgency.
+  - Communicated isolation, intensive-care planning, prognosis, and cost discussions clearly to the owner.
+  Call out any of these elements as deficiencies when missing from the transcript.`,
   },
   {
     id: "case-3",
@@ -148,6 +158,11 @@ export const CASE_SEEDS: CaseSeed[] = [
     get_owner_follow_up_prompt: `Roleplay a producer balancing cost, milk quality premiums, and labour limits. Ask for concrete timelines and ROI on recommended changes.`,
     get_owner_follow_up_feedback_prompt: `Comment on the student's ability to tie diagnostics to management changes and to present numbers that resonate with producers.`,
     get_owner_diagnosis_prompt: `React to the confirmed Staph aureus diagnosis: weigh culling vs. extended therapy and ask about protecting the rest of the herd.`,
-    get_overall_feedback_prompt: `Provide a closing evaluation of the student's herd-level thinking, communication, and professionalism during the mastitis case.`,
+    get_overall_feedback_prompt: `Focus on whether the student:
+  - Explored herd management risk factors (milking routines, hygiene, staff practices, equipment maintenance).
+  - Conducted or described a systematic udder/quarter exam and interpreted findings in a herd context.
+  - Recommended appropriate diagnostics (culture, PCR, SCC trending) with economic justification.
+  - Delivered practical, numbers-backed advice on segregation, treatment vs. culling, and prevention while maintaining producer rapport.
+  Highlight any missing components directly as performance gaps.`,
   },
 ];

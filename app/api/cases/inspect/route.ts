@@ -1,13 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(
-  supabaseUrl,
-  supabaseServiceKey ?? supabaseAnonKey
-);
+import { requireAdmin } from "@/app/api/_lib/auth";
 
 const promptFields = [
   "description",
@@ -30,7 +23,12 @@ const promptFields = [
 ];
 
 export async function GET(req: Request) {
+  const auth = await requireAdmin(req);
+  if ("error" in auth) {
+    return auth.error;
+  }
   try {
+    const { supabase } = auth;
     const url = new URL(req.url);
     const id = url.searchParams.get("id");
     if (!id) {

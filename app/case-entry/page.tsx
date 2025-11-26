@@ -6,58 +6,21 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import axios from "axios";
 import ImageUploader from "@/components/ui/image-uploader";
-
-const initialFormState = {
-  id: "",
-  title: "",
-  description: "",
-  species: "",
-  condition: "",
-  category: "",
-  difficulty: "",
-  estimated_time: "",
-  image_url: "",
-  details: "",
-  physical_exam_findings: "",
-  diagnostic_findings: "",
-  owner_background: "",
-  history_feedback: "",
-  owner_follow_up: "",
-  owner_follow_up_feedback: "",
-  owner_diagnosis: "",
-  get_owner_prompt: "",
-  get_history_feedback_prompt: "",
-  get_physical_exam_prompt: "",
-  get_diagnostic_prompt: "",
-  get_owner_follow_up_prompt: "",
-  get_owner_follow_up_feedback_prompt: "",
-  get_owner_diagnosis_prompt: "",
-  get_overall_feedback_prompt: "",
-};
+import {
+  caseFieldMeta,
+  createEmptyCaseFormState,
+  orderedCaseFieldKeys,
+  type CaseFieldKey,
+  getFieldMeta,
+} from "@/features/cases/fieldMeta";
 
 export default function CaseEntryForm() {
-  // List of fields considered long text
-  const longTextFields = [
-    "description",
-    "details",
-    "physical_exam_findings",
-    "diagnostic_findings",
-    "owner_background",
-    "history_feedback",
-    "owner_follow_up",
-    "owner_follow_up_feedback",
-    "owner_diagnosis",
-    "get_owner_prompt",
-    "get_history_feedback_prompt",
-    "get_physical_exam_prompt",
-    "get_diagnostic_prompt",
-    "get_owner_follow_up_prompt",
-    "get_owner_follow_up_feedback_prompt",
-    "get_owner_diagnosis_prompt",
-    "get_overall_feedback_prompt",
-  ];
-  const [expandedField, setExpandedField] = useState<string | null>(null);
-  const [form, setForm] = useState(initialFormState);
+  const [expandedField, setExpandedField] = useState<CaseFieldKey | null>(
+    null
+  );
+  const [form, setForm] = useState<Record<CaseFieldKey, string>>(
+    createEmptyCaseFormState
+  );
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
@@ -65,7 +28,9 @@ export default function CaseEntryForm() {
   function handleChange(
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    if (!getFieldMeta(name)) return;
+    setForm((prev) => ({ ...prev, [name as CaseFieldKey]: value }));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -78,7 +43,7 @@ export default function CaseEntryForm() {
       const payload: Record<string, unknown> = { ...form };
 
       // Helper to inject default text only when empty
-      const ensure = (key: string, value: string) => {
+      const ensure = (key: CaseFieldKey, value: string) => {
         const v = payload[key];
         if (
           v === undefined ||
@@ -90,38 +55,88 @@ export default function CaseEntryForm() {
       };
 
       // Basic case-specific defaults based on id/title
-      const horseName = String(
-        payload["title"] ?? payload["id"] ?? "the patient"
-      );
+  const patientLabel = String(
+    payload["title"] ?? payload["id"] ?? "the patient"
+  );
 
-      const diagnostic_findings_template = `Note: Only provide results for tests specifically requested by the student. If they request other tests not listed here, results should be within normal range but note these may be unnecessary tests.`;
+  const diagnostic_findings_template = `List the diagnostic data that is already available for this case. Present each value on its own line with units where appropriate. When responding to the student, release only the specific result they request. If a test has not been performed, state that it is pending or unavailable.`;
 
-      const owner_background_template = `Role: Horse Owner (Female, initially worried but responsive to reassurance)\nHorse: ${horseName} (3-year-old Cob mare)\n\nPrimary Concern:\n- Horse is off color and not eating well (this is very concerning as she's usually a good eater)\n- Should express worry about these symptoms ONLY ONCE at the beginning of the conversation\n- If the student provides reassurance or shows empathy, IMMEDIATELY transition to a more calm and cooperative demeanor and DO NOT express worry again\n\nClinical Information (ONLY PROVIDE WHEN SPECIFICALLY REQUESTED):\n1. Current Symptoms:\n- Poor appetite\n- Quieter than usual\n- Feces have been normal until today, they are now a bit dry)\n- No nasal discharge noticed\n- Everything else appears normal\n\n2. Living Situation (ONLY PROVIDE WHEN SPECIFICALLY REQUESTED):\n- Housed at a large yard with 45 horses\n- Stabled at night, out in pasture in morning\n- Not in training yet\n- Other horses come and go for shows frequently\n- ${horseName} hasn't been to any shows for 8 weeks\n\n3. Healthcare (ONLY PROVIDE WHEN SPECIFICALLY REQUESTED):\n- Regular vaccinations for flu and tetanus\n- Not vaccinated for EHV or strangles\n- Regular fecal egg counts performed\n- Last worming was 6 months ago (can't remember product used)\n- Fecal egg counts consistently low\n\n4. Diet (ONLY PROVIDE WHEN SPECIFICALLY REQUESTED):\n- High-quality hay (9-10 kg/day)\n- Commercial feed (low starch, high fiber)\n- Gets speedy-beet\n- Recent nutritionist consultation\n\nImportant Character Notes:\n- Should initially be hesitant about sharing information with yard manager/other owners\n- Will agree to share information if the student explains the importance\n- Can be convinced to allow discussion with yard manager and other vets\n- Should show concern for horse's wellbeing WITHOUT repeatedly mentioning worry\n- Use non-technical language\n- Only provide information when specifically asked\n- If asked about anything not listed above, respond that everything seems normal or you haven't noticed anything unusual\n- IMPORTANT: After any reassurance from the student, switch to a calm, cooperative tone and do not mention being worried again`;
+  const owner_background_template = `Role: Animal owner or primary caretaker.
+Patient: ${patientLabel}
 
-      const history_feedback_template = `You are an experienced veterinary educator providing feedback on a student's history-taking during a case of a horse presenting with poor appetite and being "off color". Base your evaluation on the following criteria: CRITICAL INFORMATION THAT SHOULD BE COLLECTED: 1. Current Clinical Signs - Appetite changes (type, duration) - General demeanor/behavior - Any nasal discharge - Fecal output/consistency - Temperature if checked - Duration of symptoms 2. Yard Environment & Contacts - Details about the yard (size, population) - Contact with other horses - Recent travel/shows - Movement of other horses on yard - Housing arrangements 3. Preventive Healthcare - Vaccination status - Parasite control/worming - Recent health issues 4. Current Management - Housing routine - Diet and feeding - Current work/exercise\n\nEVALUATION GUIDELINES: 1. First acknowledge what the student did well 2. Identify any critical missing information 3. Note the logical flow of questioning (or lack thereof) 4. Provide specific examples of questions they should have asked 5. Be constructive but direct about serious oversights\n\nProvide feedback using the structured format in the UI when requested.`;
+Guidance for conversation setup:
+- Open with the key concern in one or two sentences.
+- Provide additional medical or management history ONLY when the student asks for it.
+- Use plain language and avoid medical jargon unless the student introduces it.
+- Begin slightly worried but become cooperative once a plan is explained.
+- If a question falls outside the information you know, state that you are unsure rather than improvising.`;
 
-      const owner_follow_up_template = `Role: Horse Owner (Female, worried but cooperative and wants to know what's next)\nHorse: ${horseName} (3-year-old Cob mare)\n\nCurrent Understanding:\n- Aware that ${horseName} has: * High temperature * Poor appetite * Some swollen areas around the head * Not quite herself - No diagnosis yet - Wanting to know what happens next\n\nKey Questions/Responses:\n- "So what do we need to do next?"\n- "Why do we need these tests?"\n- "How much will all this cost?"\n- "Do we need to do all of these tests?"\n- "Could we just try some treatment first?"\n- If student suggests treatment without diagnosis: \"Shouldn't we know what we're dealing with first?\"`;
+  const history_feedback_template = `You are an experienced veterinary educator providing feedback on a student's history-taking performance.
 
-      const owner_follow_up_feedback_template = `CRITICAL INFORMATION THAT SHOULD BE DISCUSSED: 1. Essential Diagnostic Tests: - Nasopharyngeal swab/lavage for: * Strep equi PCR and culture * PCR for flu and EHV1/4 - Lymph node assessment: * Ultrasound of regional lymph nodes * Consider fine needle aspirate of enlarged submandibular lymph node - Blood work if suggested: * Comment on cost vs benefit * Note that biochemistry may be expensive and non-informative 2. Test Prioritization: - Focus on tests specific to suspected infectious disease - Avoid unnecessary testing - Consider cost-effectiveness of each test 3. Biosecurity Measures: - CRITICAL: Discussion of isolation requirements - Temperature monitoring protocol - Communication with yard manager - Prevention of nose-to-nose contact 4. Treatment Considerations: - Explanation of why diagnosis before treatment is important - Discussion of why antimicrobials may not be appropriate - Appropriate use of NSAIDs if suggested - Avoidance of corticosteroids`;
+Assessment checklist:
+1. Presenting complaint details (onset, duration, severity, progression).
+2. Signalment and relevant background for the patient.
+3. Environment, exposure risks, and recent changes.
+4. Preventive healthcare status and prior medical history.
+5. Current diet, medications, and management routines.
 
-      const owner_diagnosis_template = `Role: Relative/Owner receiving diagnosis (concerned but receptive)\nPatient: ${horseName}\n\nTest Results to Discuss and typical owner questions about diagnosis and management. Provide guidance for student conversation and common owner reactions.`;
+Feedback instructions:
+- Begin by highlighting what the student did well.
+- Identify the most important unanswered questions.
+- Suggest 2-3 concrete follow-up questions they should ask next.
+- Comment briefly on organisation and rapport-building.
+- Keep the tone constructive and educational.`;
 
-      // Prompts for interactive roles
-      const get_owner_prompt_template = `You are roleplaying as Catalina's owner in a veterinary consultation. Maintain character according to the following background information while responding to the student's questions. Please remember to only provide information that is specifically asked for.\n\n{ownerBackground}\n\nStudent's question: {studentQuestion}`;
+  const owner_follow_up_template = `Role: Animal owner or caretaker seeking clarity on next steps.
+Patient: ${patientLabel}
 
-      const get_history_feedback_prompt_template = `IMPORTANT - FIRST CHECK FOR MINIMAL INTERACTION: ... (use the full feedback guidance when requested)`;
+Conversation goals:
+- Understand which diagnostics are being recommended and why.
+- Ask about costs, logistics, and timing for each test or treatment.
+- Raise concerns about patient comfort or practicality when appropriate.
+- Become more cooperative once the clinician explains the rationale clearly.
+- Avoid repeating the same concern once it has been addressed.`;
 
-      const get_physical_exam_prompt_template = `You are a veterinary assistant helping with the physical examination of ${horseName}. Provide findings only when asked.`;
+  const owner_follow_up_feedback_template = `When reviewing this stage, comment on whether the student:
+- Prioritised diagnostics that align with the likely differentials.
+- Explained the purpose and value of each recommendation in plain language.
+- Discussed cost considerations or resource constraints when prompted.
+- Addressed biosecurity, safety, or home-care logistics if relevant.
+- Invited and handled owner questions respectfully.`;
 
-      const get_diagnostic_prompt_template = `You are a laboratory technician providing diagnostic test results for ${horseName}. Only provide results when specifically requested.`;
+  const owner_diagnosis_template = `Role: Animal owner receiving diagnostic results and management plan.
+Patient: ${patientLabel}
 
-      const get_owner_follow_up_prompt_template = `You are roleplaying as ${horseName}'s owner in a follow-up discussion after the physical examination. Maintain character and answer why tests are needed.`;
+Guidance:
+- React with natural concern, then focus on practical questions about prognosis, monitoring, treatment, and communication.
+- Ask about timelines for recovery, potential complications, and how to protect other animals or people if relevant.
+- Acknowledge clear explanations and request clarification when something is unclear.`;
 
-      const get_owner_follow_up_feedback_prompt_template = `Provide structured feedback on diagnostic planning and biosecurity for follow-up discussions.`;
+  // Prompts for interactive roles
+  const get_owner_prompt_template = `You are roleplaying as the patient's owner or caretaker. Stay in character using the background information below and provide only the details that are explicitly requested.
 
-      const get_owner_diagnosis_prompt_template = `You are roleplaying as the owner in a follow-up about test results. Respond in character.`;
+{ownerBackground}
 
-      const get_overall_feedback_prompt_template = `You are an experienced veterinary educator providing comprehensive feedback on the student's performance across the case. Use the structured guidance provided.`;
+Student's question: {studentQuestion}
+
+Remain collaborative, use everyday language, and avoid offering your own medical diagnoses.`;
+
+  const get_history_feedback_prompt_template = `IMPORTANT - FIRST CHECK FOR MINIMAL INTERACTION:
+1. Determine if the student has supplied fewer than three substantive messages in the conversation context below.
+2. If interaction is minimal, provide guidance encouraging them to gather more information before requesting feedback.
+3. If interaction is sufficient, deliver detailed feedback using the rubric provided in this prompt.`;
+
+  const get_physical_exam_prompt_template = `You are a veterinary assistant supporting the examination of ${patientLabel}. Share only the specific vital sign or system finding that the student asks about. If their request is vague, prompt them to be more specific.`;
+
+  const get_diagnostic_prompt_template = `You are a laboratory technician answering questions about diagnostic results for ${patientLabel}. Release one requested result at a time, note if a test is pending or unperformed, and avoid interpretation beyond the raw data.`;
+
+  const get_owner_follow_up_prompt_template = `You are roleplaying as the owner or caretaker during the diagnostic planning conversation. Ask for clear explanations, raise practical concerns, and acknowledge when the student addresses them effectively.`;
+
+  const get_owner_follow_up_feedback_prompt_template = `Provide structured feedback on the student's diagnostic planning discussion. Highlight strengths, note missing explanations, and recommend actionable improvements.`;
+
+  const get_owner_diagnosis_prompt_template = `You are the owner or caretaker receiving the results discussion. Respond with practical questions about management, monitoring, and communication while staying consistent with the owner's persona.`;
+
+  const get_overall_feedback_prompt_template = `Provide a comprehensive teaching summary covering communication, clinical reasoning, diagnostic planning, and professionalism observed across the entire case.`;
 
       // Inject defaults when empty
       ensure("diagnostic_findings", diagnostic_findings_template);
@@ -151,7 +166,7 @@ export default function CaseEntryForm() {
       // Post to API
       await axios.post("/api/cases", payload);
       setSuccess("Case added successfully!");
-      setForm(initialFormState);
+      setForm(createEmptyCaseFormState());
     } catch (err: unknown) {
       // Prefer server-provided error message when available
       const e = err as {
@@ -172,52 +187,97 @@ export default function CaseEntryForm() {
     <div className="max-w-2xl mx-auto p-8">
       <h1 className="text-2xl font-bold mb-6">Add New Case</h1>
       <form onSubmit={handleSubmit} className="space-y-4">
-        {Object.entries(initialFormState).map(([key]) => (
-          <div key={key}>
-            <label className="block font-medium mb-1" htmlFor={key}>
-              {key.replace(/_/g, " ")}
-            </label>
-            {key === "image_url" ? (
-              <div>
-                <ImageUploader
-                  existingUrl={form.image_url}
-                  onUpload={(url) => setForm({ ...form, image_url: url })}
-                />
-                <Input
-                  name={key}
-                  value={form[key as keyof typeof form]}
-                  onChange={handleChange}
-                  className="w-full mt-2"
-                />
+        {orderedCaseFieldKeys.map((key) => {
+          const meta = caseFieldMeta[key];
+          const helpId = meta.help ? `${key}-help` : undefined;
+
+          if (key === "image_url") {
+            return (
+              <div key={key}>
+                <label className="block font-medium mb-1" htmlFor={key}>
+                  {meta.label}
+                </label>
+                <div className="space-y-2">
+                  <ImageUploader
+                    existingUrl={form.image_url}
+                    onUpload={(url) =>
+                      setForm((prev) => ({ ...prev, image_url: url }))
+                    }
+                  />
+                  <Input
+                    name={key}
+                    value={form[key]}
+                    onChange={handleChange}
+                    placeholder={meta.placeholder}
+                    aria-describedby={helpId}
+                    className="w-full"
+                  />
+                </div>
+                {meta.help && (
+                  <p id={helpId} className="mt-1 text-sm text-muted-foreground">
+                    {meta.help}
+                  </p>
+                )}
               </div>
-            ) : longTextFields.includes(key) ? (
-              <div className="flex gap-2 items-center">
-                <Textarea
-                  name={key}
-                  autoComplete="off"
-                  value={form[key as keyof typeof form]}
-                  onChange={handleChange}
-                  className="w-full"
-                  rows={3}
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => setExpandedField(key)}
-                >
-                  Expand
-                </Button>
+            );
+          }
+
+          if (meta.multiline) {
+            return (
+              <div key={key}>
+                <label className="block font-medium mb-1" htmlFor={key}>
+                  {meta.label}
+                </label>
+                <div className="flex items-start gap-2">
+                  <Textarea
+                    name={key}
+                    autoComplete="off"
+                    value={form[key]}
+                    onChange={handleChange}
+                    placeholder={meta.placeholder}
+                    aria-describedby={helpId}
+                    className="w-full"
+                    rows={meta.rows ?? 4}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => setExpandedField(key)}
+                  >
+                    Expand
+                  </Button>
+                </div>
+                {meta.help && (
+                  <p id={helpId} className="mt-1 text-sm text-muted-foreground">
+                    {meta.help}
+                  </p>
+                )}
               </div>
-            ) : (
+            );
+          }
+
+          return (
+            <div key={key}>
+              <label className="block font-medium mb-1" htmlFor={key}>
+                {meta.label}
+              </label>
               <Input
                 name={key}
-                value={form[key as keyof typeof form]}
+                value={form[key]}
                 onChange={handleChange}
+                placeholder={meta.placeholder}
+                aria-describedby={helpId}
                 className="w-full"
+                autoComplete="off"
               />
-            )}
-          </div>
-        ))}
+              {meta.help && (
+                <p id={helpId} className="mt-1 text-sm text-muted-foreground">
+                  {meta.help}
+                </p>
+              )}
+            </div>
+          );
+        })}
         <Button type="submit" disabled={loading} className="w-full">
           {loading ? "Submitting..." : "Submit"}
         </Button>
@@ -229,16 +289,30 @@ export default function CaseEntryForm() {
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg max-w-2xl w-full p-6">
             <h2 className="text-lg font-bold mb-2">
-              {expandedField.replace(/_/g, " ")}
+              {caseFieldMeta[expandedField]?.label ?? expandedField}
             </h2>
             <Textarea
-              value={form[expandedField as keyof typeof form]}
+              value={form[expandedField]}
               onChange={handleChange}
               name={expandedField}
               autoComplete="off"
               className="w-full h-64"
-              rows={12}
+              placeholder={caseFieldMeta[expandedField]?.placeholder}
+              aria-describedby={
+                caseFieldMeta[expandedField]?.help
+                  ? `${expandedField}-help`
+                  : undefined
+              }
+              rows={caseFieldMeta[expandedField]?.rows ?? 12}
             />
+            {caseFieldMeta[expandedField]?.help && (
+              <p
+                id={`${expandedField}-help`}
+                className="mt-2 text-sm text-muted-foreground"
+              >
+                {caseFieldMeta[expandedField]?.help}
+              </p>
+            )}
             <div className="flex justify-end mt-4">
               <Button type="button" onClick={() => setExpandedField(null)}>
                 Close

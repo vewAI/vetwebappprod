@@ -49,14 +49,30 @@ export function ChatMessage({ message, stages, onRetry }: ChatMessageProps) {
         isUser ? "bg-muted/50" : "bg-background"
       )}
     >
-      <div
-        className={cn(
-          "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
-          isUser ? "bg-primary text-primary-foreground" : "bg-muted"
-        )}
-      >
-        {isUser ? <User className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
-      </div>
+      {message.portraitUrl && !isUser ? (
+        <div className="relative h-[4.5rem] w-[4.5rem] shrink-0 overflow-hidden rounded-lg border bg-muted">
+          <img
+            src={message.portraitUrl}
+            alt={`${roleName} portrait`}
+            className="h-full w-full object-cover"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+          />
+        </div>
+      ) : (
+        <div
+          className={cn(
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
+            isUser ? "bg-primary text-primary-foreground" : "bg-muted"
+          )}
+        >
+          {isUser ? (
+            <User className="h-5 w-5" />
+          ) : (
+            <Bot className="h-5 w-5" />
+          )}
+        </div>
+      )}
       <div className="flex-1 space-y-2">
         <div className="flex items-center gap-2">
           <div className="font-medium">{roleName}</div>

@@ -3,6 +3,10 @@ import {
   dispatchTtsEnd,
   dispatchTtsStart,
 } from "@/features/speech/models/tts-events";
+import {
+  buildAuthHeaders,
+  getAccessToken,
+} from "@/lib/auth-headers";
 
 type TtsMeta = Omit<TtsEventDetail, "audio"> | undefined;
 
@@ -50,9 +54,17 @@ export async function speakRemote(
 ): Promise<HTMLAudioElement> {
   if (!text) throw new Error("text required");
 
+  const token = await getAccessToken();
+  if (!token) {
+    throw new Error("Not authenticated");
+  }
+
   const res = await fetch("/api/tts", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await buildAuthHeaders(
+      { "Content-Type": "application/json" },
+      token
+    ),
     body: JSON.stringify({ text, voice }),
   });
 
@@ -148,12 +160,20 @@ export async function speakRemoteStream(
 ): Promise<HTMLAudioElement> {
   if (!text) throw new Error("text required");
 
+  const token = await getAccessToken();
+  if (!token) {
+    throw new Error("Not authenticated");
+  }
+
   // POST-init flow: request a short streaming URL from the server so we avoid
   // very long GET URLs. The server will return a short url that proxies the
   // upstream provider and supports streaming audio.
   const initResp = await fetch("/api/tts/init", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await buildAuthHeaders(
+      { "Content-Type": "application/json" },
+      token
+    ),
     body: JSON.stringify({ text, voice }),
   });
 
@@ -210,7 +230,10 @@ export async function speakRemoteStream(
           "Streamed audio failed, attempting buffered fallback:",
           ev
         );
-        const resp = await fetch(url, { cache: "no-store" });
+        const resp = await fetch(url, {
+          cache: "no-store",
+          headers: await buildAuthHeaders({}, token),
+        });
         if (!resp.ok) {
           const txt = await resp.text().catch(() => "");
           throw new Error(`Fallback fetch failed: ${resp.status} ${txt}`);
@@ -289,12 +312,17 @@ export async function speakRemoteStream(
             );
           });
         }
-      } catch (fallbackErr) {
+      } catch (fallbackErr: unknown) {
         try {
-          const detail =
-            (fallbackErr && fallbackErr.message) ||
-            (ev && ev.message) ||
-            String(fallbackErr);
+          const fallbackMessage =
+            typeof fallbackErr === "object" && fallbackErr !== null && "message" in fallbackErr
+              ? String((fallbackErr as { message?: string }).message ?? fallbackErr)
+              : String(fallbackErr);
+          const eventMessage =
+            typeof ev === "object" && ev !== null && "message" in ev
+              ? String((ev as { message?: string }).message ?? ev)
+              : String(ev);
+          const detail = fallbackMessage || eventMessage;
           reject(new Error(`Streamed audio playback error: ${detail}`));
         } catch (err) {
           reject(new Error("Streamed audio playback error"));

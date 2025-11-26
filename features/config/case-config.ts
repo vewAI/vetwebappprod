@@ -5,7 +5,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
     {
       id: "stage-1",
       title: "History Taking",
-      description: "Take a detailed history from the horse owner.",
+      description: "Share the recorded presenting complaint and history, volunteering relevant observations that stay consistent with the documented condition.",
       completed: false,
       role: "Client (Horse Owner)",
       roleInfoKey: "getOwnerPrompt",
@@ -14,7 +14,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
     {
       id: "stage-2",
       title: "Physical Examination",
-      description: "Perform a physical examination of the horse.",
+      description: "Report physical examination findings exactly as recorded when asked.",
       completed: false,
       role: "Veterinarian",
       roleInfoKey: "getPhysicalExamPrompt",
@@ -22,7 +22,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
     {
       id: "stage-3",
       title: "Owner Follow-up",
-      description: "Talk to the owner about tests needed to confirm diagnosis",
+      description: "Provide factual answers to owner follow-up questions when requested.",
       completed: false,
       role: "Client (Horse Owner)",
       roleInfoKey: "getOwnerFollowUpPrompt",
@@ -31,7 +31,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
     {
       id: "stage-4",
       title: "Test Results",
-      description: "Consult with the laboratory technician about test results",
+      description: "Share laboratory findings verbatim when the student asks.",
       completed: false,
       role: "Laboratory Technician",
       roleInfoKey: "getDiagnosticPrompt",
@@ -39,7 +39,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
     {
       id: "stage-5",
       title: "Client Communication",
-      description: "Communicate findings and recommendations",
+      description: "Answer client questions with the documented diagnosis and plan.",
       completed: false,
       role: "Client (Horse Owner)",
       roleInfoKey: "getOwnerDiagnosisPrompt",
@@ -50,7 +50,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       id: "stage-1",
       title: "History Taking",
       description:
-        "Gather a thorough history from Milo's owner, focusing on vaccination status, exposure risks, and onset of clinical signs.",
+        "Share Milo's recorded presenting complaint and timeline, volunteering observations that stay consistent with the documented condition.",
       completed: false,
       role: "Client (Dog Owner)",
       roleInfoKey: "getOwnerPrompt",
@@ -60,7 +60,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       id: "stage-2",
       title: "Physical Examination",
       description:
-        "Perform a system-based physical examination with emphasis on hydration status and abdominal pain.",
+        "Report physical examination findings exactly as documented whenever the student asks.",
       completed: false,
       role: "Veterinary Nurse",
       roleInfoKey: "getPhysicalExamPrompt",
@@ -69,7 +69,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       id: "stage-3",
       title: "Diagnostic Planning",
       description:
-        "Discuss recommended diagnostics and isolation protocols with the owner.",
+        "Respond to owner diagnostic questions with factual information only when asked.",
       completed: false,
       role: "Client (Dog Owner)",
       roleInfoKey: "getOwnerFollowUpPrompt",
@@ -79,7 +79,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       id: "stage-4",
       title: "Laboratory Review",
       description:
-        "Review lab findings with the in-house technician and interpret key abnormalities.",
+        "Provide the exact lab findings requested without interpretation or advice.",
       completed: false,
       role: "Laboratory Technician",
       roleInfoKey: "getDiagnosticPrompt",
@@ -88,7 +88,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       id: "stage-5",
       title: "Client Communication",
       description:
-        "Deliver the diagnosis and outline treatment plus home-care instructions.",
+        "Answer the client's questions with the documented diagnosis and plan only when prompted.",
       completed: false,
       role: "Client (Dog Owner)",
       roleInfoKey: "getOwnerDiagnosisPrompt",
@@ -99,7 +99,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       id: "stage-1",
       title: "History Taking",
       description:
-        "Interview the dairy producer about herd-level mastitis concerns and recent management changes.",
+        "Share the producer's recorded concerns and observations, volunteering context that stays consistent with the documented condition.",
       completed: false,
       role: "Producer (Dairy Farmer)",
       roleInfoKey: "getOwnerPrompt",
@@ -109,7 +109,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       id: "stage-2",
       title: "Physical Examination",
       description:
-        "Conduct a focused exam on the affected quarter and evaluate udder health indicators.",
+        "Report the documented udder and physical findings whenever the student asks.",
       completed: false,
       role: "Veterinary Assistant",
       roleInfoKey: "getPhysicalExamPrompt",
@@ -118,7 +118,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       id: "stage-3",
       title: "Diagnostic Planning",
       description:
-        "Explain culture, PCR, and milk-record data needs to the producer and prioritise testing.",
+        "Answer producer questions about diagnostics with factual information only when prompted.",
       completed: false,
       role: "Producer (Dairy Farmer)",
       roleInfoKey: "getOwnerFollowUpPrompt",
@@ -128,7 +128,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       id: "stage-4",
       title: "Laboratory Review",
       description:
-        "Discuss microbiology findings with the diagnostic laboratory contact.",
+        "Provide the microbiology findings exactly as recorded when requested.",
       completed: false,
       role: "Laboratory Technician",
       roleInfoKey: "getDiagnosticPrompt",
@@ -137,7 +137,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       id: "stage-5",
       title: "Client Communication",
       description:
-        "Deliver the diagnosis, outline treatment, and design a herd-level prevention plan.",
+        "Respond to client questions with the documented diagnosis, plan, and prevention data when asked.",
       completed: false,
       role: "Producer (Dairy Farmer)",
       roleInfoKey: "getOwnerDiagnosisPrompt",

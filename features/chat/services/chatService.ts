@@ -1,5 +1,6 @@
 import axios from "axios";
 import type { Message } from "@/features/chat/models/chat";
+import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
 
 /**
  * Service for handling chat API communication
@@ -16,7 +17,14 @@ export const chatService = {
     messages: Message[],
     stageIndex: number,
     caseId: string
-  ): Promise<{ content: string; displayRole?: string }> => {
+  ): Promise<{
+    content: string;
+    displayRole?: string;
+    portraitUrl?: string;
+    voiceId?: string;
+    personaSex?: string;
+    personaRoleKey?: string;
+  }> => {
     try {
       // Format messages for the API
       const apiMessages = messages.map((msg) => ({
@@ -29,6 +37,12 @@ export const chatService = {
         throw new Error("Network unavailable - please check your connection.");
       }
 
+      const token = await getAccessToken();
+      if (!token) {
+        throw new Error("Not authenticated");
+      }
+      const authHeaders = await buildAuthHeaders({}, token);
+
       // Call the API using axios with a small retry loop for transient
       // network errors (no response). This reduces noisy "Network Error"
       // console traces when the dev server briefly hiccups.
@@ -37,12 +51,25 @@ export const chatService = {
       let lastErr: unknown = null;
       while (attempt < maxAttempts) {
         try {
-          const response = await axios.post("/api/chat", {
-            messages: apiMessages,
-            stageIndex,
-            caseId,
-          });
-          return response.data as { content: string; displayRole?: string };
+          const response = await axios.post(
+            "/api/chat",
+            {
+              messages: apiMessages,
+              stageIndex,
+              caseId,
+            },
+            {
+              headers: authHeaders,
+            }
+          );
+          return response.data as {
+            content: string;
+            displayRole?: string;
+            portraitUrl?: string;
+            voiceId?: string;
+            personaSex?: string;
+            personaRoleKey?: string;
+          };
         } catch (err) {
           lastErr = err;
           // If the error looks like an HTTP response from the server,
@@ -91,6 +118,7 @@ export const chatService = {
     timestamp: new Date().toISOString(),
     stageIndex,
     displayRole: "You",
+    portraitUrl: undefined,
     status: "pending",
   }),
 
@@ -104,7 +132,11 @@ export const chatService = {
   createAssistantMessage: (
     content: string,
     stageIndex: number,
-    roleName: string
+    roleName: string,
+    portraitUrl?: string,
+    voiceId?: string,
+    personaSex?: string,
+    personaRoleKey?: string
   ): Message => ({
     id:
       typeof crypto !== "undefined" && (crypto as any).randomUUID
@@ -115,6 +147,10 @@ export const chatService = {
     timestamp: new Date().toISOString(),
     stageIndex,
     displayRole: roleName,
+    portraitUrl,
+    voiceId,
+    personaSex,
+    personaRoleKey,
   }),
 
   /**

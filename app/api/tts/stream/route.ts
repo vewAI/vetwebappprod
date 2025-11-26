@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+
+import { requireUser } from "@/app/api/_lib/auth";
 import { takeAsync, peekAsync } from "../store";
 
 // Streaming TTS proxy endpoint.
@@ -27,6 +29,13 @@ export async function GET(req: Request) {
       }
       text = payload.text;
       voice = payload.voice ?? voice;
+    }
+
+    if (!id) {
+      const auth = await requireUser(req);
+      if ("error" in auth) {
+        return auth.error;
+      }
     }
 
     if (!text || text.trim().length === 0) {

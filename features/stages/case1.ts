@@ -7,27 +7,27 @@ export function getTransitionMessage(stageIndex: number): Message {
   switch (stageIndex) {
     case 0:
       content =
-        "Now, let's move on to history taking. Ask relevant questions about the horse's condition, history, and current symptoms.";
+        "You are the owner. Start by explaining the horse's presenting complaint and the key symptoms you've noticed, then answer the clinician's questions with the recorded details only—stay consistent with what's documented and avoid adding new problems.";
       break;
     case 1:
       content =
-        "It's time for the physical examination. Describe what you would do to examine this horse, being specific about your approach.";
+        "Report physical examination findings exactly as recorded whenever the student asks. Do not coach or suggest steps.";
       break;
     case 2:
       content =
-        "Based on your physical exam findings, converse with Catalina's owner to suggest follow up tests that need to be done.";
+        "Answer the owner's follow-up questions with factual information only. Offer no guidance unless directly requested.";
       break;
     case 3:
       content =
-        "Consult with the laboratoy technician to find the results of the tests.";
+        "Provide the exact laboratory results the student requests, without interpretation or recommendations.";
       break;
     case 4:
       content =
-        "Based on the test results, prepare to communicate your diagnosis and treatment plan to the client. Consider what information they need to know.";
+        "Share assessment data already on record when the student asks. Do not offer planning advice unprompted.";
       break;
     case 5:
       content =
-        "Finally, communicate your findings and recommendations to the client. Remember to discuss isolation procedures and yard biosecurity.";
+        "Respond to client questions with the recorded diagnosis and plan details only when they are requested.";
       break;
     default:
       content = "Please proceed with the current stage of the examination.";

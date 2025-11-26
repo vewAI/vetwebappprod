@@ -2,21 +2,57 @@ import OpenAi from "openai";
 import { NextRequest, NextResponse } from "next/server";
 import { getRoleInfoPrompt } from "@/features/role-info/services/roleInfoService";
 import { getStagesForCase } from "@/features/stages/services/stageService";
-import { createClient } from "@supabase/supabase-js";
-
-// Create a Supabase server client using the service role key when available.
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabase = createClient(
-  supabaseUrl,
-  supabaseServiceKey ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ""
-);
+import { resolvePersonaRoleKey } from "@/features/personas/services/personaImageService";
+import { buildPersonaSeeds } from "@/features/personas/services/personaSeedService";
+import type { PersonaIdentity } from "@/features/personas/models/persona";
+import { CHAT_SYSTEM_GUIDELINE } from "@/features/chat/prompts/systemGuideline";
+import { resolvePromptValue } from "@/features/prompts/services/promptService";
+import { ensureCasePersonas } from "@/features/personas/services/casePersonaPersistence";
+import { requireUser } from "@/app/api/_lib/auth";
 
 const openai = new OpenAi({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const stripLeadingPersonaIntro = (
+  text: string | null | undefined,
+  labels: Array<string | undefined>
+): string => {
+  if (!text) {
+    return "";
+  }
+
+  const uniqueLabels = Array.from(
+    new Set(
+      labels
+        .map((label) => (label ? label.trim() : ""))
+        .filter((label) => label.length > 0)
+    )
+  );
+
+  let output = text;
+
+  for (const label of uniqueLabels) {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(
+      `^\\s*(?:${escaped})(?:\\s*\\([^)]*\\))?\\s*:\\s*`,
+      "i"
+    );
+    if (pattern.test(output)) {
+      output = output.replace(pattern, "");
+      break;
+    }
+  }
+
+  return output.trimStart();
+};
+
 export async function POST(request: NextRequest) {
+  const auth = await requireUser(request);
+  if ("error" in auth) {
+    return auth.error;
+  }
+  const { supabase } = auth;
   try {
     const { messages, stageIndex, caseId } = await request.json();
 
@@ -36,12 +72,13 @@ export async function POST(request: NextRequest) {
     // If we have a valid caseId, fetch owner_background and roleInfo and prepend them
     // so the LLM is influenced by the owner's personality plus any stage-specific role info.
     let ownerBackground: string | null = null;
+    let caseRecord: Record<string, unknown> | null = null;
     if (caseId) {
       try {
         const { data: caseRow, error: caseErr } = await supabase
           .from("cases")
-          // fetch title so we can substitute placeholders like [Your Name]
-          .select("owner_background,title")
+          // fetch the complete row so we can derive persona identities and prompts
+          .select("*")
           .eq("id", caseId)
           .maybeSingle();
 
@@ -50,25 +87,28 @@ export async function POST(request: NextRequest) {
             "Could not fetch case owner_background:",
             caseErr.message ?? caseErr
           );
-        } else if (caseRow && caseRow.owner_background) {
-          ownerBackground = String(caseRow.owner_background);
-          // Replace common placeholder markers the prompts may contain so the
-          // LLM doesn't echo things like "[Your Name]" literally. Prefer the
-          // case title (usually the horse name) when available, otherwise fall
-          // back to a neutral label.
-          const titleFromRow = (caseRow as { title?: string } | null)?.title;
-          const replacement =
-            titleFromRow && String(titleFromRow).trim() !== ""
-              ? String(titleFromRow)
-              : "Owner";
-          ownerBackground = ownerBackground.replace(
-            /\[Your Name\]/g,
-            replacement
-          );
-          ownerBackground = ownerBackground.replace(
-            /\{owner_name\}/g,
-            replacement
-          );
+        } else if (caseRow) {
+          caseRecord = caseRow as Record<string, unknown>;
+          if (caseRow.owner_background) {
+            ownerBackground = String(caseRow.owner_background);
+            // Replace common placeholder markers the prompts may contain so the
+            // LLM doesn't echo things like "[Your Name]" literally. Prefer the
+            // case title (usually the horse name) when available, otherwise fall
+            // back to a neutral label.
+            const titleFromRow = (caseRow as { title?: string } | null)?.title;
+            const replacement =
+              titleFromRow && String(titleFromRow).trim() !== ""
+                ? String(titleFromRow)
+                : "Owner";
+            ownerBackground = ownerBackground.replace(
+              /\[Your Name\]/g,
+              replacement
+            );
+            ownerBackground = ownerBackground.replace(
+              /\{owner_name\}/g,
+              replacement
+            );
+          }
         }
       } catch (e) {
         console.warn("Error fetching owner_background for caseId", caseId, e);
@@ -94,40 +134,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // High-priority system guideline to shape assistant tone and avoid
-    // verbose, repetitive, or overly-polite filler. Keep replies natural,
-    // concise, and human-like. Avoid phrases like "Thank you for asking"
-    // or "What else would you like to know about X?" unless explicitly
-    // requested. Do not prematurely summarize or provide full diagnostic
-    // conclusions unless the student asks; when asked for a summary produce
-    // a concise bulleted list or a markdown table on request.
-    const systemGuideline = `You are a concise, human-like veterinary assistant. Avoid filler and unnecessary pleasantries. Do not use phrases such as "Thank you for asking" or "What else would you like to know" unless directly requested. Keep responses brief, natural, and focused. Do not provide final summaries or diagnostic conclusions unless the student explicitly requests them; when asked to summarize, produce a short bulleted list or a markdown table if requested.
-
-When the student provides physical examination findings, they may use shorthand, non-standard phrases, or list items out of order. Always interpret the intent of the student's input flexibly, address observations in the order presented when reasonable, and ask concise clarifying questions if needed. Incorporate any indications the student gives and respond fluently and directly to each point the student raises.`;
-
-    enhancedMessages.unshift({ role: "system", content: systemGuideline });
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: enhancedMessages,
-      temperature: 0.7,
-      max_tokens: 1000,
-    });
-
-    const assistantContent = response.choices[0].message.content;
-
-    // Prefer the configured stage role label when available (so the UI shows
-    // e.g. "Laboratory Technician" for the Test Results stage). Only derive
-    // an owner-specific label from the ownerBackground when the current stage
-    // role is the client/owner; otherwise use the stage role directly.
     let displayRole: string | undefined = undefined;
-    try {
-      if (caseId !== undefined && typeof stageIndex === "number") {
+    let stageRole: string | undefined = undefined;
+    let personaRoleKey: string | undefined = undefined;
+    let personaIdentity: PersonaIdentity | undefined = undefined;
+    if (caseId && typeof stageIndex === "number") {
+      try {
         const stages = getStagesForCase(caseId);
         const stage = stages && stages[stageIndex];
         if (stage && stage.role) {
-          // If the stage role refers to the owner/client and we have an
-          // ownerBackground, derive a friendly label using the horse name.
+          stageRole = stage.role;
           if (/owner|client/i.test(stage.role) && ownerBackground) {
             const roleMatch = ownerBackground.match(/Role:\s*(.+)/i);
             if (roleMatch && roleMatch[1]) {
@@ -142,32 +158,260 @@ When the student provides physical examination findings, they may use shorthand,
               }
             }
           } else {
-            // Use the stage role (e.g., "Laboratory Technician")
             displayRole = stage.role;
           }
         }
+      } catch (stageErr) {
+        console.warn("Failed to resolve stage role for case", caseId, stageErr);
       }
-    } catch {
-      // Fallback to the old ownerBackground-derived label if anything goes wrong
-      if (ownerBackground) {
-        const roleMatch = ownerBackground.match(/Role:\s*(.+)/i);
-        if (roleMatch && roleMatch[1]) {
-          displayRole = roleMatch[1].trim();
+    }
+
+    if (!displayRole && ownerBackground) {
+      const roleMatch = ownerBackground.match(/Role:\s*(.+)/i);
+      if (roleMatch && roleMatch[1]) {
+        displayRole = roleMatch[1].trim();
+      } else {
+        const horseMatch = ownerBackground.match(/Horse:\s*([^\n]+)/i);
+        if (horseMatch && horseMatch[1]) {
+          const horseName = horseMatch[1].split("(")[0].trim();
+          displayRole = `Owner (${horseName})`;
         } else {
-          const horseMatch = ownerBackground.match(/Horse:\s*([^\n]+)/i);
-          if (horseMatch && horseMatch[1]) {
-            const horseName = horseMatch[1].split("(")[0].trim();
-            displayRole = `Owner (${horseName})`;
-          } else {
-            displayRole = "Client (Owner)";
-          }
+          displayRole = "Client (Owner)";
         }
       }
     }
 
+    personaRoleKey = resolvePersonaRoleKey(stageRole, displayRole) ?? undefined;
+
+    type PersonaTableRow = {
+      role_key?: string | null;
+      display_name?: string | null;
+      metadata?: unknown;
+      image_url?: string | null;
+      status?: string | null;
+    };
+
+    let personaRow: PersonaTableRow | null = null;
+    let personaMetadata: Record<string, unknown> | null = null;
+    let personaImageUrl: string | undefined = undefined;
+
+    if (caseId && typeof caseId === "string" && personaRoleKey) {
+      try {
+        const { data: row, error } = await supabase
+          .from("case_personas")
+          .select("role_key, display_name, metadata, image_url, status")
+          .eq("case_id", caseId)
+          .eq("role_key", personaRoleKey)
+          .maybeSingle();
+
+        if (error) {
+          console.warn("Failed to read persona row for chat", error);
+        } else if (row) {
+          personaRow = row as PersonaTableRow;
+        }
+
+        if (!personaRow && caseRecord) {
+          try {
+            await ensureCasePersonas(
+              supabase,
+              caseId,
+              caseRecord as Record<string, unknown>
+            );
+          } catch (personaEnsureError) {
+            console.warn(
+              "Unable to ensure persona rows during chat request",
+              personaEnsureError
+            );
+          }
+          const { data: retryRow } = await supabase
+            .from("case_personas")
+            .select("role_key, display_name, metadata, image_url, status")
+            .eq("case_id", caseId)
+            .eq("role_key", personaRoleKey)
+            .maybeSingle();
+          if (retryRow) {
+            personaRow = retryRow as PersonaTableRow;
+          }
+        }
+      } catch (personaErr) {
+        console.warn("Failed to ensure persona row for chat", personaErr);
+      }
+    }
+
+    if (personaRow?.display_name) {
+      displayRole = personaRow.display_name;
+    }
+
+    if (
+      personaRow?.metadata &&
+      typeof personaRow.metadata === "object" &&
+      !Array.isArray(personaRow.metadata)
+    ) {
+      personaMetadata = personaRow.metadata as Record<string, unknown>;
+    }
+
+    if (!personaIdentity && personaMetadata) {
+      const identityCandidate = personaMetadata["identity"];
+      if (
+        identityCandidate &&
+        typeof identityCandidate === "object" &&
+        identityCandidate !== null
+      ) {
+        personaIdentity = identityCandidate as PersonaIdentity;
+      }
+    }
+
+    personaImageUrl = personaRow?.image_url ?? undefined;
+
+    let personaVoiceId: string | undefined = undefined;
+    let personaSex: string | undefined = undefined;
+
+    const resolveVoiceFromMetadata = (
+      metadata: Record<string, unknown>
+    ): string | undefined => {
+      const direct = metadata["voiceId"];
+      if (typeof direct === "string" && direct.trim()) return direct;
+      const identityVoice =
+        metadata["identity"] &&
+        typeof metadata["identity"] === "object" &&
+        metadata["identity"] !== null
+          ? (metadata["identity"] as { voiceId?: unknown }).voiceId
+          : undefined;
+      if (typeof identityVoice === "string" && identityVoice.trim()) {
+        return identityVoice;
+      }
+      return undefined;
+    };
+
+    const resolveSexFromMetadata = (
+      metadata: Record<string, unknown>
+    ): string | undefined => {
+      const direct = metadata["sex"];
+      if (direct === "male" || direct === "female") {
+        return direct;
+      }
+      const identitySex =
+        metadata["identity"] &&
+        typeof metadata["identity"] === "object" &&
+        metadata["identity"] !== null
+          ? (metadata["identity"] as { sex?: unknown }).sex
+          : undefined;
+      if (identitySex === "male" || identitySex === "female") {
+        return identitySex;
+      }
+      return undefined;
+    };
+
+    if (personaMetadata) {
+      personaVoiceId = resolveVoiceFromMetadata(personaMetadata);
+      personaSex = resolveSexFromMetadata(personaMetadata);
+    }
+
+    if (!personaIdentity && caseId && typeof caseId === "string") {
+      try {
+        const seeds = buildPersonaSeeds(
+          caseId,
+          (caseRecord ?? {}) as Record<string, unknown>
+        );
+        const matchedSeed = seeds.find((seed) => seed.roleKey === personaRoleKey);
+        const metadata = matchedSeed?.metadata;
+        if (metadata && typeof metadata === "object") {
+          const identityCandidate = (metadata as { identity?: unknown }).identity;
+          if (
+            identityCandidate &&
+            typeof identityCandidate === "object" &&
+            identityCandidate !== null
+          ) {
+            personaIdentity = identityCandidate as PersonaIdentity;
+            if (!personaVoiceId) {
+              const candidateVoice =
+                (identityCandidate as { voiceId?: unknown }).voiceId;
+              if (typeof candidateVoice === "string") {
+                personaVoiceId = candidateVoice;
+              }
+            }
+            if (!personaSex) {
+              const candidateSex = (identityCandidate as { sex?: unknown }).sex;
+              if (candidateSex === "male" || candidateSex === "female") {
+                personaSex = candidateSex;
+              }
+            }
+          }
+        }
+      } catch (identityErr) {
+        console.warn("Failed to resolve persona identity for case", caseId, identityErr);
+      }
+    }
+
+    if (personaIdentity?.fullName) {
+      const normalizedStage = stageRole?.trim().toLowerCase();
+      const normalizedDisplay = displayRole?.trim().toLowerCase();
+      if (!displayRole) {
+        displayRole = personaIdentity.fullName;
+      } else if (
+        normalizedStage &&
+        normalizedDisplay &&
+        normalizedStage === normalizedDisplay
+      ) {
+        displayRole = personaIdentity.fullName;
+      }
+    }
+
+    // High-priority system guideline to shape assistant tone and avoid
+    // verbose, repetitive, or overly-polite filler. Keep replies natural,
+    // concise, and human-like. Avoid phrases like "Thank you for asking"
+    // or "What else would you like to know about X?" unless explicitly
+    // requested. Do not prematurely summarize or provide full diagnostic
+    // conclusions unless the student asks; when asked for a summary produce
+    // a concise bulleted list or a markdown table on request.
+    let systemGuideline = await resolvePromptValue(
+      supabase,
+      "chat.system.guideline",
+      CHAT_SYSTEM_GUIDELINE
+    );
+
+    const personaNameForChat =
+      (typeof displayRole === "string" && displayRole.trim() !== ""
+        ? displayRole.trim()
+        : undefined) ?? personaIdentity?.fullName;
+
+    if (personaNameForChat) {
+      const pronounSubject = personaIdentity?.pronouns?.subject ?? "they";
+      const pronounObject =
+        pronounSubject === "she"
+          ? "her"
+          : pronounSubject === "he"
+            ? "him"
+            : "them";
+      systemGuideline += `
+
+Your canonical persona name is ${personaNameForChat}. When the student asks for your name or identity, always respond using "${personaNameForChat}" and remain consistent. Refer to yourself using ${pronounSubject}/${pronounObject} pronouns and stay aligned with the role-specific perspective for ${stageRole ?? displayRole ?? "this stage"}.`;
+    }
+
+    enhancedMessages.unshift({ role: "system", content: systemGuideline });
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: enhancedMessages,
+      temperature: 0.7,
+      max_tokens: 1000,
+    });
+
+    const assistantRawContent = response.choices[0].message.content ?? "";
+    const assistantContent = stripLeadingPersonaIntro(assistantRawContent, [
+      personaNameForChat,
+      displayRole,
+      stageRole,
+    ]);
+    const portraitUrl = personaImageUrl;
+
     return NextResponse.json({
       content: assistantContent,
       displayRole,
+      portraitUrl,
+      voiceId: personaVoiceId,
+      personaSex,
+      personaRoleKey,
     });
   } catch (error) {
     console.error("Error in chat API:", error);

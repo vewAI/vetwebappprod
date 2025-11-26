@@ -27,12 +27,12 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
       router.push("/login");
     }
 
-    // If user is authenticated but not admin and trying to access /admin, redirect
-    if (user && pathname === "/admin" && !isAdmin) {
-      console.log("Authenticated but not admin, redirecting away from /admin");
+    // If user is authenticated but not admin and trying to access any /admin path, redirect
+    if (user && pathname.startsWith("/admin") && !isAdmin) {
+      console.log("Authenticated but not admin, redirecting away from admin area");
       router.push("/");
     }
-  }, [user, loading, profileLoading, router, pathname]);
+  }, [user, loading, profileLoading, router, pathname, isAdmin]);
 
   // If on login page and authenticated, redirect to home
   useEffect(() => {
@@ -47,8 +47,8 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
     return <LoadingScreen />;
   }
 
-  // If pathname is admin, ensure user is admin
-  if (pathname === "/admin") {
+  // If path is within the admin area, ensure user is admin
+  if (pathname.startsWith("/admin")) {
     if (!loading && user && isAdmin) {
       return <>{children}</>;
     }

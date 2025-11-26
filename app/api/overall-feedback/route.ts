@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { OpenAI } from "openai";
 import { case1RoleInfo } from "@/features/role-info/case1";
-import { createClient } from "@supabase/supabase-js";
 import type { Message } from "@/features/chat/models/chat";
+import { requireUser } from "@/app/api/_lib/auth";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -10,6 +10,11 @@ const openai = new OpenAI({
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireUser(request);
+    if ("error" in auth) {
+      return auth.error;
+    }
+    const { supabase } = auth;
     const { caseId, messages } = await request.json();
 
     console.log("Generating overall feedback for case:", caseId);
@@ -26,12 +31,6 @@ export async function POST(request: Request) {
     // Fetch case row so we can inject case-specific prompts when available
     let caseRow: Record<string, unknown> | null = null;
     try {
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-      const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-      const supabase = createClient(
-        supabaseUrl,
-        supabaseServiceKey ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ""
-      );
       const { data, error } = await supabase
         .from("cases")
         .select("*")

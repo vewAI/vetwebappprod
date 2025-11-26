@@ -26,6 +26,41 @@ const getCaseTitle = (caseRow: Record<string, unknown> | null | undefined) => {
   return rawTitle.trim().length > 0 ? rawTitle : "the patient";
 };
 
+const getPresentingComplaint = (
+  caseRow: Record<string, unknown> | null | undefined,
+  title: string
+) => {
+  const direct =
+    typeof caseRow?.presenting_complaint === "string"
+      ? caseRow.presenting_complaint
+      : null;
+
+  if (direct && direct.trim().length > 0) {
+    return direct.trim();
+  }
+
+  const details = caseRow?.details;
+  if (details && typeof details === "object") {
+    const candidate = (details as Record<string, unknown>)[
+      "presenting_complaint"
+    ];
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+
+  const condition =
+    typeof caseRow?.condition === "string" && caseRow.condition.trim().length > 0
+      ? caseRow.condition.trim()
+      : null;
+
+  if (condition) {
+    return `Owner reports concerns consistent with ${condition}.`;
+  }
+
+  return `Owner reports initial concerns about ${title}.`;
+};
+
 const defaultOwnerBackground = (title: string) =>
   `Role: Animal Owner (concerned but cooperative)\nPatient: ${title}\n\nProvide clear, concise answers and volunteer information only when specifically asked.`;
 
@@ -39,7 +74,26 @@ const defaultFollowUpFeedback = `Provide structured feedback on how the student 
 const defaultDiagnosisPrompt = (title: string) =>
   `You are the owner receiving a diagnosis and discharge plan for ${title}. Ask practical questions about monitoring, medication, prognosis, and when to seek help.`;
 
-const defaultOverallFeedback = `Provide a concise summary of the student's strengths and areas for improvement across the entire case. Include communication, clinical reasoning, and client management.`;
+const baseOverallFeedbackInstructions = `You are a senior veterinary OSCE examiner. Review the conversation transcript and deliver a candid, evidence-based performance evaluation.
+
+Rules:
+- Treat the transcript as the only evidence. If a question, explanation, or counselling point is absent, assume the student did not cover it.
+- Describe strengths only when the transcript clearly demonstrates them. Avoid generic praise.
+- Call out missing infectious-disease control measures, skipped diagnostics, or weak client explanations explicitly when they occur.
+- Keep the tone professional but direct—do not say the performance was excellent if major steps were omitted.
+- Structure the response exactly as:
+  **Performance Snapshot:** One short paragraph tying observed behaviours to overall competence.
+  **Strengths observed:** Bullet list of concrete positives; if none exist, write "- None observed in this transcript."
+  **Critical gaps:** Bullet list (minimum two items) naming the highest-priority deficiencies and referencing the relevant stage (history, physical exam, diagnostics, client communication) or case objective.
+  **Recommended next steps:** Bullet list of actionable items the student must do next time (e.g., specific history domains, diagnostics to order, isolation instructions).
+- Close with a single sentence that is encouraging yet honest about the need for improvement.`;
+
+const defaultOverallFeedbackCaseFocus = `Use the case''s learning objectives, stage descriptions, and transcript evidence to judge whether the student:
+- Collected the history domains implied by the scenario (signalment, exposure risks, progression, owner constraints).
+- Completed or clearly outlined an appropriate physical examination strategy.
+- Recommended diagnostics aligned with the case goals and explained their rationale, cost, and logistics.
+- Communicated management, isolation/biosecurity, or follow-up instructions suitable for the species and setting.
+Whenever the transcript omits one of these pillars, flag it explicitly as a deficiency.`;
 
 export const dbRoleInfo: RoleInfo = {
   getOwnerPrompt: (
@@ -47,12 +101,29 @@ export const dbRoleInfo: RoleInfo = {
     studentQuestion: string
   ) => {
     const title = getCaseTitle(caseRow);
+    const presentingComplaint = getPresentingComplaint(caseRow, title);
     const ownerBackground = getText(
       caseRow,
       "owner_background",
       defaultOwnerBackground(title)
     );
-    return `You are roleplaying as the owner or caretaker in a veterinary consultation. Stay in character according to the background below and only reveal information that is explicitly requested.\n\n${ownerBackground}\n\nStudent's question: ${studentQuestion}\n\nStay true to the owner personality and avoid offering diagnostic reasoning of your own.`;
+    return `You are roleplaying as the owner or caretaker in a veterinary consultation. Stay in character according to the background below and speak in natural, conversational language.
+
+Presenting complaint (use these exact facts to open the discussion and to answer related questions):
+${presentingComplaint}
+
+Owner background:
+${ownerBackground}
+
+Guidelines:
+- Begin by describing the presenting complaint in your own words using everyday phrasing from the owner's point of view, but stay consistent with the facts above.
+- Feel free to add context (timeline, management details, behaviour changes) that aligns with the presenting complaint or with obvious manifestations of the condition referenced above, but do not invent new or contradictory symptoms. Avoid generic phrases like "I'm worried about her health and want to ensure we address it properly"—use specific owner observations instead.
+- Answer the clinician's follow-up questions honestly, even if they did not explicitly ask yet, whenever the information above makes it relevant.
+- Never attempt to diagnose or use technical jargon beyond what is provided. Remain a non-expert narrator of what you have observed.
+
+Student's question: ${studentQuestion}
+
+Stay true to the owner personality, collaborate willingly, and avoid offering diagnostic reasoning of your own.`;
   },
   getHistoryFeedbackPrompt: (
     caseRow: Record<string, unknown> | null,
@@ -74,7 +145,7 @@ export const dbRoleInfo: RoleInfo = {
       "physical_exam_findings",
       "Physical examination was within normal limits."
     );
-    return `You are a veterinary nurse/technician assisting with the physical examination. Provide ONLY the findings that the student specifically requests.\n\nAvailable findings:\n${findings}\n\nStudent request: ${studentQuestion}`;
+    return `You are a veterinary nurse/technician and the physical examination has already been completed. Your only job is to report the recorded results that match what the student is asking about.\n\nCompleted examination record:\n${findings}\n\nRules:\n- Do not describe how to examine or suggest next steps.\n- Before you answer, scan the entire record above. When the student mentions a body system, structure, or symptom, quote every relevant recorded finding verbatim (include the exact measurements or descriptive qualifiers). Never summarise as "within normal limits" when any abnormal data are documented for that body system.\n- Always include the pertinent vital signs when the question relates to a system that relies on them (e.g., respiratory system questions should report respiratory rate and any fever).\n- If the request is broad ("full exam"), give a concise rundown of all vitals and abnormal findings that were documented.\n- If the chart lacks data for the requested item, say "No recorded findings for <item>." Never invent findings.\n- Present the answer as a short, scannable list so the measurements stand out.\n\nStudent request: ${studentQuestion}`;
   },
   getDiagnosticPrompt: (
     caseRow: Record<string, unknown> | null,
@@ -129,8 +200,8 @@ export const dbRoleInfo: RoleInfo = {
     const overview = getText(
       caseRow,
       "get_overall_feedback_prompt",
-      defaultOverallFeedback
+      defaultOverallFeedbackCaseFocus
     );
-    return `Provide a concise, motivational summary of the student's performance using the context below.\n\nConversation context:\n${context}\n\nFeedback guidance:\n${overview}`;
+    return `${baseOverallFeedbackInstructions}\n\nCase-specific priorities:\n${overview}\n\nConversation context:\n${context}`;
   },
 };

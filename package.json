@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "seed:cases": "tsx scripts/seed-cases.ts"
+    "seed:cases": "tsx scripts/seed-cases.ts",
+    "generate:portraits": "tsx scripts/generate-persona-portraits.ts",
+    "reset:portraits": "tsx scripts/reset-persona-portraits.ts"
   },
   "dependencies": {
     "@next/env": "^15.2.4",
@@ -35,6 +37,8 @@
     "@types/node": "^20",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19",
+    "chalk": "^5.3.0",
+    "dotenv": "^17.2.3",
     "eslint": "^9",
     "eslint-config-next": "15.2.2",
     "tailwindcss": "^4",

@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 
+import { requireUser } from "@/app/api/_lib/auth";
+
 // Server-side TTS proxy to a third-party TTS service (OpenAI/E2E)
 // Expects JSON: { text: string, voice?: string }
 export async function POST(req: Request) {
+  const auth = await requireUser(req);
+  if ("error" in auth) {
+    return auth.error;
+  }
   try {
     const body = await req.json();
     const text = String(body?.text ?? "");

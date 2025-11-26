@@ -1,23 +1,24 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import OpenAi from "openai";
 import crypto from "crypto";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-// Prefer a server-side service role key for inserts so RLS doesn't block server handlers.
-// NOTE: Never expose the SERVICE_ROLE key to the browser. It must be set only on the server (.env.local and on Vercel as a secret).
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(
-  supabaseUrl,
-  supabaseServiceKey ?? supabaseAnonKey
-);
+import { ensureCasePersonas } from "@/features/personas/services/casePersonaPersistence";
+import { scheduleCasePersonaPortraitGeneration } from "@/features/personas/services/personaImageService";
+import { scheduleCaseImageGeneration } from "@/features/cases/services/caseImageService";
+import {
+  applyCaseDefaults,
+  enrichCaseWithModel,
+  mergeAugmentedFields,
+  scrubConflictingSpeciesStrings,
+} from "@/features/cases/services/caseCompletion";
+import { requireUser } from "@/app/api/_lib/auth";
 
 const openai = new OpenAi({ apiKey: process.env.OPENAI_API_KEY });
-
-// OpenAI client intentionally removed from this route when unused to satisfy lint rules.
-
-export async function GET() {
+export async function GET(req: Request) {
+  const auth = await requireUser(req, { requireAdmin: true });
+  if ("error" in auth) {
+    return auth.error;
+  }
+  const { supabase } = auth;
   const { data, error } = await supabase.from("cases").select("*");
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -26,6 +27,11 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const auth = await requireUser(req, { requireAdmin: true });
+  if ("error" in auth) {
+    return auth.error;
+  }
+  const { supabase } = auth;
   try {
     // Read raw text first and provide a clearer error for empty or malformed bodies.
     const raw = await req.text();
@@ -118,188 +124,20 @@ export async function POST(req: Request) {
       console.warn("Could not write case checkpoint:", ckErr);
     }
 
-    // Apply intelligent defaults for missing fields using case-1 templates,
-    // but adapt them to the provided title/id where sensible.
-    const horseName = String(body["title"] ?? body["id"] ?? "the patient");
-
-    const species = String(body["species"] ?? "");
-    const speciesLower = species.toLowerCase();
-    const condition = String(body["condition"] ?? "");
-    const conditionLower = condition.toLowerCase();
-
-    const diagnostic_findings_template = `Note: Only provide results for tests specifically requested by the student. If they request other tests not listed here, results should be within normal range but note these may be unnecessary tests.`;
-
-    const description_template = String(body["title"] ?? "")
-      ? `${String(body["title"])} - ${condition || "clinical signs"}`
-      : `A ${species || "patient"} presenting with ${
-          condition || "clinical signs"
-        }.`;
-
-    const details_template: Record<string, unknown> = {
-      presenting_complaint: String(
-        body["description"] ?? `Presenting for ${condition || "clinical signs"}`
-      ),
-      duration: body["estimated_time"]
-        ? `${body["estimated_time"]} minutes`
-        : "Unknown",
-      notes: "Provide additional details when available.",
-    };
-
-    // Difficulty heuristic
-    let difficulty_template = "Easy";
-    if (
-      /severe|shock|critical|collapse|fracture|laminitis|sepsis|er/i.test(
-        conditionLower
-      )
-    ) {
-      difficulty_template = "Hard";
-    } else if (/moderate|chronic|recurring|suspected/i.test(conditionLower)) {
-      difficulty_template = "Medium";
-    }
-
-    // Estimated time default (minutes)
-    const estimated_time_template = 15;
-
-    // Physical exam findings - adapt by species when possible
-    let physical_exam_findings_template =
-      "No abnormalities detected on brief physical exam.";
-    if (
-      /horse|equine/i.test(speciesLower) ||
-      /equine|horse/i.test(conditionLower) ||
-      /horse/i.test(String(body["title"] ?? ""))
-    ) {
-      physical_exam_findings_template = `Heart rate: 36-44 bpm (may be elevated if stressed); Temperature: 37.5-39.5°C (pyrexia if infected); Respiratory rate: 8-20 bpm; Mucous membranes: pink and moist; Localised pain on palpation of affected area.`;
-    } else if (species) {
-      physical_exam_findings_template = `Physical exam within expected limits for ${species}. Note any localised pain or abnormal vital signs.`;
-    }
-
-    const owner_background_template = `Role: Horse Owner (Female, initially worried but cooperative)\nHorse: ${horseName}\n\nPrimary Concern:\n- ${horseName} is off colour and not eating well\n\nClinical Information (ONLY PROVIDE WHEN SPECIFICALLY REQUESTED):\n1. Current Symptoms:\n- Poor appetite\n- Quieter than usual\n- No nasal discharge noticed\n\n2. Living Situation (ONLY PROVIDE WHEN SPECIFICALLY REQUESTED):\n- Housed at a large yard with other horses\n\nImportant Character Notes:\n- Always provide your name when asked by the student (do not withhold identifying information).\n- May be cautious about sharing other details with yard manager/other owners but will provide identifying information when requested. Use non-technical language.`;
-
-    const history_feedback_template = `You are an experienced veterinary educator providing feedback on a student's history-taking during this case. Focus on whether critical information was collected and give structured, actionable feedback.`;
-
-    const owner_follow_up_template = `Role: Horse Owner (Female, worried but cooperative). ${horseName} owner is concerned and wants to know what to do next.`;
-
-    const owner_follow_up_feedback_template = `Provide structured feedback on test prioritisation, biosecurity, and communication with the owner.`;
-
-    const owner_diagnosis_template = `Provide advice for communicating diagnosis to the owner of ${horseName}.`;
-
-    const get_owner_prompt_template = `You are roleplaying as ${horseName}'s owner in a veterinary consultation. Keep character and provide short, owner-appropriate responses.`;
-
-    const get_history_feedback_prompt_template = `Provide targeted history-taking feedback when requested.`;
-
-    const get_physical_exam_prompt_template = `You are a veterinary assistant providing physical exam findings only when asked.`;
-
-    const get_diagnostic_prompt_template = `You are a laboratory technician providing diagnostic test results when asked.`;
-
-    const get_owner_follow_up_prompt_template = `You are roleplaying as ${horseName}'s owner in a follow-up discussion after the physical exam.`;
-
-    const get_owner_follow_up_feedback_prompt_template = `Provide structured feedback on the follow-up discussion.`;
-
-    const get_owner_diagnosis_prompt_template = `You are the owner receiving a diagnosis; respond in character.`;
-
-    const get_overall_feedback_prompt_template = `Provide comprehensive feedback on the student's performance across the case.`;
-
-    const ensure = (key: string, value: unknown) => {
-      const v = body[key];
-      if (
-        v === undefined ||
-        v === null ||
-        (typeof v === "string" && v.trim() === "")
-      ) {
-        body[key] = value;
-      }
-    };
-    ensure("description", description_template);
-    ensure("details", details_template);
-    // estimated_time may be null at this point; ensure numeric
-    if (
-      body["estimated_time"] === undefined ||
-      isNaN(Number(body["estimated_time"]))
-    ) {
-      body["estimated_time"] = estimated_time_template;
-    }
-    ensure("difficulty", difficulty_template);
-    ensure("physical_exam_findings", physical_exam_findings_template);
-    ensure("diagnostic_findings", diagnostic_findings_template);
-    ensure("owner_background", owner_background_template);
-    ensure("history_feedback", history_feedback_template);
-    ensure("owner_follow_up", owner_follow_up_template);
-    ensure("owner_follow_up_feedback", owner_follow_up_feedback_template);
-    ensure("owner_diagnosis", owner_diagnosis_template);
-    ensure("get_owner_prompt", get_owner_prompt_template);
-    ensure("get_history_feedback_prompt", get_history_feedback_prompt_template);
-    ensure("get_physical_exam_prompt", get_physical_exam_prompt_template);
-    ensure("get_diagnostic_prompt", get_diagnostic_prompt_template);
-    ensure("get_owner_follow_up_prompt", get_owner_follow_up_prompt_template);
-    ensure(
-      "get_owner_follow_up_feedback_prompt",
-      get_owner_follow_up_feedback_prompt_template
-    );
-    ensure("get_owner_diagnosis_prompt", get_owner_diagnosis_prompt_template);
-    ensure("get_overall_feedback_prompt", get_overall_feedback_prompt_template);
+    const baseSpecies =
+      typeof body["species"] === "string" ? body["species"] : null;
+    scrubConflictingSpeciesStrings(body, baseSpecies);
+    applyCaseDefaults(body);
 
     // Attempt to enrich and expand case fields by asking the LLM to complete
-    // any missing or terse fields (e.g., physical_exam_findings,
-    // diagnostic_findings, owner_background, prompts, etc.). The model is
-    // asked to return a JSON object with the same keys. This is best-effort
-    // — failures here will not block insertion.
+    // any missing or terse fields. The model is asked to return a JSON object
+    // with the same keys. This is best-effort — failures here will not block
+    // insertion.
     try {
-      const promptSystem = `You are an expert veterinary educator and clinician. Given a partially-filled case record in JSON, expand and complete each field to produce a high-quality, evidence-informed, educational case. Use clear clinical language suitable for students and make the case a challenging but fair learning scenario. Return a single JSON object containing the expanded fields (only JSON, no commentary). Respond using up-to-date veterinary reasoning and include clinically-relevant physical exam findings, likely diagnostic considerations, and concise owner background and role prompts suitable for a simulated owner. Do not include explanatory text outside the JSON.`;
-
-      const userContent = JSON.stringify(body);
-
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: promptSystem },
-          { role: "user", content: userContent },
-        ],
-        temperature: 0.2,
-        max_tokens: 1200,
+      const parsedFromModel = await enrichCaseWithModel(body, openai);
+      body = mergeAugmentedFields(body, parsedFromModel, {
+        species: baseSpecies,
       });
-
-      const content = String(completion.choices?.[0]?.message?.content ?? "");
-      // Try parsing the returned JSON. The model was instructed to return
-      // JSON only, but be defensive in parsing.
-      let parsedFromModel: unknown = null;
-      try {
-        parsedFromModel = JSON.parse(content);
-      } catch {
-        // Attempt to extract a JSON block from the content
-        const m = content.match(/\{[\s\S]*\}/);
-        if (m) {
-          try {
-            parsedFromModel = JSON.parse(m[0]);
-          } catch (e2) {
-            console.warn("Could not parse JSON from model completion", e2);
-            parsedFromModel = null;
-          }
-        }
-      }
-
-      if (
-        parsedFromModel &&
-        typeof parsedFromModel === "object" &&
-        !Array.isArray(parsedFromModel)
-      ) {
-        // Treat the parsed result as a plain object and merge fields into the
-        // body. We use a Record<string, unknown> to avoid `any`.
-        const parsedObj = parsedFromModel as Record<string, unknown>;
-        for (const k of Object.keys(parsedObj)) {
-          // Only overwrite if model provided a non-empty value
-          const v = parsedObj[k];
-          if (
-            v !== undefined &&
-            v !== null &&
-            !(typeof v === "string" && v.trim() === "")
-          ) {
-            // Safe to assign into `body` which is a loose JS object representing
-            // the case fields coming from the request.
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (body as Record<string, any>)[k] = v;
-          }
-        }
-      }
     } catch (llmErr) {
       console.warn("LLM enrichment failed for new case:", llmErr);
     }
@@ -313,6 +151,18 @@ export async function POST(req: Request) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+    const insertedCase = Array.isArray(data) ? data[0] : data;
+
+    if (insertedCase?.id) {
+      await ensureCasePersonas(supabase, insertedCase.id, body);
+      scheduleCasePersonaPortraitGeneration(supabase, openai, insertedCase.id);
+      scheduleCaseImageGeneration(
+        supabase,
+        openai,
+        insertedCase as Record<string, unknown>,
+        { force: !insertedCase?.image_url }
+      );
+    }
     return NextResponse.json({ success: true, data });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -325,6 +175,11 @@ export async function POST(req: Request) {
 
 // Allow updating an existing case via PUT
 export async function PUT(req: Request) {
+  const auth = await requireUser(req, { requireAdmin: true });
+  if ("error" in auth) {
+    return auth.error;
+  }
+  const { supabase } = auth;
   try {
     const body = await req.json();
     if (!body || !body.id) {
@@ -359,6 +214,17 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    if (data?.id) {
+      await ensureCasePersonas(supabase, data.id, body);
+      scheduleCasePersonaPortraitGeneration(supabase, openai, data.id);
+      scheduleCaseImageGeneration(
+        supabase,
+        openai,
+        data as Record<string, unknown>,
+        { force: !data?.image_url }
+      );
+    }
+
     return NextResponse.json({ success: true, data });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -371,6 +237,11 @@ export async function PUT(req: Request) {
 
 // Delete a case by id (query param ?id=...)
 export async function DELETE(req: Request) {
+  const auth = await requireUser(req, { requireAdmin: true });
+  if ("error" in auth) {
+    return auth.error;
+  }
+  const { supabase } = auth;
   try {
     const url = new URL(req.url);
     const id = url.searchParams.get("id");
