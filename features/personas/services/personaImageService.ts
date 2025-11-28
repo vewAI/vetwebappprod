@@ -25,7 +25,9 @@ import type {
   PersonaSex,
 } from "@/features/personas/models/persona";
 import { ensureCasePersonas } from "@/features/personas/services/casePersonaPersistence";
+import { ensureSharedPersonas } from "@/features/personas/services/globalPersonaPersistence";
 import { resolvePersonaIdentity } from "@/features/personas/services/personaIdentityService";
+import { SHARED_CASE_ID } from "@/features/personas/services/personaSeedService";
 
 const DEFAULT_BUCKET =
   process.env.PERSONA_IMAGE_BUCKET ??
@@ -61,6 +63,7 @@ interface CasePersonaRow {
   role_key?: string | null;
   display_name?: string | null;
   prompt?: string | null;
+  behavior_prompt?: string | null;
   status?: string | null;
   image_url?: string | null;
   metadata?: Record<string, unknown> | null;
@@ -68,6 +71,28 @@ interface CasePersonaRow {
   last_generated_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+}
+
+interface GlobalPersonaRow {
+  id?: string;
+  role_key?: string | null;
+  display_name?: string | null;
+  prompt?: string | null;
+  behavior_prompt?: string | null;
+  status?: string | null;
+  image_url?: string | null;
+  metadata?: Record<string, unknown> | null;
+  generated_by?: string | null;
+  last_generated_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+interface GlobalPersonaSummaryRow {
+  role_key?: string | null;
+  display_name?: string | null;
+  status?: string | null;
+  image_url?: string | null;
 }
 
 type PersonaMetadata = {
@@ -95,6 +120,282 @@ type PersonaPortraitResult = {
   sex?: PersonaSex;
   identity?: PersonaIdentity;
 };
+
+type GlobalPortraitArgs = {
+  supabase: SupabaseClient;
+  openai: OpenAi;
+  roleKey: string;
+  displayRole?: string | null;
+  stageRole?: string | null;
+};
+
+type GlobalPortraitOptions = {
+  roleKey?: string;
+  force?: boolean;
+};
+
+async function getGlobalPersonaPortrait({
+  supabase,
+  openai,
+  roleKey,
+  displayRole,
+  stageRole,
+}: GlobalPortraitArgs): Promise<PersonaPortraitResult> {
+  let personaRow = await ensureGlobalPersonaRowExists(supabase, roleKey);
+  if (!personaRow) {
+    return { roleKey };
+  }
+
+  const personaMetadata = parsePersonaMetadata(personaRow);
+  const identity =
+    personaMetadata?.identity ?? resolvePersonaIdentity(SHARED_CASE_ID, roleKey);
+  const voiceId = (personaMetadata?.voiceId ??
+    personaMetadata?.identity?.voiceId ??
+    identity?.voiceId) as string | undefined;
+  const personaSex = (personaMetadata?.sex ??
+    personaMetadata?.identity?.sex ??
+    identity?.sex) as PersonaSex | undefined;
+  const displayName =
+    personaRow.display_name ??
+    identity?.fullName ??
+    displayRole ??
+    stageRole ??
+    roleKey;
+
+  let personaBehaviorPrompt: string | undefined;
+  if (personaRow.behavior_prompt && typeof personaRow.behavior_prompt === "string") {
+    const trimmed = personaRow.behavior_prompt.trim();
+    if (trimmed) {
+      personaBehaviorPrompt = trimmed;
+    }
+  }
+  if (!personaBehaviorPrompt && personaMetadata) {
+    const behaviorCandidate = personaMetadata["behaviorPrompt"];
+    if (typeof behaviorCandidate === "string") {
+      const trimmed = behaviorCandidate.trim();
+      if (trimmed) {
+        personaBehaviorPrompt = trimmed;
+      }
+    }
+  }
+
+  if (personaBehaviorPrompt) {
+    // Store behaviour prompt back onto the row for future retrieval if missing.
+    if (!personaRow.behavior_prompt && personaRow.id) {
+      void supabase
+        .from("global_personas")
+        .update({ behavior_prompt: personaBehaviorPrompt })
+        .eq("id", personaRow.id)
+        .then(
+          () => undefined,
+          () => undefined
+        );
+    }
+  }
+
+  if (personaRow.image_url && personaRow.status === "ready") {
+    const existingIdentity = (personaMetadata?.identity ?? identity) as
+      | PersonaIdentity
+      | undefined;
+    return {
+      imageUrl: personaRow.image_url,
+      roleKey,
+      displayName,
+      voiceId,
+      sex: personaSex,
+      identity: existingIdentity,
+    };
+  }
+
+  const sharedPersonaKey =
+    personaMetadata && typeof personaMetadata["sharedPersonaKey"] === "string"
+      ? (personaMetadata["sharedPersonaKey"] as string)
+      : roleKey;
+
+  const promptText =
+    personaRow.prompt ?? buildFallbackPrompt(roleKey, displayRole ?? stageRole);
+  if (!promptText) {
+    return {
+      roleKey,
+      displayName,
+      voiceId,
+      sex: personaSex,
+      identity,
+    };
+  }
+
+  let modelUsed: string = IMAGE_MODEL;
+  let sizeUsed: PersonaImageSize = normalizeImageSize(IMAGE_MODEL, IMAGE_SIZE);
+
+  try {
+    await markGlobalPersonaStatus(supabase, personaRow, roleKey, "generating");
+
+    const requestPayload: Parameters<typeof openai.images.generate>[0] = {
+      model: IMAGE_MODEL,
+      prompt: promptText,
+      n: 1,
+      size: sizeUsed,
+    };
+    modelUsed = requestPayload.model ?? IMAGE_MODEL;
+
+    if (IMAGE_MODEL !== "gpt-image-1") {
+      requestPayload.response_format = "b64_json";
+    }
+
+    let currentPayload = { ...requestPayload };
+    let allowSizeRetry = true;
+    let allowFallback = IMAGE_MODEL === "gpt-image-1";
+    let response;
+
+    while (true) {
+      try {
+        response = await openai.images.generate(currentPayload);
+        modelUsed = currentPayload.model ?? IMAGE_MODEL;
+        if (typeof currentPayload.size === "string") {
+          sizeUsed = normalizeImageSize(
+            modelUsed,
+            currentPayload.size as PersonaImageSize
+          );
+        }
+        break;
+      } catch (generationError) {
+        if (
+          allowSizeRetry &&
+          shouldRetryWithDefaultSize(generationError, currentPayload.size)
+        ) {
+          currentPayload = {
+            ...currentPayload,
+            size: DEFAULT_IMAGE_SIZE,
+          };
+          sizeUsed = DEFAULT_IMAGE_SIZE;
+          allowSizeRetry = false;
+          continue;
+        }
+
+        if (allowFallback && shouldFallbackToDalle3(generationError)) {
+          currentPayload = {
+            ...currentPayload,
+            model: "dall-e-3",
+            response_format: "b64_json",
+            size: normalizeImageSize(
+              "dall-e-3",
+              currentPayload.size as PersonaImageSize
+            ),
+          };
+          modelUsed = "dall-e-3";
+          sizeUsed = currentPayload.size as PersonaImageSize;
+          allowFallback = false;
+          continue;
+        }
+
+        throw generationError;
+      }
+    }
+
+    const b64 = response.data?.[0]?.b64_json;
+    if (!b64) {
+      throw new Error("Image generation returned no data");
+    }
+
+    const buffer = Buffer.from(b64, "base64");
+    const fileName = `${sharedPersonaKey}.png`;
+    const storagePath = `shared/${fileName}`;
+    const arrayBuffer = buffer.buffer.slice(
+      buffer.byteOffset,
+      buffer.byteOffset + buffer.byteLength
+    );
+
+    const { error: uploadError } = await supabase.storage
+      .from(DEFAULT_BUCKET)
+      .upload(storagePath, arrayBuffer, {
+        contentType: "image/png",
+        upsert: true,
+      });
+
+    if (uploadError) {
+      throw uploadError;
+    }
+
+    const { data: publicData } = supabase.storage
+      .from(DEFAULT_BUCKET)
+      .getPublicUrl(storagePath);
+
+    const publicUrl = publicData?.publicUrl;
+    if (!publicUrl) {
+      throw new Error("Failed to resolve public URL for persona portrait");
+    }
+
+    const nextMetadata: Record<string, unknown> = {
+      ...(personaMetadata ?? {}),
+      identity,
+      voiceId,
+      sex: personaSex,
+      sharedPersonaKey,
+      generatedAt: new Date().toISOString(),
+      model: modelUsed,
+      size: sizeUsed,
+    };
+
+    await markGlobalPersonaStatus(supabase, personaRow, roleKey, "ready", {
+      image_url: publicUrl,
+      last_generated_at: new Date().toISOString(),
+      display_name: displayName,
+      prompt: promptText,
+      behavior_prompt: personaBehaviorPrompt ?? null,
+      generated_by: personaRow.generated_by ?? "system",
+      metadata: nextMetadata,
+    });
+
+    personaRow =
+      (await fetchGlobalPersonaRow(supabase, roleKey)) ?? personaRow;
+    const refreshedMetadata = parsePersonaMetadata(personaRow);
+    const refreshedVoiceId = (refreshedMetadata?.voiceId ??
+      refreshedMetadata?.identity?.voiceId ??
+      voiceId) as string | undefined;
+    const refreshedSex = (refreshedMetadata?.sex ??
+      refreshedMetadata?.identity?.sex ??
+      personaSex) as PersonaSex | undefined;
+    const refreshedDisplayName = personaRow?.display_name ?? displayName;
+    const refreshedIdentity = (refreshedMetadata?.identity ?? identity) as
+      | PersonaIdentity
+      | undefined;
+
+    return {
+      imageUrl: publicUrl,
+      roleKey,
+      displayName: refreshedDisplayName,
+      voiceId: refreshedVoiceId,
+      sex: refreshedSex,
+      identity: refreshedIdentity,
+    };
+  } catch (error) {
+    console.error("Failed to generate global persona portrait", error);
+    const errorMessage =
+      error instanceof Error ? error.message : String(error ?? "Unknown error");
+    const failureMetadata: Record<string, unknown> = {
+      ...(personaMetadata ?? {}),
+      identity,
+      voiceId,
+      sex: personaSex,
+      error: errorMessage,
+      failedAt: new Date().toISOString(),
+      model: modelUsed,
+      sizeTried: sizeUsed,
+      sharedPersonaKey,
+    };
+    await markGlobalPersonaStatus(supabase, personaRow, roleKey, "failed", {
+      prompt: promptText,
+      metadata: failureMetadata,
+    });
+    return {
+      roleKey,
+      displayName,
+      voiceId,
+      sex: personaSex,
+      identity,
+    };
+  }
+}
 
 function extractErrorMessage(error: unknown): string | null {
   if (!error) return null;
@@ -230,7 +531,9 @@ async function fetchPersonaRow(
   return data ?? null;
 }
 
-function parsePersonaMetadata(row: CasePersonaRow | null): PersonaMetadata {
+function parsePersonaMetadata(
+  row: CasePersonaRow | GlobalPersonaRow | null
+): PersonaMetadata {
   if (!row?.metadata || typeof row.metadata !== "object") {
     return null;
   }
@@ -267,6 +570,65 @@ async function ensurePersonaRowExists(
   );
 
   return await fetchPersonaRow(supabase, caseId, roleKey);
+}
+
+async function fetchGlobalPersonaRow(
+  supabase: SupabaseClient,
+  roleKey: string
+): Promise<GlobalPersonaRow | null> {
+  const { data, error } = await supabase
+    .from("global_personas")
+    .select(
+      "id, role_key, display_name, prompt, behavior_prompt, status, image_url, metadata, generated_by, last_generated_at, created_at, updated_at"
+    )
+    .eq("role_key", roleKey)
+    .maybeSingle();
+
+  if (error) {
+    console.warn("Failed to read global persona row", error);
+    return null;
+  }
+
+  return data ?? null;
+}
+
+async function ensureGlobalPersonaRowExists(
+  supabase: SupabaseClient,
+  roleKey: string
+): Promise<GlobalPersonaRow | null> {
+  const existing = await fetchGlobalPersonaRow(supabase, roleKey);
+  if (existing) return existing;
+
+  await ensureSharedPersonas(supabase);
+  return await fetchGlobalPersonaRow(supabase, roleKey);
+}
+
+async function markGlobalPersonaStatus(
+  supabase: SupabaseClient,
+  row: GlobalPersonaRow | null,
+  roleKey: string,
+  status: "pending" | "generating" | "ready" | "failed",
+  extra: Partial<GlobalPersonaRow> = {}
+) {
+  const payload: Record<string, unknown> = {
+    status,
+    ...extra,
+  };
+
+  if (row?.id) {
+    await supabase.from("global_personas").update(payload).eq("id", row.id);
+    return;
+  }
+
+  await supabase
+    .from("global_personas")
+    .upsert(
+      {
+        role_key: roleKey,
+        ...payload,
+      },
+      { onConflict: "role_key" }
+    );
 }
 
 async function markPersonaStatus(
@@ -308,6 +670,16 @@ export async function getOrGeneratePersonaPortrait({
 }: PersonaPortraitArgs): Promise<PersonaPortraitResult> {
   const roleKey = resolvePersonaRoleKey(stageRole, displayRole);
   if (!roleKey) return {};
+
+  if (roleKey !== "owner") {
+    return await getGlobalPersonaPortrait({
+      supabase,
+      openai,
+      roleKey,
+      stageRole,
+      displayRole,
+    });
+  }
 
   let personaRow = await ensurePersonaRowExists(supabase, caseId, roleKey);
   const personaMetadata = parsePersonaMetadata(personaRow);
@@ -548,6 +920,85 @@ async function generateMissingPortraits(
       );
     }
   }
+}
+
+async function generateMissingGlobalPortraitsInternal(
+  supabase: SupabaseClient,
+  openai: OpenAi,
+  options?: GlobalPortraitOptions
+) {
+  await ensureSharedPersonas(supabase);
+
+  const query = supabase
+    .from("global_personas")
+    .select("role_key, display_name, status, image_url")
+    .order("role_key", { ascending: true });
+
+  if (options?.roleKey) {
+    query.eq("role_key", options.roleKey);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.warn("Unable to read shared personas for portrait generation", error);
+    return;
+  }
+
+  const personas = (data ?? []) as GlobalPersonaSummaryRow[];
+  for (const persona of personas) {
+    const roleKey = persona.role_key;
+    if (!roleKey) continue;
+
+    const shouldSkip =
+      !options?.force && persona.status === "ready" && persona.image_url;
+    if (shouldSkip) {
+      continue;
+    }
+
+    if (options?.force) {
+      await supabase
+        .from("global_personas")
+        .update({ status: "pending", image_url: null, last_generated_at: null })
+        .eq("role_key", roleKey);
+    }
+
+    try {
+      await getGlobalPersonaPortrait({
+        supabase,
+        openai,
+        roleKey,
+        displayRole: persona.display_name ?? undefined,
+      });
+    } catch (portraitErr) {
+      console.warn(
+        `Deferred portrait generation failed for shared persona ${roleKey}`,
+        portraitErr
+      );
+    }
+  }
+}
+
+export async function generateMissingGlobalPortraits(
+  supabase: SupabaseClient,
+  openai: OpenAi,
+  options?: GlobalPortraitOptions
+): Promise<void> {
+  await generateMissingGlobalPortraitsInternal(supabase, openai, options);
+}
+
+export function scheduleGlobalPersonaPortraitGeneration(
+  supabase: SupabaseClient,
+  openai: OpenAi,
+  options?: GlobalPortraitOptions
+) {
+  void generateMissingGlobalPortraitsInternal(supabase, openai, options).catch((error) => {
+    const roleKey = options?.roleKey ?? "all";
+    console.warn(
+      `Background shared persona portrait generation failed for ${roleKey}`,
+      error
+    );
+  });
 }
 
 export function scheduleCasePersonaPortraitGeneration(

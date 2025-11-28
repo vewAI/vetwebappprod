@@ -3,6 +3,120 @@ import { cn } from "@/lib/utils";
 import type { Message } from "@/features/chat/models/chat";
 import { useEffect, useState } from "react";
 import type { Stage } from "@/features/stages/types";
+import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
+
+type MediaRendererProps = {
+  items: CaseMediaItem[];
+};
+
+function MediaRenderer({ items }: MediaRendererProps) {
+  if (!items.length) return null;
+
+  return (
+    <div className="mt-3 space-y-3">
+      {items.map((item) => {
+        const key = `${item.id}-${item.type}`;
+        const caption = item.caption?.trim();
+        const transcript = item.transcript?.trim();
+
+        if (item.type === "image") {
+          return (
+            <figure key={key} className="space-y-2">
+              <img
+                src={item.url}
+                alt={caption || "Case media"}
+                className="max-h-80 w-full rounded-lg object-contain"
+                loading="lazy"
+              />
+              {caption ? (
+                <figcaption className="text-xs text-muted-foreground">{caption}</figcaption>
+              ) : null}
+            </figure>
+          );
+        }
+
+        if (item.type === "video") {
+          return (
+            <figure key={key} className="space-y-2">
+              <video
+                className="w-full rounded-lg"
+                src={item.url}
+                controls
+                preload="metadata"
+              />
+              {caption ? (
+                <figcaption className="text-xs text-muted-foreground">{caption}</figcaption>
+              ) : null}
+              {transcript ? (
+                <details className="text-xs text-muted-foreground">
+                  <summary className="cursor-pointer">Transcript</summary>
+                  <p className="mt-1 whitespace-pre-wrap">{transcript}</p>
+                </details>
+              ) : null}
+            </figure>
+          );
+        }
+
+        if (item.type === "audio") {
+          return (
+            <figure key={key} className="space-y-2">
+              <audio
+                className="w-full"
+                src={item.url}
+                controls
+                loop={Boolean(item.loop)}
+                preload="metadata"
+              />
+              {caption ? (
+                <figcaption className="text-xs text-muted-foreground">{caption}</figcaption>
+              ) : null}
+              {item.thumbnailUrl ? (
+                <img
+                  src={item.thumbnailUrl}
+                  alt="Waveform preview"
+                  className="h-16 w-full rounded object-cover"
+                  loading="lazy"
+                />
+              ) : null}
+              {transcript ? (
+                <details className="text-xs text-muted-foreground">
+                  <summary className="cursor-pointer">Transcript</summary>
+                  <p className="mt-1 whitespace-pre-wrap">{transcript}</p>
+                </details>
+              ) : null}
+            </figure>
+          );
+        }
+
+        return (
+          <div
+            key={key}
+            className="rounded border border-border bg-muted/20 p-3 text-xs text-muted-foreground"
+          >
+            <div className="font-semibold uppercase tracking-wide text-[0.65rem] text-muted-foreground/80">
+              {item.mimeType || item.type}
+            </div>
+            <a
+              className="text-sm text-primary underline"
+              href={item.url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open resource
+            </a>
+            {caption ? <p className="mt-1 whitespace-pre-wrap">{caption}</p> : null}
+            {transcript ? (
+              <details className="text-xs text-muted-foreground">
+                <summary className="cursor-pointer">Transcript</summary>
+                <p className="mt-1 whitespace-pre-wrap">{transcript}</p>
+              </details>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 type ChatMessageProps = {
   message: Message;
@@ -93,6 +207,9 @@ export function ChatMessage({ message, stages, onRetry }: ChatMessageProps) {
           )}
         </div>
         <div className="whitespace-pre-wrap text-sm">{message.content}</div>
+        {Array.isArray(message.media) && message.media.length > 0 ? (
+          <MediaRenderer items={message.media} />
+        ) : null}
       </div>
     </div>
   );

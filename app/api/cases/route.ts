@@ -5,6 +5,10 @@ import { ensureCasePersonas } from "@/features/personas/services/casePersonaPers
 import { scheduleCasePersonaPortraitGeneration } from "@/features/personas/services/personaImageService";
 import { scheduleCaseImageGeneration } from "@/features/cases/services/caseImageService";
 import {
+  normalizeCaseMedia,
+  type CaseMediaItem,
+} from "@/features/cases/models/caseMedia";
+import {
   applyCaseDefaults,
   enrichCaseWithModel,
   mergeAugmentedFields,
@@ -13,6 +17,23 @@ import {
 import { requireUser } from "@/app/api/_lib/auth";
 
 const openai = new OpenAi({ apiKey: process.env.OPENAI_API_KEY });
+
+function normalizeIncomingMedia(raw: unknown): CaseMediaItem[] {
+  const normalized = normalizeCaseMedia(raw);
+  return normalized.map((item) => {
+    const hasId = typeof item.id === "string" && item.id.trim().length > 0;
+    const generatedId =
+      typeof (crypto as unknown as { randomUUID?: () => string }).randomUUID ===
+      "function"
+        ? (crypto as unknown as { randomUUID: () => string }).randomUUID()
+        : `${Date.now()}-${Math.random()}`;
+    return {
+      metadata: item.metadata ?? null,
+      ...item,
+      id: hasId ? item.id.trim() : generatedId,
+    } satisfies CaseMediaItem;
+  });
+}
 export async function GET(req: Request) {
   const auth = await requireUser(req, { requireAdmin: true });
   if ("error" in auth) {
@@ -91,6 +112,22 @@ export async function POST(req: Request) {
       }
     } else {
       body["details"] = null;
+    }
+
+    // Normalize multimedia payloads
+    if (Object.prototype.hasOwnProperty.call(body, "media")) {
+      const rawMedia = body["media"];
+      let parsedMedia: unknown = rawMedia;
+      if (typeof rawMedia === "string") {
+        try {
+          parsedMedia = JSON.parse(rawMedia);
+        } catch {
+          parsedMedia = [];
+        }
+      }
+      body["media"] = normalizeIncomingMedia(parsedMedia);
+    } else {
+      body["media"] = [];
     }
 
     // Validate required fields (customize as needed)
@@ -200,6 +237,19 @@ export async function PUT(req: Request) {
       }
     } else {
       body.estimated_time = null;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "media")) {
+      const rawMedia = body.media;
+      let parsedMedia: unknown = rawMedia;
+      if (typeof rawMedia === "string") {
+        try {
+          parsedMedia = JSON.parse(rawMedia as string);
+        } catch {
+          parsedMedia = [];
+        }
+      }
+      body.media = normalizeIncomingMedia(parsedMedia);
     }
 
     // Try to update the row

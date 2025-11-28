@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,6 +13,8 @@ import {
   type CaseFieldKey,
   getFieldMeta,
 } from "@/features/cases/fieldMeta";
+import { CaseMediaEditor } from "@/features/cases/components/case-media-editor";
+import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
 
 export default function CaseEntryForm() {
   const [expandedField, setExpandedField] = useState<CaseFieldKey | null>(
@@ -24,6 +26,12 @@ export default function CaseEntryForm() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
+  const [mediaItems, setMediaItems] = useState<CaseMediaItem[]>([]);
+
+  const caseIdForMedia = useMemo(() => {
+    const raw = form.id?.trim();
+    return raw ? raw : undefined;
+  }, [form.id]);
 
   function handleChange(
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -41,6 +49,7 @@ export default function CaseEntryForm() {
     try {
       // Prepare payload and merge in case-specific structured fields when empty
       const payload: Record<string, unknown> = { ...form };
+      payload["media"] = mediaItems;
 
       // Helper to inject default text only when empty
       const ensure = (key: CaseFieldKey, value: string) => {
@@ -167,6 +176,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
       await axios.post("/api/cases", payload);
       setSuccess("Case added successfully!");
       setForm(createEmptyCaseFormState());
+      setMediaItems([]);
     } catch (err: unknown) {
       // Prefer server-provided error message when available
       const e = err as {
@@ -181,6 +191,14 @@ Remain collaborative, use everyday language, and avoid offering your own medical
     } finally {
       setLoading(false);
     }
+
+        <div className="border border-dashed border-muted-foreground/40 rounded-lg p-4">
+          <CaseMediaEditor
+            caseId={caseIdForMedia}
+            value={mediaItems}
+            onChange={setMediaItems}
+          />
+        </div>
   }
 
   return (

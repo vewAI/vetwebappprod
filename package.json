@@ -9,7 +9,10 @@
     "lint": "next lint",
     "seed:cases": "tsx scripts/seed-cases.ts",
     "generate:portraits": "tsx scripts/generate-persona-portraits.ts",
-    "reset:portraits": "tsx scripts/reset-persona-portraits.ts"
+    "reset:portraits": "tsx scripts/reset-persona-portraits.ts",
+    "seed:global-personas": "tsx scripts/seed-global-personas.ts",
+    "generate:global-portraits": "tsx scripts/generate-global-portraits.ts",
+    "cleanup:case-personas": "tsx scripts/cleanup-case-personas.ts"
   },
   "dependencies": {
     "@next/env": "^15.2.4",

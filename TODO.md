@@ -38,3 +38,4 @@
 - Schedule discovery sessions with stakeholders (students, professors) to validate avatar expectations and case authoring flows.
 - Produce technical spike documents estimating integration effort for top avatar providers and RBAC changes.
 - Prioritize incremental deliverables (e.g., RBAC + professor dashboards first, avatar MVP behind feature flag) and define success metrics.
+- Add infra ticket to externalize the OpenAI TTS model (env var + docs) and plan upgrade path to GPT-5 streaming voices once the provider contract is confirmed.

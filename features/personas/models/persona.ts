@@ -6,6 +6,7 @@ export interface PersonaRecord {
   roleKey: string;
   displayName: string;
   prompt: string;
+  behaviorPrompt?: string;
   status: PersonaStatus;
   imageUrl?: string;
   metadata?: Record<string, unknown> | null;
@@ -38,6 +39,7 @@ export interface PersonaSeed {
   roleKey: string;
   displayName: string;
   prompt: string;
+  behaviorPrompt: string;
   metadata?: Record<string, unknown>;
   sharedPersonaKey?: string;
 }

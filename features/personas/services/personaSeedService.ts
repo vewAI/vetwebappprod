@@ -26,6 +26,57 @@ const FALLBACK_OWNER_SURNAMES = [
   "Baxter",
 ];
 
+export const SHARED_CASE_ID = "__global__";
+export const SHARED_PERSONA_KEYS = getDefaultPersonaKeys().filter(
+  (key) => key !== "owner"
+);
+const SHARED_CONTEXT: PersonaSeedContext = {
+  caseId: SHARED_CASE_ID,
+  title: "Shared Persona Template",
+  species: "Horse",
+  patientName: "the patient",
+  ownerRoleDescription: "a dedicated caretaker",
+  ownerSetting: "the equine facility",
+  caseDifficulty: "Medium",
+  ownerName: undefined,
+};
+
+export function buildSharedPersonaSeeds(): PersonaSeed[] {
+  const seeds: PersonaSeed[] = [];
+
+  for (const roleKey of SHARED_PERSONA_KEYS) {
+    const template = personaTemplates[roleKey];
+    if (!template) continue;
+
+    const identityContext: PersonaSeedContext = {
+      ...SHARED_CONTEXT,
+      sharedPersonaKey: roleKey,
+    };
+
+    const identity = resolvePersonaIdentity(
+      SHARED_CASE_ID,
+      roleKey,
+      identityContext
+    );
+    const seed = template(identityContext, identity);
+    const metadata: Record<string, unknown> = {
+      ...(seed.metadata ?? {}),
+      identity,
+      sex: identity.sex,
+      voiceId: identity.voiceId,
+      sharedPersonaKey: roleKey,
+    };
+
+    seeds.push({
+      ...seed,
+      metadata,
+      sharedPersonaKey: roleKey,
+    });
+  }
+
+  return seeds;
+}
+
 export function buildPersonaSeeds(
   caseId: string,
   caseBody: Record<string, unknown>
@@ -38,7 +89,7 @@ export function buildPersonaSeeds(
   keys.forEach((key) => {
     const template = personaTemplates[key];
     if (!template) return;
-    const sharedPersonaKey = key === "owner" ? undefined : key;
+    const sharedPersonaKey = key === "owner" ? undefined : undefined;
     const identityContext: PersonaSeedContext = {
       ...context,
       sharedPersonaKey,
@@ -50,7 +101,6 @@ export function buildPersonaSeeds(
       identity,
       sex: identity.sex,
       voiceId: identity.voiceId,
-      ...(sharedPersonaKey ? { sharedPersonaKey } : {}),
     };
     seeds.push({
       ...seed,

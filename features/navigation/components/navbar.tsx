@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/features/auth/services/authService";
 import { Button } from "@/components/ui/button";
 import { Menu, X, Home, LayoutDashboard, LogOut, History } from "lucide-react";
+import { ThemeToggle } from "@/features/navigation/components/theme-toggle";
 
 export function Navbar() {
   const { user, signOut, isAdmin, role, profileLoading } = useAuth();
@@ -74,7 +75,8 @@ export function Navbar() {
             </Button>
           </div>
 
-          <div className="hidden md:flex md:items-center">
+          <div className="hidden md:flex md:items-center gap-3">
+            <ThemeToggle />
             {user && (
               <div className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-foreground">
                 <div className="flex items-center gap-3">
@@ -141,6 +143,10 @@ export function Navbar() {
               <History className="size-5" />
               <span>My Attempts</span>
             </Link>
+            <div className="flex items-center gap-2 rounded-md px-3 py-2">
+              <ThemeToggle size="sm" className="h-8 w-8" />
+              <span className="text-sm text-muted-foreground">Theme</span>
+            </div>
             {isAdmin && (
               <Link
                 href="/admin"

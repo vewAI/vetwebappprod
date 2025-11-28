@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef } from "react";
+import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 
@@ -65,10 +66,13 @@ export default function ImageUploader({
     <div className="space-y-2">
       {preview ? (
         <div className="flex items-center gap-4">
-          <img
+          <Image
             src={preview}
-            alt="case"
-            className="h-28 w-28 object-cover rounded"
+            alt="case preview"
+            width={112}
+            height={112}
+            className="h-28 w-28 rounded object-cover"
+            unoptimized
           />
           <div className="flex flex-col gap-2">
             <div className="text-sm text-muted-foreground">Uploaded image</div>

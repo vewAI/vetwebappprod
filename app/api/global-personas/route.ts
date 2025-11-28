@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { requireUser } from "@/app/api/_lib/auth";
+import { ensureSharedPersonas } from "@/features/personas/services/globalPersonaPersistence";
 
 export async function GET(request: NextRequest) {
   const auth = await requireUser(request, { requireAdmin: true });
@@ -8,34 +9,25 @@ export async function GET(request: NextRequest) {
     return auth.error;
   }
   const { supabase } = auth;
-  const caseId = request.nextUrl.searchParams.get("caseId");
-  if (!caseId) {
-    return NextResponse.json(
-      { error: "caseId query param is required" },
-      { status: 400 }
-    );
-  }
 
   try {
+    await ensureSharedPersonas(supabase);
+
     const { data, error } = await supabase
-      .from("case_personas")
+      .from("global_personas")
       .select(
-        "id, case_id, role_key, display_name, status, image_url, prompt, behavior_prompt, metadata, generated_by, last_generated_at, updated_at"
+        "id, role_key, display_name, status, image_url, prompt, behavior_prompt, metadata, generated_by, last_generated_at, updated_at"
       )
-      .eq("case_id", caseId)
       .order("role_key", { ascending: true });
 
     if (error) {
-      console.error(
-        "Failed to load personas",
-        JSON.stringify({ caseId, message: error.message, details: error.details, hint: error.hint })
-      );
+      console.error("Failed to load global personas", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ personas: data ?? [] });
   } catch (error) {
-    console.error("Unhandled personas API error", error);
+    console.error("Unhandled global personas GET error", error);
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: 500 });
   }
@@ -52,11 +44,8 @@ export async function PUT(request: NextRequest) {
   try {
     payload = await request.json();
   } catch (error) {
-    console.error("Failed to parse persona update payload", error);
-    return NextResponse.json(
-      { error: "Invalid JSON body" },
-      { status: 400 }
-    );
+    console.error("Failed to parse global persona payload", error);
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
@@ -68,22 +57,20 @@ export async function PUT(request: NextRequest) {
 
   const {
     id,
-    case_id: caseId,
     role_key: roleKey,
     display_name: displayName,
     image_url: imageUrl,
     behavior_prompt: behaviorPrompt,
   } = payload as Record<string, unknown>;
 
-  if (!id && (!caseId || !roleKey)) {
+  if (!id && !roleKey) {
     return NextResponse.json(
-      { error: "Provide persona id or case_id and role_key" },
+      { error: "Provide persona id or role_key" },
       { status: 400 }
     );
   }
 
   const updatePayload: Record<string, unknown> = {};
-
   if (typeof displayName === "string") {
     updatePayload.display_name = displayName;
   }
@@ -94,9 +81,6 @@ export async function PUT(request: NextRequest) {
     updatePayload.behavior_prompt = behaviorPrompt;
   }
 
-  // Mark manual edits so automated refresh jobs do not overwrite admin changes.
-  updatePayload.generated_by = "manual";
-
   if (!Object.keys(updatePayload).length) {
     return NextResponse.json(
       { error: "No persona fields provided for update" },
@@ -104,18 +88,20 @@ export async function PUT(request: NextRequest) {
     );
   }
 
+  updatePayload.generated_by = "manual";
+
   try {
-    let query = supabase.from("case_personas").update(updatePayload);
+    let query = supabase.from("global_personas").update(updatePayload);
 
     if (id && typeof id === "string") {
       query = query.eq("id", id);
-    } else {
-      query = query.eq("case_id", caseId).eq("role_key", roleKey);
+    } else if (typeof roleKey === "string") {
+      query = query.eq("role_key", roleKey);
     }
 
     const { data, error } = await query
       .select(
-        "id, case_id, role_key, display_name, status, image_url, prompt, behavior_prompt, metadata, generated_by, last_generated_at, updated_at"
+        "id, role_key, display_name, status, image_url, prompt, behavior_prompt, metadata, generated_by, last_generated_at, updated_at"
       )
       .single();
 
@@ -126,7 +112,7 @@ export async function PUT(request: NextRequest) {
           { status: 404 }
         );
       }
-      console.error("Failed to update persona", error);
+      console.error("Failed to update global persona", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
@@ -139,7 +125,7 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({ persona: data });
   } catch (error) {
-    console.error("Unhandled persona update error", error);
+    console.error("Unhandled global persona update error", error);
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: 500 });
   }

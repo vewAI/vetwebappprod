@@ -16,6 +16,12 @@ export default function AdminPage() {
       <Button className="mb-4 ml-2" onClick={() => router.push("/case-viewer")}>
         Review and Edit Cases
       </Button>
+      <Button
+        className="mb-4 ml-2"
+        onClick={() => router.push("/admin/personas")}
+      >
+        Manage Personas
+      </Button>
       {/* Add other admin controls here */}
     </div>
   );

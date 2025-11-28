@@ -44,6 +44,64 @@ const STAGE_KEYWORD_SYNONYMS: Record<string, string[]> = {
   plan: ["treatment", "management", "strategy"],
 };
 
+type StageCompletionRule = {
+  minUserTurns?: number;
+  minAssistantTurns?: number;
+  assistantKeywords?: string[];
+  minAssistantKeywordHits?: number;
+};
+
+type StageCompletionMetrics = {
+  userTurns: number;
+  assistantTurns: number;
+  matchedAssistantKeywords: number;
+};
+
+type StageCompletionResult = {
+  status: "ready" | "insufficient";
+  metrics: StageCompletionMetrics;
+  rule?: StageCompletionRule | null;
+};
+
+const PHYSICAL_EXAM_KEYWORDS: string[] = [
+  "temperature",
+  "temp",
+  "pulse",
+  "heart rate",
+  "respiratory",
+  "breathing",
+  "respiration",
+  "lung",
+  "lungs",
+  "auscultation",
+  "mucous",
+  "membranes",
+  "crt",
+  "capillary",
+  "refill",
+  "hydration",
+  "lymph",
+  "palpation",
+  "abdomen",
+  "pain",
+  "limb",
+  "gait",
+  "weight",
+  "temperature reading",
+];
+
+const STAGE_COMPLETION_RULES: Record<string, StageCompletionRule> = {
+  "physical examination": {
+    minUserTurns: 2,
+    minAssistantTurns: 2,
+    assistantKeywords: PHYSICAL_EXAM_KEYWORDS,
+    minAssistantKeywordHits: 2,
+  },
+};
+
+const escapeRegExp = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 type ChatInterfaceProps = {
   caseId: string;
   attemptId?: string;
@@ -94,6 +152,9 @@ export function ChatInterface({
   const [stageIndicator, setStageIndicator] = useState<
     { title: string; body: string } | null
   >(null);
+  const [advanceGuard, setAdvanceGuard] = useState<
+    { stageIndex: number; askedAt: number; metrics: StageCompletionMetrics } | null
+  >(null);
   const stageKeywordSets = useMemo(() => {
     return stages.map((stage, index) => {
       const keywords = new Set<string>();
@@ -139,6 +200,74 @@ export function ChatInterface({
       return Array.from(keywords).filter(Boolean);
     });
   }, [stages]);
+
+  const evaluateStageCompletion = useCallback(
+    (stageIndex: number, messageList: Message[]): StageCompletionResult => {
+      const stage = stages[stageIndex];
+      const metrics: StageCompletionMetrics = {
+        userTurns: 0,
+        assistantTurns: 0,
+        matchedAssistantKeywords: 0,
+      };
+
+      if (!stage) {
+        return { status: "ready", metrics };
+      }
+
+      const stageMessages = messageList.filter(
+        (msg) => msg.stageIndex === stageIndex
+      );
+      metrics.userTurns = stageMessages.filter((msg) => msg.role === "user").length;
+      const assistantMessages = stageMessages.filter(
+        (msg) => msg.role === "assistant"
+      );
+      metrics.assistantTurns = assistantMessages.length;
+
+      const ruleKey = stage.title?.toLowerCase().replace(/\s+/g, " ").trim();
+      const rule = ruleKey ? STAGE_COMPLETION_RULES[ruleKey] : undefined;
+      if (!rule) {
+        return { status: "ready", metrics, rule: undefined };
+      }
+
+      if (rule.assistantKeywords && rule.assistantKeywords.length > 0) {
+        const normalizedKeywords = rule.assistantKeywords
+          .map((kw) => kw.toLowerCase().trim())
+          .filter(Boolean);
+        const keywordHits = new Set<string>();
+        assistantMessages.forEach((msg) => {
+          const content = msg.content?.toLowerCase() ?? "";
+          if (!content) return;
+          normalizedKeywords.forEach((keyword) => {
+            if (keyword && content.includes(keyword)) {
+              keywordHits.add(keyword);
+            }
+          });
+        });
+        metrics.matchedAssistantKeywords = keywordHits.size;
+      }
+
+      let ready = true;
+      if (rule.minUserTurns && metrics.userTurns < rule.minUserTurns) {
+        ready = false;
+      }
+      if (rule.minAssistantTurns && metrics.assistantTurns < rule.minAssistantTurns) {
+        ready = false;
+      }
+      if (
+        rule.minAssistantKeywordHits &&
+        metrics.matchedAssistantKeywords < rule.minAssistantKeywordHits
+      ) {
+        ready = false;
+      }
+
+      return {
+        status: ready ? "ready" : "insufficient",
+        metrics,
+        rule,
+      };
+    },
+    [stages]
+  );
   const isAdvancingRef = useRef<boolean>(false);
   const nextStageIntentTimeoutRef = useRef<number | null>(null);
   const handleProceedRef = useRef<(() => Promise<void>) | null>(null);
@@ -354,10 +483,13 @@ export function ChatInterface({
           ? payload.personas
           : [];
         const next: Record<string, PersonaDirectoryEntry> = {};
+
         for (const row of personas) {
           const rawKey = typeof row?.role_key === "string" ? row.role_key : "";
           const normalizedKey = normalizeRoleKey(rawKey) ?? rawKey;
-          if (!normalizedKey) continue;
+          if (!normalizedKey || normalizedKey !== "owner") {
+            continue;
+          }
           const metadata =
             row && typeof row.metadata === "object" && row.metadata !== null
               ? (row.metadata as Record<string, unknown>)
@@ -390,6 +522,61 @@ export function ChatInterface({
                   ? identity.sex
                   : undefined,
           };
+        }
+
+        try {
+          const globalResponse = await fetch("/api/global-personas");
+          if (!globalResponse.ok) {
+            throw new Error(`Failed to load shared personas: ${globalResponse.status}`);
+          }
+          const globalPayload = await globalResponse
+            .json()
+            .catch(() => ({ personas: [] }));
+          const globalPersonas = Array.isArray(globalPayload?.personas)
+            ? globalPayload.personas
+            : [];
+
+          for (const row of globalPersonas) {
+            const rawKey = typeof row?.role_key === "string" ? row.role_key : "";
+            const normalizedKey = normalizeRoleKey(rawKey) ?? rawKey;
+            if (!normalizedKey || normalizedKey === "owner") {
+              continue;
+            }
+            const metadata =
+              row && typeof row.metadata === "object" && row.metadata !== null
+                ? (row.metadata as Record<string, unknown>)
+                : {};
+            const identity =
+              metadata && typeof metadata.identity === "object"
+                ? (metadata.identity as {
+                    fullName?: string;
+                    voiceId?: string;
+                    sex?: string;
+                  })
+                : undefined;
+            next[normalizedKey] = {
+              displayName:
+                typeof row?.display_name === "string"
+                  ? row.display_name
+                  : identity?.fullName,
+              portraitUrl:
+                typeof row?.image_url === "string" ? row.image_url : undefined,
+              voiceId:
+                typeof metadata?.voiceId === "string"
+                  ? (metadata.voiceId as string)
+                  : typeof identity?.voiceId === "string"
+                    ? identity.voiceId
+                    : undefined,
+              sex:
+                typeof metadata?.sex === "string"
+                  ? (metadata.sex as string)
+                  : typeof identity?.sex === "string"
+                    ? identity.sex
+                    : undefined,
+            };
+          }
+        } catch (globalErr) {
+          console.warn("Failed to load shared personas", globalErr);
         }
         if (!cancelled) {
           setPersonaDirectory(next);
@@ -501,6 +688,86 @@ export function ChatInterface({
     }
   };
 
+  const emitStageReadinessPrompt = useCallback(
+    async (stageIndex: number, result: StageCompletionResult) => {
+      const stage = stages[stageIndex];
+      if (!stage) return;
+
+      const stageTitle = stage.title ?? "this stage";
+      const ruleKey = stage.title?.toLowerCase().replace(/\s+/g, " ").trim();
+      const specializedPrompt = ruleKey === "physical examination";
+      const cautionText = specializedPrompt
+        ? "Are you sure you have gathered enough physical exam findings before moving on, Doctor?"
+        : `Are you sure you have enough information before leaving ${stageTitle.toLowerCase()}?`;
+
+      const roleName = stage.role ?? "Virtual Assistant";
+      const normalizedRoleKey = normalizeRoleKey(roleName) ?? undefined;
+      const personaMeta = normalizedRoleKey
+        ? personaDirectory[normalizedRoleKey]
+        : undefined;
+
+      const voiceSex: "male" | "female" | "neutral" =
+        personaMeta?.sex === "male" ||
+        personaMeta?.sex === "female" ||
+        personaMeta?.sex === "neutral"
+          ? (personaMeta.sex as "male" | "female" | "neutral")
+          : "neutral";
+
+      const voiceForRole = getOrAssignVoiceForRole(roleName, attemptId, {
+        preferredVoice: personaMeta?.voiceId,
+        sex: voiceSex,
+      });
+
+      const assistantMsg = chatService.createAssistantMessage(
+        cautionText,
+        stageIndex,
+        personaMeta?.displayName ?? roleName,
+        personaMeta?.portraitUrl,
+        voiceForRole,
+        personaMeta?.sex,
+        normalizedRoleKey
+      );
+
+      upsertPersonaDirectory(normalizedRoleKey, {
+        displayName: personaMeta?.displayName ?? roleName,
+        portraitUrl: personaMeta?.portraitUrl,
+        voiceId: voiceForRole,
+        sex: personaMeta?.sex,
+      });
+
+      setMessages((prev) => [...prev, assistantMsg]);
+
+      if (ttsEnabled && cautionText) {
+        try {
+          const guardMeta: TtsPlaybackMeta = {
+            roleKey: normalizedRoleKey,
+            displayRole: assistantMsg.displayRole,
+            role: roleName,
+            caseId,
+            metadata: {
+              stageId: stage.id,
+              stageGuard: true,
+              metrics: result.metrics,
+            },
+          };
+          await playTtsAndPauseStt(cautionText, voiceForRole, guardMeta);
+        } catch (ttsErr) {
+          console.error("Stage readiness prompt TTS failed", ttsErr);
+        }
+      }
+    },
+    [
+      attemptId,
+      caseId,
+      personaDirectory,
+      playTtsAndPauseStt,
+      setMessages,
+      stages,
+      ttsEnabled,
+      upsertPersonaDirectory,
+    ]
+  );
+
   // Microphone button handlers
   const { handleStart, handleStop, handleCancel } = useMicButton(
     textareaRef,
@@ -566,9 +833,49 @@ export function ChatInterface({
     }
     setInput("");
 
+    const stageResult = evaluateStageCompletion(currentStageIndex, snapshot);
     const hasNextStage = currentStageIndex < stages.length - 1;
-    const shouldAutoAdvance =
-      hasNextStage && detectNextStageIntent(trimmed);
+    let shouldAutoAdvance = false;
+
+    const guardActive =
+      advanceGuard && advanceGuard.stageIndex === currentStageIndex;
+    if (guardActive) {
+      setAdvanceGuard(null);
+      const guardResponse = detectAdvanceGuardResponse(trimmed);
+      if (guardResponse === "confirm" && hasNextStage) {
+        shouldAutoAdvance = true;
+      } else if (guardResponse === "decline") {
+        shouldAutoAdvance = false;
+      }
+    }
+
+    if (!shouldAutoAdvance && hasNextStage) {
+      const autoIntent = detectNextStageIntent(trimmed);
+      if (autoIntent) {
+        if (stageResult.status === "ready") {
+          shouldAutoAdvance = true;
+        } else {
+          if (userMessage) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === userMessage!.id ? { ...m, status: "sent" } : m
+              )
+            );
+          }
+          setAdvanceGuard({
+            stageIndex: currentStageIndex,
+            askedAt: Date.now(),
+            metrics: stageResult.metrics,
+          });
+          await emitStageReadinessPrompt(currentStageIndex, stageResult);
+          reset();
+          baseInputRef.current = "";
+          return;
+        }
+      } else if (stageResult.status === "ready" && guardActive) {
+        setAdvanceGuard(null);
+      }
+    }
 
     if (shouldAutoAdvance) {
       if (userMessage) {
@@ -590,7 +897,8 @@ export function ChatInterface({
       const response = await chatService.sendMessage(
         snapshot,
         currentStageIndex,
-        caseId
+        caseId,
+        { attemptId }
       );
       const stage = stages[currentStageIndex] ?? stages[0];
       const roleName = response.displayRole ?? stage?.role ?? "assistant";
@@ -602,7 +910,8 @@ export function ChatInterface({
         portraitUrl,
         response.voiceId,
         response.personaSex,
-        response.personaRoleKey
+        response.personaRoleKey,
+        response.media
       );
       const finalAssistantContent = aiMessage.content;
       const normalizedPersonaKey =
@@ -690,7 +999,11 @@ export function ChatInterface({
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === placeholderMessage.id
-                    ? { ...m, content: finalAssistantContent }
+                    ? {
+                        ...m,
+                        content: finalAssistantContent,
+                        media: aiMessage.media,
+                      }
                     : m
                 )
               );
@@ -804,98 +1117,134 @@ export function ChatInterface({
     if (!normalized) return false;
 
     const isQuestion = /\b(what|which|who|where|when|why|how)\b/.test(normalized);
-    const postponeIntent = /\b(later|after|eventually)\b/.test(normalized);
+    if (isQuestion) return false;
+
+    const postponeIntent = /\b(later|after|eventually|not yet|hold on|wait)\b/.test(
+      normalized
+    );
+    if (postponeIntent) return false;
+
+    const stagePhrase = (nextStage.title ?? "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const stageTokens = stagePhrase ? stagePhrase.split(" ").filter(Boolean) : [];
+    const nextKeywords = (stageKeywordSets[nextIndex] ?? []).map((kw) =>
+      kw.toLowerCase()
+    );
 
     const directionWords = [
-      "go",
-      "move",
       "proceed",
       "advance",
+      "move",
+      "go",
       "continue",
       "switch",
       "jump",
       "head",
+      "shift",
+      "transition",
       "start",
       "begin",
-      "shift",
     ];
-    const directionPhrases = ["let's", "lets", "ready to", "time to", "we should"];
-    const hasDirectionWord = directionWords.some((word) =>
+    const hasDirectionVerb = directionWords.some((word) =>
       new RegExp(`\\b${word}\\b`).test(normalized)
     );
-    const hasDirectionPhrase = directionPhrases.some((phrase) =>
-      normalized.includes(phrase)
-    );
-    const hasDirection = hasDirectionWord || hasDirectionPhrase;
 
-    const mentionsNextStagePhrase = /\bnext\s+(stage|section|part|step)\b/.test(normalized);
+    const mentionsNextStagePhrase = /\bnext\s+(stage|section|part|step)\b/.test(
+      normalized
+    );
     const stageNumber = nextIndex + 1;
     const mentionsStageNumber = new RegExp(
       `\\b(stage|section|part)\\s*${stageNumber}\\b`
     ).test(normalized);
 
-    if (mentionsNextStagePhrase && !isQuestion && !postponeIntent) {
-      const shortDirectCommand = /^(next\s+(stage|section|part|step))(\s+(please|now))?$/.test(
-        normalized
-      );
-      if (hasDirection || /\bplease\b/.test(normalized) || shortDirectCommand) {
-        return true;
-      }
-    }
+    const politeCue = /\bplease\b/.test(normalized) || /\bnow\b/.test(normalized);
 
-    if (
-      mentionsStageNumber &&
-      !isQuestion &&
-      !postponeIntent &&
-      (hasDirection || /\bplease\b/.test(normalized) || /\bnow\b/.test(normalized))
-    ) {
-      return true;
-    }
+    const stagePhraseRegex =
+      stagePhrase && stagePhrase.length > 0
+        ? new RegExp(`\b${escapeRegExp(stagePhrase)}\b`)
+        : null;
+    const mentionsStagePhrase = stagePhraseRegex?.test(normalized) ?? false;
 
-    if (!isQuestion) {
-      const numericShortCommand = new RegExp(
-        `^(stage|section|part)\\s*${stageNumber}(\\s+(please|now))?$`
-      ).test(normalized);
-      if (numericShortCommand && !postponeIntent) {
-        return true;
-      }
-    }
-
-    const nextKeywords = stageKeywordSets[nextIndex] ?? [];
-    const mentionsNextKeywords = nextKeywords.some((keyword) => {
+    const keywordMatches = nextKeywords.filter((keyword) => {
       if (!keyword) return false;
-      const candidate = keyword.trim();
-      if (!candidate) return false;
-      return normalized.includes(candidate.toLowerCase());
+      if (keyword.length <= 3) return false;
+      return normalized.includes(keyword);
     });
+    const richKeywordMatches = keywordMatches.filter(
+      (kw) => kw.includes(" ") || kw.length >= 6
+    );
 
-    if (!mentionsNextKeywords) {
-      return false;
-    }
+    const stageTokenMatches = stageTokens.filter((token) =>
+      token.length > 3 && normalized.includes(token)
+    );
 
-    if ((hasDirection || mentionsNextStagePhrase) && !isQuestion && !postponeIntent) {
+    const mentionsStageKeywords =
+      mentionsStagePhrase ||
+      richKeywordMatches.length > 0 ||
+      keywordMatches.length >= 2 ||
+      stageTokenMatches.length >= Math.min(stageTokens.length, 2);
+
+    const explicitAdvanceToStage = stagePhrase
+      ? new RegExp(
+          `\\b(proceed|advance|move|go|switch|jump|head|shift|transition)\\s+(to|into|onto)\\s+${escapeRegExp(stagePhrase)}\\b`
+        ).test(normalized)
+      : false;
+
+    const readyForStagePattern = stagePhrase
+      ? new RegExp(
+          `\\b(ready|time|start|begin)\\s+(for|to|with)\\s+${escapeRegExp(stagePhrase)}\\b`
+        ).test(normalized)
+      : false;
+
+    if (mentionsNextStagePhrase && (hasDirectionVerb || politeCue)) {
       return true;
     }
 
-    const immediateCue =
-      !isQuestion && (/(^now\b|\bnow$)/.test(normalized) || /\bplease\b/.test(normalized));
-    if (immediateCue && !postponeIntent) {
-      const keywordMatchesEdge = nextKeywords.some((keyword) => {
-        if (!keyword) return false;
-        const candidate = keyword.toLowerCase();
-        return (
-          normalized.startsWith(candidate) ||
-          normalized.endsWith(`${candidate} now`) ||
-          normalized.includes(`${candidate} now`) ||
-          normalized.includes(`now ${candidate}`)
-        );
-      });
-      if (keywordMatchesEdge) {
-        return true;
-      }
+    if (mentionsStageNumber && (hasDirectionVerb || politeCue)) {
+      return true;
+    }
+
+    if (explicitAdvanceToStage || readyForStagePattern) {
+      return true;
+    }
+
+    if (hasDirectionVerb && mentionsStageKeywords) {
+      return true;
+    }
+
+    if (mentionsStageKeywords && politeCue) {
+      return true;
     }
 
     return false;
+  };
+
+  const detectAdvanceGuardResponse = (
+    content: string
+  ): "confirm" | "decline" | "none" => {
+    const normalized = content.toLowerCase().replace(/\s+/g, " ").trim();
+    if (!normalized) return "none";
+
+    if (
+      /\b(yes|yeah|yep|ready|sure|absolutely|of course|do it|let's go|lets go|move on|advance|proceed)\b/.test(
+        normalized
+      )
+    ) {
+      return "confirm";
+    }
+
+    if (
+      /\b(no|not yet|wait|hold on|stay|keep going|continue here|need more|give me more time)\b/.test(
+        normalized
+      )
+    ) {
+      return "decline";
+    }
+
+    return "none";
   };
 
   // Trigger an auto-send that also flashes the Send button briefly so the
@@ -990,7 +1339,8 @@ export function ChatInterface({
             },
           ] as Message[],
           p.stageIndex,
-          p.caseId
+          p.caseId,
+          { attemptId }
         );
 
         // Append assistant reply into chat UI
@@ -1002,7 +1352,8 @@ export function ChatInterface({
           response.portraitUrl,
           response.voiceId,
           response.personaSex,
-          response.personaRoleKey
+          response.personaRoleKey,
+          response.media
         );
         const normalizedPersonaKey =
           aiMessage.personaRoleKey ??
@@ -1430,6 +1781,21 @@ export function ChatInterface({
     if (isAdvancingRef.current) {
       return;
     }
+    const stageResult = evaluateStageCompletion(currentStageIndex, messages);
+    if (stageResult.status === "insufficient") {
+      if (!advanceGuard || advanceGuard.stageIndex !== currentStageIndex) {
+        setAdvanceGuard({
+          stageIndex: currentStageIndex,
+          askedAt: Date.now(),
+          metrics: stageResult.metrics,
+        });
+        await emitStageReadinessPrompt(currentStageIndex, stageResult);
+      }
+      reset();
+      baseInputRef.current = "";
+      return;
+    }
+
     isAdvancingRef.current = true;
     const targetIndex = Math.min(currentStageIndex + 1, stages.length - 1);
 

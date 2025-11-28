@@ -3,12 +3,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRoleInfoPrompt } from "@/features/role-info/services/roleInfoService";
 import { getStagesForCase } from "@/features/stages/services/stageService";
 import { resolvePersonaRoleKey } from "@/features/personas/services/personaImageService";
-import { buildPersonaSeeds } from "@/features/personas/services/personaSeedService";
-import type { PersonaIdentity } from "@/features/personas/models/persona";
+import {
+  buildPersonaSeeds,
+  buildSharedPersonaSeeds,
+} from "@/features/personas/services/personaSeedService";
+import type {
+  PersonaIdentity,
+  PersonaSeed,
+} from "@/features/personas/models/persona";
 import { CHAT_SYSTEM_GUIDELINE } from "@/features/chat/prompts/systemGuideline";
 import { resolvePromptValue } from "@/features/prompts/services/promptService";
 import { ensureCasePersonas } from "@/features/personas/services/casePersonaPersistence";
+import { ensureSharedPersonas } from "@/features/personas/services/globalPersonaPersistence";
 import { requireUser } from "@/app/api/_lib/auth";
+import {
+  normalizeCaseMedia,
+  type CaseMediaItem,
+} from "@/features/cases/models/caseMedia";
 
 const openai = new OpenAi({
   apiKey: process.env.OPENAI_API_KEY,
@@ -54,7 +65,7 @@ export async function POST(request: NextRequest) {
   }
   const { supabase } = auth;
   try {
-    const { messages, stageIndex, caseId } = await request.json();
+    const { messages, stageIndex, caseId, attemptId } = await request.json();
 
     // Validate that messages is an array
     if (!messages || !Array.isArray(messages)) {
@@ -73,6 +84,7 @@ export async function POST(request: NextRequest) {
     // so the LLM is influenced by the owner's personality plus any stage-specific role info.
     let ownerBackground: string | null = null;
     let caseRecord: Record<string, unknown> | null = null;
+    let caseMedia: CaseMediaItem[] = [];
     if (caseId) {
       try {
         const { data: caseRow, error: caseErr } = await supabase
@@ -89,6 +101,8 @@ export async function POST(request: NextRequest) {
           );
         } else if (caseRow) {
           caseRecord = caseRow as Record<string, unknown>;
+           const rawMedia = (caseRow as { media?: unknown }).media;
+           caseMedia = normalizeCaseMedia(rawMedia);
           if (caseRow.owner_background) {
             ownerBackground = String(caseRow.owner_background);
             // Replace common placeholder markers the prompts may contain so the
@@ -136,12 +150,20 @@ export async function POST(request: NextRequest) {
 
     let displayRole: string | undefined = undefined;
     let stageRole: string | undefined = undefined;
+    let stageDescriptor: { id?: string; title?: string; role?: string } | null = null;
     let personaRoleKey: string | undefined = undefined;
     let personaIdentity: PersonaIdentity | undefined = undefined;
     if (caseId && typeof stageIndex === "number") {
       try {
         const stages = getStagesForCase(caseId);
         const stage = stages && stages[stageIndex];
+        if (stage) {
+          stageDescriptor = {
+            id: stage.id,
+            title: stage.title,
+            role: stage.role,
+          };
+        }
         if (stage && stage.role) {
           stageRole = stage.role;
           if (/owner|client/i.test(stage.role) && ownerBackground) {
@@ -186,6 +208,7 @@ export async function POST(request: NextRequest) {
     type PersonaTableRow = {
       role_key?: string | null;
       display_name?: string | null;
+      behavior_prompt?: string | null;
       metadata?: unknown;
       image_url?: string | null;
       status?: string | null;
@@ -194,12 +217,16 @@ export async function POST(request: NextRequest) {
     let personaRow: PersonaTableRow | null = null;
     let personaMetadata: Record<string, unknown> | null = null;
     let personaImageUrl: string | undefined = undefined;
+    let personaBehaviorPrompt: string | undefined = undefined;
+    let personaSeeds: PersonaSeed[] | null = null;
 
-    if (caseId && typeof caseId === "string" && personaRoleKey) {
+    if (personaRoleKey === "owner" && caseId && typeof caseId === "string") {
       try {
         const { data: row, error } = await supabase
           .from("case_personas")
-          .select("role_key, display_name, metadata, image_url, status")
+          .select(
+            "role_key, display_name, behavior_prompt, metadata, image_url, status"
+          )
           .eq("case_id", caseId)
           .eq("role_key", personaRoleKey)
           .maybeSingle();
@@ -225,7 +252,9 @@ export async function POST(request: NextRequest) {
           }
           const { data: retryRow } = await supabase
             .from("case_personas")
-            .select("role_key, display_name, metadata, image_url, status")
+            .select(
+              "role_key, display_name, behavior_prompt, metadata, image_url, status"
+            )
             .eq("case_id", caseId)
             .eq("role_key", personaRoleKey)
             .maybeSingle();
@@ -235,6 +264,25 @@ export async function POST(request: NextRequest) {
         }
       } catch (personaErr) {
         console.warn("Failed to ensure persona row for chat", personaErr);
+      }
+    } else if (personaRoleKey) {
+      try {
+        await ensureSharedPersonas(supabase);
+        const { data: globalRow, error: globalError } = await supabase
+          .from("global_personas")
+          .select(
+            "role_key, display_name, behavior_prompt, metadata, image_url, status"
+          )
+          .eq("role_key", personaRoleKey)
+          .maybeSingle();
+
+        if (globalError) {
+          console.warn("Failed to read shared persona row for chat", globalError);
+        } else if (globalRow) {
+          personaRow = globalRow as PersonaTableRow;
+        }
+      } catch (sharedErr) {
+        console.warn("Failed to ensure shared persona row for chat", sharedErr);
       }
     }
 
@@ -250,6 +298,16 @@ export async function POST(request: NextRequest) {
       personaMetadata = personaRow.metadata as Record<string, unknown>;
     }
 
+    if (!personaBehaviorPrompt && personaMetadata) {
+      const behaviorCandidate = personaMetadata["behaviorPrompt"];
+      if (typeof behaviorCandidate === "string") {
+        const trimmedBehavior = behaviorCandidate.trim();
+        if (trimmedBehavior) {
+          personaBehaviorPrompt = trimmedBehavior;
+        }
+      }
+    }
+
     if (!personaIdentity && personaMetadata) {
       const identityCandidate = personaMetadata["identity"];
       if (
@@ -262,6 +320,12 @@ export async function POST(request: NextRequest) {
     }
 
     personaImageUrl = personaRow?.image_url ?? undefined;
+    if (personaRow?.behavior_prompt && typeof personaRow.behavior_prompt === "string") {
+      const trimmedBehavior = personaRow.behavior_prompt.trim();
+      if (trimmedBehavior) {
+        personaBehaviorPrompt = trimmedBehavior;
+      }
+    }
 
     let personaVoiceId: string | undefined = undefined;
     let personaSex: string | undefined = undefined;
@@ -307,39 +371,128 @@ export async function POST(request: NextRequest) {
       personaSex = resolveSexFromMetadata(personaMetadata);
     }
 
-    if (!personaIdentity && caseId && typeof caseId === "string") {
+    if (personaRoleKey) {
       try {
-        const seeds = buildPersonaSeeds(
-          caseId,
-          (caseRecord ?? {}) as Record<string, unknown>
+        if (!personaSeeds) {
+          if (personaRoleKey === "owner" && caseId && typeof caseId === "string") {
+            personaSeeds = buildPersonaSeeds(
+              caseId,
+              (caseRecord ?? {}) as Record<string, unknown>
+            );
+          } else {
+            personaSeeds = buildSharedPersonaSeeds();
+          }
+        }
+        const matchedSeed = personaSeeds.find(
+          (seed) => seed.roleKey === personaRoleKey
         );
-        const matchedSeed = seeds.find((seed) => seed.roleKey === personaRoleKey);
-        const metadata = matchedSeed?.metadata;
-        if (metadata && typeof metadata === "object") {
-          const identityCandidate = (metadata as { identity?: unknown }).identity;
-          if (
-            identityCandidate &&
-            typeof identityCandidate === "object" &&
-            identityCandidate !== null
-          ) {
-            personaIdentity = identityCandidate as PersonaIdentity;
-            if (!personaVoiceId) {
-              const candidateVoice =
-                (identityCandidate as { voiceId?: unknown }).voiceId;
-              if (typeof candidateVoice === "string") {
-                personaVoiceId = candidateVoice;
+
+        if (!personaBehaviorPrompt && matchedSeed?.behaviorPrompt) {
+          const trimmedBehavior = matchedSeed.behaviorPrompt.trim();
+          if (trimmedBehavior) {
+            personaBehaviorPrompt = trimmedBehavior;
+          }
+        }
+
+        if (!personaIdentity) {
+          const metadata = matchedSeed?.metadata;
+          if (metadata && typeof metadata === "object") {
+            const identityCandidate = (metadata as { identity?: unknown }).identity;
+            if (
+              identityCandidate &&
+              typeof identityCandidate === "object" &&
+              identityCandidate !== null
+            ) {
+              personaIdentity = identityCandidate as PersonaIdentity;
+              if (!personaVoiceId) {
+                const candidateVoice =
+                  (identityCandidate as { voiceId?: unknown }).voiceId;
+                if (typeof candidateVoice === "string") {
+                  personaVoiceId = candidateVoice;
+                }
               }
-            }
-            if (!personaSex) {
-              const candidateSex = (identityCandidate as { sex?: unknown }).sex;
-              if (candidateSex === "male" || candidateSex === "female") {
-                personaSex = candidateSex;
+              if (!personaSex) {
+                const candidateSex = (identityCandidate as { sex?: unknown }).sex;
+                if (candidateSex === "male" || candidateSex === "female") {
+                  personaSex = candidateSex;
+                }
               }
             }
           }
         }
-      } catch (identityErr) {
-        console.warn("Failed to resolve persona identity for case", caseId, identityErr);
+      } catch (seedErr) {
+        console.warn(
+          "Failed to resolve persona seed data",
+          { caseId, personaRoleKey },
+          seedErr
+        );
+      }
+    }
+
+    const stageTokens = new Set<string>();
+    const appendToken = (value?: string | null) => {
+      if (!value) return;
+      const token = value.toString().trim().toLowerCase();
+      if (token) {
+        stageTokens.add(token);
+      }
+    };
+    const pushToken = (set: Set<string>, value?: string | null) => {
+      if (!value) return;
+      const token = value.toString().trim().toLowerCase();
+      if (token) {
+        set.add(token);
+      }
+    };
+    appendToken(stageDescriptor?.id);
+    appendToken(stageDescriptor?.title);
+    appendToken(stageDescriptor?.role);
+    appendToken(stageRole);
+    appendToken(displayRole);
+    appendToken(personaRoleKey);
+
+    const matchingMedia = caseMedia.filter((item) => {
+      const stageRef = item.stage ?? {};
+      const refTokens = new Set<string>();
+      pushToken(refTokens, stageRef.stageId);
+      pushToken(refTokens, stageRef.stageKey);
+      pushToken(refTokens, stageRef.roleKey);
+      if (!refTokens.size) {
+        return false;
+      }
+      for (const token of refTokens) {
+        if (stageTokens.has(token)) {
+          return true;
+        }
+      }
+      return false;
+    });
+
+    if (
+      matchingMedia.length &&
+      typeof attemptId === "string" &&
+      attemptId.trim() &&
+      typeof caseId === "string" &&
+      caseId.trim()
+    ) {
+      try {
+        const attemptIdSafe = attemptId.trim();
+        const caseIdSafe = caseId.trim();
+        const artifactRows = matchingMedia.map((item) => ({
+          attempt_id: attemptIdSafe,
+          case_id: caseIdSafe,
+          media_id: item.id,
+          media_type: item.type,
+          payload: {
+            stageIndex,
+            stageId: stageDescriptor?.id ?? null,
+            stageRole: stageDescriptor?.role ?? null,
+            personaRoleKey,
+          },
+        }));
+        await supabase.from("case_attempt_artifacts").insert(artifactRows);
+      } catch (artifactErr) {
+        console.warn("Failed to log case media artifact", artifactErr);
       }
     }
 
@@ -355,6 +508,13 @@ export async function POST(request: NextRequest) {
       ) {
         displayRole = personaIdentity.fullName;
       }
+    }
+
+    if (personaBehaviorPrompt) {
+      enhancedMessages.unshift({
+        role: "system",
+        content: personaBehaviorPrompt,
+      });
     }
 
     // High-priority system guideline to shape assistant tone and avoid
@@ -412,6 +572,7 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
       voiceId: personaVoiceId,
       personaSex,
       personaRoleKey,
+      media: matchingMedia,
     });
   } catch (error) {
     console.error("Error in chat API:", error);

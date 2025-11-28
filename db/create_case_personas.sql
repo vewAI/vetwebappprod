@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS public.case_personas (
   role_key text NOT NULL,
   display_name text,
   prompt text,
+  behavior_prompt text,
   status text NOT NULL DEFAULT 'pending',
   image_url text,
   metadata jsonb,

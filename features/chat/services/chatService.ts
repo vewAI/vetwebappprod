@@ -1,5 +1,6 @@
 import axios from "axios";
 import type { Message } from "@/features/chat/models/chat";
+import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
 import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
 
 /**
@@ -16,7 +17,8 @@ export const chatService = {
   sendMessage: async (
     messages: Message[],
     stageIndex: number,
-    caseId: string
+    caseId: string,
+    options?: { attemptId?: string }
   ): Promise<{
     content: string;
     displayRole?: string;
@@ -24,6 +26,7 @@ export const chatService = {
     voiceId?: string;
     personaSex?: string;
     personaRoleKey?: string;
+    media?: CaseMediaItem[];
   }> => {
     try {
       // Format messages for the API
@@ -51,17 +54,15 @@ export const chatService = {
       let lastErr: unknown = null;
       while (attempt < maxAttempts) {
         try {
-          const response = await axios.post(
-            "/api/chat",
-            {
-              messages: apiMessages,
-              stageIndex,
-              caseId,
-            },
-            {
-              headers: authHeaders,
-            }
-          );
+          const payload = {
+            messages: apiMessages,
+            stageIndex,
+            caseId,
+            ...(options?.attemptId ? { attemptId: options.attemptId } : {}),
+          };
+          const response = await axios.post("/api/chat", payload, {
+            headers: authHeaders,
+          });
           return response.data as {
             content: string;
             displayRole?: string;
@@ -69,6 +70,7 @@ export const chatService = {
             voiceId?: string;
             personaSex?: string;
             personaRoleKey?: string;
+            media?: CaseMediaItem[];
           };
         } catch (err) {
           lastErr = err;
@@ -136,7 +138,8 @@ export const chatService = {
     portraitUrl?: string,
     voiceId?: string,
     personaSex?: string,
-    personaRoleKey?: string
+    personaRoleKey?: string,
+    media?: CaseMediaItem[]
   ): Message => ({
     id:
       typeof crypto !== "undefined" && (crypto as any).randomUUID
@@ -151,6 +154,7 @@ export const chatService = {
     voiceId,
     personaSex,
     personaRoleKey,
+    media,
   }),
 
   /**

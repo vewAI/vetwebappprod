@@ -80,6 +80,7 @@ export async function requireUser(
     global: {
       headers: {
         Authorization: `Bearer ${token}`,
+        apikey: supabaseAnonKey,
       },
     },
     auth: { persistSession: false },

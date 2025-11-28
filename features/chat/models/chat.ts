@@ -1,3 +1,5 @@
+import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
+
 export interface Message {
   id: string;
   role: string;
@@ -11,4 +13,5 @@ export interface Message {
   personaRoleKey?: string;
   // optional status for UI (pending, failed, sent)
   status?: "pending" | "failed" | "sent";
+  media?: CaseMediaItem[];
 }

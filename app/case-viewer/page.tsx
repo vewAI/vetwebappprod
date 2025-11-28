@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 // ImageUploader intentionally not used here to allow manual image_url input in edit mode.
 import axios from "axios";
@@ -11,6 +12,11 @@ import {
 } from "@/features/cases/fieldMeta";
 import { isCaseFieldAutomatable } from "@/features/prompts/services/casePromptAutomation";
 import { useAuth } from "@/features/auth/services/authService";
+import { CaseMediaEditor } from "@/features/cases/components/case-media-editor";
+import {
+  normalizeCaseMedia,
+  type CaseMediaItem,
+} from "@/features/cases/models/caseMedia";
 
 type CaseRecord = Record<string, unknown>;
 
@@ -70,6 +76,88 @@ export default function CaseViewerPage() {
       }
     >
   >({});
+  const [mediaDraft, setMediaDraft] = useState<CaseMediaItem[]>([]);
+
+  const parseMedia = useCallback((raw: unknown): CaseMediaItem[] => {
+    if (typeof raw === "string") {
+      try {
+        const parsed = JSON.parse(raw);
+        return normalizeCaseMedia(parsed);
+      } catch {
+        return [];
+      }
+    }
+    return normalizeCaseMedia(raw);
+  }, []);
+
+  const loadCaseIntoForm = useCallback(
+    (record: CaseRecord | null) => {
+      if (!record) {
+        setFormState(null);
+        setMediaDraft([]);
+        return;
+      }
+      const media = parseMedia((record as Record<string, unknown>)["media"]);
+      setFormState({ ...record, media });
+      setMediaDraft(media);
+    },
+    [parseMedia]
+  );
+
+  const handleMediaChange = useCallback(
+    (items: CaseMediaItem[]) => {
+      setMediaDraft(items);
+      setFormState((prev) => (prev ? { ...prev, media: items } : prev));
+    },
+    []
+  );
+
+  const loadPersonas = useCallback(
+    async (caseId: string) => {
+      if (!authHeaders) {
+        setPersonas([]);
+        setPersonasError("You must be signed in to load personas.");
+        return;
+      }
+
+      try {
+        setPersonasLoading(true);
+        setPersonasError(null);
+        const resp = await axios.get("/api/personas", {
+          headers: authHeaders,
+          params: { caseId },
+        });
+        const data = resp.data as { personas?: PersonaRow[] };
+        const list = Array.isArray(data?.personas) ? data.personas ?? [] : [];
+        const ownerRows = list.filter((row) => row.role_key === "owner");
+
+        let combined = [...ownerRows];
+        try {
+          const sharedResp = await axios.get("/api/global-personas", {
+            headers: authHeaders,
+          });
+          const shared = sharedResp.data as { personas?: PersonaRow[] };
+          if (Array.isArray(shared?.personas)) {
+            combined = combined.concat(shared.personas);
+          }
+        } catch (sharedErr) {
+          console.warn(
+            "Failed to load shared personas in case viewer",
+            sharedErr
+          );
+        }
+
+        setPersonas(combined);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setPersonasError(`Failed to load personas: ${message}`);
+        setPersonas([]);
+      } finally {
+        setPersonasLoading(false);
+      }
+    },
+    [authHeaders]
+  );
 
   useEffect(() => {
     async function fetchCases() {
@@ -94,14 +182,14 @@ export default function CaseViewerPage() {
         setCases(parsed);
         if (parsed.length > 0) {
           setCurrentIndex(0);
-          setFormState({ ...parsed[0] });
+          loadCaseIntoForm(parsed[0]);
           const firstId = formatValue(parsed[0]["id"]).trim();
           if (firstId) {
             void loadPersonas(firstId);
           }
         } else {
           setCurrentIndex(0);
-          setFormState(null);
+          loadCaseIntoForm(null);
           setPersonas([]);
         }
       } catch (err) {
@@ -114,53 +202,27 @@ export default function CaseViewerPage() {
 
     if (authLoading) return;
     void fetchCases();
-  }, [authHeaders, authLoading]);
+  }, [authHeaders, authLoading, loadCaseIntoForm, loadPersonas]);
 
   useEffect(() => {
     if (!cases.length) {
-      setFormState(null);
+      loadCaseIntoForm(null);
       setPersonas([]);
       return;
     }
     const next = cases[currentIndex];
-    setFormState(next ? { ...next } : null);
+    loadCaseIntoForm(next ?? null);
     const nextId = next ? formatValue(next["id"]).trim() : "";
     if (nextId) {
       void loadPersonas(nextId);
     } else {
       setPersonas([]);
     }
-  }, [cases, currentIndex]);
+  }, [cases, currentIndex, loadCaseIntoForm, loadPersonas]);
 
   useEffect(() => {
     setAutomationState({});
   }, [currentIndex]);
-
-  const loadPersonas = async (caseId: string) => {
-    if (!authHeaders) {
-      setPersonas([]);
-      setPersonasError("You must be signed in to load personas.");
-      return;
-    }
-
-    try {
-      setPersonasLoading(true);
-      setPersonasError(null);
-      const resp = await axios.get("/api/personas", {
-        headers: authHeaders,
-        params: { caseId },
-      });
-      const data = resp.data as { personas?: PersonaRow[] };
-      const list = data?.personas ?? [];
-      setPersonas(list.slice(0, 5));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setPersonasError(`Failed to load personas: ${message}`);
-      setPersonas([]);
-    } finally {
-      setPersonasLoading(false);
-    }
-  };
 
   const updateField = (field: string, value: string) => {
     setFormState((prev) => (prev ? { ...prev, [field]: value } : prev));
@@ -428,7 +490,7 @@ export default function CaseViewerPage() {
   const extraEntries = useMemo(() => {
     if (!formState) return [] as [string, unknown][];
     return Object.entries(formState).filter(
-      ([key]) => !knownFieldKeys.has(key as CaseFieldKey)
+      ([key]) => key !== "media" && !knownFieldKeys.has(key as CaseFieldKey)
     );
   }, [formState]);
 
@@ -447,18 +509,27 @@ export default function CaseViewerPage() {
     return <div className="p-8 text-center">No cases found.</div>;
 
   const imageUrl = formState ? formatValue(formState["image_url"]) : "";
+  const caseIdValue = formState ? formatValue(formState["id"]).trim() : "";
 
   return (
     <div className="max-w-2xl mx-auto p-8">
       <h1 className="text-2xl font-bold mb-6">Case Viewer</h1>
       {/* Show image if available */}
       {imageUrl && (
-        <div className="mb-4 bg-gray-100 rounded overflow-hidden">
-          <img
-            src={imageUrl}
-            alt={`Case ${formatValue(formState?.["id"])} image`}
-            className="w-full max-h-80 object-contain object-center"
-          />
+        <div className="mb-4 rounded bg-gray-100">
+          <div
+            className="relative w-full overflow-hidden"
+            style={{ aspectRatio: "4 / 3" }}
+          >
+            <Image
+              src={imageUrl}
+              alt={`Case ${formatValue(formState?.["id"])} image`}
+              fill
+              className="object-contain object-center"
+              sizes="(max-width: 768px) 100vw, 640px"
+              unoptimized
+            />
+          </div>
         </div>
       )}
       <div className="mb-4 flex justify-between items-center">
@@ -486,7 +557,7 @@ export default function CaseViewerPage() {
             onClick={() => {
               setEditable((prev) => {
                 if (prev && cases[currentIndex]) {
-                  setFormState({ ...cases[currentIndex] });
+                  loadCaseIntoForm(cases[currentIndex]);
                 }
                 return !prev;
               });
@@ -502,17 +573,22 @@ export default function CaseViewerPage() {
                 return;
               }
               try {
-                const resp = await axios.put("/api/cases", formState, {
+                const payload = { ...formState, media: mediaDraft };
+                const resp = await axios.put("/api/cases", payload, {
                   headers: authHeaders,
                 });
                 const respData = resp.data as unknown;
                 const respObj = respData as Record<string, unknown>;
                 if (respObj && respObj["data"]) {
                   const updated = respObj["data"] as CaseRecord;
+                  const normalizedUpdated = {
+                    ...updated,
+                    media: parseMedia((updated as Record<string, unknown>)["media"]),
+                  } as CaseRecord;
                   const nextCases = [...cases];
-                  nextCases[currentIndex] = updated;
+                  nextCases[currentIndex] = normalizedUpdated;
                   setCases(nextCases);
-                  setFormState({ ...updated });
+                  loadCaseIntoForm(normalizedUpdated);
                   const updatedId = formatValue(updated["id"]).trim();
                   if (updatedId) {
                     void loadPersonas(updatedId);
@@ -539,7 +615,7 @@ export default function CaseViewerPage() {
           </Button>
         </div>
       </div>
-      {formState && formatValue(formState["id"]).trim() && (
+      {formState && caseIdValue && (
         <div className="mb-6">
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-xl font-semibold">Persona Portraits</h2>
@@ -547,7 +623,7 @@ export default function CaseViewerPage() {
               variant="outline"
               size="sm"
               onClick={() => {
-                const caseId = formatValue(formState["id"]).trim();
+                const caseId = caseIdValue;
                 if (caseId) {
                   void loadPersonas(caseId);
                 }
@@ -601,14 +677,17 @@ export default function CaseViewerPage() {
                     key={persona.id ?? `${persona.case_id ?? ""}-${persona.role_key ?? ""}`}
                     className="flex items-center gap-3 rounded border p-3"
                   >
-                    <div className="h-16 w-16 shrink-0 overflow-hidden rounded bg-muted">
+                    <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded bg-muted">
                       {persona.image_url ? (
-                        <img
+                        <Image
                           src={persona.image_url}
                           alt={`${label} portrait`}
-                          className="h-full w-full object-cover"
+                          fill
+                          className="object-cover"
+                          sizes="64px"
                           loading="lazy"
                           referrerPolicy="no-referrer"
+                          unoptimized
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
@@ -649,6 +728,16 @@ export default function CaseViewerPage() {
               })}
             </div>
           )}
+        </div>
+      )}
+      {formState && (
+        <div className="mb-6">
+          <CaseMediaEditor
+            caseId={caseIdValue || undefined}
+            value={mediaDraft}
+            onChange={handleMediaChange}
+            readOnly={!editable}
+          />
         </div>
       )}
       <form className="space-y-4">

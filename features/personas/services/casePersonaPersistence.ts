@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PersonaSeed } from "@/features/personas/models/persona";
 import { buildPersonaSeeds } from "@/features/personas/services/personaSeedService";
+import { ensureSharedPersonas } from "@/features/personas/services/globalPersonaPersistence";
 
 type DbPersonaRow = {
   id?: string;
@@ -8,6 +9,7 @@ type DbPersonaRow = {
   role_key?: string;
   display_name?: string;
   prompt?: string;
+  behavior_prompt?: string;
   status?: string;
   image_url?: string | null;
   metadata?: unknown;
@@ -20,13 +22,15 @@ export async function ensureCasePersonas(
   caseId: string,
   caseBody: Record<string, unknown>
 ): Promise<void> {
+  await ensureSharedPersonas(supabase);
+
   const seeds = buildPersonaSeeds(caseId, caseBody);
   if (!seeds.length) return;
 
   const { data: existingRows, error: fetchError } = await supabase
     .from("case_personas")
     .select(
-      "role_key, status, generated_by, display_name, prompt, metadata, image_url, last_generated_at"
+      "role_key, status, generated_by, display_name, prompt, behavior_prompt, metadata, image_url, last_generated_at"
     )
     .eq("case_id", caseId);
 
@@ -48,6 +52,10 @@ export async function ensureCasePersonas(
   const pendingUpdates: Record<string, unknown>[] = [];
 
   for (const seed of seeds) {
+    if (seed.roleKey !== "owner") {
+      continue;
+    }
+
     const existing = existingRoleMap.get(seed.roleKey);
     const sharedPersona = seed.sharedPersonaKey
       ? await loadSharedPersona(
@@ -62,6 +70,8 @@ export async function ensureCasePersonas(
     const mergedMetadata = mergeMetadata(sharedPersona?.metadata, seed);
     const displayName = sharedPersona?.display_name ?? seed.displayName;
     const prompt = sharedPersona?.prompt ?? seed.prompt;
+    const behaviorPrompt =
+      sharedPersona?.behavior_prompt ?? existing?.behavior_prompt ?? seed.behaviorPrompt;
     const imageUrl = resolveImageUrl(existing, sharedPersona);
     const status = resolveStatus(existing, sharedPersona, imageUrl);
 
@@ -71,6 +81,7 @@ export async function ensureCasePersonas(
         role_key: seed.roleKey,
         display_name: displayName,
         prompt,
+        behavior_prompt: behaviorPrompt,
         metadata: mergedMetadata ?? null,
         status,
         image_url: imageUrl ?? null,
@@ -89,6 +100,7 @@ export async function ensureCasePersonas(
       role_key: seed.roleKey,
       display_name: displayName,
       prompt,
+      behavior_prompt: behaviorPrompt,
       metadata: mergedMetadata ?? null,
       status,
       image_url: imageUrl ?? null,
@@ -132,7 +144,7 @@ async function loadSharedPersona(
   const { data, error } = await supabase
     .from("case_personas")
     .select(
-      "id, case_id, role_key, display_name, prompt, status, image_url, metadata, last_generated_at"
+      "id, case_id, role_key, display_name, prompt, behavior_prompt, status, image_url, metadata, last_generated_at"
     )
     .eq("role_key", roleKey)
     .eq("metadata->>sharedPersonaKey", sharedPersonaKey)
