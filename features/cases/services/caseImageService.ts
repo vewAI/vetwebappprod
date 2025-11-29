@@ -1,4 +1,4 @@
-import { Buffer } from "node:buffer";
+import { Buffer } from "buffer";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type OpenAI from "openai";
 

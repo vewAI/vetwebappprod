@@ -16,7 +16,7 @@ function shouldFallbackToDalle3(error: unknown): boolean {
   }
   return false;
 }
-import { Buffer } from "node:buffer";
+import { Buffer } from "buffer";
 import type OpenAi from "openai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { normalizeRoleKey } from "@/features/avatar/utils/role-utils";
