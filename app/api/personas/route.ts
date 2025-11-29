@@ -73,6 +73,8 @@ export async function PUT(request: NextRequest) {
     display_name: displayName,
     image_url: imageUrl,
     behavior_prompt: behaviorPrompt,
+    metadata,
+    prompt,
   } = payload as Record<string, unknown>;
 
   if (!id && (!caseId || !roleKey)) {
@@ -92,6 +94,15 @@ export async function PUT(request: NextRequest) {
   }
   if (typeof behaviorPrompt === "string" || behaviorPrompt === null) {
     updatePayload.behavior_prompt = behaviorPrompt;
+  }
+  if (
+    metadata === null ||
+    (typeof metadata === "object" && !Array.isArray(metadata))
+  ) {
+    updatePayload.metadata = metadata as Record<string, unknown> | null;
+  }
+  if (typeof prompt === "string" || prompt === null) {
+    updatePayload.prompt = prompt;
   }
 
   // Mark manual edits so automated refresh jobs do not overwrite admin changes.

@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
+import OpenAi from "openai";
 
 import { requireUser } from "@/app/api/_lib/auth";
+import { generateBehaviorPrompt } from "@/features/personas/services/personaPromptGenerator";
 import {
-  SHARED_CASE_ID,
-  buildPersonaSeeds,
-  buildSharedPersonaSeeds,
-} from "@/features/personas/services/personaSeedService";
-import { ensureSharedPersonas } from "@/features/personas/services/globalPersonaPersistence";
+  loadCaseRow,
+  loadPersonaForGeneration,
+} from "@/features/personas/services/personaGenerationShared";
+
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+if (!OPENAI_API_KEY) {
+  console.warn("OPENAI_API_KEY is not defined. Persona auto-behaviour generation will fail.");
+}
+
+const openaiClient = OPENAI_API_KEY ? new OpenAi({ apiKey: OPENAI_API_KEY }) : null;
 
 export async function POST(request: NextRequest) {
   const auth = await requireUser(request, { requireAdmin: true });
@@ -14,6 +22,13 @@ export async function POST(request: NextRequest) {
     return auth.error;
   }
   const { supabase } = auth;
+
+  if (!openaiClient) {
+    return NextResponse.json(
+      { error: "OpenAI API key not configured" },
+      { status: 500 }
+    );
+  }
 
   let payload: unknown;
   try {
@@ -55,85 +70,42 @@ export async function POST(request: NextRequest) {
 
   const isOwner = resolvedRoleKey === "owner";
 
-  if (!isOwner && resolvedCaseId && typeof resolvedCaseId !== "string") {
+  if (isOwner && !resolvedCaseId) {
     return NextResponse.json(
-      { error: "Invalid caseId" },
+      { error: "caseId is required for owner persona" },
       { status: 400 }
     );
   }
 
-  try {
-    if (!isOwner) {
-      await ensureSharedPersonas(supabase);
-      const seeds = buildSharedPersonaSeeds();
-      const seed = seeds.find((entry) => entry.roleKey === resolvedRoleKey);
+  const persona = await loadPersonaForGeneration(supabase, {
+    roleKey: resolvedRoleKey,
+    caseId: resolvedCaseId,
+  });
 
-      if (!seed) {
-        return NextResponse.json(
-          { error: "Shared persona template not found for role" },
-          { status: 404 }
-        );
-      }
-
-      return NextResponse.json({
-        persona: {
-          role_key: seed.roleKey,
-          case_id: SHARED_CASE_ID,
-          display_name: seed.displayName,
-          behavior_prompt: seed.behaviorPrompt,
-          prompt: seed.prompt,
-          metadata: seed.metadata ?? null,
-        },
-      });
-    }
-
-    if (!resolvedCaseId) {
-      return NextResponse.json(
-        { error: "caseId is required for owner persona" },
-        { status: 400 }
-      );
-    }
-
-    const { data: caseRow, error } = await supabase
-      .from("cases")
-      .select("*")
-      .eq("id", resolvedCaseId)
-      .maybeSingle();
-
-    if (error) {
-      console.error("Failed to load case for persona auto behavior", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    if (!caseRow) {
-      return NextResponse.json(
-        { error: "Case not found" },
-        { status: 404 }
-      );
-    }
-
-    // Recreate the persona template so we can return the canonical behavior prompt.
-    const seeds = buildPersonaSeeds(
-      resolvedCaseId,
-      caseRow as Record<string, unknown>
+  if (!persona) {
+    return NextResponse.json(
+      { error: "Persona not found" },
+      { status: 404 }
     );
-    const seed = seeds.find((entry) => entry.roleKey === resolvedRoleKey);
+  }
 
-    if (!seed) {
-      return NextResponse.json(
-        { error: "Persona template not found for role" },
-        { status: 404 }
-      );
-    }
+  const caseRow = isOwner && resolvedCaseId ? await loadCaseRow(supabase, resolvedCaseId) : null;
+
+  try {
+    const behaviorPrompt = await generateBehaviorPrompt({
+      openai: openaiClient,
+      persona,
+      caseRow,
+    });
 
     return NextResponse.json({
       persona: {
-        role_key: seed.roleKey,
-        case_id: resolvedCaseId,
-        display_name: seed.displayName,
-        behavior_prompt: seed.behaviorPrompt,
-        prompt: seed.prompt,
-        metadata: seed.metadata ?? null,
+        role_key: persona.role_key,
+        case_id: persona.case_id ?? resolvedCaseId ?? null,
+        display_name: persona.display_name,
+        behavior_prompt: behaviorPrompt,
+        prompt: persona.prompt,
+        metadata: persona.metadata ?? null,
       },
     });
   } catch (error) {

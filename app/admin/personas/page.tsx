@@ -8,6 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/features/auth/services/authService";
+import {
+  ROLE_PROMPT_DEFINITIONS,
+  type RolePromptKey,
+} from "@/features/role-info/services/roleInfoService";
 
 const ROLE_OPTIONS: { label: string; value: string }[] = [
   { label: "Owner", value: "owner" },
@@ -38,6 +42,137 @@ type PersonaRecord = {
   updated_at: string | null;
 };
 
+type RolePromptField = {
+  key: RolePromptKey;
+  label: string;
+  description: string;
+  placeholders: string[];
+  defaultTemplate: string;
+};
+
+const ROLE_PROMPT_FIELDS: Record<string, RolePromptField[]> = {
+  owner: [
+    {
+      key: "getOwnerPrompt",
+      label: "History stage prompt template",
+      description: "Guides how the owner persona opens and responds during history-taking. Leave blank to use the default template.",
+      placeholders: ["{{PRESENTING_COMPLAINT}}", "{{OWNER_BACKGROUND}}", "{{STUDENT_QUESTION}}"],
+      defaultTemplate: ROLE_PROMPT_DEFINITIONS.getOwnerPrompt.defaultTemplate,
+    },
+    {
+      key: "getOwnerFollowUpPrompt",
+      label: "Follow-up discussion prompt template",
+      description: "Used when the owner discusses diagnostics or planning after the exam. Leave blank for default behaviour.",
+      placeholders: ["{{FOLLOW_UP_GUIDANCE}}", "{{STUDENT_QUESTION}}"],
+      defaultTemplate: ROLE_PROMPT_DEFINITIONS.getOwnerFollowUpPrompt.defaultTemplate,
+    },
+    {
+      key: "getOwnerDiagnosisPrompt",
+      label: "Diagnosis delivery prompt template",
+      description: "Controls how the owner reacts when hearing the diagnosis and plan.",
+      placeholders: ["{{CASE_TITLE}}", "{{OWNER_DIAGNOSIS}}", "{{STUDENT_QUESTION}}"],
+      defaultTemplate: ROLE_PROMPT_DEFINITIONS.getOwnerDiagnosisPrompt.defaultTemplate,
+    },
+  ],
+  "lab-technician": [
+    {
+      key: "getDiagnosticPrompt",
+      label: "Laboratory response prompt template",
+      description: "Guides how the laboratory technician reports diagnostic results.",
+      placeholders: ["{{DIAGNOSTIC_RESULTS}}", "{{STUDENT_REQUEST}}"],
+      defaultTemplate: ROLE_PROMPT_DEFINITIONS.getDiagnosticPrompt.defaultTemplate,
+    },
+  ],
+  veterinarian: [
+    {
+      key: "getPhysicalExamPrompt",
+      label: "Physical examination prompt template",
+      description: "Controls how the clinician relays recorded exam findings.",
+      placeholders: ["{{FINDINGS}}", "{{STUDENT_REQUEST}}"],
+      defaultTemplate: ROLE_PROMPT_DEFINITIONS.getPhysicalExamPrompt.defaultTemplate,
+    },
+  ],
+  "veterinary-nurse": [
+    {
+      key: "getPhysicalExamPrompt",
+      label: "Physical examination prompt template",
+      description: "Controls how the nurse relays recorded exam findings.",
+      placeholders: ["{{FINDINGS}}", "{{STUDENT_REQUEST}}"],
+      defaultTemplate: ROLE_PROMPT_DEFINITIONS.getPhysicalExamPrompt.defaultTemplate,
+    },
+  ],
+  "veterinary-assistant": [
+    {
+      key: "getPhysicalExamPrompt",
+      label: "Physical examination prompt template",
+      description: "Controls how the assistant relays recorded exam findings.",
+      placeholders: ["{{FINDINGS}}", "{{STUDENT_REQUEST}}"],
+      defaultTemplate: ROLE_PROMPT_DEFINITIONS.getPhysicalExamPrompt.defaultTemplate,
+    },
+  ],
+};
+
+function cloneRecord<T extends Record<string, unknown>>(value: T | null | undefined): T | null {
+  if (!value) return null;
+  try {
+    return JSON.parse(JSON.stringify(value)) as T;
+  } catch {
+    return { ...value } as T;
+  }
+}
+
+function extractRolePrompts(metadata: unknown): Record<string, string> {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return {};
+  }
+  const record = metadata as Record<string, unknown>;
+  const sourceCandidates = [record.rolePrompts, record.role_prompts];
+  const source = sourceCandidates.find(
+    (candidate): candidate is Record<string, unknown> =>
+      candidate !== null && typeof candidate === "object" && !Array.isArray(candidate)
+  );
+  if (!source) return {};
+  const prompts: Record<string, string> = {};
+  Object.entries(source).forEach(([key, value]) => {
+    if (typeof value === "string") {
+      prompts[key] = value;
+    }
+  });
+  return prompts;
+}
+
+function mergeRolePrompts(
+  baseMetadata: Record<string, unknown> | null,
+  prompts: Record<string, string>
+): Record<string, unknown> | null {
+  const cleanedEntries = Object.entries(prompts).filter(([, value]) => value.trim().length > 0);
+  const cleaned: Record<string, string> = Object.fromEntries(cleanedEntries);
+
+  const hasPrompts = Object.keys(cleaned).length > 0;
+  const next = cloneRecord(baseMetadata) ?? {};
+  if (hasPrompts) {
+    next.rolePrompts = cleaned;
+    next.role_prompts = cleaned;
+  } else {
+    if ("rolePrompts" in next) delete next.rolePrompts;
+    if ("role_prompts" in next) delete (next as Record<string, unknown>).role_prompts;
+  }
+  return Object.keys(next).length ? next : null;
+}
+
+function areRolePromptMapsEqual(
+  a: Record<string, string>,
+  b: Record<string, string>
+): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const key of keys) {
+    if ((a[key] ?? "") !== (b[key] ?? "")) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function formatIso(iso?: string | null): string {
   if (!iso) return "";
   const parsed = new Date(iso);
@@ -49,8 +184,11 @@ type PersonaEditorState = {
   scope: PersonaScope;
   persona: PersonaRecord;
   draftBehaviorPrompt: string;
+  draftPrompt: string;
   draftDisplayName: string;
   draftImageUrl: string;
+  draftMetadata: Record<string, unknown> | null;
+  draftRolePrompts: Record<string, string>;
   isDirty: boolean;
   saving: boolean;
   saveMessage?: string | null;
@@ -58,7 +196,33 @@ type PersonaEditorState = {
   autoMessage?: string | null;
   autoError?: string | null;
   autoLoading?: boolean;
+  autoPreview?: string | null;
+  autoPreviewError?: string | null;
+  autoPreviewLoading?: boolean;
+  autoPreviewOpen?: boolean;
+  rolePromptLoading: Record<string, boolean>;
+  rolePromptErrors: Record<string, string | null>;
 };
+
+function computePersonaDirty(state: PersonaEditorState): boolean {
+  const baseBehavior = state.persona.behavior_prompt ?? "";
+  const baseDisplay = state.persona.display_name ?? "";
+  const baseImage = state.persona.image_url ?? "";
+  const basePrompt = state.persona.prompt ?? "";
+  const originalRolePrompts = extractRolePrompts(state.persona.metadata ?? null);
+  const hasRolePromptChange = !areRolePromptMapsEqual(
+    state.draftRolePrompts,
+    originalRolePrompts
+  );
+
+  return (
+    state.draftBehaviorPrompt !== baseBehavior ||
+    state.draftDisplayName !== baseDisplay ||
+    state.draftImageUrl !== baseImage ||
+    state.draftPrompt !== basePrompt ||
+    hasRolePromptChange
+  );
+}
 
 type CaseSummary = {
   id: string;
@@ -137,20 +301,37 @@ export default function PersonasAdminPage() {
           ? payload?.personas ?? []
           : [];
 
-        const editorRows: PersonaEditorState[] = rows.map((persona): PersonaEditorState => ({
-          scope: "global",
-          persona,
-          draftBehaviorPrompt: persona.behavior_prompt ?? "",
-          draftDisplayName: persona.display_name ?? "",
-          draftImageUrl: persona.image_url ?? "",
-          isDirty: false,
-          saving: false,
-          saveMessage: null,
-          error: null,
-          autoMessage: null,
-          autoError: null,
-          autoLoading: false,
-        }));
+        const editorRows: PersonaEditorState[] = rows.map((persona): PersonaEditorState => {
+          const metadataClone = cloneRecord(
+            (persona.metadata && typeof persona.metadata === "object" && !Array.isArray(persona.metadata)
+              ? (persona.metadata as Record<string, unknown>)
+              : null)
+          );
+          const rolePrompts = extractRolePrompts(persona.metadata ?? null);
+          return {
+            scope: "global",
+            persona,
+            draftBehaviorPrompt: persona.behavior_prompt ?? "",
+            draftPrompt: persona.prompt ?? "",
+            draftDisplayName: persona.display_name ?? "",
+            draftImageUrl: persona.image_url ?? "",
+            draftMetadata: metadataClone,
+            draftRolePrompts: rolePrompts,
+            isDirty: false,
+            saving: false,
+            saveMessage: null,
+            error: null,
+            autoMessage: null,
+            autoError: null,
+            autoLoading: false,
+            autoPreview: undefined,
+            autoPreviewError: null,
+            autoPreviewLoading: false,
+            autoPreviewOpen: false,
+            rolePromptLoading: {},
+            rolePromptErrors: {},
+          };
+        });
 
         editorRows.sort((a, b) => {
           const aOrder = ROLE_ORDER.get(a.persona.role_key) ?? Number.MAX_SAFE_INTEGER;
@@ -193,20 +374,37 @@ export default function PersonasAdminPage() {
           : [];
         const ownerRows = rows.filter((persona) => persona.role_key === "owner");
 
-        const editorRows: PersonaEditorState[] = ownerRows.map((persona): PersonaEditorState => ({
-          scope: "case",
-          persona,
-          draftBehaviorPrompt: persona.behavior_prompt ?? "",
-          draftDisplayName: persona.display_name ?? "",
-          draftImageUrl: persona.image_url ?? "",
-          isDirty: false,
-          saving: false,
-          saveMessage: null,
-          error: null,
-          autoMessage: null,
-          autoError: null,
-          autoLoading: false,
-        }));
+        const editorRows: PersonaEditorState[] = ownerRows.map((persona): PersonaEditorState => {
+          const metadataClone = cloneRecord(
+            (persona.metadata && typeof persona.metadata === "object" && !Array.isArray(persona.metadata)
+              ? (persona.metadata as Record<string, unknown>)
+              : null)
+          );
+          const rolePrompts = extractRolePrompts(persona.metadata ?? null);
+          return {
+            scope: "case",
+            persona,
+            draftBehaviorPrompt: persona.behavior_prompt ?? "",
+            draftPrompt: persona.prompt ?? "",
+            draftDisplayName: persona.display_name ?? "",
+            draftImageUrl: persona.image_url ?? "",
+            draftMetadata: metadataClone,
+            draftRolePrompts: rolePrompts,
+            isDirty: false,
+            saving: false,
+            saveMessage: null,
+            error: null,
+            autoMessage: null,
+            autoError: null,
+            autoLoading: false,
+            autoPreview: undefined,
+            autoPreviewError: null,
+            autoPreviewLoading: false,
+            autoPreviewOpen: false,
+            rolePromptLoading: {},
+            rolePromptErrors: {},
+          };
+        });
 
         editorRows.sort((a, b) => {
           const aOrder = ROLE_ORDER.get(a.persona.role_key) ?? Number.MAX_SAFE_INTEGER;
@@ -248,7 +446,7 @@ export default function PersonasAdminPage() {
   const handleInputChange = (
     scope: PersonaScope,
     roleKey: string,
-    field: "behavior" | "display" | "image",
+    field: "behavior" | "display" | "image" | "prompt",
     value: string
   ) => {
     updateDraft(scope, roleKey, (prev) => {
@@ -259,14 +457,117 @@ export default function PersonasAdminPage() {
         next.draftDisplayName = value;
       } else if (field === "image") {
         next.draftImageUrl = value;
+      } else if (field === "prompt") {
+        next.draftPrompt = value;
       }
-      next.isDirty =
-        next.draftBehaviorPrompt !== (next.persona.behavior_prompt ?? "") ||
-        next.draftDisplayName !== (next.persona.display_name ?? "") ||
-        next.draftImageUrl !== (next.persona.image_url ?? "");
+      next.isDirty = computePersonaDirty(next);
       next.saveMessage = null;
       return next;
     });
+  };
+
+  const handleRolePromptChange = (
+    scope: PersonaScope,
+    roleKey: string,
+    promptKey: RolePromptKey,
+    value: string
+  ) => {
+    updateDraft(scope, roleKey, (prev) => {
+      const next: PersonaEditorState = {
+        ...prev,
+        draftRolePrompts: { ...prev.draftRolePrompts },
+        rolePromptErrors: { ...prev.rolePromptErrors },
+      };
+
+      if (value.trim().length > 0) {
+        next.draftRolePrompts[promptKey] = value;
+        next.rolePromptErrors[promptKey] = null;
+      } else {
+        delete next.draftRolePrompts[promptKey];
+        delete next.rolePromptErrors[promptKey];
+      }
+
+      next.draftMetadata = mergeRolePrompts(prev.draftMetadata, next.draftRolePrompts);
+      next.isDirty = computePersonaDirty(next);
+      next.saveMessage = null;
+      return next;
+    });
+  };
+
+  const handleRolePromptAutofill = async (
+    scope: PersonaScope,
+    roleKey: string,
+    promptKey: RolePromptKey
+  ) => {
+    if (!authHeaders) return;
+
+    const rows = scope === "global" ? globalPersonaRows : casePersonaRows;
+    const target = rows.find((entry) => entry.persona.role_key === roleKey);
+    const effectiveCaseId =
+      scope === "case"
+        ? selectedCaseId || target?.persona.case_id || null
+        : null;
+
+    if (scope === "case" && !effectiveCaseId) {
+      updateDraft(scope, roleKey, (prev) => ({
+        ...prev,
+        rolePromptLoading: { ...prev.rolePromptLoading, [promptKey]: false },
+        rolePromptErrors: {
+          ...prev.rolePromptErrors,
+          [promptKey]: "Select a case first",
+        },
+      }));
+      return;
+    }
+
+    updateDraft(scope, roleKey, (prev) => ({
+      ...prev,
+      rolePromptLoading: { ...prev.rolePromptLoading, [promptKey]: true },
+      rolePromptErrors: { ...prev.rolePromptErrors, [promptKey]: null },
+    }));
+
+    try {
+      const requestBody: Record<string, unknown> = {
+        roleKey,
+        promptKey,
+      };
+      if (effectiveCaseId) {
+        requestBody.caseId = effectiveCaseId;
+      }
+
+      const response = await axios.post(
+        "/api/personas/role-prompts",
+        requestBody,
+        { headers: authHeaders }
+      );
+
+      const payload = response.data as { prompt?: string } | undefined;
+      const generatedPrompt = payload?.prompt;
+      if (!generatedPrompt || !generatedPrompt.trim()) {
+        throw new Error("No prompt returned");
+      }
+
+      updateDraft(scope, roleKey, (prev) => {
+        const nextPrompts = { ...prev.draftRolePrompts, [promptKey]: generatedPrompt };
+        const nextState: PersonaEditorState = {
+          ...prev,
+          draftRolePrompts: nextPrompts,
+          rolePromptLoading: { ...prev.rolePromptLoading, [promptKey]: false },
+          rolePromptErrors: { ...prev.rolePromptErrors, [promptKey]: null },
+          saveMessage: null,
+        };
+        nextState.draftMetadata = mergeRolePrompts(prev.draftMetadata, nextPrompts);
+        nextState.isDirty = computePersonaDirty(nextState);
+        return nextState;
+      });
+    } catch (error) {
+      const message = extractAxiosMessage(error) ?? "Failed to generate prompt";
+      updateDraft(scope, roleKey, (prev) => ({
+        ...prev,
+        rolePromptLoading: { ...prev.rolePromptLoading, [promptKey]: false },
+        rolePromptErrors: { ...prev.rolePromptErrors, [promptKey]: message },
+      }));
+    }
   };
 
   const handleSave = async (scope: PersonaScope, roleKey: string) => {
@@ -286,22 +587,35 @@ export default function PersonasAdminPage() {
             display_name: target.draftDisplayName,
             image_url: target.draftImageUrl || null,
             behavior_prompt: target.draftBehaviorPrompt || null,
+            prompt: target.draftPrompt || null,
+            metadata: target.draftMetadata ?? null,
           },
           { headers: authHeaders }
         );
         const payload = response.data as { persona?: PersonaRecord } | undefined;
         const updated = payload?.persona;
         if (updated) {
-          updateDraft(scope, roleKey, (prev) => ({
-            ...prev,
-            persona: updated,
-            draftBehaviorPrompt: updated.behavior_prompt ?? "",
-            draftDisplayName: updated.display_name ?? "",
-            draftImageUrl: updated.image_url ?? "",
-            isDirty: false,
-            saving: false,
-            saveMessage: "Persona updated",
-          }));
+          updateDraft(scope, roleKey, (prev) => {
+            const metadataClone = cloneRecord(
+              updated.metadata && typeof updated.metadata === "object" && !Array.isArray(updated.metadata)
+                ? (updated.metadata as Record<string, unknown>)
+                : null
+            );
+            const nextState: PersonaEditorState = {
+              ...prev,
+              persona: updated,
+              draftBehaviorPrompt: updated.behavior_prompt ?? "",
+              draftPrompt: updated.prompt ?? "",
+              draftDisplayName: updated.display_name ?? "",
+              draftImageUrl: updated.image_url ?? "",
+              draftMetadata: metadataClone,
+              draftRolePrompts: extractRolePrompts(updated.metadata ?? null),
+              saving: false,
+              saveMessage: "Persona updated",
+            };
+            nextState.isDirty = computePersonaDirty(nextState);
+            return nextState;
+          });
         } else {
           updateDraft(scope, roleKey, (prev) => ({
             ...prev,
@@ -321,22 +635,35 @@ export default function PersonasAdminPage() {
           display_name: target.draftDisplayName,
           image_url: target.draftImageUrl || null,
           behavior_prompt: target.draftBehaviorPrompt || null,
+          prompt: target.draftPrompt || null,
+          metadata: target.draftMetadata ?? null,
         },
         { headers: authHeaders }
       );
       const payload = response.data as { persona?: PersonaRecord } | undefined;
       const updated = payload?.persona;
       if (updated) {
-        updateDraft(scope, roleKey, (prev) => ({
-          ...prev,
-          persona: updated,
-          draftBehaviorPrompt: updated.behavior_prompt ?? "",
-          draftDisplayName: updated.display_name ?? "",
-          draftImageUrl: updated.image_url ?? "",
-          isDirty: false,
-          saving: false,
-          saveMessage: "Persona updated",
-        }));
+        updateDraft(scope, roleKey, (prev) => {
+          const metadataClone = cloneRecord(
+            (updated.metadata && typeof updated.metadata === "object" && !Array.isArray(updated.metadata)
+              ? (updated.metadata as Record<string, unknown>)
+              : null)
+          );
+          const nextState: PersonaEditorState = {
+            ...prev,
+            persona: updated,
+            draftBehaviorPrompt: updated.behavior_prompt ?? "",
+            draftPrompt: updated.prompt ?? "",
+            draftDisplayName: updated.display_name ?? "",
+            draftImageUrl: updated.image_url ?? "",
+            draftMetadata: metadataClone,
+            draftRolePrompts: extractRolePrompts(updated.metadata ?? null),
+            saving: false,
+            saveMessage: "Persona updated",
+          };
+          nextState.isDirty = computePersonaDirty(nextState);
+          return nextState;
+        });
       } else {
         updateDraft(scope, roleKey, (prev) => ({
           ...prev,
@@ -351,6 +678,95 @@ export default function PersonasAdminPage() {
         saving: false,
         error: message,
       }));
+    }
+  };
+
+  const fetchAutoBehaviorPreview = async (scope: PersonaScope, roleKey: string) => {
+    if (!authHeaders) return;
+
+    if (scope === "case" && !selectedCaseId) {
+      updateDraft(scope, roleKey, (prev) => ({
+        ...prev,
+        autoPreviewLoading: false,
+        autoPreviewError: "Select a case first",
+      }));
+      return;
+    }
+
+    updateDraft(scope, roleKey, (prev) => ({
+      ...prev,
+      autoPreviewLoading: true,
+      autoPreviewError: null,
+    }));
+
+    try {
+      const requestBody =
+        scope === "case"
+          ? { caseId: selectedCaseId, roleKey }
+          : { roleKey };
+
+      const response = await axios.post(
+        "/api/personas/auto-behavior",
+        requestBody,
+        { headers: authHeaders }
+      );
+
+      const payload = response.data as
+        | { persona?: { behavior_prompt?: string | null } }
+        | undefined;
+      const behavior = payload?.persona?.behavior_prompt ?? null;
+
+      updateDraft(scope, roleKey, (prev) => ({
+        ...prev,
+        autoPreviewLoading: false,
+        autoPreviewError: behavior ? null : "No behavior prompt returned",
+        autoPreview: behavior ?? prev.autoPreview ?? null,
+      }));
+    } catch (error) {
+      const message =
+        extractAxiosMessage(error) ?? "Failed to load auto behavior prompt";
+      updateDraft(scope, roleKey, (prev) => ({
+        ...prev,
+        autoPreviewLoading: false,
+        autoPreviewError: message,
+      }));
+    }
+  };
+
+  const toggleAutoBehaviorPreview = (scope: PersonaScope, roleKey: string) => {
+    const rows = scope === "global" ? globalPersonaRows : casePersonaRows;
+    const target = rows.find((entry) => entry.persona.role_key === roleKey);
+    if (!target) return;
+
+    if (target.autoPreviewOpen) {
+      updateDraft(scope, roleKey, (prev) => ({
+        ...prev,
+        autoPreviewOpen: false,
+      }));
+      return;
+    }
+
+    if (scope === "case" && !selectedCaseId) {
+      updateDraft(scope, roleKey, (prev) => ({
+        ...prev,
+        autoPreviewOpen: true,
+        autoPreviewError: "Select a case first",
+        autoPreviewLoading: false,
+      }));
+      return;
+    }
+
+    const shouldFetch =
+      typeof target.autoPreview === "undefined" || Boolean(target.autoPreviewError);
+
+    updateDraft(scope, roleKey, (prev) => ({
+      ...prev,
+      autoPreviewOpen: true,
+      autoPreviewError: shouldFetch ? null : prev.autoPreviewError,
+    }));
+
+    if (shouldFetch) {
+      void fetchAutoBehaviorPreview(scope, roleKey);
     }
   };
 
@@ -389,11 +805,13 @@ export default function PersonasAdminPage() {
             persona?: {
               behavior_prompt?: string | null;
               display_name?: string | null;
+              prompt?: string | null;
             };
           }
         | undefined;
       const behavior = payload?.persona?.behavior_prompt ?? null;
       const display = payload?.persona?.display_name ?? null;
+      const prompt = payload?.persona?.prompt ?? null;
 
       if (!behavior) {
         updateDraft(scope, roleKey, (prev) => ({
@@ -407,10 +825,13 @@ export default function PersonasAdminPage() {
       updateDraft(scope, roleKey, (prev) => ({
         ...prev,
         draftBehaviorPrompt: behavior,
+        draftPrompt: prompt ?? prev.draftPrompt,
         draftDisplayName: display ?? prev.draftDisplayName,
         isDirty: true,
         autoLoading: false,
         autoMessage: "Behavior prompt refreshed",
+        autoPreview: behavior ?? prev.autoPreview ?? null,
+        autoPreviewError: null,
       }));
     } catch (error) {
       const message = extractAxiosMessage(error) ?? "Failed to auto-generate";
@@ -435,6 +856,8 @@ export default function PersonasAdminPage() {
       scope === "global"
         ? "Shared across all cases"
         : `Case ID: ${row.persona.case_id ?? selectedCaseId ?? ""}`;
+    const rolePromptFields =
+      ROLE_PROMPT_FIELDS[row.persona.role_key as keyof typeof ROLE_PROMPT_FIELDS] || [];
 
     return (
       <section
@@ -462,14 +885,41 @@ export default function PersonasAdminPage() {
                 Open Chat
               </Button>
             ) : null}
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => handleAutoBehavior(scope, row.persona.role_key)}
-              disabled={row.autoLoading}
-            >
-              {row.autoLoading ? "Generating…" : "Auto behavior"}
-            </Button>
+            <div className="relative flex items-center gap-1">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleAutoBehavior(scope, row.persona.role_key)}
+                disabled={row.autoLoading}
+              >
+                {row.autoLoading ? "Generating…" : "Auto behavior"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Show auto behavior template"
+                title="Show auto behavior template"
+                onClick={() => toggleAutoBehaviorPreview(scope, row.persona.role_key)}
+              >
+                ?
+              </Button>
+              {row.autoPreviewOpen ? (
+                <div className="absolute right-0 top-full z-20 mt-2 w-80 rounded-md border bg-card p-3 text-xs text-foreground shadow-lg">
+                  {row.autoPreviewLoading ? (
+                    <p>Loading template…</p>
+                  ) : row.autoPreviewError ? (
+                    <p className="text-red-600">{row.autoPreviewError}</p>
+                  ) : row.autoPreview ? (
+                    <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap text-xs">
+                      {row.autoPreview}
+                    </pre>
+                  ) : (
+                    <p>No behavior prompt available.</p>
+                  )}
+                </div>
+              ) : null}
+            </div>
             <Button
               type="button"
               onClick={() => handleSave(scope, row.persona.role_key)}
@@ -548,6 +998,76 @@ export default function PersonasAdminPage() {
           </p>
         </div>
 
+        {rolePromptFields.length ? (
+          <div className="mt-6 space-y-4">
+            <div className="space-y-1">
+              <h3 className="text-lg font-semibold">Conversation prompt overrides</h3>
+              <p className="text-xs text-muted-foreground">
+                Override the default conversation templates for this persona. Leave any field blank to fall back to the shared template.
+              </p>
+            </div>
+            {rolePromptFields.map((field) => {
+              const inputId = `role-prompt-${field.key}-${scope}-${row.persona.role_key}`;
+              const value = row.draftRolePrompts[field.key] ?? "";
+              const loading = row.rolePromptLoading?.[field.key] ?? false;
+              const fieldError = row.rolePromptErrors?.[field.key] ?? null;
+              return (
+                <div key={field.key} className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label htmlFor={inputId}>{field.label}</Label>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={loading}
+                      onClick={() =>
+                        void handleRolePromptAutofill(
+                          scope,
+                          row.persona.role_key,
+                          field.key
+                        )
+                      }
+                    >
+                      {loading ? "Generating…" : "Auto generate"}
+                    </Button>
+                  </div>
+                  <Textarea
+                    id={inputId}
+                    rows={8}
+                    placeholder={field.description}
+                    value={value}
+                    onChange={(event) =>
+                      handleRolePromptChange(
+                        scope,
+                        row.persona.role_key,
+                        field.key,
+                        event.target.value
+                      )
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">{field.description}</p>
+                  {field.placeholders.length ? (
+                    <p className="text-[11px] text-muted-foreground">
+                      Available tags: {field.placeholders.join(", ")}
+                    </p>
+                  ) : null}
+                  <div className="rounded-md border bg-muted/30 p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      Default template
+                    </p>
+                    <pre className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap text-xs">
+                      {field.defaultTemplate}
+                    </pre>
+                  </div>
+                  {fieldError ? (
+                    <p className="text-xs text-red-600">{fieldError}</p>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+
         {row.saveMessage ? (
           <p className="mt-3 text-sm text-green-600">{row.saveMessage}</p>
         ) : null}
@@ -572,7 +1092,7 @@ export default function PersonasAdminPage() {
         <div>
           <h1 className="text-2xl font-bold">Persona Management</h1>
           <p className="text-sm text-muted-foreground">
-            Update persona display names, behavior prompts, and portrait URLs.
+            Update persona display names, behavior prompts, portrait URLs, and conversation templates.
           </p>
         </div>
         <Button

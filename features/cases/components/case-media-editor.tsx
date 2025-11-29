@@ -25,7 +25,8 @@ const FILE_ACCEPT: Record<CaseMediaType, string> = {
   image: "image/*",
   video: "video/*",
   audio: "audio/*",
-  document: "application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  document:
+    "application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 };
 
 type CaseMediaEditorProps = {
@@ -197,11 +198,16 @@ async function createWaveformPreview(
 }
 
 function clone(items: CaseMediaItem[]): CaseMediaItem[] {
-  return items.map((item) => ({ ...item, stage: item.stage ? { ...item.stage } : undefined, metadata: item.metadata ?? null }));
+  return items.map((item) => ({
+    ...item,
+    stage: item.stage ? { ...item.stage } : undefined,
+    metadata: item.metadata ?? null,
+  }));
 }
 
 export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: CaseMediaEditorProps) {
   const [uploadState, setUploadState] = useState<UploadState>({ uploadingIndex: null, error: null });
+  const [advancedOpen, setAdvancedOpen] = useState<Record<string, boolean>>({});
 
   const items = useMemo(() => clone(value), [value]);
 
@@ -233,7 +239,15 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
   const removeItem = (index: number) => {
     if (readOnly) return;
     const next = clone(items);
-    next.splice(index, 1);
+    const [removed] = next.splice(index, 1);
+    if (removed) {
+      setAdvancedOpen((prev) => {
+        if (!prev[removed.id]) return prev;
+        const nextState = { ...prev };
+        delete nextState[removed.id];
+        return nextState;
+      });
+    }
     onChange(next);
   };
 
@@ -272,13 +286,23 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
             : item.durationMs,
         thumbnailUrl: waveform?.thumbnailUrl ?? item.thumbnailUrl,
       }));
+      setUploadState({ uploadingIndex: null, error: null });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setUploadState({ uploadingIndex: null, error: message });
-      return;
     }
-    setUploadState({ uploadingIndex: null, error: null });
   };
+
+  const toggleAdvanced = useCallback(
+    (id: string) => {
+      if (readOnly) return;
+      setAdvancedOpen((prev) => ({
+        ...prev,
+        [id]: !prev[id],
+      }));
+    },
+    [readOnly]
+  );
 
   return (
     <div className="space-y-4">
@@ -294,17 +318,25 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
         <div className="text-sm text-red-600">{uploadState.error}</div>
       )}
       {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No media attached yet.
-        </p>
+        <p className="text-sm text-muted-foreground">No media attached yet.</p>
       ) : (
         <div className="space-y-4">
           {items.map((item, index) => {
             const stage = ensureStageRef(item.stage);
+            const advancedHasValue = Boolean(
+              stage.stageId ||
+              stage.roleKey ||
+              item.mimeType ||
+              item.durationMs ||
+              item.loop ||
+              item.thumbnailUrl
+            );
+            const showAdvanced = advancedOpen[item.id] ?? advancedHasValue;
+
             return (
               <div
                 key={item.id}
-                className="rounded border border-border p-4 space-y-3"
+                className="space-y-4 rounded border border-border p-4"
               >
                 <div className="flex items-center justify-between">
                   <div className="font-medium">Item {index + 1}</div>
@@ -340,76 +372,103 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                   )}
                 </div>
 
-                <div className="grid gap-3 lg:grid-cols-2">
-                  <div className="space-y-3">
-                    <Label htmlFor={`media-type-${item.id}`}>Type</Label>
-                    <select
-                      id={`media-type-${item.id}`}
-                      className="w-full rounded border border-input bg-background px-2 py-1 text-sm"
-                      value={item.type}
-                      onChange={(event) =>
-                        updateItem(index, (current) => ({
-                          ...current,
-                          type: event.target.value as CaseMediaType,
-                        }))
-                      }
-                      disabled={readOnly}
-                    >
-                      {SUPPORTED_TYPES.map((type) => (
-                        <option key={type} value={type}>
-                          {type}
-                        </option>
-                      ))}
-                    </select>
+                <div className="space-y-4">
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    <div className="space-y-3">
+                      <Label htmlFor={`media-type-${item.id}`}>Type</Label>
+                      <select
+                        id={`media-type-${item.id}`}
+                        className="w-full rounded border border-input bg-card text-card-foreground px-2 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-60"
+                        value={item.type}
+                        onChange={(event) =>
+                          updateItem(index, (current) => ({
+                            ...current,
+                            type: event.target.value as CaseMediaType,
+                          }))
+                        }
+                        disabled={readOnly}
+                      >
+                        {SUPPORTED_TYPES.map((typeOption) => (
+                          <option key={typeOption} value={typeOption}>
+                            {typeOption}
+                          </option>
+                        ))}
+                      </select>
 
-                    <Label>Source</Label>
-                    {item.type === "image" && item.url ? (
-                      <img
-                        src={item.url}
-                        alt={item.caption ?? "Case asset"}
-                        className="h-32 w-full rounded object-cover"
-                      />
-                    ) : null}
-                    {item.type === "video" && item.url ? (
-                      <video controls className="w-full rounded" src={item.url} />
-                    ) : null}
-                    {item.type === "audio" && item.url ? (
-                      <audio controls className="w-full" src={item.url} />
-                    ) : null}
-
-                    <Input
-                      value={item.url}
-                      readOnly={readOnly}
-                      onChange={(event) =>
-                        updateItem(index, (current) => ({
-                          ...current,
-                          url: event.target.value,
-                        }))
-                      }
-                      placeholder="https://..."
-                    />
-                    {!readOnly && (
-                      <label className="flex flex-col gap-2 text-sm">
-                        <span>Upload file</span>
-                        <input
-                          type="file"
-                          accept={FILE_ACCEPT[item.type]}
-                          onChange={(event) => {
-                            const file = event.target.files?.[0];
-                            if (!file) return;
-                            void handleFileChange(index, file, item.type);
-                          }}
-                          disabled={uploadState.uploadingIndex === index}
+                      <Label>Source</Label>
+                      {item.type === "image" && item.url ? (
+                        <img
+                          src={item.url}
+                          alt={item.caption ?? "Case asset"}
+                          className="h-32 w-full rounded object-cover"
                         />
-                        {uploadState.uploadingIndex === index && (
-                          <span className="text-xs text-muted-foreground">
-                            Uploading...
-                          </span>
-                        )}
-                      </label>
-                    )}
+                      ) : null}
+                      {item.type === "video" && item.url ? (
+                        <video controls className="w-full rounded" src={item.url} />
+                      ) : null}
+                      {item.type === "audio" && item.url ? (
+                        <audio controls className="w-full" src={item.url} />
+                      ) : null}
 
-                    <Label htmlFor={`media-caption-${item.id}`}>Caption</Label>
+                      <Input
+                        value={item.url}
+                        readOnly={readOnly}
+                        onChange={(event) =>
+                          updateItem(index, (current) => ({
+                            ...current,
+                            url: event.target.value,
+                          }))
+                        }
+                        placeholder="https://..."
+                      />
+                      {!readOnly && (
+                        <label className="flex flex-col gap-2 text-sm">
+                          <span>Upload file</span>
+                          <input
+                            type="file"
+                            accept={FILE_ACCEPT[item.type]}
+                            onChange={(event) => {
+                              const file = event.target.files?.[0];
+                              if (!file) return;
+                              void handleFileChange(index, file, item.type);
+                            }}
+                            disabled={uploadState.uploadingIndex === index}
+                          />
+                          {uploadState.uploadingIndex === index && (
+                            <span className="text-xs text-muted-foreground">
+                              Uploading...
+                            </span>
+                          )}
+                        </label>
+                      )}
+                    </div>
+
+                    <div className="space-y-3">
+                      <Label htmlFor={`media-stage-key-${item.id}`}>
+                        Stage key
+                      </Label>
+                      <Input
+                        id={`media-stage-key-${item.id}`}
+                        value={stage.stageKey ?? ""}
+                        readOnly={readOnly}
+                        onChange={(event) =>
+                          updateItem(index, (current) => ({
+                            ...current,
+                            stage: {
+                              ...ensureStageRef(current.stage),
+                              stageKey: event.target.value || undefined,
+                            },
+                          }))
+                        }
+                        placeholder="stage-intro"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <Label htmlFor={`media-caption-${item.id}`}>
+                      Caption
+                    </Label>
                     <Textarea
                       id={`media-caption-${item.id}`}
                       value={item.caption ?? ""}
@@ -422,7 +481,9 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                       }
                       rows={2}
                     />
+                  </div>
 
+                  <div className="space-y-3">
                     <Label htmlFor={`media-transcript-${item.id}`}>
                       Transcript / accessibility notes
                     </Label>
@@ -440,136 +501,138 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                     />
                   </div>
 
-                  <div className="space-y-3">
-                    <Label htmlFor={`media-stage-key-${item.id}`}>
-                      Stage key
-                    </Label>
-                    <Input
-                      id={`media-stage-key-${item.id}`}
-                      value={stage.stageKey ?? ""}
-                      readOnly={readOnly}
-                      onChange={(event) =>
-                        updateItem(index, (current) => ({
-                          ...current,
-                          stage: {
-                            ...ensureStageRef(current.stage),
-                            stageKey: event.target.value || undefined,
-                          },
-                        }))
-                      }
-                    />
-
-                    <Label htmlFor={`media-stage-id-${item.id}`}>
-                      Stage id (optional)
-                    </Label>
-                    <Input
-                      id={`media-stage-id-${item.id}`}
-                      value={stage.stageId ?? ""}
-                      readOnly={readOnly}
-                      onChange={(event) =>
-                        updateItem(index, (current) => ({
-                          ...current,
-                          stage: {
-                            ...ensureStageRef(current.stage),
-                            stageId: event.target.value || undefined,
-                          },
-                        }))
-                      }
-                    />
-
-                    <Label htmlFor={`media-role-key-${item.id}`}>
-                      Persona role key
-                    </Label>
-                    <Input
-                      id={`media-role-key-${item.id}`}
-                      value={stage.roleKey ?? ""}
-                      readOnly={readOnly}
-                      onChange={(event) =>
-                        updateItem(index, (current) => ({
-                          ...current,
-                          stage: {
-                            ...ensureStageRef(current.stage),
-                            roleKey: event.target.value || undefined,
-                          },
-                        }))
-                      }
-                    />
-
-                    <Label htmlFor={`media-mime-${item.id}`}>
-                      MIME type
-                    </Label>
-                    <Input
-                      id={`media-mime-${item.id}`}
-                      value={item.mimeType ?? ""}
-                      readOnly={readOnly}
-                      onChange={(event) =>
-                        updateItem(index, (current) => ({
-                          ...current,
-                          mimeType: event.target.value || undefined,
-                        }))
-                      }
-                      placeholder="image/png"
-                    />
-
-                    <Label htmlFor={`media-duration-${item.id}`}>
-                      Duration (ms)
-                    </Label>
-                    <Input
-                      id={`media-duration-${item.id}`}
-                      type="number"
-                      min={0}
-                      value={item.durationMs ?? ""}
-                      readOnly={readOnly}
-                      onChange={(event) =>
-                        updateItem(index, (current) => ({
-                          ...current,
-                          durationMs: event.target.value
-                            ? Number(event.target.value)
-                            : undefined,
-                        }))
-                      }
-                    />
-
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        id={`media-loop-${item.id}`}
-                        checked={Boolean(item.loop)}
-                        onCheckedChange={(checked) =>
-                          updateItem(index, (current) => ({
-                            ...current,
-                            loop: Boolean(checked),
-                          }))
-                        }
-                        disabled={readOnly}
-                      />
-                      <Label htmlFor={`media-loop-${item.id}`}>
-                        Loop playback
-                      </Label>
-                    </div>
-
-                    <Label htmlFor={`media-thumbnail-${item.id}`}>
-                      Thumbnail / waveform URL
-                    </Label>
-                    {item.thumbnailUrl ? (
-                      <img
-                        src={item.thumbnailUrl}
-                        alt="Thumbnail preview"
-                        className="h-20 w-full rounded object-cover"
-                      />
-                    ) : null}
-                    <Input
-                      id={`media-thumbnail-${item.id}`}
-                      value={item.thumbnailUrl ?? ""}
-                      readOnly={readOnly}
-                      onChange={(event) =>
-                        updateItem(index, (current) => ({
-                          ...current,
-                          thumbnailUrl: event.target.value || undefined,
-                        }))
-                      }
-                      placeholder="https://..."
-                    />
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => toggleAdvanced(item.id)}
+                      disabled={readOnly && !advancedHasValue}
+                    >
+                      {showAdvanced ? "Hide advanced fields" : "Show advanced fields"}
+                    </Button>
                   </div>
+
+                  {showAdvanced && (
+                    <div className="space-y-4 border-t border-border/40 pt-3">
+                      <div className="grid gap-3 lg:grid-cols-2">
+                        <div className="space-y-3">
+                          <Label htmlFor={`media-stage-id-${item.id}`}>
+                            Stage id (optional)
+                          </Label>
+                          <Input
+                            id={`media-stage-id-${item.id}`}
+                            value={stage.stageId ?? ""}
+                            readOnly={readOnly}
+                            onChange={(event) =>
+                              updateItem(index, (current) => ({
+                                ...current,
+                                stage: {
+                                  ...ensureStageRef(current.stage),
+                                  stageId: event.target.value || undefined,
+                                },
+                              }))
+                            }
+                          />
+
+                          <Label htmlFor={`media-role-key-${item.id}`}>
+                            Persona role key
+                          </Label>
+                          <Input
+                            id={`media-role-key-${item.id}`}
+                            value={stage.roleKey ?? ""}
+                            readOnly={readOnly}
+                            onChange={(event) =>
+                              updateItem(index, (current) => ({
+                                ...current,
+                                stage: {
+                                  ...ensureStageRef(current.stage),
+                                  roleKey: event.target.value || undefined,
+                                },
+                              }))
+                            }
+                          />
+
+                          <Label htmlFor={`media-mime-${item.id}`}>
+                            MIME type
+                          </Label>
+                          <Input
+                            id={`media-mime-${item.id}`}
+                            value={item.mimeType ?? ""}
+                            readOnly={readOnly}
+                            onChange={(event) =>
+                              updateItem(index, (current) => ({
+                                ...current,
+                                mimeType: event.target.value || undefined,
+                              }))
+                            }
+                            placeholder="image/png"
+                          />
+                        </div>
+
+                        <div className="space-y-3">
+                          <Label htmlFor={`media-duration-${item.id}`}>
+                            Duration (ms)
+                          </Label>
+                          <Input
+                            id={`media-duration-${item.id}`}
+                            type="number"
+                            min={0}
+                            value={item.durationMs ?? ""}
+                            readOnly={readOnly}
+                            onChange={(event) =>
+                              updateItem(index, (current) => ({
+                                ...current,
+                                durationMs: event.target.value
+                                  ? Number(event.target.value)
+                                  : undefined,
+                              }))
+                            }
+                          />
+
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              id={`media-loop-${item.id}`}
+                              checked={Boolean(item.loop)}
+                              onCheckedChange={(checked) =>
+                                updateItem(index, (current) => ({
+                                  ...current,
+                                  loop: Boolean(checked),
+                                }))
+                              }
+                              disabled={readOnly}
+                            />
+                            <Label htmlFor={`media-loop-${item.id}`}>
+                              Loop playback
+                            </Label>
+                          </div>
+
+                          <Label htmlFor={`media-thumbnail-${item.id}`}>
+                            Thumbnail / waveform URL
+                          </Label>
+                          {item.thumbnailUrl ? (
+                            <img
+                              src={item.thumbnailUrl}
+                              alt="Thumbnail preview"
+                              className="h-20 w-full rounded object-cover"
+                            />
+                          ) : null}
+                          <Input
+                            id={`media-thumbnail-${item.id}`}
+                            value={item.thumbnailUrl ?? ""}
+                            readOnly={readOnly}
+                            onChange={(event) =>
+                              updateItem(index, (current) => ({
+                                ...current,
+                                thumbnailUrl: event.target.value || undefined,
+                              }))
+                            }
+                            placeholder="https://..."
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             );

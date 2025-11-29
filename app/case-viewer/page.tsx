@@ -511,6 +511,13 @@ export default function CaseViewerPage() {
   const imageUrl = formState ? formatValue(formState["image_url"]) : "";
   const caseIdValue = formState ? formatValue(formState["id"]).trim() : "";
 
+  const baseFieldClasses =
+    "w-full rounded-md border border-input px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background transition-colors";
+  const editableFieldClasses = "bg-card text-card-foreground";
+  const readOnlyFieldClasses = "bg-muted/30 text-card-foreground";
+  const inputFieldClass = `${baseFieldClasses} ${editable ? editableFieldClasses : readOnlyFieldClasses}`;
+  const textareaFieldClass = `${baseFieldClasses} ${editable ? editableFieldClasses : readOnlyFieldClasses}`;
+
   return (
     <div className="max-w-2xl mx-auto p-8">
       <h1 className="text-2xl font-bold mb-6">Case Viewer</h1>
@@ -765,7 +772,7 @@ export default function CaseViewerPage() {
                       onChange={(e) => updateField(key, e.target.value)}
                       placeholder={meta.placeholder}
                       aria-describedby={helpId}
-                      className="w-full bg-white border rounded px-2 py-1"
+                      className={inputFieldClass}
                     />
                     <Button
                       type="button"
@@ -815,8 +822,8 @@ export default function CaseViewerPage() {
                       onChange={(e) => updateField(key, e.target.value)}
                       placeholder={meta.placeholder}
                       aria-describedby={helpId}
-                      className="w-full bg-white border rounded px-2 py-1"
-                      rows={meta.rows ?? 3}
+                      className={textareaFieldClass}
+                      rows={3}
                     />
                     <div className="flex flex-col gap-2">
                       <Button
@@ -871,7 +878,7 @@ export default function CaseViewerPage() {
                     onChange={(e) => updateField(key, e.target.value)}
                     placeholder={meta.placeholder}
                     aria-describedby={helpId}
-                    className="w-full bg-white border rounded px-2 py-1"
+                    className={inputFieldClass}
                   />
                   {isAutomatable ? (
                     <Button
@@ -918,7 +925,7 @@ export default function CaseViewerPage() {
                   autoComplete="off"
                   readOnly={!editable}
                   onChange={(e) => updateField(key, e.target.value)}
-                  className="w-full bg-white border rounded px-2 py-1"
+                  className={textareaFieldClass}
                   rows={3}
                 />
               </div>
@@ -929,7 +936,7 @@ export default function CaseViewerPage() {
         {/* Modal for expanded field */}
         {expandedField && (
           <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg max-w-2xl w-full p-6">
+            <div className="bg-background text-foreground rounded-lg shadow-lg max-w-2xl w-full p-6">
               <h2 className="text-lg font-bold mb-2">
                 {caseFieldMeta[expandedField]?.label ?? expandedField}
               </h2>
@@ -940,7 +947,7 @@ export default function CaseViewerPage() {
                 autoComplete="off"
                 readOnly={!editable}
                 onChange={(e) => updateField(expandedField, e.target.value)}
-                className="w-full h-64"
+                className={`${textareaFieldClass} h-64`}
                 rows={caseFieldMeta[expandedField]?.rows ?? 12}
               />
               {caseFieldMeta[expandedField]?.help && (

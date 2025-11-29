@@ -16,8 +16,6 @@ import {
 } from "@/features/speech/services/ttsService";
 import { ChatMessage } from "@/features/chat/components/chat-message";
 import { Notepad } from "@/features/chat/components/notepad";
-import { FeedbackButton } from "@/features/feedback/components/feedback-button";
-import { SaveAttemptButton } from "@/features/attempts/components/save-attempt-button";
 import { useSaveAttempt } from "@/features/attempts/hooks/useSaveAttempt";
 import type { Message } from "@/features/chat/models/chat";
 import type { Stage } from "@/features/stages/types";
@@ -130,6 +128,8 @@ export function ChatInterface({
   onProceedToNextStage,
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const latestInitialMessagesRef = useRef<Message[]>(initialMessages ?? []);
+  const lastHydratedAttemptKeyRef = useRef<string | null>(null);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [connectionNotice, setConnectionNotice] = useState<string | null>(null);
@@ -301,6 +301,12 @@ export function ChatInterface({
   // Track the previous attemptId so initialization runs only once per
   // attempt change.
   const prevAttemptIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    latestInitialMessagesRef.current = Array.isArray(initialMessages)
+      ? initialMessages
+      : [];
+  }, [initialMessages]);
 
   // Speech-to-text functionality. Provide an onFinal handler to auto-send when
   // voiceMode is active.
@@ -601,6 +607,11 @@ export function ChatInterface({
     cancel,
   } = useTTS();
 
+  const cancelRef = useRef(cancel);
+  useEffect(() => {
+    cancelRef.current = cancel;
+  }, [cancel]);
+
   // When TTS plays we may want to temporarily stop STT so the assistant voice
   // is not transcribed. Use a ref to remember whether we should resume.
   const resumeListeningRef = useRef<boolean>(false);
@@ -631,6 +642,15 @@ export function ChatInterface({
       return s;
     }
   };
+
+  const stopRef = useRef(stop);
+  const resetRef = useRef(reset);
+  useEffect(() => {
+    stopRef.current = stop;
+  }, [stop]);
+  useEffect(() => {
+    resetRef.current = reset;
+  }, [reset]);
 
   type TtsPlaybackMeta = Omit<TtsEventDetail, "audio"> | undefined;
 
@@ -815,6 +835,47 @@ export function ChatInterface({
   const sendUserMessage = async (text: string, existingMessageId?: string) => {
     const trimmed = String(text ?? "").trim();
     if (!trimmed || isLoading) return;
+
+    if (!existingMessageId && voiceMode && ttsEnabled) {
+      const normalize = (value: string) =>
+        value
+          .toLowerCase()
+          .replace(/[^a-z0-9\s]/gi, "")
+          .replace(/\s+/g, " ")
+          .trim();
+      const normalizedInput = normalize(trimmed);
+      if (normalizedInput) {
+        const lastAssistant = [...messages]
+          .slice()
+          .reverse()
+          .find((message) =>
+            message.role === "assistant" && message.content?.trim()
+          );
+        if (lastAssistant) {
+          const normalizedAssistant = normalize(lastAssistant.content ?? "");
+          const assistantTimestamp = lastAssistant.timestamp
+            ? Date.parse(lastAssistant.timestamp)
+            : NaN;
+          const assistantIsRecent = Number.isFinite(assistantTimestamp)
+            ? Math.abs(Date.now() - assistantTimestamp) < 8000
+            : true;
+          if (
+            normalizedAssistant &&
+            normalizedAssistant === normalizedInput &&
+            assistantIsRecent
+          ) {
+            console.debug(
+              "Skipping auto-send: detected echo of assistant speech",
+              trimmed
+            );
+            baseInputRef.current = "";
+            setInput("");
+            reset();
+            return;
+          }
+        }
+      }
+    }
 
     let userMessage = null as Message | null;
     let snapshot: Message[] = [];
@@ -1164,7 +1225,7 @@ export function ChatInterface({
 
     const stagePhraseRegex =
       stagePhrase && stagePhrase.length > 0
-        ? new RegExp(`\b${escapeRegExp(stagePhrase)}\b`)
+        ? new RegExp(`\\b${escapeRegExp(stagePhrase)}\\b`)
         : null;
     const mentionsStagePhrase = stagePhraseRegex?.test(normalized) ?? false;
 
@@ -1198,6 +1259,37 @@ export function ChatInterface({
           `\\b(ready|time|start|begin)\\s+(for|to|with)\\s+${escapeRegExp(stagePhrase)}\\b`
         ).test(normalized)
       : false;
+
+    const letsDoStageRegex =
+      stagePhrase && stagePhrase.length > 0
+        ? new RegExp(
+            `\\blet(?:'s|s| us)?\\s+(?:do|start|begin|perform|move|head|go|transition|switch)\\s+(?:to\\s+|into\\s+|with\\s+)?(?:the\\s+|a\\s+)?${escapeRegExp(stagePhrase)}\\b`
+          )
+        : null;
+    const doStageRegex =
+      stagePhrase && stagePhrase.length > 0
+        ? new RegExp(
+            `\\b(?:do|perform|start|begin|commence|conduct)\\s+(?:the\\s+|a\\s+)?${escapeRegExp(stagePhrase)}\\b`
+          )
+        : null;
+    const reviewStageRegex =
+      stagePhrase && stagePhrase.length > 0
+        ? new RegExp(
+            `\\b(?:let(?:'s|s| us)?\\s+)?(?:see|review|check|look(?:\s+at)?|view|inspect|go\\s+over|pull\\s+up|show(?:\s+me)?)\\s+(?:the\\s+|those\\s+|these\\s+)?${escapeRegExp(stagePhrase)}\\b`
+          )
+        : null;
+
+    if (letsDoStageRegex?.test(normalized)) {
+      return true;
+    }
+
+    if (doStageRegex?.test(normalized)) {
+      return true;
+    }
+
+    if (reviewStageRegex?.test(normalized)) {
+      return true;
+    }
 
     if (mentionsNextStagePhrase && (hasDirectionVerb || politeCue)) {
       return true;
@@ -1662,6 +1754,78 @@ export function ChatInterface({
   const lastSavedSnapshotRef = useRef<string>("");
 
   useEffect(() => {
+    const attemptKey = attemptId ?? "__no_attempt__";
+    const nextMessages = Array.isArray(latestInitialMessagesRef.current)
+      ? latestInitialMessagesRef.current
+      : [];
+
+    setMessages([...nextMessages]);
+    lastSavedSnapshotRef.current = JSON.stringify(nextMessages);
+    lastSavedAtRef.current = 0;
+
+    if (lastHydratedAttemptKeyRef.current === attemptKey) {
+      return;
+    }
+
+    lastHydratedAttemptKeyRef.current = attemptKey;
+    setInput("");
+    baseInputRef.current = "";
+    setTimeSpentSeconds(0);
+    setConnectionNotice(null);
+    setAdvanceGuard(null);
+    setStageIndicator(null);
+    setVoiceMode(Boolean(attemptId));
+
+    startedListeningRef.current = false;
+    userToggledOffRef.current = false;
+    resumeListeningRef.current = false;
+    introShownRef.current = false;
+
+    if (autoSendTimerRef.current) {
+      window.clearTimeout(autoSendTimerRef.current);
+      autoSendTimerRef.current = null;
+    }
+    if (autoSendFinalTimerRef.current) {
+      window.clearTimeout(autoSendFinalTimerRef.current);
+      autoSendFinalTimerRef.current = null;
+    }
+    autoSendPendingTextRef.current = null;
+    lastFinalHandledRef.current = null;
+    lastAppendedTextRef.current = null;
+    lastAppendTimeRef.current = 0;
+
+    scheduleAutoProceedRef.current = null;
+    handleProceedRef.current = null;
+
+    if (nextStageIntentTimeoutRef.current) {
+      window.clearTimeout(nextStageIntentTimeoutRef.current);
+      nextStageIntentTimeoutRef.current = null;
+    }
+    if (pendingFlushIntervalRef.current) {
+      window.clearInterval(pendingFlushIntervalRef.current);
+      pendingFlushIntervalRef.current = null;
+    }
+
+    stopActiveTtsPlayback();
+    try {
+      cancelRef.current?.();
+    } catch (err) {
+      // ignore
+    }
+    try {
+      stopRef.current?.();
+    } catch (err) {
+      // ignore
+    }
+    try {
+      resetRef.current?.();
+    } catch (err) {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attemptId]);
+
+  useEffect(() => {
     if (!attemptId) return;
 
     const intervalMs = 30000; // auto-save every 30s
@@ -2039,15 +2203,6 @@ export function ChatInterface({
                 {voiceMode ? "Voice Mode: On" : "Voice Mode: Off"}
               </Button>
 
-              {attemptId && (
-                <SaveAttemptButton
-                  attemptId={attemptId}
-                  stageIndex={currentStageIndex}
-                  messages={messages}
-                  timeSpentSeconds={timeSpentSeconds}
-                />
-              )}
-
               {/* TTS toggle */}
               <Button
                 variant="ghost"
@@ -2072,29 +2227,6 @@ export function ChatInterface({
                   <VolumeX className="h-4 w-4" />
                 )}
               </Button>
-
-              {/* Voice-first toggle: when enabled, play audio first and show text after */}
-              <Button
-                variant={voiceFirst ? "destructive" : "secondary"}
-                size="sm"
-                className="flex items-center gap-1 text-xs"
-                onClick={() => setVoiceFirst((v) => !v)}
-                title={
-                  voiceFirst
-                    ? "Voice-first: audio plays before text"
-                    : "Text-first: show text immediately"
-                }
-              >
-                {voiceFirst ? "Voice-first: On" : "Voice-first: Off"}
-              </Button>
-
-              <FeedbackButton
-                messages={messages}
-                stage={stages[currentStageIndex]}
-                stageIndex={currentStageIndex}
-                caseId={caseId}
-                attemptId={attemptId || ""}
-              />
             </div>
           </div>
 
@@ -2126,9 +2258,9 @@ export function ChatInterface({
               type="button"
               size="icon"
               onClick={() => {
-                // When voiceMode is enabled the big toggle controls listening and
-                // the mic button should be passive (no click toggle required).
-                if (voiceMode) return;
+                if (voiceMode) {
+                  toggleVoiceMode();
+                }
               }}
               onMouseDown={!voiceMode ? handleStart : undefined}
               onMouseUp={!voiceMode ? handleStop : undefined}
