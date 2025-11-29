@@ -3,6 +3,8 @@ import { dbRoleInfo } from "../db-role-info";
 import { caseConfig } from "@/features/config/case-config";
 import type { RoleInfo, RoleInfoPromptFn } from "../types";
 import { supabase } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { CASE_SEEDS, type CaseSeed } from "@/data/cases/case-seed-data";
 import type { Stage } from "@/features/stages/types";
 import { resolvePersonaRoleKey } from "@/features/personas/services/personaImageService";
 
@@ -35,6 +37,60 @@ const DEFAULT_FOLLOW_UP = (title: string) =>
 const DEFAULT_DIAGNOSIS_PROMPT = (title: string) =>
   `You are the owner receiving a diagnosis and discharge plan for ${title}. Ask practical questions about monitoring, medication, prognosis, and when to seek help.`;
 
+function extractCaseField(caseRow: CaseRow, key: string): string {
+  if (!caseRow || typeof caseRow !== "object") {
+    return "";
+  }
+  const value = (caseRow as Record<string, unknown>)[key];
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  return "";
+}
+
+function loadSeedCase(caseId: string): Record<string, unknown> | null {
+  const seed: CaseSeed | undefined = CASE_SEEDS.find((entry) => entry.id === caseId);
+  if (!seed) {
+    return null;
+  }
+  return { ...seed, details: seed.details ?? {} } as Record<string, unknown>;
+}
+
+function buildPhysicalExamFallback(caseRow: CaseRow): string {
+  const title = getCaseTitle(caseRow);
+  const presentingComplaint = getPresentingComplaint(caseRow, title);
+  const condition = extractCaseField(caseRow, "condition");
+  const species = extractCaseField(caseRow, "species");
+  const description = extractCaseField(caseRow, "description");
+
+  const contextLines: string[] = [];
+  if (presentingComplaint) {
+    contextLines.push(`Presenting complaint: ${presentingComplaint}`);
+  }
+  if (condition) {
+    contextLines.push(`Working impression: ${condition}`);
+  }
+  if (species) {
+    contextLines.push(`Species: ${species}`);
+  }
+  if (description && description !== presentingComplaint) {
+    contextLines.push(`Case summary: ${description}`);
+  }
+  if (contextLines.length === 0) {
+    contextLines.push(`Case context: ${title}`);
+  }
+  contextLines.push(
+    [
+      "Use these instructions to report the completed exam:",
+      "- Provide exact vital signs (temperature, heart rate, respiratory rate, perfusion metrics) as recorded.",
+      "- List every abnormal finding tied to this scenario—lymph node enlargement, discharges, pain responses, hydration status, gastrointestinal changes, or other pertinent systems.",
+      "- Mention a system as normal only when the case details justify it; otherwise supply physiologically plausible abnormal measurements that match this context."
+    ].join("\n")
+  );
+
+  return contextLines.join("\n");
+}
+
 export const ROLE_PROMPT_DEFINITIONS: Record<RolePromptKey, RolePromptDefinition> = {
   getOwnerPrompt: {
     defaultTemplate: `You are roleplaying as the owner or caretaker in a veterinary consultation. Stay in character according to the background below and speak in natural, conversational language.\n\nPresenting complaint (use these exact facts to open the discussion and to answer related questions):\n{{PRESENTING_COMPLAINT}}\n\nOwner background:\n{{OWNER_BACKGROUND}}\n\nGuidelines:\n- Begin by describing the presenting complaint in your own words using everyday phrasing from the owner's point of view, but stay consistent with the facts above.\n- Feel free to add context (timeline, management details, behaviour changes) that aligns with the presenting complaint or with obvious manifestations of the condition referenced above, but do not invent new or contradictory symptoms. Avoid generic phrases like "I'm worried about her health and want to ensure we address it properly"—use specific owner observations instead.\n- Answer the clinician's follow-up questions honestly, even if they did not explicitly ask yet, whenever the information above makes it relevant.\n- Never attempt to diagnose or use technical jargon beyond what is provided. Remain a non-expert narrator of what you have observed.\n\nStudent's question: {{STUDENT_QUESTION}}\n\nStay true to the owner personality, collaborate willingly, and avoid offering diagnostic reasoning of your own.`,
@@ -62,7 +118,7 @@ export const ROLE_PROMPT_DEFINITIONS: Record<RolePromptKey, RolePromptDefinition
       FINDINGS: getText(
         caseRow,
         "physical_exam_findings",
-        "Physical examination was within normal limits."
+        buildPhysicalExamFallback(caseRow)
       ),
       STUDENT_REQUEST: userMessage,
     }),
@@ -277,17 +333,34 @@ export async function getRoleInfoPrompt(
 
   // Fetch case-specific row from Supabase in case templates want injected data
   let caseRow: Record<string, any> | null = null;
+  const adminSupabase = getSupabaseAdminClient();
+  const supabaseClient = adminSupabase ?? supabase;
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from("cases")
       .select("*")
       .eq("id", caseId)
       .maybeSingle();
-    if (!error && data) {
+    if (error) {
+      console.warn("Failed to fetch case row for role info prompts", error);
+    } else if (data) {
       caseRow = data as Record<string, any>;
+    } else {
+      const rlsHint = adminSupabase ? "" : " (anon client may be blocked by RLS)";
+      console.warn(`No case row returned for ${caseId}${rlsHint}`);
     }
   } catch (e) {
     console.warn("Error fetching case row for role info prompts:", e);
+  }
+
+  if (!caseRow) {
+    const seedCase = loadSeedCase(caseId);
+    if (seedCase) {
+      caseRow = seedCase;
+      console.info(
+        `Using seed data for case ${caseId} while building role info prompts.`
+      );
+    }
   }
 
   if (roleInfoKey in ROLE_PROMPT_DEFINITIONS) {

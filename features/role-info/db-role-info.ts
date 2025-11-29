@@ -74,6 +74,54 @@ const defaultFollowUpFeedback = `Provide structured feedback on how the student 
 const defaultDiagnosisPrompt = (title: string) =>
   `You are the owner receiving a diagnosis and discharge plan for ${title}. Ask practical questions about monitoring, medication, prognosis, and when to seek help.`;
 
+const extractCaseField = (
+  caseRow: Record<string, unknown> | null | undefined,
+  key: string
+): string => {
+  if (!caseRow || typeof caseRow !== "object") {
+    return "";
+  }
+  const value = (caseRow as Record<string, unknown>)[key];
+  return typeof value === "string" ? value.trim() : "";
+};
+
+const buildPhysicalExamFallback = (
+  caseRow: Record<string, unknown> | null | undefined
+): string => {
+  const title = getCaseTitle(caseRow);
+  const presentingComplaint = getPresentingComplaint(caseRow, title);
+  const condition = extractCaseField(caseRow, "condition");
+  const species = extractCaseField(caseRow, "species");
+  const description = extractCaseField(caseRow, "description");
+
+  const contextLines: string[] = [];
+  if (presentingComplaint) {
+    contextLines.push(`Presenting complaint: ${presentingComplaint}`);
+  }
+  if (condition) {
+    contextLines.push(`Working impression: ${condition}`);
+  }
+  if (species) {
+    contextLines.push(`Species: ${species}`);
+  }
+  if (description && description !== presentingComplaint) {
+    contextLines.push(`Case summary: ${description}`);
+  }
+  if (contextLines.length === 0) {
+    contextLines.push(`Case context: ${title}`);
+  }
+  contextLines.push(
+    [
+      "Use these instructions to report the completed exam:",
+      "- Provide exact vital signs (temperature, heart rate, respiratory rate, perfusion measures) as recorded.",
+      "- List every abnormal finding that aligns with this scenario—lymph node enlargement, discharges, pain responses, hydration, gastrointestinal changes, or other pertinent systems.",
+      "- Mark a system as normal only when the case details support it; otherwise supply physiologically plausible abnormal measurements consistent with this context."
+    ].join("\n")
+  );
+
+  return contextLines.join("\n");
+};
+
 const baseOverallFeedbackInstructions = `You are a senior veterinary OSCE examiner. Review the conversation transcript and deliver a candid, evidence-based performance evaluation.
 
 Rules:
@@ -143,7 +191,7 @@ Stay true to the owner personality, collaborate willingly, and avoid offering di
     const findings = getText(
       caseRow,
       "physical_exam_findings",
-      "Physical examination was within normal limits."
+      buildPhysicalExamFallback(caseRow)
     );
     return `You are a veterinary nurse/technician and the physical examination has already been completed. Your only job is to report the recorded results that match what the student is asking about.\n\nCompleted examination record:\n${findings}\n\nRules:\n- Do not describe how to examine or suggest next steps.\n- Before you answer, scan the entire record above. When the student mentions a body system, structure, or symptom, quote every relevant recorded finding verbatim (include the exact measurements or descriptive qualifiers). Never summarise as "within normal limits" when any abnormal data are documented for that body system.\n- Always include the pertinent vital signs when the question relates to a system that relies on them (e.g., respiratory system questions should report respiratory rate and any fever).\n- If the chart lacks data for the requested item, provide a concise finding that would reasonably appear for this species and case. Base the value on the condition described in the case record, keep it physiologically plausible, and state it as part of the exam results without mentioning the absence of charted data.\n- Present the answer as a short, scannable list so the measurements stand out.\n\nStudent request: ${studentQuestion}`;
   },
