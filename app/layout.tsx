@@ -4,6 +4,7 @@ import "./globals.css";
 import { AuthProvider } from "@/features/auth/services/authService";
 import { ProtectedRoute } from "@/features/auth/components/protected-route";
 import { Navbar } from "@/features/navigation/components/navbar";
+import { AudioSettingsProvider } from "@/features/speech/context/audio-settings";
 
 const geistSans = GeistSans;
 
@@ -19,24 +20,29 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const authProtectionEnabled =
+    process.env.NEXT_PUBLIC_ENABLE_AUTH_PROTECTION === "true";
+
   return (
     <html lang="en">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <AuthProvider>
-          {process.env.NEXT_PUBLIC_ENABLE_AUTH_PROTECTION === "true" ? (
-            <ProtectedRoute>
-              <Navbar />
-              <main>{children}</main>
-            </ProtectedRoute>
-          ) : (
-            <>
-              <Navbar />
-              <main>{children}</main>
-            </>
-          )}
-        </AuthProvider>
+        <AudioSettingsProvider>
+          <AuthProvider>
+            {authProtectionEnabled ? (
+              <ProtectedRoute>
+                <Navbar />
+                <main>{children}</main>
+              </ProtectedRoute>
+            ) : (
+              <>
+                <Navbar />
+                <main>{children}</main>
+              </>
+            )}
+          </AuthProvider>
+        </AudioSettingsProvider>
       </body>
     </html>
   );

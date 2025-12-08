@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { startListening, stopListening } from "../services/sttService";
+import { useAudioSettings } from "@/features/speech/context/audio-settings";
 
 /**
  * Simple hook for speech-to-text functionality
@@ -8,6 +9,10 @@ export function useSTT(onFinal?: (text: string) => void, debounceMs = 700) {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
+  const {
+    requestInputStream,
+    releaseInputStream,
+  } = useAudioSettings();
 
   // Buffer for final chunks and debounce timer to merge nearby final events
   const pendingFinalRef = useRef<string>("");
@@ -65,15 +70,24 @@ export function useSTT(onFinal?: (text: string) => void, debounceMs = 700) {
   );
 
   // Start speech recognition
-  const start = useCallback(() => {
+  const start = useCallback(async () => {
+    try {
+      await requestInputStream();
+    } catch (err) {
+      console.warn("Microphone stream unavailable", err);
+    }
     try {
       const ok = startListening(handleResult);
       setIsListening(Boolean(ok));
+      if (!ok) {
+        releaseInputStream();
+      }
     } catch (e) {
       console.error("startListening failed:", e);
       setIsListening(false);
+      releaseInputStream();
     }
-  }, [handleResult]);
+  }, [handleResult, releaseInputStream, requestInputStream]);
 
   // Stop speech recognition
   const stop = useCallback(() => {
@@ -94,7 +108,8 @@ export function useSTT(onFinal?: (text: string) => void, debounceMs = 700) {
     } catch (e) {
       console.error("flush on stop failed", e);
     }
-  }, []);
+    releaseInputStream();
+  }, [releaseInputStream]);
 
   // Reset transcript
   const reset = useCallback(() => {
@@ -106,8 +121,9 @@ export function useSTT(onFinal?: (text: string) => void, debounceMs = 700) {
   useEffect(() => {
     return () => {
       stopListening();
+      releaseInputStream();
     };
-  }, []);
+  }, [releaseInputStream]);
 
   return {
     start,

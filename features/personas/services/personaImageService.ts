@@ -19,7 +19,6 @@ function shouldFallbackToDalle3(error: unknown): boolean {
 import { Buffer } from "buffer";
 import type OpenAi from "openai";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { normalizeRoleKey } from "@/features/avatar/utils/role-utils";
 import type {
   PersonaIdentity,
   PersonaSex,
@@ -458,18 +457,30 @@ export function resolvePersonaRoleKey(
   if (!source) return null;
   const lower = source.toLowerCase();
 
-  if (lower.includes("owner") || lower.includes("client")) return "owner";
-  if (lower.includes("lab") || lower.includes("technician"))
-    return "lab-technician";
-  if (lower.includes("nurse")) return "veterinary-nurse";
-  if (lower.includes("producer") || lower.includes("farmer")) return "producer";
-  if (lower.includes("assistant")) return "veterinary-assistant";
-  if (lower.includes("professor") || lower.includes("faculty")) return "professor";
-  if (lower.includes("mentor")) return "professor";
-  if (lower.includes("veterinarian") || lower.includes("vet"))
-    return "veterinarian";
+  if (
+    lower.includes("owner") ||
+    lower.includes("client") ||
+    lower.includes("farmer")
+  ) {
+    return "owner";
+  }
 
-  return normalizeRoleKey(source);
+  if (
+    lower.includes("nurse") ||
+    lower.includes("lab") ||
+    lower.includes("technician") ||
+    lower.includes("assistant") ||
+    lower.includes("veterinarian") ||
+    lower.includes("vet") ||
+    lower.includes("doctor") ||
+    lower.includes("professor") ||
+    lower.includes("mentor") ||
+    lower.includes("producer")
+  ) {
+    return "nurse";
+  }
+
+  return "owner";
 }
 
 type PersonaSummaryRow = {
@@ -484,18 +495,8 @@ function buildFallbackPrompt(roleKey: string, label?: string | null): string | n
   const prompts: Record<string, string> = {
     owner:
       "Photorealistic portrait of a caring animal owner standing beside a stable gate, natural warm lighting, shallow depth of field, expressive eyes, professional color grading.",
-    "lab-technician":
-      "Photorealistic portrait of a veterinary laboratory technician in a diagnostics lab, cool ambient lighting, microscopes blurred in background, clean lab coat, cinematic realism.",
-    veterinarian:
-      "Photorealistic portrait of a calm veterinarian in a clinic exam room, stethoscope in hand, balanced soft lighting, confident yet approachable expression, high detail.",
-    "veterinary-nurse":
-      "Photorealistic portrait of a veterinary nurse in scrubs within a treatment area, gentle smile, caring demeanor, diffused daylight, cinematic depth.",
-    producer:
-      "Photorealistic portrait of a dairy producer on a modern farm lane, warm sunrise lighting, barn silhouettes in soft focus, practical workwear, grounded realism.",
-    "veterinary-assistant":
-      "Photorealistic portrait of a veterinary assistant in a hospital prep room, clipboard in hand, neutral lighting with soft highlights, supportive expression, realistic detail.",
-    professor:
-      "Photorealistic portrait of a veterinary professor inside a lecture hall, warm overhead lighting, shelves of clinical texts blurred behind, thoughtful expression, cinematic clarity.",
+    nurse:
+      "Photorealistic portrait of a veterinary nurse in clinic scrubs, gentle but confident expression, treatment area softly blurred in background, balanced daylight, cinematic realism.",
   };
 
   if (prompts[roleKey]) {
@@ -671,7 +672,7 @@ export async function getOrGeneratePersonaPortrait({
   const roleKey = resolvePersonaRoleKey(stageRole, displayRole);
   if (!roleKey) return {};
 
-  if (roleKey !== "owner") {
+  if (roleKey !== "owner" && roleKey !== "nurse") {
     return await getGlobalPersonaPortrait({
       supabase,
       openai,
@@ -792,8 +793,10 @@ export async function getOrGeneratePersonaPortrait({
     }
 
     const buffer = Buffer.from(b64, "base64");
-  const fileName = sharedPersonaKey ? `${sharedPersonaKey}.png` : `${roleKey}-${Date.now()}.png`;
-  const storagePath = sharedPersonaKey ? `shared/${fileName}` : `${caseId}/${fileName}`;
+    const fileName = sharedPersonaKey
+      ? `${sharedPersonaKey}.png`
+      : `${roleKey}-${Date.now()}.png`;
+    const storagePath = sharedPersonaKey ? `shared/${fileName}` : `${caseId}/${fileName}`;
     const arrayBuffer = buffer.buffer.slice(
       buffer.byteOffset,
       buffer.byteOffset + buffer.byteLength

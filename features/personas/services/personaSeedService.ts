@@ -1,4 +1,5 @@
 import type {
+  PersonaBehaviorTemplateOverrides,
   PersonaSeed,
   PersonaSeedContext,
 } from "@/features/personas/models/persona";
@@ -7,6 +8,12 @@ import {
   personaTemplates,
 } from "@/features/personas/data/persona-templates";
 import { resolvePersonaIdentity } from "@/features/personas/services/personaIdentityService";
+import {
+  DEFAULT_NURSE_AVATAR_ID,
+  DEFAULT_OWNER_AVATAR_ID,
+  getNurseAvatarById,
+  getOwnerAvatarById,
+} from "@/features/personas/data/avatar-profiles";
 
 const HORSE_NAME_REGEX = /horse\s*:\s*([^\n]+)/i;
 const ROLE_REGEX = /role\s*:\s*([^\n]+)/i;
@@ -28,9 +35,9 @@ const FALLBACK_OWNER_SURNAMES = [
 
 export const SHARED_CASE_ID = "__global__";
 export const SHARED_PERSONA_KEYS = getDefaultPersonaKeys().filter(
-  (key) => key !== "owner"
+  (key) => key !== "owner" && key !== "nurse"
 );
-const SHARED_CONTEXT: PersonaSeedContext = {
+const SHARED_CONTEXT_BASE: PersonaSeedContext = {
   caseId: SHARED_CASE_ID,
   title: "Shared Persona Template",
   species: "Horse",
@@ -39,9 +46,13 @@ const SHARED_CONTEXT: PersonaSeedContext = {
   ownerSetting: "the equine facility",
   caseDifficulty: "Medium",
   ownerName: undefined,
+  ownerPersonalityDescription: "calm, cooperative caretaker",
+  nursePersonalityDescription: "methodical veterinary nurse focused on documentation",
 };
 
-export function buildSharedPersonaSeeds(): PersonaSeed[] {
+export function buildSharedPersonaSeeds(
+  overrides?: PersonaBehaviorTemplateOverrides
+): PersonaSeed[] {
   const seeds: PersonaSeed[] = [];
 
   for (const roleKey of SHARED_PERSONA_KEYS) {
@@ -49,9 +60,18 @@ export function buildSharedPersonaSeeds(): PersonaSeed[] {
     if (!template) continue;
 
     const identityContext: PersonaSeedContext = {
-      ...SHARED_CONTEXT,
+      ...SHARED_CONTEXT_BASE,
+      templateOverrides: overrides,
       sharedPersonaKey: roleKey,
+      ownerAvatarKey: DEFAULT_OWNER_AVATAR_ID,
+      nurseAvatarKey: DEFAULT_NURSE_AVATAR_ID,
     };
+    const ownerAvatar = getOwnerAvatarById(identityContext.ownerAvatarKey);
+    const nurseAvatar = getNurseAvatarById(identityContext.nurseAvatarKey);
+    identityContext.ownerPersonalityDescription =
+      ownerAvatar?.personality ?? identityContext.ownerPersonalityDescription;
+    identityContext.nursePersonalityDescription =
+      nurseAvatar?.personality ?? identityContext.nursePersonalityDescription;
 
     const identity = resolvePersonaIdentity(
       SHARED_CASE_ID,
@@ -67,6 +87,24 @@ export function buildSharedPersonaSeeds(): PersonaSeed[] {
       sharedPersonaKey: roleKey,
     };
 
+    if (roleKey === "nurse") {
+      const nurseAvatar = getNurseAvatarById(identityContext.nurseAvatarKey);
+      if (nurseAvatar) {
+        metadata.avatarKey = nurseAvatar.id;
+        metadata.imageUrl = nurseAvatar.imageUrl;
+        metadata.personality = nurseAvatar.personality;
+      }
+    }
+
+    if (roleKey === "owner") {
+      const ownerAvatar = getOwnerAvatarById(identityContext.ownerAvatarKey);
+      if (ownerAvatar) {
+        metadata.avatarKey = ownerAvatar.id;
+        metadata.imageUrl = ownerAvatar.imageUrl;
+        metadata.personality = ownerAvatar.personality;
+      }
+    }
+
     seeds.push({
       ...seed,
       metadata,
@@ -79,9 +117,16 @@ export function buildSharedPersonaSeeds(): PersonaSeed[] {
 
 export function buildPersonaSeeds(
   caseId: string,
-  caseBody: Record<string, unknown>
+  caseBody: Record<string, unknown>,
+  overrides?: PersonaBehaviorTemplateOverrides
 ): PersonaSeed[] {
-  const context = buildSeedContext(caseId, caseBody);
+  const baseContext = buildSeedContext(caseId, caseBody);
+  const context: PersonaSeedContext = {
+    ...baseContext,
+    templateOverrides: overrides,
+  };
+  const ownerAvatar = getOwnerAvatarById(context.ownerAvatarKey);
+  const nurseAvatar = getNurseAvatarById(context.nurseAvatarKey);
   const keys = getDefaultPersonaKeys();
 
   const seeds: PersonaSeed[] = [];
@@ -89,10 +134,8 @@ export function buildPersonaSeeds(
   keys.forEach((key) => {
     const template = personaTemplates[key];
     if (!template) return;
-    const sharedPersonaKey = key === "owner" ? undefined : undefined;
     const identityContext: PersonaSeedContext = {
       ...context,
-      sharedPersonaKey,
     };
     const identity = resolvePersonaIdentity(caseId, key, identityContext);
     const seed = template(identityContext, identity);
@@ -102,10 +145,19 @@ export function buildPersonaSeeds(
       sex: identity.sex,
       voiceId: identity.voiceId,
     };
+    if (key === "owner" && ownerAvatar) {
+      mergedMetadata.avatarKey = ownerAvatar.id;
+      mergedMetadata.imageUrl = ownerAvatar.imageUrl;
+      mergedMetadata.personality = ownerAvatar.personality;
+    }
+    if (key === "nurse" && nurseAvatar) {
+      mergedMetadata.avatarKey = nurseAvatar.id;
+      mergedMetadata.imageUrl = nurseAvatar.imageUrl;
+      mergedMetadata.personality = nurseAvatar.personality;
+    }
     seeds.push({
       ...seed,
       metadata: mergedMetadata,
-      sharedPersonaKey,
     });
   });
 
@@ -120,11 +172,23 @@ function buildSeedContext(
   const species = safeString(caseBody["species"], "Horse");
   const ownerBackground = safeString(caseBody["owner_background"], "");
   const difficulty = safeString(caseBody["difficulty"], "Medium");
+  const ownerAvatarKey = extractAvatarKey(
+    caseBody["owner_avatar_key"],
+    DEFAULT_OWNER_AVATAR_ID
+  );
+  const nurseAvatarKey = extractAvatarKey(
+    caseBody["nurse_avatar_key"],
+    DEFAULT_NURSE_AVATAR_ID
+  );
+  const ownerAvatar = getOwnerAvatarById(ownerAvatarKey);
+  const nurseAvatar = getNurseAvatarById(nurseAvatarKey);
 
   const patientName = derivePatientName(title, ownerBackground);
   const ownerRoleDescription = deriveOwnerRole(ownerBackground);
   const ownerSetting = deriveOwnerSetting(ownerBackground);
-  const ownerName = deriveOwnerName(caseBody, ownerBackground, caseId);
+  const ownerName = ownerAvatar?.displayName;
+  const ownerPersonalityDescription = ownerAvatar?.personality;
+  const nursePersonalityDescription = nurseAvatar?.personality;
 
   return {
     caseId,
@@ -135,7 +199,18 @@ function buildSeedContext(
     ownerSetting,
     caseDifficulty: difficulty,
     ownerName,
+    ownerAvatarKey,
+    nurseAvatarKey,
+    ownerPersonalityDescription,
+    nursePersonalityDescription,
   };
+}
+
+function extractAvatarKey(raw: unknown, fallback: string): string {
+  if (typeof raw === "string" && raw.trim()) {
+    return raw.trim();
+  }
+  return fallback;
 }
 
 function safeString(value: unknown, fallback: string): string {

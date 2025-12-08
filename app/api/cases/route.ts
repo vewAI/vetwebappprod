@@ -9,12 +9,18 @@ import {
   type CaseMediaItem,
 } from "@/features/cases/models/caseMedia";
 import {
+  normalizeCaseTimepointsInput,
+  mapDbTimepoints,
+  type CaseTimepoint,
+} from "@/features/cases/models/caseTimepoint";
+import {
   applyCaseDefaults,
   enrichCaseWithModel,
   mergeAugmentedFields,
   scrubConflictingSpeciesStrings,
 } from "@/features/cases/services/caseCompletion";
-import { requireUser } from "@/app/api/_lib/auth";
+import { replaceCaseTimepoints } from "@/features/cases/services/caseTimepointPersistence";
+import { requireAdmin } from "@/app/api/_lib/auth";
 
 const openai = new OpenAi({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -34,8 +40,15 @@ function normalizeIncomingMedia(raw: unknown): CaseMediaItem[] {
     } satisfies CaseMediaItem;
   });
 }
+
+function extractPersonaKey(raw: unknown): string | null {
+  if (typeof raw === "string" && raw.trim()) {
+    return raw.trim();
+  }
+  return null;
+}
 export async function GET(req: Request) {
-  const auth = await requireUser(req, { requireAdmin: true });
+  const auth = await requireAdmin(req);
   if ("error" in auth) {
     return auth.error;
   }
@@ -44,11 +57,54 @@ export async function GET(req: Request) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  return NextResponse.json(data);
+
+  const caseRows = Array.isArray(data) ? data : [];
+  const caseIds = caseRows
+    .map((row) => (typeof row?.id === "string" ? row.id : null))
+    .filter((value): value is string => Boolean(value));
+
+  const timepointsByCase: Record<string, CaseTimepoint[]> = {};
+  if (caseIds.length > 0) {
+    const { data: timepointRows, error: timepointError } = await supabase
+      .from("case_timepoints")
+      .select("*")
+      .in("case_id", caseIds)
+      .order("sequence", { ascending: true });
+
+    if (timepointError) {
+      return NextResponse.json(
+        { error: timepointError.message },
+        { status: 500 }
+      );
+    }
+
+    if (Array.isArray(timepointRows) && timepointRows.length > 0) {
+      const normalized = mapDbTimepoints(timepointRows);
+      for (const timepoint of normalized) {
+        const caseId = timepoint.caseId;
+        if (!caseId) continue;
+        if (!timepointsByCase[caseId]) {
+          timepointsByCase[caseId] = [];
+        }
+        timepointsByCase[caseId] = [
+          ...timepointsByCase[caseId],
+          timepoint,
+        ].sort((a, b) => a.sequence - b.sequence);
+      }
+    }
+  }
+
+  const enriched = caseRows.map((row) => {
+    const caseId = typeof row?.id === "string" ? row.id : null;
+    const timepoints = caseId ? timepointsByCase[caseId] ?? [] : [];
+    return { ...row, timepoints };
+  });
+
+  return NextResponse.json(enriched);
 }
 
 export async function POST(req: Request) {
-  const auth = await requireUser(req, { requireAdmin: true });
+  const auth = await requireAdmin(req);
   if ("error" in auth) {
     return auth.error;
   }
@@ -130,6 +186,17 @@ export async function POST(req: Request) {
       body["media"] = [];
     }
 
+    const hasTimepointPayload = Object.prototype.hasOwnProperty.call(
+      body,
+      "timepoints"
+    );
+    const caseTimepointsInput = hasTimepointPayload
+      ? normalizeCaseTimepointsInput(body["timepoints"])
+      : [];
+    if (hasTimepointPayload) {
+      delete body["timepoints"];
+    }
+
     // Validate required fields (customize as needed)
     // If no id provided, generate one from title or uuid so the UI doesn't have to supply it.
     if (!body["title"] || String(body["title"]).trim() === "") {
@@ -147,12 +214,33 @@ export async function POST(req: Request) {
       body["id"] = `${slug}-${suffix}`;
     }
 
+    const ownerAvatarKey = extractPersonaKey(body["owner_avatar_key"]);
+    if (!ownerAvatarKey) {
+      return NextResponse.json(
+        { error: "owner_avatar_key is required" },
+        { status: 400 }
+      );
+    }
+    body["owner_avatar_key"] = ownerAvatarKey;
+
+    const nurseAvatarKey = extractPersonaKey(body["nurse_avatar_key"]);
+    if (!nurseAvatarKey) {
+      return NextResponse.json(
+        { error: "nurse_avatar_key is required" },
+        { status: 400 }
+      );
+    }
+    body["nurse_avatar_key"] = nurseAvatarKey;
+
     // Save a checkpoint of the raw incoming payload before any augmentation.
     try {
+      const checkpointPayload = hasTimepointPayload
+        ? { ...body, timepoints: caseTimepointsInput }
+        : { ...body };
       await supabase.from("case_checkpoints").insert([
         {
           case_id: body["id"] ?? null,
-          payload: body,
+          payload: checkpointPayload,
           created_at: new Date().toISOString(),
         },
       ]);
@@ -190,7 +278,31 @@ export async function POST(req: Request) {
     }
     const insertedCase = Array.isArray(data) ? data[0] : data;
 
+    let persistedTimepoints: CaseTimepoint[] = [];
     if (insertedCase?.id) {
+      if (hasTimepointPayload) {
+        const { data: timepointData, error: timepointError } =
+          await replaceCaseTimepoints(
+            supabase,
+            insertedCase.id,
+            caseTimepointsInput
+          );
+        if (timepointError) {
+          // Attempt to roll back the inserted case to keep data consistent.
+          try {
+            await supabase.from("cases").delete().eq("id", insertedCase.id);
+          } catch (rollbackErr) {
+            console.warn("Failed to rollback case after timepoint error", rollbackErr);
+          }
+          return NextResponse.json(
+            {
+              error: `Failed to save timepoints: ${timepointError.message}`,
+            },
+            { status: 500 }
+          );
+        }
+        persistedTimepoints = timepointData;
+      }
       await ensureCasePersonas(supabase, insertedCase.id, body);
       scheduleCasePersonaPortraitGeneration(supabase, openai, insertedCase.id);
       scheduleCaseImageGeneration(
@@ -200,7 +312,10 @@ export async function POST(req: Request) {
         { force: !insertedCase?.image_url }
       );
     }
-    return NextResponse.json({ success: true, data });
+    const responsePayload = hasTimepointPayload
+      ? { success: true, data, timepoints: persistedTimepoints }
+      : { success: true, data };
+    return NextResponse.json(responsePayload);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
@@ -212,7 +327,7 @@ export async function POST(req: Request) {
 
 // Allow updating an existing case via PUT
 export async function PUT(req: Request) {
-  const auth = await requireUser(req, { requireAdmin: true });
+  const auth = await requireAdmin(req);
   if ("error" in auth) {
     return auth.error;
   }
@@ -224,6 +339,35 @@ export async function PUT(req: Request) {
         { error: "id is required for update" },
         { status: 400 }
       );
+    }
+
+    const ownerAvatarKey = extractPersonaKey(body.owner_avatar_key);
+    if (!ownerAvatarKey) {
+      return NextResponse.json(
+        { error: "owner_avatar_key is required" },
+        { status: 400 }
+      );
+    }
+    body.owner_avatar_key = ownerAvatarKey;
+
+    const nurseAvatarKey = extractPersonaKey(body.nurse_avatar_key);
+    if (!nurseAvatarKey) {
+      return NextResponse.json(
+        { error: "nurse_avatar_key is required" },
+        { status: 400 }
+      );
+    }
+    body.nurse_avatar_key = nurseAvatarKey;
+
+    const hasTimepointPayload = Object.prototype.hasOwnProperty.call(
+      body,
+      "timepoints"
+    );
+    const caseTimepointsInput = hasTimepointPayload
+      ? normalizeCaseTimepointsInput(body.timepoints)
+      : null;
+    if (hasTimepointPayload) {
+      delete body.timepoints;
     }
 
     // Convert estimated_time to number if present
@@ -264,6 +408,21 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    let persistedTimepoints: CaseTimepoint[] | null = null;
+    if (data?.id && hasTimepointPayload) {
+      const { data: timepointData, error: timepointError } =
+        await replaceCaseTimepoints(supabase, data.id, caseTimepointsInput ?? []);
+      if (timepointError) {
+        return NextResponse.json(
+          {
+            error: `Failed to save timepoints: ${timepointError.message}`,
+          },
+          { status: 500 }
+        );
+      }
+      persistedTimepoints = timepointData;
+    }
+
     if (data?.id) {
       await ensureCasePersonas(supabase, data.id, body);
       scheduleCasePersonaPortraitGeneration(supabase, openai, data.id);
@@ -275,7 +434,11 @@ export async function PUT(req: Request) {
       );
     }
 
-    return NextResponse.json({ success: true, data });
+    const responsePayload =
+      hasTimepointPayload && persistedTimepoints !== null
+        ? { success: true, data, timepoints: persistedTimepoints }
+        : { success: true, data };
+    return NextResponse.json(responsePayload);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
@@ -287,7 +450,7 @@ export async function PUT(req: Request) {
 
 // Delete a case by id (query param ?id=...)
 export async function DELETE(req: Request) {
-  const auth = await requireUser(req, { requireAdmin: true });
+  const auth = await requireAdmin(req);
   if ("error" in auth) {
     return auth.error;
   }

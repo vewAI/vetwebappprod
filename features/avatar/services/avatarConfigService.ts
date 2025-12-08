@@ -107,8 +107,8 @@ function createFallbackProfiles(caseId?: string): AvatarProfile[] {
       fallback: true,
     },
     {
-      roleKey: "lab-tech",
-      displayName: "Lab Technician",
+      roleKey: "nurse",
+      displayName: "Veterinary Nurse",
       avatarType: "svg",
       primaryColor: pickColor(seed + 2),
       fallback: true,

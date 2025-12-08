@@ -1,6 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PersonaSeed } from "@/features/personas/models/persona";
 import { buildSharedPersonaSeeds } from "@/features/personas/services/personaSeedService";
+import {
+  getDefaultPersonaTemplateOverrides,
+  loadPersonaTemplateOverrides,
+} from "@/features/personas/services/personaTemplateOverrides";
 
 export type GlobalPersonaRow = {
   id?: string;
@@ -20,7 +24,14 @@ const MANUAL_FLAG = "manual";
 export async function ensureSharedPersonas(
   supabase: SupabaseClient
 ): Promise<void> {
-  const seeds = buildSharedPersonaSeeds();
+  let overrides = getDefaultPersonaTemplateOverrides();
+  try {
+    overrides = await loadPersonaTemplateOverrides(supabase);
+  } catch (error) {
+    console.warn("Failed to load persona template overrides; falling back to defaults", error);
+  }
+
+  const seeds = buildSharedPersonaSeeds(overrides);
   for (const seed of seeds) {
     await ensureSharedPersona(supabase, seed);
   }

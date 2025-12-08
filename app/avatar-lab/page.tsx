@@ -26,12 +26,7 @@ const CASE_PRESETS = [
   "acute-non-painful-crackly-swelling-under-the-skin-06dfada8",
 ];
 
-const ROLE_PRESETS = [
-  "Virtual Assistant",
-  "Client (Horse Owner)",
-  "Laboratory Technician",
-  "Veterinarian",
-];
+const ROLE_PRESETS = ["Virtual Assistant", "Owner", "Nurse"];
 
 const DEFAULT_SCRIPT =
   "Hi Doc, I'm here as your sandbox assistant. Use the controls to try different roles and cases.";

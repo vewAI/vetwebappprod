@@ -10,14 +10,19 @@ import React, {
 import { User, Session } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import {
+  ensureUserRole,
+  type UserRole,
+} from "@/lib/user-roles";
 
 // Define the shape of our auth context
 type AuthContextType = {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  role: string | null;
+  role: UserRole | null;
   isAdmin: boolean;
+  isProfessor: boolean;
   profileLoading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -30,6 +35,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   role: null,
   isAdmin: false,
+  isProfessor: false,
   profileLoading: false,
   signIn: async () => {},
   signOut: async () => {},
@@ -39,7 +45,7 @@ const AuthContext = createContext<AuthContextType>({
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const [role, setRole] = useState<string | null>(null);
+  const [role, setRole] = useState<UserRole | null>(null);
   const [profileLoading, setProfileLoading] = useState<boolean>(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const router = useRouter();
@@ -123,7 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         const json = await res.json();
         const profile = json?.profile ?? null;
-        setRole(profile?.role ?? null);
+        setRole(ensureUserRole(profile?.role));
         setProfileLoading(false);
       } catch (err) {
         console.error(
@@ -182,6 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         role,
         isAdmin: role === "admin",
+        isProfessor: role === "professor",
         profileLoading,
         signIn,
         signOut,

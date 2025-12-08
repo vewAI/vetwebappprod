@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 // ImageUploader intentionally not used here to allow manual image_url input in edit mode.
@@ -13,10 +13,20 @@ import {
 import { isCaseFieldAutomatable } from "@/features/prompts/services/casePromptAutomation";
 import { useAuth } from "@/features/auth/services/authService";
 import { CaseMediaEditor } from "@/features/cases/components/case-media-editor";
+import { CaseTimepointsEditor } from "@/features/cases/components/case-timepoints-editor";
 import {
   normalizeCaseMedia,
   type CaseMediaItem,
 } from "@/features/cases/models/caseMedia";
+import {
+  normalizeCaseTimepointsInput,
+  type CaseTimepointInput,
+} from "@/features/cases/models/caseTimepoint";
+import { caseConfig } from "@/features/config/case-config";
+import {
+  OWNER_AVATARS,
+  NURSE_AVATARS,
+} from "@/features/personas/data/avatar-profiles";
 
 type CaseRecord = Record<string, unknown>;
 
@@ -77,6 +87,11 @@ export default function CaseViewerPage() {
     >
   >({});
   const [mediaDraft, setMediaDraft] = useState<CaseMediaItem[]>([]);
+  const [timepointsDraft, setTimepointsDraft] = useState<
+    CaseTimepointInput[]
+  >([]);
+  const [formError, setFormError] = useState<string | null>(null);
+  const casesRef = useRef<CaseRecord[]>([]);
 
   const parseMedia = useCallback((raw: unknown): CaseMediaItem[] => {
     if (typeof raw === "string") {
@@ -90,18 +105,30 @@ export default function CaseViewerPage() {
     return normalizeCaseMedia(raw);
   }, []);
 
+  const parseTimepoints = useCallback(
+    (raw: unknown): CaseTimepointInput[] => {
+      return normalizeCaseTimepointsInput(raw);
+    },
+    []
+  );
+
   const loadCaseIntoForm = useCallback(
     (record: CaseRecord | null) => {
       if (!record) {
         setFormState(null);
         setMediaDraft([]);
+        setTimepointsDraft([]);
         return;
       }
       const media = parseMedia((record as Record<string, unknown>)["media"]);
-      setFormState({ ...record, media });
+      const timepoints = parseTimepoints(
+        (record as Record<string, unknown>)["timepoints"]
+      );
+      setFormState({ ...record, media, timepoints });
       setMediaDraft(media);
+      setTimepointsDraft(timepoints);
     },
-    [parseMedia]
+    [parseMedia, parseTimepoints]
   );
 
   const handleMediaChange = useCallback(
@@ -112,13 +139,38 @@ export default function CaseViewerPage() {
     []
   );
 
+  const handleTimepointsChange = useCallback(
+    (items: CaseTimepointInput[]) => {
+      setTimepointsDraft(items);
+      setFormState((prev) => (prev ? { ...prev, timepoints: items } : prev));
+    },
+    []
+  );
+
   const loadPersonas = useCallback(
-    async (caseId: string) => {
+    async (caseId: string, caseRecord?: CaseRecord | null) => {
       if (!authHeaders) {
         setPersonas([]);
         setPersonasError("You must be signed in to load personas.");
         return;
       }
+
+      const resolvedCase: CaseRecord | null =
+        caseRecord ??
+        casesRef.current.find((item) => {
+          const rawId = item?.["id"];
+          return typeof rawId === "string" && rawId.trim() === caseId;
+        }) ??
+        null;
+
+      const ownerAvatarKey =
+        resolvedCase && typeof resolvedCase["owner_avatar_key"] === "string"
+          ? resolvedCase["owner_avatar_key"]?.trim()
+          : "";
+      const nurseAvatarKey =
+        resolvedCase && typeof resolvedCase["nurse_avatar_key"] === "string"
+          ? resolvedCase["nurse_avatar_key"]?.trim()
+          : "";
 
       try {
         setPersonasLoading(true);
@@ -129,25 +181,73 @@ export default function CaseViewerPage() {
         });
         const data = resp.data as { personas?: PersonaRow[] };
         const list = Array.isArray(data?.personas) ? data.personas ?? [] : [];
-        const ownerRows = list.filter((row) => row.role_key === "owner");
+        const filtered = list.filter((row) =>
+          row?.role_key === "owner" || row?.role_key === "nurse"
+        );
 
-        let combined = [...ownerRows];
-        try {
-          const sharedResp = await axios.get("/api/global-personas", {
-            headers: authHeaders,
-          });
-          const shared = sharedResp.data as { personas?: PersonaRow[] };
-          if (Array.isArray(shared?.personas)) {
-            combined = combined.concat(shared.personas);
+        const byRole = new Map<string, PersonaRow>();
+        filtered.forEach((row) => {
+          if (row?.role_key) {
+            byRole.set(row.role_key, row);
           }
-        } catch (sharedErr) {
-          console.warn(
-            "Failed to load shared personas in case viewer",
-            sharedErr
+        });
+
+        const selected: PersonaRow[] = [];
+        if (ownerAvatarKey || byRole.has("owner")) {
+          const avatar = OWNER_AVATARS.find(
+            (candidate) => candidate.id === ownerAvatarKey
           );
+          const ownerPersona =
+            byRole.get("owner") ??
+            (avatar
+              ? ({
+                  id: `owner-fallback-${avatar.id}`,
+                  case_id: caseId,
+                  role_key: "owner",
+                  display_name: avatar.displayName,
+                  status: "not-generated",
+                  image_url: avatar.imageUrl,
+                  prompt: null,
+                  metadata: {
+                    avatarKey: avatar.id,
+                    source: "avatar",
+                    personality: avatar.personality,
+                  } satisfies Record<string, unknown>,
+                } satisfies PersonaRow)
+              : null);
+          if (ownerPersona) {
+            selected.push(ownerPersona);
+          }
         }
 
-        setPersonas(combined);
+        if (nurseAvatarKey || byRole.has("nurse")) {
+          const avatar = NURSE_AVATARS.find(
+            (candidate) => candidate.id === nurseAvatarKey
+          );
+          const nursePersona =
+            byRole.get("nurse") ??
+            (avatar
+              ? ({
+                  id: `nurse-fallback-${avatar.id}`,
+                  case_id: caseId,
+                  role_key: "nurse",
+                  display_name: avatar.displayName,
+                  status: "not-generated",
+                  image_url: avatar.imageUrl,
+                  prompt: null,
+                  metadata: {
+                    avatarKey: avatar.id,
+                    source: "avatar",
+                    personality: avatar.personality,
+                  } satisfies Record<string, unknown>,
+                } satisfies PersonaRow)
+              : null);
+          if (nursePersona) {
+            selected.push(nursePersona);
+          }
+        }
+
+        setPersonas(selected);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         setPersonasError(`Failed to load personas: ${message}`);
@@ -160,9 +260,14 @@ export default function CaseViewerPage() {
   );
 
   useEffect(() => {
+    casesRef.current = cases;
+  }, [cases]);
+
+  useEffect(() => {
     async function fetchCases() {
       if (!authHeaders) {
         setCases([]);
+        casesRef.current = [];
         setFormState(null);
         setError("You must be signed in to view cases.");
         setLoading(false);
@@ -179,13 +284,19 @@ export default function CaseViewerPage() {
         const parsed = Array.isArray(data)
           ? (data as CaseRecord[])
           : ([] as CaseRecord[]);
-        setCases(parsed);
-        if (parsed.length > 0) {
+        const normalizedCases = parsed.map((record) => {
+          const media = parseMedia(record["media"]);
+          const timepoints = parseTimepoints(record["timepoints"]);
+          return { ...record, media, timepoints } as CaseRecord;
+        });
+        setCases(normalizedCases);
+        casesRef.current = normalizedCases;
+        if (normalizedCases.length > 0) {
           setCurrentIndex(0);
-          loadCaseIntoForm(parsed[0]);
-          const firstId = formatValue(parsed[0]["id"]).trim();
+          loadCaseIntoForm(normalizedCases[0]);
+          const firstId = formatValue(normalizedCases[0]["id"]).trim();
           if (firstId) {
-            void loadPersonas(firstId);
+            void loadPersonas(firstId, normalizedCases[0]);
           }
         } else {
           setCurrentIndex(0);
@@ -202,7 +313,14 @@ export default function CaseViewerPage() {
 
     if (authLoading) return;
     void fetchCases();
-  }, [authHeaders, authLoading, loadCaseIntoForm, loadPersonas]);
+  }, [
+    authHeaders,
+    authLoading,
+    loadCaseIntoForm,
+    loadPersonas,
+    parseMedia,
+    parseTimepoints,
+  ]);
 
   useEffect(() => {
     if (!cases.length) {
@@ -214,7 +332,7 @@ export default function CaseViewerPage() {
     loadCaseIntoForm(next ?? null);
     const nextId = next ? formatValue(next["id"]).trim() : "";
     if (nextId) {
-      void loadPersonas(nextId);
+      void loadPersonas(nextId, next ?? null);
     } else {
       setPersonas([]);
     }
@@ -339,6 +457,7 @@ export default function CaseViewerPage() {
               image_url: generatedUrl,
             };
           }
+          casesRef.current = next;
           return next;
         });
         updateAutomationStatus(field, () => ({
@@ -447,6 +566,7 @@ export default function CaseViewerPage() {
           if (current) {
             next[currentIndex] = Object.assign({}, current, snapshot);
           }
+          casesRef.current = next;
           return next;
         });
       }
@@ -579,8 +699,19 @@ export default function CaseViewerPage() {
                 alert("You must be signed in to save cases.");
                 return;
               }
+              const ownerKey = formatValue(formState["owner_avatar_key"]).trim();
+              const nurseKey = formatValue(formState["nurse_avatar_key"]).trim();
+              if (!ownerKey || !nurseKey) {
+                setFormError("Please select both an owner and a nurse before saving.");
+                return;
+              }
+              setFormError(null);
               try {
-                const payload = { ...formState, media: mediaDraft };
+                const payload = {
+                  ...formState,
+                  media: mediaDraft,
+                  timepoints: timepointsDraft,
+                };
                 const resp = await axios.put("/api/cases", payload, {
                   headers: authHeaders,
                 });
@@ -591,17 +722,22 @@ export default function CaseViewerPage() {
                   const normalizedUpdated = {
                     ...updated,
                     media: parseMedia((updated as Record<string, unknown>)["media"]),
+                    timepoints: parseTimepoints(
+                      (respObj["timepoints"] ?? updated["timepoints"]) as unknown
+                    ),
                   } as CaseRecord;
                   const nextCases = [...cases];
                   nextCases[currentIndex] = normalizedUpdated;
                   setCases(nextCases);
+                  casesRef.current = nextCases;
                   loadCaseIntoForm(normalizedUpdated);
                   const updatedId = formatValue(updated["id"]).trim();
                   if (updatedId) {
-                    void loadPersonas(updatedId);
+                    void loadPersonas(updatedId, normalizedUpdated);
                   }
                   setEditable(false);
                   setExpandedField(null);
+                  setFormError(null);
                 }
               } catch (err) {
                 console.error("Error saving case:", err);
@@ -621,6 +757,9 @@ export default function CaseViewerPage() {
             Delete
           </Button>
         </div>
+        {formError ? (
+          <p className="mt-2 text-sm text-red-600">{formError}</p>
+        ) : null}
       </div>
       {formState && caseIdValue && (
         <div className="mb-6">
@@ -632,7 +771,7 @@ export default function CaseViewerPage() {
               onClick={() => {
                 const caseId = caseIdValue;
                 if (caseId) {
-                  void loadPersonas(caseId);
+                  void loadPersonas(caseId, formState);
                 }
               }}
               disabled={personasLoading}
@@ -679,6 +818,9 @@ export default function CaseViewerPage() {
                 const sex = (metadata?.sex ?? identityRaw?.sex) as
                   | string
                   | undefined;
+                const personality = typeof metadata?.personality === "string"
+                  ? metadata.personality
+                  : undefined;
                 return (
                   <div
                     key={persona.id ?? `${persona.case_id ?? ""}-${persona.role_key ?? ""}`}
@@ -716,6 +858,11 @@ export default function CaseViewerPage() {
                         Voice: {voiceId ?? "auto"}
                         {sex ? ` · Sex: ${sex}` : ""}
                       </div>
+                      {personality && (
+                        <div className="text-xs text-muted-foreground">
+                          Personality: {personality}
+                        </div>
+                      )}
                       <div className="text-xs text-muted-foreground">
                         Status: {statusLabel}
                         {updatedAt && (
@@ -756,6 +903,22 @@ export default function CaseViewerPage() {
             const automation = automationState[key];
             const isAutomatable = isCaseFieldAutomatable(key);
             const canAutoGenerate = editable && isAutomatable;
+
+            if (key === "timepoints") {
+              const stageKey = caseIdValue || "case-1";
+              const fallbackStages = caseConfig["case-1"] ?? [];
+              const availableStages =
+                caseConfig[stageKey] ?? fallbackStages;
+              return (
+                <CaseTimepointsEditor
+                  key="timepoints"
+                  value={timepointsDraft}
+                  onChange={handleTimepointsChange}
+                  availableStages={availableStages}
+                  readOnly={!editable}
+                />
+              );
+            }
 
             if (key === "image_url") {
               return (
@@ -859,6 +1022,79 @@ export default function CaseViewerPage() {
                   ) : null}
                   {automation?.message ? (
                     <p className="mt-1 text-sm text-green-600">{automation.message}</p>
+                  ) : null}
+                </div>
+              );
+            }
+
+            if (meta.options) {
+              const formattedValue = formatValue(rawValue);
+              const baseOptions = meta.options;
+              const hasExistingOption = baseOptions.some(
+                (option) => option.value === formattedValue
+              );
+              const extendedOptions = hasExistingOption || formattedValue === ""
+                ? baseOptions
+                : [
+                    ...baseOptions,
+                    {
+                      value: formattedValue,
+                      label: `${formattedValue} (legacy)`,
+                    },
+                  ];
+
+              return (
+                <div key={key}>
+                  <label className="block font-medium mb-1" htmlFor={key}>
+                    {meta.label}
+                  </label>
+                  <div className="flex items-start gap-2">
+                    <select
+                      name={key}
+                      value={formattedValue}
+                      onChange={(e) => updateField(key, e.target.value)}
+                      aria-describedby={helpId}
+                      className={inputFieldClass}
+                      disabled={!editable}
+                    >
+                      <option value="">
+                        {meta.placeholder ?? "Select an option"}
+                      </option>
+                      {extendedOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    {isAutomatable ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => void handleAutoGenerateField(key)}
+                        disabled={!canAutoGenerate || automation?.loading}
+                      >
+                        {automation?.loading ? "Generating..." : "Auto-generate"}
+                      </Button>
+                    ) : null}
+                  </div>
+                  {meta.help && (
+                    <p
+                      id={helpId}
+                      className="mt-1 text-sm text-muted-foreground"
+                    >
+                      {meta.help}
+                    </p>
+                  )}
+                  {automation?.error ? (
+                    <p className="mt-1 text-sm text-red-600">
+                      {automation.error}
+                    </p>
+                  ) : null}
+                  {automation?.message ? (
+                    <p className="mt-1 text-sm text-green-600">
+                      {automation.message}
+                    </p>
                   ) : null}
                 </div>
               );
@@ -1036,6 +1272,7 @@ export default function CaseViewerPage() {
                               (c) => formatValue(c["id"]) !== id
                             );
                             setCases(next);
+                            casesRef.current = next;
                             const newIndex = Math.max(
                               0,
                               Math.min(currentIndex, next.length - 1)

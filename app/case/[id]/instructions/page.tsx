@@ -20,18 +20,29 @@ export default function CaseInstructionsPage() {
   const [attempts, setAttempts] = useState<Attempt[]>([]);
 
   const [caseData, setCaseData] = useState<Case | null>(null);
+  const [caseLoadAttempted, setCaseLoadAttempted] = useState(false);
 
   useEffect(() => {
+    if (!id) return;
+
     async function loadCase() {
-      const result = await fetchCaseById(id);
-      setCaseData(result);
+      try {
+        const result = await fetchCaseById(id);
+        setCaseData(result);
+      } catch (error) {
+        console.error("Failed to load case", error);
+        setCaseData(null);
+      } finally {
+        setCaseLoadAttempted(true);
+      }
     }
+
     loadCase();
   }, [id]);
 
   useEffect(() => {
     const loadAttempts = async () => {
-      if (!user) return;
+      if (!user || !id) return;
 
       setIsLoading(true);
       try {
@@ -48,6 +59,7 @@ export default function CaseInstructionsPage() {
   }, [id, user]);
 
   const handleStartCase = () => {
+    if (!id) return;
     setIsStarting(true);
     // Navigate directly to the case page
     // The case page will create a new attempt if needed
@@ -55,6 +67,17 @@ export default function CaseInstructionsPage() {
   };
 
   if (!caseData) {
+    if (!caseLoadAttempted) {
+      return (
+        <div className="container mx-auto px-4 py-8">
+          <div className="text-center py-12">
+            <Loader2 className="mx-auto mb-4 h-8 w-8 animate-spin text-primary" />
+            <p className="text-lg">Loading case details...</p>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="text-center py-12">

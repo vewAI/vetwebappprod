@@ -42,6 +42,12 @@ export interface PersonaSeed {
   behaviorPrompt: string;
   metadata?: Record<string, unknown>;
   sharedPersonaKey?: string;
+  imageUrl?: string;
+}
+
+export interface PersonaBehaviorTemplateOverrides {
+  ownerBehaviorTemplate?: string;
+  nurseBehaviorTemplate?: string;
 }
 
 export interface PersonaSeedContext {
@@ -54,4 +60,9 @@ export interface PersonaSeedContext {
   caseDifficulty: string;
   ownerName?: string;
   sharedPersonaKey?: string;
+  ownerAvatarKey?: string;
+  nurseAvatarKey?: string;
+  ownerPersonalityDescription?: string;
+  nursePersonalityDescription?: string;
+  templateOverrides?: PersonaBehaviorTemplateOverrides;
 }

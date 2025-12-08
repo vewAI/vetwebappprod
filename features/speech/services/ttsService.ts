@@ -10,6 +10,12 @@ import {
 
 type TtsMeta = Omit<TtsEventDetail, "audio"> | undefined;
 
+type TtsPlaybackOptions = {
+  voice?: string;
+  meta?: TtsMeta;
+  sinkId?: string | null;
+};
+
 type ActivePlaybackHandle = {
   audio: HTMLAudioElement;
   stop: () => void;
@@ -49,8 +55,7 @@ export function stopActiveTtsPlayback() {
  */
 export async function speakRemote(
   text: string,
-  voice?: string,
-  meta?: TtsMeta
+  options?: TtsPlaybackOptions
 ): Promise<HTMLAudioElement> {
   if (!text) throw new Error("text required");
 
@@ -65,7 +70,7 @@ export async function speakRemote(
       { "Content-Type": "application/json" },
       token
     ),
-    body: JSON.stringify({ text, voice }),
+    body: JSON.stringify({ text, voice: options?.voice }),
   });
 
   if (!res.ok) {
@@ -79,9 +84,17 @@ export async function speakRemote(
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
 
+  if (options?.sinkId && typeof (audio as any).setSinkId === "function") {
+    try {
+      await (audio as any).setSinkId(options.sinkId);
+    } catch (err) {
+      console.warn("Unable to route audio to selected output device", err);
+    }
+  }
+
   // Return a promise that resolves when playback ends (or rejects on error)
   return new Promise<HTMLAudioElement>((resolve, reject) => {
-    const endLifecycle = trackTtsLifecycle(audio, meta);
+    const endLifecycle = trackTtsLifecycle(audio, options?.meta);
 
     function cleanup() {
       clearActivePlayback(audio);
@@ -155,8 +168,7 @@ export async function speakRemote(
  */
 export async function speakRemoteStream(
   text: string,
-  voice?: string,
-  meta?: TtsMeta
+  options?: TtsPlaybackOptions
 ): Promise<HTMLAudioElement> {
   if (!text) throw new Error("text required");
 
@@ -174,7 +186,7 @@ export async function speakRemoteStream(
       { "Content-Type": "application/json" },
       token
     ),
-    body: JSON.stringify({ text, voice }),
+    body: JSON.stringify({ text, voice: options?.voice }),
   });
 
   if (!initResp.ok) {
@@ -198,8 +210,16 @@ export async function speakRemoteStream(
 
   const audio = new Audio(url);
 
+  if (options?.sinkId && typeof (audio as any).setSinkId === "function") {
+    try {
+      await (audio as any).setSinkId(options.sinkId);
+    } catch (err) {
+      console.warn("Unable to route streamed audio to selected output device", err);
+    }
+  }
+
   return await new Promise<HTMLAudioElement>((resolve, reject) => {
-    const endLifecycle = trackTtsLifecycle(audio, meta);
+    const endLifecycle = trackTtsLifecycle(audio, options?.meta);
 
     function cleanup() {
       clearActivePlayback(audio);
@@ -244,11 +264,18 @@ export async function speakRemoteStream(
         const objUrl = URL.createObjectURL(blob);
 
         const fallbackAudio = new Audio(objUrl);
-        const fallbackMeta = meta
+        if (options?.sinkId && typeof (fallbackAudio as any).setSinkId === "function") {
+          try {
+            await (fallbackAudio as any).setSinkId(options.sinkId);
+          } catch (sinkErr) {
+            console.warn("Unable to route fallback audio to selected output device", sinkErr);
+          }
+        }
+        const fallbackMeta = options?.meta
           ? {
-              ...meta,
+              ...options.meta,
               metadata: {
-                ...(meta.metadata ?? {}),
+                ...(options.meta?.metadata ?? {}),
                 playbackVariant: "buffered-fallback",
               },
             }

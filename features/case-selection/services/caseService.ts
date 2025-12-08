@@ -1,12 +1,11 @@
-import { createClient } from "@supabase/supabase-js";
 import type { Case } from "../models/case";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Proxy reads through our API so Supabase RLS can stay locked down.
+const API_BASE_PATH = "/api/case-catalog";
 
-type DbCase = {
+type ApiCase = {
   id?: string;
+  slug?: string | null;
   title?: string;
   description?: string | null;
   species?: string | null;
@@ -18,50 +17,67 @@ type DbCase = {
 };
 
 export async function fetchCases(): Promise<Case[]> {
-  const { data, error } = await supabase
-    .from("cases")
-    .select("*")
-    .order("created_at", { ascending: true });
-  if (error) throw error;
-  return (data ?? []).map(mapDbCaseToCase);
+  const response = await fetch(API_BASE_PATH, { cache: "no-store" });
+  if (!response.ok) {
+    const message = await safeReadError(response);
+    throw new Error(message || "Failed to load cases");
+  }
+
+  const payload = (await response.json()) as unknown;
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+
+  return payload.map((item) => mapApiCaseToCase(item as ApiCase));
 }
 
 export async function fetchCaseById(id: string): Promise<Case | null> {
-  // Try exact match first
+  if (!id) return null;
+
   try {
-    let { data } = await supabase
-      .from("cases")
-      .select("*")
-      .eq("id", id)
-      .single();
-    if (data) return mapDbCaseToCase(data);
+    const response = await fetch(
+      `${API_BASE_PATH}/${encodeURIComponent(id)}`,
+      { cache: "no-store" }
+    );
 
-    // Next try a slug column (if you have one) so URLs like /test-case-2 work
-    const { data: bySlug } = await supabase
-      .from("cases")
-      .select("*")
-      .eq("slug", id)
-      .single();
-    if (bySlug) return mapDbCaseToCase(bySlug);
+    if (response.status === 404) {
+      return null;
+    }
 
-    // Fallback: try prefix match on id (helps when DB ids include suffixes)
-    const { data: prefixMatch } = await supabase
-      .from("cases")
-      .select("*")
-      .ilike("id", `${id}%`)
-      .limit(1);
-    if (prefixMatch && prefixMatch.length > 0)
-      return mapDbCaseToCase(prefixMatch[0]);
+    if (!response.ok) {
+      const message = await safeReadError(response);
+      throw new Error(message || "Failed to load case");
+    }
 
-    return null;
-  } catch (e) {
-    // On any error, return null (page will show notFound). Consider logging during debugging.
-    console.error("fetchCaseById error:", e);
+    const payload = (await response.json()) as unknown;
+    if (!payload || typeof payload !== "object") {
+      return null;
+    }
+
+    return mapApiCaseToCase(payload as ApiCase);
+  } catch (error) {
+    console.error("fetchCaseById error:", error);
     return null;
   }
 }
 
-function mapDbCaseToCase(dbCase: DbCase): Case {
+async function safeReadError(response: Response): Promise<string> {
+  try {
+    const data = (await response.json()) as unknown;
+    if (data && typeof data === "object" && "error" in data) {
+      const { error } = data as { error?: unknown };
+      if (typeof error === "string") {
+        return error;
+      }
+    }
+  } catch {
+    // Ignore JSON parsing failures and fall through to status text
+  }
+
+  return response.statusText;
+}
+
+function mapApiCaseToCase(dbCase: ApiCase): Case {
   return {
     id: dbCase.id ?? "",
     title: dbCase.title ?? "",

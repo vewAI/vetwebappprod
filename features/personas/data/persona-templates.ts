@@ -3,6 +3,14 @@ import type {
   PersonaSeed,
   PersonaSeedContext,
 } from "@/features/personas/models/persona";
+import {
+  getNurseAvatarById,
+  getOwnerAvatarById,
+} from "@/features/personas/data/avatar-profiles";
+import {
+  PERSONA_TEMPLATE_OWNER_BEHAVIOR_DEFAULT,
+  PERSONA_TEMPLATE_NURSE_BEHAVIOR_DEFAULT,
+} from "@/features/prompts/defaults/personaPrompts";
 
 type PersonaTemplate = (
   context: PersonaSeedContext,
@@ -22,18 +30,41 @@ function joinLexicon(...extra: string[]): string {
   return [...cinematicLexicon, ...extra].join(", ");
 }
 
+function renderTemplate(
+  template: string,
+  replacements: Record<string, string>
+): string {
+  let output = template;
+  for (const [token, value] of Object.entries(replacements)) {
+    const pattern = new RegExp(`{{\s*${token}\s*}}`, "g");
+    output = output.replace(pattern, value);
+  }
+  // Remove any unused tokens so they do not leak into prompts
+  output = output.replace(/{{\s*[A-Z0-9_]+\s*}}/g, "");
+  return output.replace(/\s+/g, " ").trim();
+}
+
 export const personaTemplates: PersonaTemplateMap = {
   owner: (context, identity) => {
+    const ownerAvatar = getOwnerAvatarById(context.ownerAvatarKey);
     const mood =
       context.caseDifficulty.toLowerCase() === "hard"
         ? "concerned"
         : "attentive";
-    const behaviorPrompt = [
-      `You are ${identity.fullName}, the primary caretaker of ${context.patientName}.`,
-      `Speak in natural, everyday language and focus on what you have personally observed at ${context.ownerSetting || "the facility"}.`,
-      `Base every detail on the documented presenting complaint and obvious effects of the current condition—do not invent new problems or offer medical diagnoses.`,
-      `Share timelines, management routines, and behaviour changes when the clinician asks, staying cooperative and solution-focused.`,
-    ].join(" ");
+    const personality =
+      context.ownerPersonalityDescription ??
+      ownerAvatar?.personality ??
+      "calm, cooperative caretaker";
+    const ownerTemplate =
+      context.templateOverrides?.ownerBehaviorTemplate ??
+      PERSONA_TEMPLATE_OWNER_BEHAVIOR_DEFAULT;
+    const behaviorPrompt = renderTemplate(ownerTemplate, {
+      FULL_NAME: identity.fullName,
+      PATIENT_NAME: context.patientName,
+      OWNER_SETTING: context.ownerSetting || "the facility",
+      OWNER_ROLE_DESCRIPTION: context.ownerRoleDescription,
+      PERSONALITY: personality,
+    });
 
     return {
       roleKey: "owner",
@@ -53,183 +84,52 @@ export const personaTemplates: PersonaTemplateMap = {
         identity,
         sex: identity.sex,
         voiceId: identity.voiceId,
+        avatarKey: ownerAvatar?.id,
         behaviorPrompt,
         mood,
+        personality,
       },
+      imageUrl: ownerAvatar?.imageUrl,
     };
   },
-  "lab-technician": (context, identity) => {
-    const behaviorPrompt = [
-      `You are ${identity.fullName}, the laboratory technician supporting the veterinary team.`,
-      `Respond only with diagnostic results and measurements that have already been collected, quoting exact values, units, and qualifiers when they appear in the chart.`,
-      `If data is missing, state that it has not been reported rather than speculating or advising on next steps.`,
-      `Keep answers concise and scannable so the clinician can document values quickly.`,
-    ].join(" ");
+  nurse: (context, identity) => {
+    const nurseAvatar = getNurseAvatarById(context.nurseAvatarKey);
+    const personality =
+      context.nursePersonalityDescription ??
+      nurseAvatar?.personality ??
+      "organized, detail-focused nurse";
+    const nurseTemplate =
+      context.templateOverrides?.nurseBehaviorTemplate ??
+      PERSONA_TEMPLATE_NURSE_BEHAVIOR_DEFAULT;
+    const behaviorPrompt = renderTemplate(nurseTemplate, {
+      FULL_NAME: identity.fullName,
+      PERSONALITY: personality,
+      PATIENT_NAME: context.patientName,
+    });
 
     return {
-      roleKey: "lab-technician",
-      displayName: `${identity.fullName} (Laboratory Technician)`,
+      roleKey: "nurse",
+      displayName: `${identity.fullName} (Nurse)`,
       prompt: [
-        `Hyper-realistic portrait of ${identity.fullName}, a veterinary laboratory technician working amid analytical instruments with centrifuges and microscopes softly blurred in the background.`,
-      `Lab coat with neatly rolled sleeves, nitrile gloves, and a tablet in hand ready to review results. ${joinLexicon(
-        "cool ambient lighting",
-        "polished stainless-steel surfaces",
-        "monitors emitting subtle cyan highlights"
-      )}.`,
-      `Expression focused yet approachable, projecting calm expertise while guiding clinicians through diagnostic data.`,
-      ].join(" "),
-      behaviorPrompt,
-      metadata: {
-        persona: "lab-technician",
-        identity,
-        sex: identity.sex,
-        voiceId: identity.voiceId,
-        behaviorPrompt,
-      },
-    };
-  },
-  veterinarian: (context, identity) => {
-    const behaviorPrompt = [
-      `You are ${identity.fullName}, the attending veterinarian guiding care for the primary patient.`,
-      `Maintain a professional, collaborative tone—ask clarifying questions, summarise confirmed data, and reinforce clinical reasoning without taking the case away from the student.`,
-      `Keep suggestions evidence-based and reference the case record or student statements; avoid revealing final diagnoses or skipping ahead of their process.`,
-    ].join(" ");
-
-    return {
-      roleKey: "veterinarian",
-      displayName: `${identity.fullName} (Attending Veterinarian)`,
-      prompt: [
-      `Ultra-realistic portrait of ${identity.fullName}, an attending veterinarian in a contemporary clinical setting with frosted glass partitions and medical carts in soft focus.`,
-      `${joinLexicon(
-        "balanced warm and cool practical lighting",
-        "stethoscope resting over a tailored clinical coat",
-        "polished concrete flooring with reflections"
-      )}.`,
-      `Expression confident yet collaborative, posture relaxed, inviting discussion while offering structured mentorship.`,
-      ].join(" "),
-      behaviorPrompt,
-      metadata: {
-        persona: "veterinarian",
-        identity,
-        sex: identity.sex,
-        voiceId: identity.voiceId,
-        behaviorPrompt,
-      },
-    };
-  },
-  "veterinary-nurse": (context, identity) => {
-    const behaviorPrompt = [
-      `You are ${identity.fullName}, the veterinary nurse supporting the patient through treatment.`,
-      `Provide calm, reassuring updates about patient comfort, monitoring tasks, and nursing interventions that are actually recorded.`,
-      `Avoid offering diagnoses—focus on practical care details, equipment readiness, and observations that help the clinician plan their next steps.`,
-    ].join(" ");
-
-    return {
-      roleKey: "veterinary-nurse",
-      displayName: `${identity.fullName} (Veterinary Nurse)`,
-      prompt: [
-        `Ultra-realistic portrait of ${identity.fullName}, a veterinary nurse organising IV lines and monitoring sheets on a prep table.`,
+        `Ultra-realistic portrait of ${identity.fullName}, a veterinary nurse reviewing monitoring charts beside the patient stall.`,
         `${joinLexicon(
-          "soft diffused daylight",
-          "neatly pressed scrub top with embroidered clinic logo",
-          "stainless equipment trays catching subtle highlights"
+          "soft neutral lighting",
+          "immaculate scrub top",
+          "organized equipment carts in gentle focus"
         )}.`,
-        `Expression reassuring and attentive, hands positioned as if ready to assist while projecting calm readiness.`,
+        `Expression attentive and calm, posture suggesting readiness to carry out the clinician's next instruction.`,
       ].join(" "),
       behaviorPrompt,
       metadata: {
-        persona: "veterinary-nurse",
+        persona: "nurse",
         identity,
         sex: identity.sex,
         voiceId: identity.voiceId,
+        avatarKey: nurseAvatar?.id,
         behaviorPrompt,
+        personality,
       },
-    };
-  },
-  producer: (context, identity) => {
-    const behaviorPrompt = [
-      `You are ${identity.fullName}, the agricultural producer responsible for the operation that owns the patient.`,
-      `Speak pragmatically about herd logistics, labour, and cost considerations while staying aligned with the documented problems.`,
-      `Ask for clear plans, timelines, and biosecurity implications; avoid medical jargon or inventing clinical details.`,
-    ].join(" ");
-
-    return {
-      roleKey: "producer",
-      displayName: `${identity.fullName} (Agricultural Producer)`,
-      prompt: [
-        `Hyper-realistic portrait of ${identity.fullName}, an agricultural producer standing alongside a modern barn lane with feed silos and fencing softly blurred behind.`,
-        `${joinLexicon(
-          "warm golden-hour rim lighting",
-          "dust motes catching the light",
-          "work-worn textures on a canvas jacket and leather gloves"
-        )}.`,
-        `Expression thoughtful and engaged, posture balanced as decisions about herd health and logistics are considered.`,
-      ].join(" "),
-      behaviorPrompt,
-      metadata: {
-        persona: "producer",
-        identity,
-        sex: identity.sex,
-        voiceId: identity.voiceId,
-        behaviorPrompt,
-      },
-    };
-  },
-  "veterinary-assistant": (context, identity) => {
-    const behaviorPrompt = [
-      `You are ${identity.fullName}, the veterinary assistant helping with procedures for the current patient.`,
-      `Offer logistical support, relay recorded vitals or preparation status, and confirm equipment or paperwork when asked.`,
-      `Do not provide diagnoses or unsolicited plans—keep responses efficient, task-focused, and tied to the documented record.`,
-    ].join(" ");
-
-    return {
-      roleKey: "veterinary-assistant",
-      displayName: `${identity.fullName} (Veterinary Assistant)`,
-      prompt: [
-        `Ultra-realistic portrait of ${identity.fullName}, a veterinary assistant arranging sterile packs and anesthetic circuits on a prep counter.`,
-        `${joinLexicon(
-          "clean clinical prep room",
-          "soft practical lighting with gentle lens bloom",
-          "organized instruments laid out with precise alignment"
-        )}.`,
-        `Expression helpful and observant, gloved hands resting near equipment while anticipating the veterinarian's needs.`,
-      ].join(" "),
-      behaviorPrompt,
-      metadata: {
-        persona: "veterinary-assistant",
-        identity,
-        sex: identity.sex,
-        voiceId: identity.voiceId,
-        behaviorPrompt,
-      },
-    };
-  },
-  professor: (context, identity) => {
-    const behaviorPrompt = [
-      `You are ${identity.fullName}, the clinical professor evaluating this encounter.`,
-      `Offer candid but supportive coaching grounded in what the student actually demonstrates, referencing specific behaviours or omissions.`,
-      `Ask reflective questions, reinforce learning objectives, and avoid taking over the case yourself.`,
-    ].join(" ");
-
-    return {
-      roleKey: "professor",
-      displayName: `${identity.fullName} (Clinical Professor)`,
-      prompt: [
-        `Ultra-realistic portrait of ${identity.fullName}, a seasoned veterinary professor within a tiered lecture theatre lined with anatomical models and etched glass panels.`,
-        `Warm cinematic lighting with a soft projector glow, ${joinLexicon(
-          "rows of leather-bound reference texts",
-          "architectural wood panel accents"
-        )}.`,
-        `Professional attire with subtle veterinary insignia, expression encouraging yet evaluative while mentoring advanced learners.`,
-      ].join(" "),
-      behaviorPrompt,
-      metadata: {
-        persona: "professor",
-        identity,
-        sex: identity.sex,
-        voiceId: identity.voiceId,
-        behaviorPrompt,
-      },
+      imageUrl: nurseAvatar?.imageUrl,
     };
   },
 };

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Message } from "@/features/chat/models/chat";
 import { Stage } from "@/features/stages/types";
 import { Loader2, X } from "lucide-react";
+import { sanitizeHtml } from "@/lib/sanitize-html";
 import axios from "axios";
 import { feedbackPromptRegistry } from "@/features/feedback/feedback-prompts";
 
@@ -147,7 +148,9 @@ export function FeedbackButton({
                 </div>
               ) : (
                 <div className="prose prose-sm dark:prose-invert max-w-none">
-                  <div dangerouslySetInnerHTML={{ __html: feedback }} />
+                  <div
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(feedback) }}
+                  />
                 </div>
               )}
             </div>

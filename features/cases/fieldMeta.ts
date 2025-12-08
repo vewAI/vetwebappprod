@@ -1,3 +1,5 @@
+import { OWNER_AVATARS, NURSE_AVATARS } from "@/features/personas/data/avatar-profiles";
+
 export type CaseFieldKey =
 	| "id"
 	| "title"
@@ -5,9 +7,12 @@ export type CaseFieldKey =
 	| "species"
 	| "condition"
 	| "category"
+	| "owner_avatar_key"
+	| "nurse_avatar_key"
 	| "difficulty"
 	| "estimated_time"
 	| "image_url"
+	| "timepoints"
 	| "details"
 	| "physical_exam_findings"
 	| "diagnostic_findings"
@@ -25,6 +30,11 @@ export type CaseFieldKey =
 	| "get_owner_diagnosis_prompt"
 	| "get_overall_feedback_prompt";
 
+export type CaseFieldOption = {
+	value: string;
+	label: string;
+};
+
 export type CaseFieldMeta = {
 	key: CaseFieldKey;
 	label: string;
@@ -32,7 +42,26 @@ export type CaseFieldMeta = {
 	help?: string;
 	multiline?: boolean;
 	rows?: number;
+	options?: CaseFieldOption[];
 };
+
+const categoryOptions: CaseFieldOption[] = [
+	{ value: "canine", label: "Canine" },
+	{ value: "feline", label: "Feline" },
+	{ value: "equine", label: "Equine" },
+	{ value: "large animal", label: "Large Animal" },
+	{ value: "exotics", label: "Exotics" },
+];
+
+const ownerAvatarOptions: CaseFieldOption[] = OWNER_AVATARS.map((avatar) => ({
+	value: avatar.id,
+	label: `${avatar.displayName} - ${avatar.personality} [${avatar.voiceId}]`,
+}));
+
+const nurseAvatarOptions: CaseFieldOption[] = NURSE_AVATARS.map((avatar) => ({
+	value: avatar.id,
+	label: `${avatar.displayName} - ${avatar.personality} [${avatar.voiceId}]`,
+}));
 
 const metaList: CaseFieldMeta[] = [
 	{
@@ -70,8 +99,29 @@ const metaList: CaseFieldMeta[] = [
 	{
 		key: "category",
 		label: "Discipline / category",
-		placeholder: "Equine Infectious Disease",
+		placeholder: "Select a discipline",
 		help: "Used to group cases for browsing and analytics.",
+		options: categoryOptions,
+	},
+	{
+		key: "owner_avatar_key",
+		label: "Owner avatar",
+		placeholder: "Select owner persona",
+		help: "Choose the owner persona assigned to this case.",
+		options: ownerAvatarOptions,
+	},
+	{
+		key: "nurse_avatar_key",
+		label: "Nurse avatar",
+		placeholder: "Select nurse persona",
+		help: "Choose the nurse persona who will report exam findings.",
+		options: nurseAvatarOptions,
+	},
+	{
+		key: "timepoints",
+		label: "Time progression checkpoints",
+		help:
+			"Configure follow-up visits (e.g., Day 2, Recheck) that unlock after the main stages.",
 	},
 	{
 		key: "difficulty",

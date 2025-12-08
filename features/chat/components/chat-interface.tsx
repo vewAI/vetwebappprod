@@ -3,7 +3,15 @@
 import type React from "react";
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { SendIcon, PenLine, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
+import {
+  SendIcon,
+  PenLine,
+  Mic,
+  MicOff,
+  Volume2,
+  VolumeX,
+  SlidersHorizontal,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useSTT } from "@/features/speech/hooks/useSTT";
@@ -14,6 +22,8 @@ import {
   speakRemoteStream,
   stopActiveTtsPlayback,
 } from "@/features/speech/services/ttsService";
+import { useAudioSettings } from "@/features/speech/context/audio-settings";
+import { AudioSettingsPanel } from "@/features/speech/components/audio-settings-panel";
 import { ChatMessage } from "@/features/chat/components/chat-message";
 import { Notepad } from "@/features/chat/components/notepad";
 import { useSaveAttempt } from "@/features/attempts/hooks/useSaveAttempt";
@@ -24,6 +34,7 @@ import { chatService } from "@/features/chat/services/chatService";
 import { getOrAssignVoiceForRole } from "@/features/speech/services/voiceMap";
 import type { TtsEventDetail } from "@/features/speech/models/tts-events";
 import { normalizeRoleKey } from "@/features/avatar/utils/role-utils";
+import { canonicalizePersonaRole } from "@/features/personas/utils/roleMapping";
 
 const STAGE_KEYWORD_SYNONYMS: Record<string, string[]> = {
   examination: ["exam"],
@@ -88,6 +99,81 @@ const PHYSICAL_EXAM_KEYWORDS: string[] = [
   "temperature reading",
 ];
 
+const PHYSICAL_EXAM_ACTION_WORDS: string[] = [
+  "auscultate",
+  "palpate",
+  "percuss",
+  "inspect",
+  "observe",
+  "evaluate",
+  "assess",
+  "measure",
+  "check",
+  "take",
+  "listen",
+  "feel",
+  "monitor",
+  "examine",
+];
+
+const PHYSICAL_EXAM_PATTERNS: RegExp[] = [
+  /\b(perform|do|start|begin|conduct|complete|run)\b[\w\s]{0,20}\b(physical|systemic)\s+(exam|examination|assessment)\b/i,
+  /\b(carry\s+out|proceed\s+with)\b[\w\s]{0,20}\b(physical|systemic)\s+(exam|examination|assessment)\b/i,
+  /\b(physical|systemic)\s+(exam|examination|assessment)\b/i,
+  /\b(check|take|measure|assess|evaluate|monitor|record|repeat|recheck)\s+(?:the\s+)?(vital(?:s)?|vitals|vital signs|heart rate|pulse|temperature|respiratory rate|breathing|lung sounds|auscultation|crt|capillary refill)\b/i,
+  /\b(auscultate|palpate|percuss|inspect|observe|listen|feel)\b[\w\s]{0,40}\b(heart|lungs?|abdomen|belly|chest|thorax|neck|jugular|lymph|mucous|membranes|crt|capillary|limb|legs?|hoof|hooves)\b/i,
+];
+
+const LAB_REQUEST_PATTERNS: RegExp[] = [
+  /\b(run|order|request|perform|repeat|recheck|add|draw|collect|send|submit|pull|get|obtain)\b[\w\s]{0,40}\b(cbc|chem(?:istry)?(?: panel)?|blood(?: ?work)?|lab(?:s|oratory)?|panel|profile|urinalysis|culture|cytology|sample|samples|test(?:s)?|lactate|glucose|electrolyte(?:s)?)\b/i,
+  /\b(show|see|review|check|look(?:\s+at)?|share|provide|give|tell|display)\b[\w\s]{0,40}\b(lab(?:s|oratory)?|blood(?: ?work)?|cbc|chem(?:istry)?(?: panel)?|panel|profile|urinalysis|culture|results?|values?|numbers?|findings?)\b/i,
+  /\bwhat\s+(?:are|were)\b[\w\s]{0,20}\b(lab(?:s|oratory)?|blood(?: ?work)?|cbc|chem(?:istry)?(?: panel)?|panel|profile|urinalysis|culture|results?)\b/i,
+  /\b(lab(?:s|oratory)?|blood(?: ?work)?|cbc|chem(?:istry)?(?: panel)?|panel|profile|urinalysis|culture|results?|values?|numbers?|findings?)\b[\w\s]{0,20}\b(results?|values?|numbers?|findings?)\b/i,
+  /\b(need|needs|want|wants|like|likes|would\s+like|could\s+use)\b[\w\s]{0,20}\b(labs?|bloodwork|tests?)\b/i,
+];
+
+const LAB_KEYWORDS: string[] = [
+  "lab",
+  "labs",
+  "labwork",
+  "bloodwork",
+  "blood work",
+  "cbc",
+  "chem",
+  "chemistry",
+  "chem panel",
+  "panel",
+  "profile",
+  "electrolyte",
+  "electrolytes",
+  "glucose",
+  "lactate",
+  "urinalysis",
+  "urine",
+  "culture",
+  "cytology",
+  "sample",
+  "samples",
+  "hematology",
+  "pcv",
+  "total protein",
+  "fibrinogen",
+  "blood gas",
+];
+
+const LAB_RESULT_WORDS: string[] = [
+  "result",
+  "results",
+  "value",
+  "values",
+  "numbers",
+  "findings",
+  "readings",
+  "data",
+  "report",
+  "reports",
+];
+
 const STAGE_COMPLETION_RULES: Record<string, StageCompletionRule> = {
   "physical examination": {
     minUserTurns: 2,
@@ -96,6 +182,33 @@ const STAGE_COMPLETION_RULES: Record<string, StageCompletionRule> = {
     minAssistantKeywordHits: 2,
   },
 };
+
+const DEFAULT_PERSONA_ROLE_KEY = "nurse";
+
+type PersonaRoleLookup = {
+  explicitRoleKey?: string | null;
+  roleName?: string | null;
+  displayName?: string | null;
+};
+
+function resolvePersonaRoleKeyForDirectory({
+  explicitRoleKey,
+  roleName,
+  displayName,
+}: PersonaRoleLookup): string {
+  const canonicalExplicit = canonicalizePersonaRole(
+    explicitRoleKey,
+    displayName
+  );
+  if (canonicalExplicit) {
+    return canonicalExplicit;
+  }
+  const canonicalRole = canonicalizePersonaRole(roleName, displayName);
+  if (canonicalRole) {
+    return canonicalRole;
+  }
+  return DEFAULT_PERSONA_ROLE_KEY;
+}
 
 const escapeRegExp = (value: string) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -155,6 +268,10 @@ export function ChatInterface({
   const [advanceGuard, setAdvanceGuard] = useState<
     { stageIndex: number; askedAt: number; metrics: StageCompletionMetrics } | null
   >(null);
+  const [showAudioSettings, setShowAudioSettings] = useState(false);
+  const {
+    selectedOutputId,
+  } = useAudioSettings();
   const stageKeywordSets = useMemo(() => {
     return stages.map((stage, index) => {
       const keywords = new Set<string>();
@@ -491,9 +608,14 @@ export function ChatInterface({
         const next: Record<string, PersonaDirectoryEntry> = {};
 
         for (const row of personas) {
-          const rawKey = typeof row?.role_key === "string" ? row.role_key : "";
-          const normalizedKey = normalizeRoleKey(rawKey) ?? rawKey;
-          if (!normalizedKey || normalizedKey !== "owner") {
+          const displayName =
+            typeof row?.display_name === "string" ? row.display_name : null;
+          const canonicalKey = resolvePersonaRoleKeyForDirectory({
+            explicitRoleKey: typeof row?.role_key === "string" ? row.role_key : null,
+            roleName: typeof row?.role_key === "string" ? row.role_key : null,
+            displayName,
+          });
+          if (canonicalKey !== "owner") {
             continue;
           }
           const metadata =
@@ -508,7 +630,7 @@ export function ChatInterface({
                   sex?: string;
                 })
               : undefined;
-          next[normalizedKey] = {
+          next[canonicalKey] = {
             displayName:
               typeof row?.display_name === "string"
                 ? row.display_name
@@ -543,9 +665,14 @@ export function ChatInterface({
             : [];
 
           for (const row of globalPersonas) {
-            const rawKey = typeof row?.role_key === "string" ? row.role_key : "";
-            const normalizedKey = normalizeRoleKey(rawKey) ?? rawKey;
-            if (!normalizedKey || normalizedKey === "owner") {
+            const displayName =
+              typeof row?.display_name === "string" ? row.display_name : null;
+            const canonicalKey = resolvePersonaRoleKeyForDirectory({
+              explicitRoleKey: typeof row?.role_key === "string" ? row.role_key : null,
+              roleName: typeof row?.role_key === "string" ? row.role_key : null,
+              displayName,
+            });
+            if (!canonicalKey || canonicalKey === "owner") {
               continue;
             }
             const metadata =
@@ -560,7 +687,7 @@ export function ChatInterface({
                     sex?: string;
                   })
                 : undefined;
-            next[normalizedKey] = {
+            next[canonicalKey] = {
               displayName:
                 typeof row?.display_name === "string"
                   ? row.display_name
@@ -680,10 +807,18 @@ export function ChatInterface({
       // content shown in the chat.
       const ttsText = sanitizeForTts(text);
       try {
-        await speakRemoteStream(ttsText, voice, meta);
+        await speakRemoteStream(ttsText, {
+          voice,
+          meta,
+          sinkId: selectedOutputId,
+        });
       } catch (streamErr) {
         try {
-          await speakRemote(ttsText, voice, meta);
+          await speakRemote(ttsText, {
+            voice,
+            meta,
+            sinkId: selectedOutputId,
+          });
         } catch (bufErr) {
           try {
             if (ttsAvailable && speakAsync) {
@@ -721,9 +856,12 @@ export function ChatInterface({
         : `Are you sure you have enough information before leaving ${stageTitle.toLowerCase()}?`;
 
       const roleName = stage.role ?? "Virtual Assistant";
-      const normalizedRoleKey = normalizeRoleKey(roleName) ?? undefined;
-      const personaMeta = normalizedRoleKey
-        ? personaDirectory[normalizedRoleKey]
+      const personaRoleKey = resolvePersonaRoleKeyForDirectory({
+        roleName,
+        displayName: roleName,
+      });
+      const personaMeta = personaRoleKey
+        ? personaDirectory[personaRoleKey]
         : undefined;
 
       const voiceSex: "male" | "female" | "neutral" =
@@ -745,10 +883,10 @@ export function ChatInterface({
         personaMeta?.portraitUrl,
         voiceForRole,
         personaMeta?.sex,
-        normalizedRoleKey
+        personaRoleKey
       );
 
-      upsertPersonaDirectory(normalizedRoleKey, {
+      upsertPersonaDirectory(personaRoleKey, {
         displayName: personaMeta?.displayName ?? roleName,
         portraitUrl: personaMeta?.portraitUrl,
         voiceId: voiceForRole,
@@ -964,6 +1102,11 @@ export function ChatInterface({
       const stage = stages[currentStageIndex] ?? stages[0];
       const roleName = response.displayRole ?? stage?.role ?? "assistant";
       const portraitUrl = response.portraitUrl;
+      const personaDirectoryKey = resolvePersonaRoleKeyForDirectory({
+        explicitRoleKey: response.personaRoleKey,
+        roleName,
+        displayName: response.displayRole ?? roleName ?? stage?.role ?? null,
+      });
       const aiMessage = chatService.createAssistantMessage(
         response.content,
         currentStageIndex,
@@ -971,14 +1114,11 @@ export function ChatInterface({
         portraitUrl,
         response.voiceId,
         response.personaSex,
-        response.personaRoleKey,
+        personaDirectoryKey,
         response.media
       );
       const finalAssistantContent = aiMessage.content;
-      const normalizedPersonaKey =
-        aiMessage.personaRoleKey ??
-        (roleName ? normalizeRoleKey(roleName) ?? undefined : undefined);
-      upsertPersonaDirectory(normalizedPersonaKey, {
+      upsertPersonaDirectory(personaDirectoryKey, {
         displayName: aiMessage.displayRole,
         portraitUrl,
         voiceId: response.voiceId,
@@ -1022,10 +1162,11 @@ export function ChatInterface({
             }
           );
 
-          const normalizedRoleKey =
-            response.personaRoleKey ??
-            normalizeRoleKey(roleName ?? stage?.role ?? "assistant") ??
-            undefined;
+          const normalizedRoleKey = resolvePersonaRoleKeyForDirectory({
+            explicitRoleKey: response.personaRoleKey,
+            roleName: roleName ?? stage?.role ?? "assistant",
+            displayName: aiMessage.displayRole ?? roleName ?? stage?.role ?? null,
+          });
           const ttsMeta = {
             roleKey: normalizedRoleKey,
             displayRole: roleName ?? stage?.role,
@@ -1169,13 +1310,83 @@ export function ChatInterface({
     await sendUserMessage(msg.content, messageId);
   };
 
+  const detectStageSpecificIntent = (
+    normalized: string,
+    stage: Stage | undefined
+  ): boolean => {
+    if (!stage) return false;
+
+    const stageTitle = stage.title
+      ? stage.title.toLowerCase().replace(/\s+/g, " ").trim()
+      : "";
+    const stageDescription = stage.description
+      ? stage.description.toLowerCase().replace(/\s+/g, " ").trim()
+      : "";
+    const stageText = `${stageTitle} ${stageDescription}`.trim();
+
+    const includesKeyword = (keyword: string) => {
+      if (!keyword) return false;
+      if (keyword.includes(" ")) {
+        return normalized.includes(keyword);
+      }
+      return new RegExp(`\\b${escapeRegExp(keyword)}\\b`).test(normalized);
+    };
+
+    const isPhysicalExamStage =
+      stageText.includes("physical exam") || stageText.includes("physical examination");
+    if (isPhysicalExamStage) {
+      if (PHYSICAL_EXAM_PATTERNS.some((pattern) => pattern.test(normalized))) {
+        return true;
+      }
+      const actionHits = PHYSICAL_EXAM_ACTION_WORDS.filter(includesKeyword);
+      const metricHits = PHYSICAL_EXAM_KEYWORDS.filter(includesKeyword);
+      if (actionHits.length >= 1 && metricHits.length >= 1) {
+        return true;
+      }
+      if (metricHits.length >= 2) {
+        return true;
+      }
+    }
+
+    const isLabStage =
+      stageText.includes("test result") ||
+      stageText.includes("laboratory") ||
+      stageText.includes("lab review") ||
+      stageText.includes("lab results") ||
+      stageText.includes("diagnostic");
+
+    if (isLabStage) {
+      if (LAB_REQUEST_PATTERNS.some((pattern) => pattern.test(normalized))) {
+        return true;
+      }
+      const labMatches = LAB_KEYWORDS.filter(includesKeyword);
+      const resultMatches = LAB_RESULT_WORDS.filter(includesKeyword);
+      if (labMatches.length >= 1 && resultMatches.length >= 1) {
+        return true;
+      }
+      if (labMatches.length >= 2) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
   const detectNextStageIntent = (content: string) => {
     const nextIndex = currentStageIndex + 1;
     const nextStage = stages[nextIndex];
     if (!nextStage) return false;
 
-    const normalized = content.toLowerCase().replace(/\s+/g, " ").trim();
+    const normalized = content
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
     if (!normalized) return false;
+
+    if (detectStageSpecificIntent(normalized, nextStage)) {
+      return true;
+    }
 
     const isQuestion = /\b(what|which|who|where|when|why|how)\b/.test(normalized);
     if (isQuestion) return false;
@@ -1437,6 +1648,11 @@ export function ChatInterface({
 
         // Append assistant reply into chat UI
         const roleName = response.displayRole ?? stages[currentStageIndex].role;
+        const personaDirectoryKey = resolvePersonaRoleKeyForDirectory({
+          explicitRoleKey: response.personaRoleKey,
+          roleName: String(roleName ?? "assistant"),
+          displayName: String(response.displayRole ?? roleName ?? "assistant"),
+        });
         const aiMessage = chatService.createAssistantMessage(
           response.content,
           p.stageIndex,
@@ -1444,13 +1660,10 @@ export function ChatInterface({
           response.portraitUrl,
           response.voiceId,
           response.personaSex,
-          response.personaRoleKey,
+          personaDirectoryKey,
           response.media
         );
-        const normalizedPersonaKey =
-          aiMessage.personaRoleKey ??
-          (roleName ? normalizeRoleKey(String(roleName)) ?? undefined : undefined);
-        upsertPersonaDirectory(normalizedPersonaKey, {
+        upsertPersonaDirectory(personaDirectoryKey, {
           displayName: aiMessage.displayRole,
           portraitUrl: response.portraitUrl,
           voiceId: response.voiceId,
@@ -1968,7 +2181,10 @@ export function ChatInterface({
     // labels the speaker appropriately (e.g., Owner, Laboratory Technician)
     const stageRole = stages[targetIndex]?.role ?? "Virtual Assistant";
     const roleName = String(stageRole);
-    const normalizedRoleKey = normalizeRoleKey(roleName ?? "assistant") ?? undefined;
+    const normalizedRoleKey = resolvePersonaRoleKeyForDirectory({
+      roleName,
+      displayName: roleName,
+    });
     const personaMeta = normalizedRoleKey
       ? personaDirectory[normalizedRoleKey]
       : undefined;
@@ -2133,6 +2349,16 @@ export function ChatInterface({
                   the 'Voice Mode' button to disable listening and speaking.
                 </div>
               </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="flex items-center gap-1 text-xs"
+                onClick={() => setShowAudioSettings(true)}
+                title="Select microphone and playback device"
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                Audio Settings
+              </Button>
             </div>
           </div>
         </div>
@@ -2185,7 +2411,7 @@ export function ChatInterface({
               {nextStageTitle}
             </Button>
 
-            <div className="flex gap-2 items-center">
+            <div className="relative flex gap-2 items-center">
               {/* Big voice-mode toggle */}
               <Button
                 type="button"
@@ -2227,6 +2453,23 @@ export function ChatInterface({
                   <VolumeX className="h-4 w-4" />
                 )}
               </Button>
+
+              {/* Audio settings popover */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="flex items-center gap-1 text-xs"
+                onClick={() => setShowAudioSettings((prev) => !prev)}
+                title="Choose microphone and playback device"
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                Audio
+              </Button>
+              {showAudioSettings ? (
+                <AudioSettingsPanel
+                  onClose={() => setShowAudioSettings(false)}
+                />
+              ) : null}
             </div>
           </div>
 

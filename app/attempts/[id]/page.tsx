@@ -22,6 +22,7 @@ import type {
 import type { Message } from "@/features/chat/models/chat";
 import type { Stage } from "@/features/stages/types";
 import { ChatInterface } from "@/features/chat/components/chat-interface";
+import { sanitizeHtml } from "@/lib/sanitize-html";
 
 export default function ViewAttemptPage() {
   const params = useParams();
@@ -357,7 +358,7 @@ export default function ViewAttemptPage() {
                       <div className="prose prose-sm dark:prose-invert max-w-none">
                         <div
                           dangerouslySetInnerHTML={{
-                            __html: item.feedbackContent,
+                            __html: sanitizeHtml(item.feedbackContent),
                           }}
                         />
                       </div>
@@ -391,7 +392,7 @@ export default function ViewAttemptPage() {
                   <div className="prose prose-sm dark:prose-invert max-w-none">
                     <div
                       dangerouslySetInnerHTML={{
-                        __html: attempt.overallFeedback,
+                        __html: sanitizeHtml(attempt.overallFeedback),
                       }}
                     />
                   </div>

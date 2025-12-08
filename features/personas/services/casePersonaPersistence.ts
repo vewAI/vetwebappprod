@@ -2,6 +2,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PersonaSeed } from "@/features/personas/models/persona";
 import { buildPersonaSeeds } from "@/features/personas/services/personaSeedService";
 import { ensureSharedPersonas } from "@/features/personas/services/globalPersonaPersistence";
+import {
+  getDefaultPersonaTemplateOverrides,
+  loadPersonaTemplateOverrides,
+} from "@/features/personas/services/personaTemplateOverrides";
 
 type DbPersonaRow = {
   id?: string;
@@ -24,7 +28,14 @@ export async function ensureCasePersonas(
 ): Promise<void> {
   await ensureSharedPersonas(supabase);
 
-  const seeds = buildPersonaSeeds(caseId, caseBody);
+  let overrides = getDefaultPersonaTemplateOverrides();
+  try {
+    overrides = await loadPersonaTemplateOverrides(supabase);
+  } catch (error) {
+    console.warn("Failed to load persona template overrides for case personas; using defaults", error);
+  }
+
+  const seeds = buildPersonaSeeds(caseId, caseBody, overrides);
   if (!seeds.length) return;
 
   const { data: existingRows, error: fetchError } = await supabase
@@ -52,10 +63,6 @@ export async function ensureCasePersonas(
   const pendingUpdates: Record<string, unknown>[] = [];
 
   for (const seed of seeds) {
-    if (seed.roleKey !== "owner") {
-      continue;
-    }
-
     const existing = existingRoleMap.get(seed.roleKey);
     const sharedPersona = seed.sharedPersonaKey
       ? await loadSharedPersona(

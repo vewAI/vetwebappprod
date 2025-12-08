@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -12,15 +13,17 @@ import {
   ROLE_PROMPT_DEFINITIONS,
   type RolePromptKey,
 } from "@/features/role-info/services/roleInfoService";
+import type { PromptRecord } from "@/features/prompts/types";
+import {
+  CHAT_SYSTEM_GUIDELINE_PROMPT_ID,
+  PERSONA_TEMPLATE_OWNER_BEHAVIOR_PROMPT_ID,
+  findStagePromptConfig,
+} from "@/features/prompts/defaults/personaPrompts";
+import { canonicalizePersonaRole, isHiddenSharedPersona } from "@/features/personas/utils/roleMapping";
 
 const ROLE_OPTIONS: { label: string; value: string }[] = [
   { label: "Owner", value: "owner" },
-  { label: "Laboratory Technician", value: "lab-technician" },
-  { label: "Attending Veterinarian", value: "veterinarian" },
-  { label: "Veterinary Nurse", value: "veterinary-nurse" },
-  { label: "Agricultural Producer", value: "producer" },
-  { label: "Veterinary Assistant", value: "veterinary-assistant" },
-  { label: "Clinical Professor", value: "professor" },
+  { label: "Nurse", value: "nurse" },
 ];
 
 const ROLE_ORDER = new Map(ROLE_OPTIONS.map((option, index) => [option.value, index] as const));
@@ -74,40 +77,20 @@ const ROLE_PROMPT_FIELDS: Record<string, RolePromptField[]> = {
       defaultTemplate: ROLE_PROMPT_DEFINITIONS.getOwnerDiagnosisPrompt.defaultTemplate,
     },
   ],
-  "lab-technician": [
+  nurse: [
+    {
+      key: "getPhysicalExamPrompt",
+      label: "Physical/diagnostic response prompt template",
+      description: "Controls how the nurse relays recorded exam findings or diagnostic results.",
+      placeholders: ["{{FINDINGS}}", "{{STUDENT_REQUEST}}"],
+      defaultTemplate: ROLE_PROMPT_DEFINITIONS.getPhysicalExamPrompt.defaultTemplate,
+    },
     {
       key: "getDiagnosticPrompt",
-      label: "Laboratory response prompt template",
-      description: "Guides how the laboratory technician reports diagnostic results.",
+      label: "Diagnostic results prompt template",
+      description: "Guides how the nurse reports diagnostic data back to the student.",
       placeholders: ["{{DIAGNOSTIC_RESULTS}}", "{{STUDENT_REQUEST}}"],
       defaultTemplate: ROLE_PROMPT_DEFINITIONS.getDiagnosticPrompt.defaultTemplate,
-    },
-  ],
-  veterinarian: [
-    {
-      key: "getPhysicalExamPrompt",
-      label: "Physical examination prompt template",
-      description: "Controls how the clinician relays recorded exam findings.",
-      placeholders: ["{{FINDINGS}}", "{{STUDENT_REQUEST}}"],
-      defaultTemplate: ROLE_PROMPT_DEFINITIONS.getPhysicalExamPrompt.defaultTemplate,
-    },
-  ],
-  "veterinary-nurse": [
-    {
-      key: "getPhysicalExamPrompt",
-      label: "Physical examination prompt template",
-      description: "Controls how the nurse relays recorded exam findings.",
-      placeholders: ["{{FINDINGS}}", "{{STUDENT_REQUEST}}"],
-      defaultTemplate: ROLE_PROMPT_DEFINITIONS.getPhysicalExamPrompt.defaultTemplate,
-    },
-  ],
-  "veterinary-assistant": [
-    {
-      key: "getPhysicalExamPrompt",
-      label: "Physical examination prompt template",
-      description: "Controls how the assistant relays recorded exam findings.",
-      placeholders: ["{{FINDINGS}}", "{{STUDENT_REQUEST}}"],
-      defaultTemplate: ROLE_PROMPT_DEFINITIONS.getPhysicalExamPrompt.defaultTemplate,
     },
   ],
 };
@@ -139,6 +122,15 @@ function extractRolePrompts(metadata: unknown): Record<string, string> {
     }
   });
   return prompts;
+}
+
+function extractPersonality(metadata: unknown): string {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return "";
+  }
+  const record = metadata as Record<string, unknown>;
+  const value = record.personality;
+  return typeof value === "string" ? value : "";
 }
 
 function mergeRolePrompts(
@@ -180,6 +172,75 @@ function formatIso(iso?: string | null): string {
   return parsed.toLocaleString();
 }
 
+const GLOBAL_PROMPT_COPY: Record<
+  string,
+  { title: string; description: string; helper?: string }
+> = {
+  [CHAT_SYSTEM_GUIDELINE_PROMPT_ID]: {
+    title: "Universal chat system guideline",
+    description:
+      "Inserted at the top of every conversation before any persona-specific instructions.",
+    helper:
+      "Keep directives concise and focused on tone and guardrails that should apply across all personas and cases.",
+  },
+  [PERSONA_TEMPLATE_OWNER_BEHAVIOR_PROMPT_ID]: {
+    title: "Persona seeding template · Owner narrative",
+    description:
+      "Defines how owner personas are generated whenever a case owner record is created or refreshed.",
+    helper:
+      "Supports tokens like {{FULL_NAME}} and {{PATIENT_NAME}}. Updates immediately affect newly seeded owner personas.",
+  },
+};
+
+function createPromptEditorState(record: PromptRecord): PromptEditorState {
+  return {
+    record,
+    draftValue: record.value ?? "",
+    isDirty: false,
+    saving: false,
+    message: null,
+    error: null,
+  };
+}
+
+function parseStageIndexFromPromptId(id: string): number | null {
+  const match = id.match(/\.transition\.(\d+)$/);
+  if (!match) return null;
+  const value = Number.parseInt(match[1], 10);
+  return Number.isNaN(value) ? null : value;
+}
+
+function buildStagePromptDescription(record: PromptRecord): string {
+  if (!record.caseId) {
+    return record.description;
+  }
+  const stageIndex = parseStageIndexFromPromptId(record.id);
+  const config =
+    typeof stageIndex === "number"
+      ? findStagePromptConfig(record.caseId, stageIndex)
+      : undefined;
+  const pieces: string[] = [];
+  if (typeof stageIndex === "number") {
+    pieces.push(
+      `Broadcast when stage ${stageIndex + 1} begins for ${record.caseId}.`
+    );
+  }
+  if (config?.role) {
+    const personaRole = config.role === "owner" ? "owner persona" : "nurse persona";
+    pieces.push(`Shapes the ${personaRole}'s tone for the opening of this stage.`);
+  } else {
+    pieces.push("Shapes the persona tone as the stage opens.");
+  }
+  if (record.description) {
+    pieces.push(record.description);
+  }
+  return pieces.join(" ").trim();
+}
+
+function formatPromptStatus(record: PromptRecord): string {
+  return record.hasOverride ? "Override active" : "Using default";
+}
+
 type PersonaEditorState = {
   scope: PersonaScope;
   persona: PersonaRecord;
@@ -187,6 +248,7 @@ type PersonaEditorState = {
   draftPrompt: string;
   draftDisplayName: string;
   draftImageUrl: string;
+  draftPersonality: string;
   draftMetadata: Record<string, unknown> | null;
   draftRolePrompts: Record<string, string>;
   isDirty: boolean;
@@ -204,11 +266,21 @@ type PersonaEditorState = {
   rolePromptErrors: Record<string, string | null>;
 };
 
+type PromptEditorState = {
+  record: PromptRecord;
+  draftValue: string;
+  isDirty: boolean;
+  saving: boolean;
+  message?: string | null;
+  error?: string | null;
+};
+
 function computePersonaDirty(state: PersonaEditorState): boolean {
   const baseBehavior = state.persona.behavior_prompt ?? "";
   const baseDisplay = state.persona.display_name ?? "";
   const baseImage = state.persona.image_url ?? "";
   const basePrompt = state.persona.prompt ?? "";
+  const basePersonality = extractPersonality(state.persona.metadata ?? null);
   const originalRolePrompts = extractRolePrompts(state.persona.metadata ?? null);
   const hasRolePromptChange = !areRolePromptMapsEqual(
     state.draftRolePrompts,
@@ -220,6 +292,7 @@ function computePersonaDirty(state: PersonaEditorState): boolean {
     state.draftDisplayName !== baseDisplay ||
     state.draftImageUrl !== baseImage ||
     state.draftPrompt !== basePrompt ||
+    state.draftPersonality.trim() !== basePersonality.trim() ||
     hasRolePromptChange
   );
 }
@@ -241,6 +314,14 @@ export default function PersonasAdminPage() {
   const [selectedCaseId, setSelectedCaseId] = useState<string>("");
   const [loadingCases, setLoadingCases] = useState(false);
   const [casesError, setCasesError] = useState<string | null>(null);
+
+  const [globalPromptRows, setGlobalPromptRows] = useState<PromptEditorState[]>([]);
+  const [globalPromptLoading, setGlobalPromptLoading] = useState(false);
+  const [globalPromptError, setGlobalPromptError] = useState<string | null>(null);
+
+  const [casePromptRows, setCasePromptRows] = useState<PromptEditorState[]>([]);
+  const [casePromptLoading, setCasePromptLoading] = useState(false);
+  const [casePromptError, setCasePromptError] = useState<string | null>(null);
 
   const [globalPersonaRows, setGlobalPersonaRows] = useState<PersonaEditorState[]>([]);
   const [globalError, setGlobalError] = useState<string | null>(null);
@@ -284,6 +365,52 @@ export default function PersonasAdminPage() {
 
   useEffect(() => {
     if (!authHeaders) {
+      setGlobalPromptRows([]);
+      setGlobalPromptError(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadGlobalPrompts() {
+      setGlobalPromptLoading(true);
+      setGlobalPromptError(null);
+      try {
+        const response = await axios.get("/api/prompts", {
+          headers: authHeaders,
+        });
+        const payload = response.data as { prompts?: PromptRecord[] } | undefined;
+        const prompts = Array.isArray(payload?.prompts)
+          ? (payload?.prompts as PromptRecord[])
+          : [];
+        const filtered = prompts.filter((record) =>
+          record.id === CHAT_SYSTEM_GUIDELINE_PROMPT_ID ||
+          record.id === PERSONA_TEMPLATE_OWNER_BEHAVIOR_PROMPT_ID
+        );
+        if (!cancelled) {
+          setGlobalPromptRows(filtered.map(createPromptEditorState));
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const message = extractAxiosMessage(error) ?? "Failed to load global prompts";
+          setGlobalPromptError(message);
+        }
+      } finally {
+        if (!cancelled) {
+          setGlobalPromptLoading(false);
+        }
+      }
+    }
+
+    void loadGlobalPrompts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authHeaders]);
+
+  useEffect(() => {
+    if (!authHeaders) {
       setGlobalPersonaRows([]);
       setGlobalError(null);
       return;
@@ -301,7 +428,11 @@ export default function PersonasAdminPage() {
           ? payload?.personas ?? []
           : [];
 
-        const editorRows: PersonaEditorState[] = rows.map((persona): PersonaEditorState => {
+        const visibleRows = rows.filter((persona) =>
+          !isHiddenSharedPersona(persona.role_key, persona.display_name)
+        );
+
+        const editorRows: PersonaEditorState[] = visibleRows.map((persona): PersonaEditorState => {
           const metadataClone = cloneRecord(
             (persona.metadata && typeof persona.metadata === "object" && !Array.isArray(persona.metadata)
               ? (persona.metadata as Record<string, unknown>)
@@ -315,6 +446,7 @@ export default function PersonasAdminPage() {
             draftPrompt: persona.prompt ?? "",
             draftDisplayName: persona.display_name ?? "",
             draftImageUrl: persona.image_url ?? "",
+            draftPersonality: extractPersonality(persona.metadata ?? null),
             draftMetadata: metadataClone,
             draftRolePrompts: rolePrompts,
             isDirty: false,
@@ -334,8 +466,10 @@ export default function PersonasAdminPage() {
         });
 
         editorRows.sort((a, b) => {
-          const aOrder = ROLE_ORDER.get(a.persona.role_key) ?? Number.MAX_SAFE_INTEGER;
-          const bOrder = ROLE_ORDER.get(b.persona.role_key) ?? Number.MAX_SAFE_INTEGER;
+          const aCanonical = canonicalizePersonaRole(a.persona.role_key, a.persona.display_name) ?? a.persona.role_key;
+          const bCanonical = canonicalizePersonaRole(b.persona.role_key, b.persona.display_name) ?? b.persona.role_key;
+          const aOrder = ROLE_ORDER.get(aCanonical ?? "") ?? Number.MAX_SAFE_INTEGER;
+          const bOrder = ROLE_ORDER.get(bCanonical ?? "") ?? Number.MAX_SAFE_INTEGER;
           return aOrder - bOrder;
         });
 
@@ -350,6 +484,59 @@ export default function PersonasAdminPage() {
 
     void loadGlobalPersonas();
   }, [authHeaders]);
+
+  useEffect(() => {
+    if (!authHeaders || !selectedCaseId) {
+      setCasePromptRows([]);
+      setCasePromptError(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadCasePrompts() {
+      setCasePromptLoading(true);
+      setCasePromptError(null);
+      try {
+        const response = await axios.get("/api/prompts", {
+          headers: authHeaders,
+          params: { caseId: selectedCaseId, scope: "case" },
+        });
+        const payload = response.data as { prompts?: PromptRecord[] } | undefined;
+        const prompts = Array.isArray(payload?.prompts)
+          ? (payload?.prompts as PromptRecord[])
+          : [];
+        const filtered = prompts
+          .filter((record) => record.scope === "case" && record.caseId === selectedCaseId)
+          .sort((a, b) => {
+            const aIndex = parseStageIndexFromPromptId(a.id) ?? Number.MAX_SAFE_INTEGER;
+            const bIndex = parseStageIndexFromPromptId(b.id) ?? Number.MAX_SAFE_INTEGER;
+            if (a.caseId === b.caseId) {
+              return aIndex - bIndex;
+            }
+            return (a.caseId ?? "").localeCompare(b.caseId ?? "");
+          });
+        if (!cancelled) {
+          setCasePromptRows(filtered.map(createPromptEditorState));
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const message = extractAxiosMessage(error) ?? "Failed to load stage prompts";
+          setCasePromptError(message);
+        }
+      } finally {
+        if (!cancelled) {
+          setCasePromptLoading(false);
+        }
+      }
+    }
+
+    void loadCasePrompts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authHeaders, selectedCaseId]);
 
   useEffect(() => {
     if (!selectedCaseId || !authHeaders) {
@@ -372,9 +559,11 @@ export default function PersonasAdminPage() {
         const rows = Array.isArray(payload?.personas)
           ? payload?.personas ?? []
           : [];
-        const ownerRows = rows.filter((persona) => persona.role_key === "owner");
+        const editableRows = rows.filter(
+          (persona) => persona.role_key === "owner" || persona.role_key === "nurse"
+        );
 
-        const editorRows: PersonaEditorState[] = ownerRows.map((persona): PersonaEditorState => {
+        const editorRows: PersonaEditorState[] = editableRows.map((persona): PersonaEditorState => {
           const metadataClone = cloneRecord(
             (persona.metadata && typeof persona.metadata === "object" && !Array.isArray(persona.metadata)
               ? (persona.metadata as Record<string, unknown>)
@@ -388,6 +577,7 @@ export default function PersonasAdminPage() {
             draftPrompt: persona.prompt ?? "",
             draftDisplayName: persona.display_name ?? "",
             draftImageUrl: persona.image_url ?? "",
+            draftPersonality: extractPersonality(persona.metadata ?? null),
             draftMetadata: metadataClone,
             draftRolePrompts: rolePrompts,
             isDirty: false,
@@ -446,7 +636,7 @@ export default function PersonasAdminPage() {
   const handleInputChange = (
     scope: PersonaScope,
     roleKey: string,
-    field: "behavior" | "display" | "image" | "prompt",
+    field: "behavior" | "display" | "image" | "prompt" | "personality",
     value: string
   ) => {
     updateDraft(scope, roleKey, (prev) => {
@@ -459,6 +649,16 @@ export default function PersonasAdminPage() {
         next.draftImageUrl = value;
       } else if (field === "prompt") {
         next.draftPrompt = value;
+      } else if (field === "personality") {
+        next.draftPersonality = value;
+        const baseMeta = cloneRecord(prev.draftMetadata) ?? {};
+        const trimmed = value.trim();
+        if (trimmed) {
+          baseMeta.personality = trimmed;
+        } else {
+          delete baseMeta.personality;
+        }
+        next.draftMetadata = Object.keys(baseMeta).length ? baseMeta : null;
       }
       next.isDirty = computePersonaDirty(next);
       next.saveMessage = null;
@@ -608,6 +808,7 @@ export default function PersonasAdminPage() {
               draftPrompt: updated.prompt ?? "",
               draftDisplayName: updated.display_name ?? "",
               draftImageUrl: updated.image_url ?? "",
+              draftPersonality: extractPersonality(updated.metadata ?? null),
               draftMetadata: metadataClone,
               draftRolePrompts: extractRolePrompts(updated.metadata ?? null),
               saving: false,
@@ -656,6 +857,7 @@ export default function PersonasAdminPage() {
             draftPrompt: updated.prompt ?? "",
             draftDisplayName: updated.display_name ?? "",
             draftImageUrl: updated.image_url ?? "",
+            draftPersonality: extractPersonality(updated.metadata ?? null),
             draftMetadata: metadataClone,
             draftRolePrompts: extractRolePrompts(updated.metadata ?? null),
             saving: false,
@@ -874,6 +1076,7 @@ export default function PersonasAdminPage() {
             <p className="text-xs text-muted-foreground">
               Last updated: {formatIso(row.persona.updated_at)}
             </p>
+
           </div>
           <div className="flex items-center gap-2">
             {showOpenChat ? (
@@ -973,6 +1176,29 @@ export default function PersonasAdminPage() {
               Used by the chat UI. Leave blank to remove.
             </p>
           </div>
+        </div>
+
+        <div className="mt-4 space-y-2">
+          <Label htmlFor={`personality-${scope}-${row.persona.role_key}`}>
+            Personality spotlight
+          </Label>
+          <Textarea
+            id={`personality-${scope}-${row.persona.role_key}`}
+            rows={3}
+            placeholder="Short phrase that captures this persona's tone and priorities"
+            value={row.draftPersonality}
+            onChange={(event) =>
+              handleInputChange(
+                scope,
+                row.persona.role_key,
+                "personality",
+                event.target.value
+              )
+            }
+          />
+          <p className="text-xs text-muted-foreground">
+            Appears in admin tooling and seeds behavior instructions. Keep it concise (1-2 sentences).
+          </p>
         </div>
 
         <div className="mt-4 space-y-2">
@@ -1085,6 +1311,210 @@ export default function PersonasAdminPage() {
   };
 
   const selectedCase = caseSummaries.find((entry) => entry.id === selectedCaseId);
+  const selectedCaseDescriptor = selectedCase?.title && selectedCase.title.trim().length
+    ? selectedCase.title
+    : selectedCaseId || "the selected case";
+
+  const updatePromptRows = (
+    section: "global" | "case",
+    updater: (rows: PromptEditorState[]) => PromptEditorState[]
+  ) => {
+    if (section === "global") {
+      setGlobalPromptRows((prev) => updater(prev));
+    } else {
+      setCasePromptRows((prev) => updater(prev));
+    }
+  };
+
+  const handlePromptChange = (
+    section: "global" | "case",
+    id: string,
+    value: string
+  ) => {
+    updatePromptRows(section, (rows) =>
+      rows.map((row) =>
+        row.record.id === id
+          ? {
+              ...row,
+              draftValue: value,
+              isDirty: value !== row.record.value,
+              message: null,
+              error: null,
+            }
+          : row
+      )
+    );
+  };
+
+  const handlePromptReset = (section: "global" | "case", id: string) => {
+    updatePromptRows(section, (rows) =>
+      rows.map((row) =>
+        row.record.id === id
+          ? {
+              ...row,
+              draftValue: row.record.defaultValue,
+              isDirty: row.record.defaultValue !== row.record.value,
+              message: null,
+              error: null,
+            }
+          : row
+      )
+    );
+  };
+
+  const handlePromptSave = async (section: "global" | "case", id: string) => {
+    if (!authHeaders) return;
+
+    const rows = section === "global" ? globalPromptRows : casePromptRows;
+    const target = rows.find((row) => row.record.id === id);
+    if (!target || target.saving) {
+      return;
+    }
+
+    const payloadValue = target.draftValue;
+
+    updatePromptRows(section, (prev) =>
+      prev.map((row) =>
+        row.record.id === id
+          ? { ...row, saving: true, message: null, error: null }
+          : row
+      )
+    );
+
+    try {
+      const response = await axios.put(
+        "/api/prompts",
+        { id, value: payloadValue },
+        { headers: authHeaders }
+      );
+      const payload = response.data as { prompt?: PromptRecord | null } | undefined;
+      const promptRecord = payload?.prompt ?? null;
+
+      updatePromptRows(section, (prev) =>
+        prev.map((row) => {
+          if (row.record.id !== id) return row;
+
+          const nextRecord: PromptRecord = promptRecord
+            ? promptRecord
+            : {
+                ...row.record,
+                value: payloadValue,
+                hasOverride:
+                  payloadValue.trim() !== row.record.defaultValue.trim(),
+                updatedAt: row.record.updatedAt ?? null,
+                updatedBy: row.record.updatedBy ?? null,
+              };
+
+          return {
+            record: nextRecord,
+            draftValue: nextRecord.value ?? "",
+            isDirty: false,
+            saving: false,
+            message: "Saved changes.",
+            error: null,
+          };
+        })
+      );
+    } catch (error) {
+      const message = extractAxiosMessage(error) ?? "Failed to update prompt";
+      updatePromptRows(section, (prev) =>
+        prev.map((row) =>
+          row.record.id === id
+            ? { ...row, saving: false, error: message }
+            : row
+        )
+      );
+    }
+  };
+
+  const renderPromptCard = (section: "global" | "case") =>
+    (row: PromptEditorState) => {
+      const { record } = row;
+      const copy = section === "global" ? GLOBAL_PROMPT_COPY[record.id] : undefined;
+      const primaryDescription =
+        section === "global"
+          ? copy?.description ?? record.description
+          : buildStagePromptDescription(record);
+      const helperText = section === "global" ? copy?.helper ?? null : null;
+      const safeId = record.id.replace(/[^a-zA-Z0-9_-]/g, "-");
+      const inputId = `${section}-prompt-${safeId}`;
+      const descriptionId = `${inputId}-description`;
+      const title = copy?.title ?? record.label;
+      const status = formatPromptStatus(record);
+      const updatedLine = record.updatedAt
+        ? record.updatedBy
+          ? `Last updated ${formatIso(record.updatedAt)} by ${record.updatedBy}`
+          : `Last updated ${formatIso(record.updatedAt)}`
+        : record.hasOverride
+        ? "Override saved"
+        : "No override saved yet";
+      const resetDisabled = row.draftValue === record.defaultValue;
+      return (
+        <div key={record.id} className="rounded border p-4 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-lg font-semibold" id={`${inputId}-title`}>
+              {title}
+            </h3>
+            <Badge variant={record.hasOverride ? "default" : "outline"}>
+              {status}
+            </Badge>
+          </div>
+          <p className="text-xs text-muted-foreground" id={descriptionId}>
+            {primaryDescription}
+          </p>
+          {helperText ? (
+            <p className="text-[11px] text-muted-foreground">{helperText}</p>
+          ) : null}
+          <Textarea
+            id={inputId}
+            aria-labelledby={`${inputId}-title`}
+            aria-describedby={descriptionId}
+            rows={section === "global" ? 10 : 6}
+            value={row.draftValue}
+            onChange={(event) =>
+              handlePromptChange(section, record.id, event.target.value)
+            }
+            className="font-mono"
+          />
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+            <span>{updatedLine}</span>
+            <span>• Scope: {record.scope}</span>
+            {record.category ? <span>• Category: {record.category}</span> : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void handlePromptSave(section, record.id)}
+              disabled={!row.isDirty || row.saving}
+            >
+              {row.saving ? "Saving…" : "Save changes"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => handlePromptReset(section, record.id)}
+              disabled={row.saving || resetDisabled}
+            >
+              Reset to default
+            </Button>
+          </div>
+          {row.message ? (
+            <p className="text-xs text-green-600">{row.message}</p>
+          ) : null}
+          {row.error ? (
+            <p className="text-xs text-red-600">{row.error}</p>
+          ) : null}
+          <details className="rounded border bg-muted/30 p-3 text-xs">
+            <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Default content
+            </summary>
+            <pre className="mt-2 whitespace-pre-wrap">{record.defaultValue}</pre>
+          </details>
+        </div>
+      );
+    };
 
   return (
     <div className="max-w-6xl mx-auto p-8 space-y-6">
@@ -1143,6 +1573,53 @@ export default function PersonasAdminPage() {
           </div>
         ) : null}
       </div>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold">Global Conversation Prompts</h2>
+          <p className="text-sm text-muted-foreground">
+            Adjust the system-wide instructions and persona seeding templates that every conversation follows.
+          </p>
+        </div>
+        {globalPromptLoading ? (
+          <p className="text-center">Loading global prompts…</p>
+        ) : globalPromptError ? (
+          <p className="text-center text-red-600">{globalPromptError}</p>
+        ) : !globalPromptRows.length ? (
+          <p className="text-center text-muted-foreground">
+            No editable global prompts were found.
+          </p>
+        ) : (
+          <div className="grid gap-4">
+            {globalPromptRows.map(renderPromptCard("global"))}
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold">Stage Transition Directives</h2>
+          <p className="text-sm text-muted-foreground">
+            Update the role reminders delivered when each stage begins for {selectedCaseDescriptor}. Changes apply immediately to live chat sessions.
+          </p>
+        </div>
+        {casePromptLoading ? (
+          <p className="text-center">Loading stage directives…</p>
+        ) : casePromptError ? (
+          <p className="text-center text-red-600">{casePromptError}</p>
+        ) : !casePromptRows.length ? (
+          <p className="text-center text-muted-foreground">
+            {selectedCaseId
+              ? "No stage directives available for this case yet."
+              : "Select a case to review stage directives."}
+          </p>
+        ) : (
+          <div className="grid gap-4">
+            {casePromptRows.map(renderPromptCard("case"))}
+          </div>
+        )}
+      </section>
+
       <section className="space-y-4">
         <div>
           <h2 className="text-xl font-semibold">Shared Personas</h2>

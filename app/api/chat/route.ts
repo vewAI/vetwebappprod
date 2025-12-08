@@ -11,7 +11,10 @@ import type {
   PersonaIdentity,
   PersonaSeed,
 } from "@/features/personas/models/persona";
-import { CHAT_SYSTEM_GUIDELINE } from "@/features/chat/prompts/systemGuideline";
+import {
+  CHAT_SYSTEM_GUIDELINE_DEFAULT,
+  CHAT_SYSTEM_GUIDELINE_PROMPT_ID,
+} from "@/features/chat/prompts/systemGuideline";
 import { resolvePromptValue } from "@/features/prompts/services/promptService";
 import { ensureCasePersonas } from "@/features/personas/services/casePersonaPersistence";
 import { ensureSharedPersonas } from "@/features/personas/services/globalPersonaPersistence";
@@ -20,6 +23,10 @@ import {
   normalizeCaseMedia,
   type CaseMediaItem,
 } from "@/features/cases/models/caseMedia";
+import {
+  getDefaultPersonaTemplateOverrides,
+  loadPersonaTemplateOverrides,
+} from "@/features/personas/services/personaTemplateOverrides";
 
 const openai = new OpenAi({
   apiKey: process.env.OPENAI_API_KEY,
@@ -66,6 +73,16 @@ export async function POST(request: NextRequest) {
   const { supabase } = auth;
   try {
     const { messages, stageIndex, caseId, attemptId } = await request.json();
+
+    let personaTemplateOverrides = getDefaultPersonaTemplateOverrides();
+    try {
+      personaTemplateOverrides = await loadPersonaTemplateOverrides(supabase);
+    } catch (overrideError) {
+      console.warn(
+        "Failed to resolve persona template overrides in chat route; using defaults",
+        overrideError
+      );
+    }
 
     // Validate that messages is an array
     if (!messages || !Array.isArray(messages)) {
@@ -220,7 +237,10 @@ export async function POST(request: NextRequest) {
     let personaBehaviorPrompt: string | undefined = undefined;
     let personaSeeds: PersonaSeed[] | null = null;
 
-    if (personaRoleKey === "owner" && caseId && typeof caseId === "string") {
+    const isCasePersona =
+      personaRoleKey === "owner" || personaRoleKey === "nurse";
+
+    if (isCasePersona && caseId && typeof caseId === "string") {
       try {
         const { data: row, error } = await supabase
           .from("case_personas")
@@ -374,13 +394,20 @@ export async function POST(request: NextRequest) {
     if (personaRoleKey) {
       try {
         if (!personaSeeds) {
-          if (personaRoleKey === "owner" && caseId && typeof caseId === "string") {
+          if (
+            isCasePersona &&
+            caseId &&
+            typeof caseId === "string"
+          ) {
             personaSeeds = buildPersonaSeeds(
               caseId,
-              (caseRecord ?? {}) as Record<string, unknown>
+              (caseRecord ?? {}) as Record<string, unknown>,
+              personaTemplateOverrides
             );
           } else {
-            personaSeeds = buildSharedPersonaSeeds();
+            personaSeeds = buildSharedPersonaSeeds(
+              personaTemplateOverrides
+            );
           }
         }
         const matchedSeed = personaSeeds.find(
@@ -497,16 +524,27 @@ export async function POST(request: NextRequest) {
     }
 
     if (personaIdentity?.fullName) {
-      const normalizedStage = stageRole?.trim().toLowerCase();
-      const normalizedDisplay = displayRole?.trim().toLowerCase();
-      if (!displayRole) {
-        displayRole = personaIdentity.fullName;
-      } else if (
-        normalizedStage &&
-        normalizedDisplay &&
-        normalizedStage === normalizedDisplay
-      ) {
-        displayRole = personaIdentity.fullName;
+      const personaName = personaIdentity.fullName;
+      const suffix =
+        personaRoleKey === "nurse"
+          ? " (Nurse)"
+          : personaRoleKey === "owner"
+            ? " (Owner)"
+            : "";
+
+      const decoratedName = `${personaName}${suffix}`.trim();
+      if (displayRole && displayRole.trim()) {
+        const normalizedStage = stageRole?.trim().toLowerCase();
+        const normalizedDisplay = displayRole.trim().toLowerCase();
+        if (
+          normalizedStage &&
+          normalizedDisplay &&
+          normalizedStage === normalizedDisplay
+        ) {
+          displayRole = decoratedName;
+        }
+      } else {
+        displayRole = decoratedName;
       }
     }
 
@@ -526,8 +564,8 @@ export async function POST(request: NextRequest) {
     // a concise bulleted list or a markdown table on request.
     let systemGuideline = await resolvePromptValue(
       supabase,
-      "chat.system.guideline",
-      CHAT_SYSTEM_GUIDELINE
+      CHAT_SYSTEM_GUIDELINE_PROMPT_ID,
+      CHAT_SYSTEM_GUIDELINE_DEFAULT
     );
 
     const personaNameForChat =

@@ -6,6 +6,8 @@ export type CaseSeed = {
   species: string;
   condition: string;
   category: string;
+  owner_avatar_key: string;
+  nurse_avatar_key: string;
   difficulty: "Easy" | "Medium" | "Hard";
   estimated_time: number;
   image_url: string;
@@ -40,6 +42,8 @@ export const CASE_SEEDS: CaseSeed[] = [
     species: "Equine",
     condition: "Suspected Streptococcus equi infection",
     category: "Equine Infectious Disease",
+    owner_avatar_key: "owner-amelia-ramirez",
+    nurse_avatar_key: "nurse-isabella-chen",
     difficulty: "Medium",
     estimated_time: 25,
     image_url: placeholderImage,
@@ -85,6 +89,8 @@ export const CASE_SEEDS: CaseSeed[] = [
     species: "Canine",
     condition: "Parvoviral enteritis",
     category: "Small Animal Internal Medicine",
+    owner_avatar_key: "owner-olivia-nguyen",
+    nurse_avatar_key: "nurse-grace-adebayo",
     difficulty: "Hard",
     estimated_time: 30,
     image_url: placeholderImage,
@@ -130,6 +136,8 @@ export const CASE_SEEDS: CaseSeed[] = [
     species: "Bovine",
     condition: "Contagious mastitis outbreak",
     category: "Food Animal Production Medicine",
+    owner_avatar_key: "owner-james-hartley",
+    nurse_avatar_key: "nurse-ethan-cooper",
     difficulty: "Medium",
     estimated_time: 28,
     image_url: placeholderImage,

@@ -1,5 +1,9 @@
 import OpenAi from "openai";
 import type { CaseFieldKey } from "@/features/cases/fieldMeta";
+import {
+  DEFAULT_NURSE_AVATAR_ID,
+  DEFAULT_OWNER_AVATAR_ID,
+} from "@/features/personas/data/avatar-profiles";
 
 export type CasePayload = Record<string, unknown>;
 
@@ -192,6 +196,9 @@ export function applyCaseDefaults(body: CasePayload) {
 
   ensureField(body, "description", description_template);
   ensureField(body, "details", details_template);
+
+  ensureField(body, "owner_avatar_key", DEFAULT_OWNER_AVATAR_ID);
+  ensureField(body, "nurse_avatar_key", DEFAULT_NURSE_AVATAR_ID);
 
   if (
     body["estimated_time"] === undefined ||

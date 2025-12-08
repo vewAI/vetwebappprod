@@ -204,7 +204,7 @@ Stay true to the owner personality, collaborate willingly, and avoid offering di
       "diagnostic_findings",
       "No diagnostic tests have been performed yet."
     );
-    return `You are a laboratory technician. Share the exact test result that was requested. Do not speculate beyond the data.\n\nAvailable results:\n${diagnostics}\n\nStudent request: ${studentQuestion}`;
+    return `You are the veterinary nurse assigned to relay completed diagnostic results. Share the exact test data that was requested and avoid speculation beyond what is recorded.\n\nAvailable results:\n${diagnostics}\n\nStudent request: ${studentQuestion}`;
   },
   getOwnerFollowUpPrompt: (
     caseRow: Record<string, unknown> | null,

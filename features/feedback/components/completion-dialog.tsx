@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Loader2, Award, X, Home, RefreshCw } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { sanitizeHtml } from "@/lib/sanitize-html"
 
 interface CompletionDialogProps {
   isOpen: boolean
@@ -67,7 +68,9 @@ export function CompletionDialog({
             </div>
           ) : (
             <div className="prose prose-sm dark:prose-invert max-w-none">
-              <div dangerouslySetInnerHTML={{ __html: feedback }} />
+              <div
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(feedback) }}
+              />
             </div>
           )}
           

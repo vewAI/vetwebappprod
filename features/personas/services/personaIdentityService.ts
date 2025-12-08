@@ -4,114 +4,15 @@ import type {
   PersonaSeedContext,
   PersonaSex,
 } from "@/features/personas/models/persona";
-
-function hashString(input: string): number {
-  let hash = 0;
-  for (let i = 0; i < input.length; i++) {
-    hash = (hash << 5) - hash + input.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
-
-type NameEntry = {
-  first: string;
-  last: string;
-  honorific?: string;
-};
-
-type PersonaIdentityConfig = {
-  sex: PersonaSex;
-  voiceId: string;
-  names: NameEntry[];
-  defaultHonorific?: string;
-};
-
-const DEFAULT_CONFIG: PersonaIdentityConfig = {
-  sex: "female",
-  voiceId: "alloy",
-  names: [
-    { first: "Alex", last: "Morgan" },
-    { first: "Jordan", last: "Lee" },
-    { first: "Taylor", last: "Quinn" },
-    { first: "Riley", last: "Adams" },
-  ],
-};
-
-const ROLE_CONFIG: Record<string, PersonaIdentityConfig> = {
-  owner: {
-    sex: "female",
-    voiceId: "aria",
-    names: [
-      { first: "Charlotte", last: "Bennett" },
-      { first: "Amelia", last: "Montrose" },
-      { first: "Imogen", last: "Lovelace" },
-      { first: "Beatrice", last: "Hollingsworth" },
-    ],
-  },
-  "lab-technician": {
-    sex: "male",
-    voiceId: "matthew",
-    names: [
-      { first: "Andre", last: "Silva" },
-      { first: "Jasper", last: "Hayes" },
-      { first: "Malik", last: "Daniels" },
-      { first: "Rowan", last: "Li" },
-    ],
-  },
-  veterinarian: {
-    sex: "male",
-    voiceId: "verse",
-    names: [
-      { honorific: "Dr.", first: "Miguel", last: "Torres" },
-      { honorific: "Dr.", first: "Noah", last: "Kim" },
-      { honorific: "Dr.", first: "Luca", last: "Romero" },
-      { honorific: "Dr.", first: "Aiden", last: "Forsyth" },
-    ],
-    defaultHonorific: "Dr.",
-  },
-  "veterinary-nurse": {
-    sex: "female",
-    voiceId: "luna",
-    names: [
-      { first: "Sierra", last: "Holland" },
-      { first: "Imani", last: "Carson" },
-      { first: "Freya", last: "Bennett" },
-      { first: "Alina", last: "Popescu" },
-    ],
-  },
-  producer: {
-    sex: "male",
-    voiceId: "oliver",
-    names: [
-      { first: "Colin", last: "McDermott" },
-      { first: "Rafael", last: "Santos" },
-      { first: "Ethan", last: "Brooks" },
-      { first: "Declan", last: "Murphy" },
-    ],
-  },
-  "veterinary-assistant": {
-    sex: "female",
-    voiceId: "alloy",
-    names: [
-      { first: "Nina", last: "Zhao" },
-      { first: "Priya", last: "Kulkarni" },
-      { first: "Avery", last: "Lopez" },
-      { first: "Juniper", last: "Ellis" },
-    ],
-  },
-  professor: {
-    sex: "female",
-    voiceId: "sage",
-    names: [
-      { honorific: "Dr.", first: "Evelyn", last: "Hart" },
-      { honorific: "Dr.", first: "Nalini", last: "Chandra" },
-      { honorific: "Dr.", first: "Miranda", last: "Kingsley" },
-      { honorific: "Dr.", first: "Sabine", last: "Dubois" },
-    ],
-    defaultHonorific: "Dr.",
-  },
-};
+import {
+  DEFAULT_NURSE_AVATAR_ID,
+  DEFAULT_OWNER_AVATAR_ID,
+  getNurseAvatarById,
+  getOwnerAvatarById,
+  NURSE_AVATARS,
+  OWNER_AVATARS,
+  type PersonaAvatarProfile,
+} from "@/features/personas/data/avatar-profiles";
 
 function buildPronouns(sex: PersonaSex): PersonaPronouns {
   if (sex === "male") {
@@ -130,76 +31,55 @@ function buildPronouns(sex: PersonaSex): PersonaPronouns {
   };
 }
 
-function pickNameEntry(config: PersonaIdentityConfig, seed: string): NameEntry {
-  const pool = config.names.length ? config.names : DEFAULT_CONFIG.names;
-  const index = hashString(seed) % pool.length;
-  return pool[index];
-}
-
 export function resolvePersonaIdentity(
   caseId: string,
   roleKey: string,
   context?: PersonaSeedContext
 ): PersonaIdentity {
-  if (roleKey === "owner" && context?.ownerName) {
-    return buildOwnerIdentity(context.ownerName, caseId, roleKey);
-  }
-
-  const config = ROLE_CONFIG[roleKey] ?? DEFAULT_CONFIG;
-  const seedBase = context?.sharedPersonaKey
-    ? context.sharedPersonaKey
-    : `${roleKey}:${context?.species ?? "shared"}`;
-  const nameEntry = pickNameEntry(config, seedBase);
-  const honorific = nameEntry.honorific ?? config.defaultHonorific;
-  const firstName = nameEntry.first;
-  const lastName = nameEntry.last;
-  const fullName = honorific
-    ? `${honorific} ${firstName} ${lastName}`
-    : `${firstName} ${lastName}`;
-
-  return {
-    firstName,
-    lastName,
-    fullName,
-    honorific,
-    sex: config.sex,
-    pronouns: buildPronouns(config.sex),
-    voiceId: config.voiceId,
-  };
-}
-
-function buildOwnerIdentity(ownerName: string, caseId: string, roleKey: string): PersonaIdentity {
-  const cleaned = ownerName.replace(/[^A-Za-z'\-\s]/g, " ").replace(/\s+/g, " ").trim();
-  const config = ROLE_CONFIG[roleKey] ?? DEFAULT_CONFIG;
-  const backupNames = config.names.length ? config.names : DEFAULT_CONFIG.names;
-  const base = `${caseId}:${roleKey}:owner`;
-  const defaultEntry = pickNameEntry({ ...config, names: backupNames }, base);
-
-  if (!cleaned) {
+  if (roleKey === "owner") {
+    const avatar = getOwnerAvatarById(context?.ownerAvatarKey ?? DEFAULT_OWNER_AVATAR_ID);
     return {
-      firstName: defaultEntry.first,
-      lastName: defaultEntry.last,
-      fullName: `${defaultEntry.first} ${defaultEntry.last}`,
-      honorific: defaultEntry.honorific ?? config.defaultHonorific,
-      sex: config.sex,
-      pronouns: buildPronouns(config.sex),
-      voiceId: config.voiceId,
+      firstName: avatar?.firstName ?? OWNER_AVATARS[0]?.firstName ?? "Alex",
+      lastName: avatar?.lastName ?? OWNER_AVATARS[0]?.lastName ?? "Morgan",
+      fullName: avatar?.displayName ?? `${OWNER_AVATARS[0]?.firstName ?? "Alex"} ${OWNER_AVATARS[0]?.lastName ?? "Morgan"}`,
+      honorific: undefined,
+      sex: avatar?.sex ?? "female",
+      pronouns: buildPronouns(avatar?.sex ?? "female"),
+      voiceId: avatar?.voiceId ?? "aria",
     };
   }
 
-  const fragments = cleaned.split(" ").filter(Boolean);
-  const firstName = fragments[0] ?? defaultEntry.first;
-  const lastName = fragments.length > 1 ? fragments[fragments.length - 1] : defaultEntry.last;
-  const honorific = defaultEntry.honorific ?? config.defaultHonorific;
-  const fullName = honorific ? `${honorific} ${firstName} ${lastName}` : `${firstName} ${lastName}`;
+  if (roleKey === "nurse") {
+    const avatar = getNurseAvatarById(context?.nurseAvatarKey ?? DEFAULT_NURSE_AVATAR_ID);
+    return {
+      firstName: avatar?.firstName ?? NURSE_AVATARS[0]?.firstName ?? "Riley",
+      lastName: avatar?.lastName ?? NURSE_AVATARS[0]?.lastName ?? "Adams",
+      fullName: avatar?.displayName ?? `${NURSE_AVATARS[0]?.firstName ?? "Riley"} ${NURSE_AVATARS[0]?.lastName ?? "Adams"}`,
+      honorific: undefined,
+      sex: avatar?.sex ?? "female",
+      pronouns: buildPronouns(avatar?.sex ?? "female"),
+      voiceId: avatar?.voiceId ?? "aria",
+    };
+  }
+
+  // Fallback for unexpected role keys (should not occur with new avatar system)
+  const fallback: PersonaAvatarProfile = {
+    id: "fallback",
+    firstName: "Alex",
+    lastName: "Morgan",
+    displayName: "Alex Morgan",
+    sex: "female",
+    voiceId: "aria",
+    imageUrl: "",
+  };
 
   return {
-    firstName,
-    lastName,
-    fullName,
-    honorific,
-    sex: config.sex,
-    pronouns: buildPronouns(config.sex),
-    voiceId: config.voiceId,
+    firstName: fallback.firstName,
+    lastName: fallback.lastName,
+    fullName: fallback.displayName,
+    honorific: undefined,
+    sex: fallback.sex,
+    pronouns: buildPronouns(fallback.sex),
+    voiceId: fallback.voiceId,
   };
 }
