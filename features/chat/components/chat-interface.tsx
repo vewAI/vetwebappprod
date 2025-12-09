@@ -23,7 +23,11 @@ import { getStageTip } from "@/features/stages/services/stageService";
 import { chatService } from "@/features/chat/services/chatService";
 import { getOrAssignVoiceForRole } from "@/features/speech/services/voiceMap";
 import type { TtsEventDetail } from "@/features/speech/models/tts-events";
-import { normalizeRoleKey } from "@/features/avatar/utils/role-utils";
+import {
+  classifyChatPersonaLabel,
+  isAllowedChatPersonaKey,
+  resolveChatPersonaRoleKey,
+} from "@/features/chat/utils/persona-guardrails";
 
 const STAGE_KEYWORD_SYNONYMS: Record<string, string[]> = {
   examination: ["exam"],
@@ -119,6 +123,14 @@ type PersonaDirectoryEntry = {
   sex?: string;
 };
 
+const resolveDirectoryPersonaKey = (
+  raw: string | null | undefined
+): string | null => {
+  if (!raw) return null;
+  if (isAllowedChatPersonaKey(raw)) return raw;
+  return classifyChatPersonaLabel(raw);
+};
+
 export function ChatInterface({
   caseId,
   attemptId,
@@ -149,12 +161,48 @@ export function ChatInterface({
   const [personaDirectory, setPersonaDirectory] = useState<
     Record<string, PersonaDirectoryEntry>
   >({});
+  const personaDirectoryRef = useRef<Record<string, PersonaDirectoryEntry>>({});
+  useEffect(() => {
+    personaDirectoryRef.current = personaDirectory;
+  }, [personaDirectory]);
+
+  const personaDirectoryResolveRef = useRef<(() => void) | null>(null);
+  const personaDirectoryReadyPromiseRef = useRef<Promise<void> | null>(null);
+
+  const resetPersonaDirectoryReady = useCallback(() => {
+    personaDirectoryReadyPromiseRef.current = new Promise<void>((resolve) => {
+      personaDirectoryResolveRef.current = resolve;
+    });
+  }, []);
+
+  const resolvePersonaDirectoryReady = useCallback(() => {
+    if (personaDirectoryResolveRef.current) {
+      personaDirectoryResolveRef.current();
+      personaDirectoryResolveRef.current = null;
+    }
+  }, []);
   const [stageIndicator, setStageIndicator] = useState<
     { title: string; body: string } | null
   >(null);
   const [advanceGuard, setAdvanceGuard] = useState<
     { stageIndex: number; askedAt: number; metrics: StageCompletionMetrics } | null
   >(null);
+  const ensurePersonaMetadata = useCallback(
+    async (roleKey: string | null | undefined) => {
+      if (!roleKey) return undefined;
+      const existing = personaDirectoryRef.current[roleKey];
+      if (existing) return existing;
+      if (personaDirectoryReadyPromiseRef.current) {
+        try {
+          await personaDirectoryReadyPromiseRef.current;
+        } catch (e) {
+          console.warn("Persona directory wait failed", e);
+        }
+      }
+      return personaDirectoryRef.current[roleKey];
+    },
+    []
+  );
   const stageKeywordSets = useMemo(() => {
     return stages.map((stage, index) => {
       const keywords = new Set<string>();
@@ -275,17 +323,19 @@ export function ChatInterface({
 
   const upsertPersonaDirectory = useCallback(
     (roleKey: string | null | undefined, entry: PersonaDirectoryEntry) => {
-      if (!roleKey) return;
-      const normalized = normalizeRoleKey(roleKey) ?? roleKey;
+      const normalized = resolveDirectoryPersonaKey(roleKey);
+      if (!normalized) return;
       setPersonaDirectory((prev) => {
         const existing = prev[normalized] ?? {};
-        return {
+        const nextDir = {
           ...prev,
           [normalized]: {
             ...existing,
             ...entry,
           },
         };
+        personaDirectoryRef.current = nextDir;
+        return nextDir;
       });
     },
     []
@@ -476,6 +526,10 @@ export function ChatInterface({
 
   useEffect(() => {
     let cancelled = false;
+    setPersonaDirectory({});
+    personaDirectoryRef.current = {};
+    resetPersonaDirectoryReady();
+
     async function loadPersonaDirectory() {
       try {
         const response = await fetch(
@@ -492,8 +546,10 @@ export function ChatInterface({
 
         for (const row of personas) {
           const rawKey = typeof row?.role_key === "string" ? row.role_key : "";
-          const normalizedKey = normalizeRoleKey(rawKey) ?? rawKey;
-          if (!normalizedKey || normalizedKey !== "owner") {
+          const normalizedKey = isAllowedChatPersonaKey(rawKey)
+            ? rawKey
+            : classifyChatPersonaLabel(rawKey);
+          if (!normalizedKey) {
             continue;
           }
           const metadata =
@@ -544,8 +600,10 @@ export function ChatInterface({
 
           for (const row of globalPersonas) {
             const rawKey = typeof row?.role_key === "string" ? row.role_key : "";
-            const normalizedKey = normalizeRoleKey(rawKey) ?? rawKey;
-            if (!normalizedKey || normalizedKey === "owner") {
+            const normalizedKey = isAllowedChatPersonaKey(rawKey)
+              ? rawKey
+              : classifyChatPersonaLabel(rawKey);
+            if (!normalizedKey || next[normalizedKey]) {
               continue;
             }
             const metadata =
@@ -586,9 +644,14 @@ export function ChatInterface({
         }
         if (!cancelled) {
           setPersonaDirectory(next);
+          personaDirectoryRef.current = next;
+          resolvePersonaDirectoryReady();
         }
       } catch (err) {
         console.warn("Failed to load persona directory", err);
+        if (!cancelled) {
+          resolvePersonaDirectoryReady();
+        }
       }
     }
 
@@ -596,7 +659,7 @@ export function ChatInterface({
     return () => {
       cancelled = true;
     };
-  }, [caseId]);
+  }, [caseId, resetPersonaDirectoryReady, resolvePersonaDirectoryReady]);
 
   // Text-to-speech
   const {
@@ -721,10 +784,8 @@ export function ChatInterface({
         : `Are you sure you have enough information before leaving ${stageTitle.toLowerCase()}?`;
 
       const roleName = stage.role ?? "Virtual Assistant";
-      const normalizedRoleKey = normalizeRoleKey(roleName) ?? undefined;
-      const personaMeta = normalizedRoleKey
-        ? personaDirectory[normalizedRoleKey]
-        : undefined;
+      const normalizedRoleKey = resolveChatPersonaRoleKey(stage.role, roleName);
+      const personaMeta = await ensurePersonaMetadata(normalizedRoleKey);
 
       const voiceSex: "male" | "female" | "neutral" =
         personaMeta?.sex === "male" ||
@@ -733,7 +794,7 @@ export function ChatInterface({
           ? (personaMeta.sex as "male" | "female" | "neutral")
           : "neutral";
 
-      const voiceForRole = getOrAssignVoiceForRole(roleName, attemptId, {
+      const voiceForRole = getOrAssignVoiceForRole(normalizedRoleKey, attemptId, {
         preferredVoice: personaMeta?.voiceId,
         sex: voiceSex,
       });
@@ -780,6 +841,7 @@ export function ChatInterface({
       attemptId,
       caseId,
       personaDirectory,
+      ensurePersonaMetadata,
       playTtsAndPauseStt,
       setMessages,
       stages,
@@ -963,6 +1025,11 @@ export function ChatInterface({
       );
       const stage = stages[currentStageIndex] ?? stages[0];
       const roleName = response.displayRole ?? stage?.role ?? "assistant";
+      const safePersonaRoleKey =
+        (response.personaRoleKey &&
+          isAllowedChatPersonaKey(response.personaRoleKey)
+          ? response.personaRoleKey
+          : resolveChatPersonaRoleKey(stage?.role, roleName));
       const portraitUrl = response.portraitUrl;
       const aiMessage = chatService.createAssistantMessage(
         response.content,
@@ -971,13 +1038,11 @@ export function ChatInterface({
         portraitUrl,
         response.voiceId,
         response.personaSex,
-        response.personaRoleKey,
+        safePersonaRoleKey,
         response.media
       );
       const finalAssistantContent = aiMessage.content;
-      const normalizedPersonaKey =
-        aiMessage.personaRoleKey ??
-        (roleName ? normalizeRoleKey(roleName) ?? undefined : undefined);
+      const normalizedPersonaKey = safePersonaRoleKey;
       upsertPersonaDirectory(normalizedPersonaKey, {
         displayName: aiMessage.displayRole,
         portraitUrl,
@@ -1014,7 +1079,7 @@ export function ChatInterface({
               ? response.personaSex
               : "neutral";
           const voiceForRole = getOrAssignVoiceForRole(
-            String(roleName ?? "assistant"),
+            normalizedPersonaKey,
             attemptId,
             {
               preferredVoice,
@@ -1022,10 +1087,7 @@ export function ChatInterface({
             }
           );
 
-          const normalizedRoleKey =
-            response.personaRoleKey ??
-            normalizeRoleKey(roleName ?? stage?.role ?? "assistant") ??
-            undefined;
+          const normalizedRoleKey = normalizedPersonaKey;
           const ttsMeta = {
             roleKey: normalizedRoleKey,
             displayRole: roleName ?? stage?.role,
@@ -1436,7 +1498,13 @@ export function ChatInterface({
         );
 
         // Append assistant reply into chat UI
-        const roleName = response.displayRole ?? stages[currentStageIndex].role;
+        const stage = stages[p.stageIndex] ?? stages[currentStageIndex];
+        const roleName = response.displayRole ?? stage?.role;
+        const safePersonaRoleKey =
+          (response.personaRoleKey &&
+            isAllowedChatPersonaKey(response.personaRoleKey)
+            ? response.personaRoleKey
+            : resolveChatPersonaRoleKey(stage?.role, roleName));
         const aiMessage = chatService.createAssistantMessage(
           response.content,
           p.stageIndex,
@@ -1444,12 +1512,10 @@ export function ChatInterface({
           response.portraitUrl,
           response.voiceId,
           response.personaSex,
-          response.personaRoleKey,
+          safePersonaRoleKey,
           response.media
         );
-        const normalizedPersonaKey =
-          aiMessage.personaRoleKey ??
-          (roleName ? normalizeRoleKey(String(roleName)) ?? undefined : undefined);
+        const normalizedPersonaKey = safePersonaRoleKey;
         upsertPersonaDirectory(normalizedPersonaKey, {
           displayName: aiMessage.displayRole,
           portraitUrl: response.portraitUrl,
@@ -1937,7 +2003,7 @@ export function ChatInterface({
       return `Hi Doc, do you have any news for me?`;
     }
 
-    return `I am a veterinary assistant. I'm here to help with the ${title.toLowerCase()} and to provide information about findings and tests when requested. Please let me know how I can assist.`;
+    return `I'm the veterinary nurse supporting this case. I'm ready to share the documented findings for the ${title.toLowerCase()} whenever you need them.`;
   };
 
   const handleProceed = async () => {
@@ -1968,10 +2034,8 @@ export function ChatInterface({
     // labels the speaker appropriately (e.g., Owner, Laboratory Technician)
     const stageRole = stages[targetIndex]?.role ?? "Virtual Assistant";
     const roleName = String(stageRole);
-    const normalizedRoleKey = normalizeRoleKey(roleName ?? "assistant") ?? undefined;
-    const personaMeta = normalizedRoleKey
-      ? personaDirectory[normalizedRoleKey]
-      : undefined;
+    const normalizedRoleKey = resolveChatPersonaRoleKey(stageRole, roleName);
+    const personaMeta = await ensurePersonaMetadata(normalizedRoleKey);
 
     // Create assistant message using persona metadata when available so the
     // client sees the correct speaker (owner vs assistant vs lab tech) with
@@ -1983,14 +2047,10 @@ export function ChatInterface({
         ? personaMeta.sex
         : "neutral";
 
-    const voiceForRole = getOrAssignVoiceForRole(
-      roleName,
-      attemptId,
-      {
-        preferredVoice: personaMeta?.voiceId,
-        sex: voiceSex,
-      }
-    );
+    const voiceForRole = getOrAssignVoiceForRole(normalizedRoleKey, attemptId, {
+      preferredVoice: personaMeta?.voiceId,
+      sex: voiceSex,
+    });
     const assistantMsg = chatService.createAssistantMessage(
       introText,
       targetIndex,

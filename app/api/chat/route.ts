@@ -2,7 +2,7 @@ import OpenAi from "openai";
 import { NextRequest, NextResponse } from "next/server";
 import { getRoleInfoPrompt } from "@/features/role-info/services/roleInfoService";
 import { getStagesForCase } from "@/features/stages/services/stageService";
-import { resolvePersonaRoleKey } from "@/features/personas/services/personaImageService";
+import { resolveChatPersonaRoleKey } from "@/features/chat/utils/persona-guardrails";
 import {
   buildPersonaSeeds,
   buildSharedPersonaSeeds,
@@ -203,7 +203,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    personaRoleKey = resolvePersonaRoleKey(stageRole, displayRole) ?? undefined;
+    personaRoleKey = resolveChatPersonaRoleKey(stageRole, displayRole);
 
     type PersonaTableRow = {
       role_key?: string | null;
@@ -220,7 +220,12 @@ export async function POST(request: NextRequest) {
     let personaBehaviorPrompt: string | undefined = undefined;
     let personaSeeds: PersonaSeed[] | null = null;
 
-    if (personaRoleKey === "owner" && caseId && typeof caseId === "string") {
+    const useCasePersona =
+      personaRoleKey &&
+      typeof caseId === "string" &&
+      (personaRoleKey === "owner" || personaRoleKey === "veterinary-nurse");
+
+    if (useCasePersona && caseId) {
       try {
         const { data: row, error } = await supabase
           .from("case_personas")
@@ -264,6 +269,24 @@ export async function POST(request: NextRequest) {
         }
       } catch (personaErr) {
         console.warn("Failed to ensure persona row for chat", personaErr);
+      }
+
+      if (!personaRow && personaRoleKey) {
+        try {
+          await ensureSharedPersonas(supabase);
+          const { data: fallbackRow } = await supabase
+            .from("global_personas")
+            .select(
+              "role_key, display_name, behavior_prompt, metadata, image_url, status"
+            )
+            .eq("role_key", personaRoleKey)
+            .maybeSingle();
+          if (fallbackRow) {
+            personaRow = fallbackRow as PersonaTableRow;
+          }
+        } catch (fallbackErr) {
+          console.warn("Failed to fallback to shared persona row", fallbackErr);
+        }
       }
     } else if (personaRoleKey) {
       try {

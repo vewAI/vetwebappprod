@@ -39,7 +39,35 @@ const diagnosticPrompts: PromptDefinition[] = [
   },
 ];
 
-export const promptRegistry: PromptDefinition[] = diagnosticPrompts;
+const chatGuardrailPrompts: PromptDefinition[] = [
+  {
+    id: "chat.owner-guardrail",
+    label: "Chat • Owner persona guardrail",
+    description:
+      "System-level reminder that the owner/client describes only documented observations and never evaluates the student's knowledge.",
+    scope: "system",
+    category: "chat",
+    defaultValue:
+      "When portraying the owner or client, speak naturally about the animal's symptoms, timelines, and management that already exist in the record. Never invent new problems, never coach the student, and never test their reasoning—simply answer the clinician's questions based on what you have personally observed.",
+    source: "features/chat/prompts/systemGuideline.ts",
+  },
+  {
+    id: "chat.nurse-guardrail",
+    label: "Chat • Veterinary nurse guardrail",
+    description:
+      "System-level reminder that the nurse persona reports nursing observations and recorded clinical data without offering diagnoses.",
+    scope: "system",
+    category: "chat",
+    defaultValue:
+      "When portraying the veterinary nurse, provide calm, task-focused updates about patient comfort, monitoring tasks, and test results that are already documented. Do not speculate, do not diagnose, and do not introduce new findings—only share the recorded information the student explicitly requests.",
+    source: "features/chat/prompts/systemGuideline.ts",
+  },
+];
+
+export const promptRegistry: PromptDefinition[] = [
+  ...diagnosticPrompts,
+  ...chatGuardrailPrompts,
+];
 
 export function findPromptDefinition(id: string): PromptDefinition | undefined {
   return promptRegistry.find((entry) => entry.id === id);

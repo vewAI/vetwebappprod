@@ -67,6 +67,14 @@ export async function GET(req: Request) {
 
     if (!providerRes.ok) {
       const detail = await providerRes.text().catch(() => "");
+      try {
+        const snippet = text.length > 200 ? `${text.slice(0, 200)}…` : text;
+        console.error(
+          `[tts stream] upstream ${providerRes.status} ${providerRes.statusText} (voice=${voice}, chars=${text.length})\n${snippet}\n${detail}`
+        );
+      } catch (logError) {
+        console.error("[tts stream] failed to log provider error", logError);
+      }
       return NextResponse.json(
         { error: "TTS provider error", detail },
         { status: 502 }

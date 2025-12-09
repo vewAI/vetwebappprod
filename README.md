@@ -34,6 +34,16 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Branch workflow
+
+- `main` stays production-ready.
+- `dev` only receives code that is fully tested, demo-ready, and safe for others to build upon.
+- Any exploratory or in-progress effort lives on `sandbox/*` branches (e.g., `sandbox/2025-12-08-wip`). Create one from `dev`, iterate freely, and push it so the history is backed up.
+- When a sandbox change set is stable, cherry-pick or re-implement just that slice onto `dev`, run lint/tests, then push/PR as usual.
+- If you want CI or review on a sandbox effort before promoting it, open a PR from the sandbox branch—but do not merge until the work is verified.
+
+This keeps `dev` clean for handoffs while preserving maximum flexibility for ongoing experiments.
+
 ## Avatar Lab sandbox
 
 Need to test the talking avatar without running a full chat? Visit [`/avatar-lab`](http://localhost:3000/avatar-lab) while the dev server is running. The page lets you:

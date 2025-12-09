@@ -11,11 +11,17 @@ export type VoicePreset = {
 export const VOICE_PRESETS: VoicePreset[] = [
   { id: "alloy", label: "Alloy (neutral)", gender: "neutral" },
   { id: "verse", label: "Verse (male)", gender: "male" },
-  { id: "aria", label: "Aria (female)", gender: "female" },
-  { id: "matthew", label: "Matthew (male)", gender: "male" },
-  { id: "luna", label: "Luna (female)", gender: "female" },
-  { id: "oliver", label: "Oliver (male)", gender: "male" },
+  { id: "coral", label: "Coral (female)", gender: "female" },
+  { id: "nova", label: "Nova (female)", gender: "female" },
+  { id: "onyx", label: "Onyx (male)", gender: "male" },
+  { id: "echo", label: "Echo (neutral)", gender: "neutral" },
+  { id: "shimmer", label: "Shimmer (female)", gender: "female" },
+  { id: "ballad", label: "Ballad (male)", gender: "male" },
+  { id: "ash", label: "Ash (neutral)", gender: "neutral" },
   { id: "sage", label: "Sage (neutral)", gender: "neutral" },
+  { id: "marin", label: "Marin (female)", gender: "female" },
+  { id: "cedar", label: "Cedar (male)", gender: "male" },
+  { id: "fable", label: "Fable (neutral)", gender: "neutral" },
 ];
 
 const STORAGE_PREFIX = "vmap:";
