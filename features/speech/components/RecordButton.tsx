@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button"
 import { Mic, MicOff, Trash2 } from "lucide-react"
 import { useSTT } from "../hooks/useSTT"
+import { useSpeechDevices } from "@/features/speech/context/audio-device-context"
 
 interface RecordButtonProps {
   onTranscriptChange?: (text: string) => void;
@@ -10,6 +11,7 @@ interface RecordButtonProps {
 }
 
 export function RecordButton({ onTranscriptChange, className = "" }: RecordButtonProps) {
+  const { selectedInputId } = useSpeechDevices();
   const { 
     start, 
     stop, 
@@ -17,7 +19,7 @@ export function RecordButton({ onTranscriptChange, className = "" }: RecordButto
     transcript, 
     interimTranscript,
     isListening 
-  } = useSTT();
+  } = useSTT(undefined, 700, { inputDeviceId: selectedInputId });
   
   // Handle toggling recording state
   const toggleRecording = () => {

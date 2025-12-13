@@ -7,6 +7,7 @@ import {
   buildAuthHeaders,
   getAccessToken,
 } from "@/lib/auth-headers";
+import { getPreferredOutputDevice } from "./deviceRegistry";
 
 type TtsMeta = Omit<TtsEventDetail, "audio"> | undefined;
 
@@ -31,6 +32,20 @@ function registerActivePlayback(handle: ActivePlaybackHandle) {
 function clearActivePlayback(audio: HTMLAudioElement) {
   if (activePlayback && activePlayback.audio === audio) {
     activePlayback = null;
+  }
+}
+
+async function applyPreferredOutputDevice(audio: HTMLAudioElement) {
+  const sinkAware = audio as HTMLAudioElement & {
+    setSinkId?: (sinkId: string) => Promise<void>;
+  };
+  const sinkId = getPreferredOutputDevice();
+  if (!sinkId) return;
+  if (typeof sinkAware.setSinkId !== "function") return;
+  try {
+    await sinkAware.setSinkId(sinkId);
+  } catch (err) {
+    console.warn("Failed to route audio to selected output device", err);
   }
 }
 
@@ -78,6 +93,7 @@ export async function speakRemote(
   const blob = new Blob([buf], { type: contentType });
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
+  await applyPreferredOutputDevice(audio);
 
   // Return a promise that resolves when playback ends (or rejects on error)
   return new Promise<HTMLAudioElement>((resolve, reject) => {
@@ -197,6 +213,7 @@ export async function speakRemoteStream(
   );
 
   const audio = new Audio(url);
+  await applyPreferredOutputDevice(audio);
 
   return await new Promise<HTMLAudioElement>((resolve, reject) => {
     const endLifecycle = trackTtsLifecycle(audio, meta);
@@ -244,6 +261,7 @@ export async function speakRemoteStream(
         const objUrl = URL.createObjectURL(blob);
 
         const fallbackAudio = new Audio(objUrl);
+        await applyPreferredOutputDevice(fallbackAudio);
         const fallbackMeta = meta
           ? {
               ...meta,

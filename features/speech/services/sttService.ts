@@ -4,6 +4,7 @@ type _ResultList = { [index: number]: unknown };
 
 // Use a loose typing for the browser SpeechRecognition instance
 let recognition: any = null;
+let micStream: MediaStream | null = null;
 // Whether we should auto-restart recognition when it ends (true while
 // the app intends continuous listening). Cleared by stopListening().
 let shouldRestart = false;
@@ -14,9 +15,14 @@ let starting = false;
  * Start speech recognition
  * @param callback Function to call with speech recognition results
  */
-export function startListening(
-  callback: (text: string, isFinal: boolean) => void
-): boolean {
+type StartListeningOptions = {
+  deviceId?: string;
+};
+
+export async function startListening(
+  callback: (text: string, isFinal: boolean) => void,
+  options?: StartListeningOptions
+): Promise<boolean> {
   // Stop any ongoing recognition to ensure a fresh instance
   stopListening();
 
@@ -32,6 +38,27 @@ export function startListening(
   // Create and configure recognition
   recognition = new (SpeechRecognition as any)();
   shouldRestart = true;
+
+  const normalizedDeviceId = (() => {
+    const id = options?.deviceId?.trim();
+    if (!id || id === "default" || id === "communications") {
+      return undefined;
+    }
+    return id;
+  })();
+
+  if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: normalizedDeviceId
+          ? { deviceId: { exact: normalizedDeviceId } }
+          : true,
+      });
+    } catch (err) {
+      console.warn("Microphone access failed; falling back to default device", err);
+      micStream = null;
+    }
+  }
 
   if (recognition) {
     recognition.lang = "en-US";
@@ -97,6 +124,15 @@ export function startListening(
     }
   } catch (error) {
     console.error("Error starting speech recognition:", error);
+    if (micStream) {
+      try {
+        micStream.getTracks().forEach((track) => track.stop());
+      } catch {
+        // ignore
+      }
+      micStream = null;
+    }
+    recognition = null;
   }
   return false;
 }
@@ -115,5 +151,13 @@ export function stopListening(): void {
       // Ignore errors when stopping
     }
     recognition = null;
+  }
+  if (micStream) {
+    try {
+      micStream.getTracks().forEach((track) => track.stop());
+    } catch (err) {
+      console.warn("Failed to stop microphone stream", err);
+    }
+    micStream = null;
   }
 }

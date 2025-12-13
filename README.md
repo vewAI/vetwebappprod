@@ -44,6 +44,11 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 This keeps `dev` clean for handoffs while preserving maximum flexibility for ongoing experiments.
 
+## Regression checklist
+
+- Before promoting changes, run `npm run test` and walk through the steps in `docs/regression-checklist.md` (start a fresh attempt, verify the persona roster only contains the owner and veterinary nurse, and ensure stage metadata/guardrails behave as expected).
+- Document any deviations in your PR and pause the rollout until they are addressed.
+
 ## Avatar Lab sandbox
 
 Need to test the talking avatar without running a full chat? Visit [`/avatar-lab`](http://localhost:3000/avatar-lab) while the dev server is running. The page lets you:

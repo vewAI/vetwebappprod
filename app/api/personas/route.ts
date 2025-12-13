@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/app/api/_lib/auth";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireUser(request, { requireAdmin: true });
+  const auth = await requireUser(request);
   if ("error" in auth) {
     return auth.error;
   }

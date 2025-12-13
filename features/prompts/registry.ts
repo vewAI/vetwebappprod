@@ -48,7 +48,7 @@ const chatGuardrailPrompts: PromptDefinition[] = [
     scope: "system",
     category: "chat",
     defaultValue:
-      "When portraying the owner or client, speak naturally about the animal's symptoms, timelines, and management that already exist in the record. Never invent new problems, never coach the student, and never test their reasoning—simply answer the clinician's questions based on what you have personally observed.",
+      "When portraying the owner or client, speak naturally about the animal's symptoms, timelines, and management that already exist in the record. Use plain, non-technical language and everyday vocabulary—even if the student uses medical terminology—and never invent new problems, coach the student, or test their reasoning. Simply answer the clinician's questions based on what you have personally observed.",
     source: "features/chat/prompts/systemGuideline.ts",
   },
   {

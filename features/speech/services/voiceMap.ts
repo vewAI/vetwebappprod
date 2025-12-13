@@ -25,6 +25,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
 ];
 
 const STORAGE_PREFIX = "vmap:";
+const ALLOWED_VOICE_IDS = new Set(VOICE_PRESETS.map((preset) => preset.id));
 
 function safeParse(json?: string | null) {
   try {
@@ -32,6 +33,25 @@ function safeParse(json?: string | null) {
   } catch (e) {
     return {};
   }
+}
+
+export function isSupportedVoice(id?: string | null): id is string {
+  if (!id) return false;
+  return ALLOWED_VOICE_IDS.has(id);
+}
+
+function sanitizeVoiceMap(map: Record<string, string> | undefined | null) {
+  const result: Record<string, string> = {};
+  if (!map) return result;
+  let mutated = false;
+  for (const [role, voiceId] of Object.entries(map)) {
+    if (isSupportedVoice(voiceId)) {
+      result[role] = voiceId;
+    } else {
+      mutated = true;
+    }
+  }
+  return { result, mutated } as const;
 }
 
 // Simple deterministic hash to pick a voice when none assigned yet.
@@ -64,22 +84,28 @@ export function getOrAssignVoiceForRole(
   attemptId?: string,
   options?: string | VoiceSelectionOptions
 ) {
-  const { preferredVoice, sex } = resolveOptions(options);
+  const resolved = resolveOptions(options);
+  const safePreferredVoice = isSupportedVoice(resolved.preferredVoice)
+    ? resolved.preferredVoice
+    : undefined;
+  const sex = resolved.sex;
   const key = STORAGE_PREFIX + (attemptId ?? "global");
   try {
     const raw =
       typeof window !== "undefined" ? window.sessionStorage.getItem(key) : null;
-    const map = safeParse(raw) as Record<string, string>;
-    if (preferredVoice) {
-      if (!map || map[role] !== preferredVoice) {
-        const updated = { ...(map ?? {}), [role]: preferredVoice };
-        if (typeof window !== "undefined") {
-          window.sessionStorage.setItem(key, JSON.stringify(updated));
-        }
-      }
-      return preferredVoice;
+    const { result: map, mutated } = sanitizeVoiceMap(safeParse(raw));
+    if (mutated && typeof window !== "undefined") {
+      window.sessionStorage.setItem(key, JSON.stringify(map));
     }
-    if (map && map[role]) return map[role];
+    if (map[role]) return map[role];
+
+    if (safePreferredVoice) {
+      const updated = { ...map, [role]: safePreferredVoice };
+      if (typeof window !== "undefined") {
+        window.sessionStorage.setItem(key, JSON.stringify(updated));
+      }
+      return safePreferredVoice;
+    }
 
     const candidateVoices = (() => {
       if (!sex || sex === "neutral") {
@@ -97,7 +123,7 @@ export function getOrAssignVoiceForRole(
     // Avoid assigning a voice already used by another role within this
     // attempt so each character sounds distinct. Iterate through presets
     // starting from the hashed index and pick the first unused voice.
-    const usedVoices = new Set(Object.values(map || {}));
+    const usedVoices = new Set(Object.values(map));
     let chosen = candidateVoices[startIdx].id;
     if (usedVoices.has(chosen)) {
       // find next available
@@ -113,7 +139,7 @@ export function getOrAssignVoiceForRole(
 
     // Persist mapping in sessionStorage for the attempt
     try {
-      const newMap = { ...(map || {}), [role]: chosen };
+      const newMap = { ...map, [role]: chosen };
       if (typeof window !== "undefined") {
         window.sessionStorage.setItem(key, JSON.stringify(newMap));
       }

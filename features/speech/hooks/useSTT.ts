@@ -1,13 +1,22 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { startListening, stopListening } from "../services/sttService";
 
+type UseSttOptions = {
+  inputDeviceId?: string | null;
+};
+
 /**
  * Simple hook for speech-to-text functionality
  */
-export function useSTT(onFinal?: (text: string) => void, debounceMs = 700) {
+export function useSTT(
+  onFinal?: (text: string) => void,
+  debounceMs = 700,
+  options: UseSttOptions = {}
+) {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
+  const startInFlightRef = useRef(false);
 
   // Buffer for final chunks and debounce timer to merge nearby final events
   const pendingFinalRef = useRef<string>("");
@@ -66,14 +75,24 @@ export function useSTT(onFinal?: (text: string) => void, debounceMs = 700) {
 
   // Start speech recognition
   const start = useCallback(() => {
-    try {
-      const ok = startListening(handleResult);
-      setIsListening(Boolean(ok));
-    } catch (e) {
-      console.error("startListening failed:", e);
-      setIsListening(false);
+    if (startInFlightRef.current) {
+      return;
     }
-  }, [handleResult]);
+    startInFlightRef.current = true;
+    (async () => {
+      try {
+        const ok = await startListening(handleResult, {
+          deviceId: options?.inputDeviceId ?? undefined,
+        });
+        setIsListening(Boolean(ok));
+      } catch (e) {
+        console.error("startListening failed:", e);
+        setIsListening(false);
+      } finally {
+        startInFlightRef.current = false;
+      }
+    })();
+  }, [handleResult, options?.inputDeviceId]);
 
   // Stop speech recognition
   const stop = useCallback(() => {

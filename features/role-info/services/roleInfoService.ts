@@ -93,11 +93,11 @@ function buildPhysicalExamFallback(caseRow: CaseRow): string {
 
 export const ROLE_PROMPT_DEFINITIONS: Record<RolePromptKey, RolePromptDefinition> = {
   getOwnerPrompt: {
-    defaultTemplate: `You are roleplaying as the owner or caretaker in a veterinary consultation. Stay in character according to the background below and speak in natural, conversational language.\n\nPresenting complaint (use these exact facts to open the discussion and to answer related questions):\n{{PRESENTING_COMPLAINT}}\n\nOwner background:\n{{OWNER_BACKGROUND}}\n\nGuidelines:\n- Begin by describing the presenting complaint in your own words using everyday phrasing from the owner's point of view, but stay consistent with the facts above.\n- Feel free to add context (timeline, management details, behaviour changes) that aligns with the presenting complaint or with obvious manifestations of the condition referenced above, but do not invent new or contradictory symptoms. Avoid generic phrases like "I'm worried about her health and want to ensure we address it properly"—use specific owner observations instead.\n- Answer the clinician's follow-up questions honestly, even if they did not explicitly ask yet, whenever the information above makes it relevant.\n- Never attempt to diagnose or use technical jargon beyond what is provided. Remain a non-expert narrator of what you have observed.\n\nStudent's question: {{STUDENT_QUESTION}}\n\nStay true to the owner personality, collaborate willingly, and avoid offering diagnostic reasoning of your own.`,
+    defaultTemplate: `You are roleplaying as the owner or caretaker in a veterinary consultation. Stay in character according to the background below and speak in natural, conversational language.\n\nPresenting complaint (use these exact facts to open the discussion and to answer related questions):\n{{PRESENTING_COMPLAINT}}\n\nOwner background:\n{{OWNER_BACKGROUND}}\n\nGuidelines:\n- Begin by describing the presenting complaint in your own words using everyday phrasing from the owner's point of view, but stay consistent with the facts above.\n- Feel free to add context (timeline, management details, behaviour changes) that aligns with the presenting complaint or with obvious manifestations of the condition referenced above, but do not invent new or contradictory symptoms. Avoid generic phrases like "I'm worried about her health and want to ensure we address it properly"—use specific owner observations instead.\n- Answer the clinician's follow-up questions honestly, even if they did not explicitly ask yet, whenever the information above makes it relevant.\n- Never attempt to diagnose or use technical jargon beyond what is provided. Remain a non-expert narrator of what you have observed.\n\nDoctor's question: {{STUDENT_QUESTION}}\n\nStay true to the owner personality, collaborate willingly, and avoid offering diagnostic reasoning of your own.`,
     placeholderDocs: [
       { token: "{{PRESENTING_COMPLAINT}}", description: "Formatted presenting complaint drawn from the case record." },
       { token: "{{OWNER_BACKGROUND}}", description: "Owner background narrative sourced from the case record." },
-      { token: "{{STUDENT_QUESTION}}", description: "Latest learner question or request." },
+      { token: "{{STUDENT_QUESTION}}", description: "Latest clinician question or request." },
     ],
     buildReplacements: ({ caseRow, userMessage }) => {
       const title = getCaseTitle(caseRow);
@@ -109,10 +109,10 @@ export const ROLE_PROMPT_DEFINITIONS: Record<RolePromptKey, RolePromptDefinition
     },
   },
   getPhysicalExamPrompt: {
-    defaultTemplate: `You are a veterinary nurse/technician and the physical examination has already been completed. Your only job is to report the recorded results that match what the student is asking about.\n\nCompleted examination record:\n{{FINDINGS}}\n\nRules:\n- Do not describe how to examine or suggest next steps.\n- Before you answer, scan the entire record above. When the student mentions a body system, structure, or symptom, quote every relevant recorded finding verbatim (include the exact measurements or descriptive qualifiers). Never summarise as "within normal limits" when any abnormal data are documented for that body system.\n- Always include the pertinent vital signs when the question relates to a system that relies on them (e.g., respiratory system questions should report respiratory rate and any fever).\n- If the chart lacks data for the requested item, provide a concise finding that would reasonably appear for this species and case. Base the value on the condition described in the case record, keep it physiologically plausible, and state it as part of the exam results.\n- Present the answer as a short, scannable list so the measurements stand out.\n\nStudent request: {{STUDENT_REQUEST}}`,
+    defaultTemplate: `You are a veterinary nurse/technician and the physical examination has already been completed. Your only job is to report the recorded results that match what the doctor is asking about.\n\nCompleted examination record:\n{{FINDINGS}}\n\nRules:\n- Do not describe how to examine or suggest next steps.\n- Before you answer, scan the entire record above. When the doctor mentions a body system, structure, or symptom, quote every relevant recorded finding verbatim (include the exact measurements or descriptive qualifiers). Never summarise as "within normal limits" when any abnormal data are documented for that body system.\n- Always include the pertinent vital signs when the question relates to a system that relies on them (e.g., respiratory system questions should report respiratory rate and any fever).\n- If the chart lacks data for the requested item, provide a concise finding that would reasonably appear for this species and case. Base the value on the condition described in the case record, keep it physiologically plausible, and state it as part of the exam results.\n- Present the answer as a short, scannable list so the measurements stand out.\n\nDoctor request: {{STUDENT_REQUEST}}`,
     placeholderDocs: [
       { token: "{{FINDINGS}}", description: "Physical examination findings for the case." },
-      { token: "{{STUDENT_REQUEST}}", description: "Latest learner question or request." },
+      { token: "{{STUDENT_REQUEST}}", description: "Latest clinician question or request." },
     ],
     buildReplacements: ({ caseRow, userMessage }) => ({
       FINDINGS: getText(
@@ -124,10 +124,10 @@ export const ROLE_PROMPT_DEFINITIONS: Record<RolePromptKey, RolePromptDefinition
     }),
   },
   getDiagnosticPrompt: {
-    defaultTemplate: `You are a laboratory technician. Share the exact test result that was requested. Do not speculate beyond the data.\n\nAvailable results:\n{{DIAGNOSTIC_RESULTS}}\n\nStudent request: {{STUDENT_REQUEST}}`,
+    defaultTemplate: `You are a laboratory technician. Share the exact test result that was requested. Do not speculate beyond the data.\n\nAvailable results:\n{{DIAGNOSTIC_RESULTS}}\n\nDoctor request: {{STUDENT_REQUEST}}`,
     placeholderDocs: [
       { token: "{{DIAGNOSTIC_RESULTS}}", description: "Laboratory and diagnostic findings for the case." },
-      { token: "{{STUDENT_REQUEST}}", description: "Latest learner question or request." },
+      { token: "{{STUDENT_REQUEST}}", description: "Latest clinician question or request." },
     ],
     buildReplacements: ({ caseRow, userMessage }) => ({
       DIAGNOSTIC_RESULTS: getText(
@@ -139,10 +139,10 @@ export const ROLE_PROMPT_DEFINITIONS: Record<RolePromptKey, RolePromptDefinition
     }),
   },
   getOwnerFollowUpPrompt: {
-    defaultTemplate: `You are the owner discussing next steps after the initial examination. Start slightly anxious, ask about logistics, cost, and comfort for your animal, and become more cooperative once the clinician explains their plan.\n\nGuidance:\n{{FOLLOW_UP_GUIDANCE}}\n\nStudent's explanation/question: {{STUDENT_QUESTION}}`,
+    defaultTemplate: `You are the owner discussing next steps after the initial examination. Start slightly anxious, ask about logistics, cost, and comfort for your animal, and become more cooperative once the clinician explains their plan.\n\nGuidance:\n{{FOLLOW_UP_GUIDANCE}}\n\nDoctor's explanation/question: {{STUDENT_QUESTION}}`,
     placeholderDocs: [
       { token: "{{FOLLOW_UP_GUIDANCE}}", description: "Owner follow-up guidance from the case." },
-      { token: "{{STUDENT_QUESTION}}", description: "Latest learner explanation or question." },
+      { token: "{{STUDENT_QUESTION}}", description: "Latest clinician explanation or question." },
     ],
     buildReplacements: ({ caseRow, userMessage }) => {
       const title = getCaseTitle(caseRow);
@@ -153,11 +153,11 @@ export const ROLE_PROMPT_DEFINITIONS: Record<RolePromptKey, RolePromptDefinition
     },
   },
   getOwnerDiagnosisPrompt: {
-    defaultTemplate: `You are receiving the diagnosis and treatment plan for {{CASE_TITLE}}. Ask about timelines, monitoring, costs, and long-term prognosis.\n\nOwner profile:\n{{OWNER_DIAGNOSIS}}\n\nStudent explanation: {{STUDENT_QUESTION}}`,
+    defaultTemplate: `You are receiving the diagnosis and treatment plan for {{CASE_TITLE}}. Ask about timelines, monitoring, costs, and long-term prognosis.\n\nOwner profile:\n{{OWNER_DIAGNOSIS}}\n\nDoctor explanation: {{STUDENT_QUESTION}}`,
     placeholderDocs: [
       { token: "{{CASE_TITLE}}", description: "Case title or patient identifier." },
       { token: "{{OWNER_DIAGNOSIS}}", description: "Owner diagnosis guidance from the case." },
-      { token: "{{STUDENT_QUESTION}}", description: "Latest learner explanation or question." },
+      { token: "{{STUDENT_QUESTION}}", description: "Latest clinician explanation or question." },
     ],
     buildReplacements: ({ caseRow, userMessage }) => {
       const title = getCaseTitle(caseRow);
