@@ -200,7 +200,7 @@ function deriveOwnerName(
   const roleLine = ownerBackground.match(ROLE_REGEX);
   if (roleLine && roleLine[1]) {
     const candidate = roleLine[1].split(/[,(]/)[0]?.trim() ?? "";
-    if (candidate && !/owner|client/i.test(candidate)) {
+    if (candidate && !/owner|client|role/i.test(candidate)) {
       return sanitizeName(candidate, caseId);
     }
   }
@@ -208,13 +208,13 @@ function deriveOwnerName(
   const ownerLine = ownerBackground.match(OWNER_LINE_REGEX);
   if (ownerLine && ownerLine[1]) {
     const candidate = ownerLine[1].split(/[,(]/)[0]?.trim() ?? "";
-    if (candidate && !/owner|client/i.test(candidate)) {
+    if (candidate && !/owner|client|role/i.test(candidate)) {
       return sanitizeName(candidate, caseId);
     }
   }
 
   const nameToken = ownerBackground.match(NAME_TOKEN_REGEX);
-  if (nameToken && nameToken[0] && !/owner|client/i.test(nameToken[0])) {
+  if (nameToken && nameToken[0] && !/owner|client|role/i.test(nameToken[0])) {
     return sanitizeName(nameToken[0], caseId);
   }
 

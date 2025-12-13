@@ -55,7 +55,7 @@ export function AudioDeviceSelector({ className }: AudioDeviceSelectorProps) {
           <Button
             type="button"
             variant="ghost"
-            size="xs"
+            size="sm"
             onClick={() => void refreshDevices()}
             disabled={isEnumerating}
           >
@@ -64,7 +64,7 @@ export function AudioDeviceSelector({ className }: AudioDeviceSelectorProps) {
           <Button
             type="button"
             variant="ghost"
-            size="xs"
+            size="sm"
             onClick={() => void requestPermission()}
           >
             Allow access

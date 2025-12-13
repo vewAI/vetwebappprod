@@ -29,13 +29,24 @@ export function useTTS() {
     };
   }, [available]);
 
-  const speak = (text: string, lang = "en-US") => {
+  const speak = (text: string, lang = "en-US", gender?: "male" | "female") => {
     if (!available || !text) return;
     try {
       // Cancel any existing speech
       window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
       u.lang = lang;
+      
+      if (gender) {
+        const voices = window.speechSynthesis.getVoices();
+        const preferred = voices.find(v => 
+            v.name.toLowerCase().includes(gender) || 
+            (gender === 'female' && (v.name.includes('Zira') || v.name.includes('Samantha') || v.name.includes('Google US English'))) ||
+            (gender === 'male' && (v.name.includes('David') || v.name.includes('Alex')))
+        );
+        if (preferred) u.voice = preferred;
+      }
+
       u.onend = () => setIsSpeaking(false);
       u.onerror = () => setIsSpeaking(false);
       utterRef.current = u;
@@ -48,7 +59,7 @@ export function useTTS() {
   };
 
   // speakAsync — returns a promise that resolves when speech ends (or rejects on error)
-  const speakAsync = (text: string, lang = "en-US") => {
+  const speakAsync = (text: string, lang = "en-US", gender?: "male" | "female") => {
     if (!available || !text)
       return Promise.reject(new Error("TTS not available or empty text"));
     return new Promise<void>((resolve, reject) => {
@@ -56,6 +67,17 @@ export function useTTS() {
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
         u.lang = lang;
+
+        if (gender) {
+            const voices = window.speechSynthesis.getVoices();
+            const preferred = voices.find(v => 
+                v.name.toLowerCase().includes(gender) || 
+                (gender === 'female' && (v.name.includes('Zira') || v.name.includes('Samantha') || v.name.includes('Google US English'))) ||
+                (gender === 'male' && (v.name.includes('David') || v.name.includes('Alex')))
+            );
+            if (preferred) u.voice = preferred;
+        }
+
         u.onend = () => {
           setIsSpeaking(false);
           resolve();

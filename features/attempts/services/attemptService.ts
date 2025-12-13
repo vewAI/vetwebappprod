@@ -274,6 +274,32 @@ export async function deleteAttempt(attemptId: string): Promise<boolean> {
   }
 }
 
+// Update attempt time only (for fast-forward)
+export async function updateAttemptTime(
+  attemptId: string,
+  timeSpentSeconds: number
+): Promise<boolean> {
+  try {
+    const token = await getAccessToken();
+    if (!token) return false;
+
+    const response = await fetch("/api/attempts/progress", {
+      method: "POST",
+      headers: {
+        ...(await buildAuthHeaders({ "Content-Type": "application/json" }, token)),
+      },
+      body: JSON.stringify({
+        attemptId,
+        timeSpentSeconds,
+      }),
+    });
+    return response.ok;
+  } catch (err) {
+    console.error("Error updating attempt time:", err);
+    return false;
+  }
+}
+
 // Save attempt progress
 export async function saveAttemptProgress(
   attemptId: string,

@@ -1,4 +1,6 @@
 #!/usr/bin/env tsx
+import dotenv from "dotenv";
+dotenv.config({ path: ".env.local" });
 import { createClient } from "@supabase/supabase-js";
 import { CASE_SEEDS } from "../data/cases/case-seed-data";
 

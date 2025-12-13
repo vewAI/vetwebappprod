@@ -15,12 +15,7 @@ import {
 
 const ROLE_OPTIONS: { label: string; value: string }[] = [
   { label: "Owner", value: "owner" },
-  { label: "Laboratory Technician", value: "lab-technician" },
-  { label: "Attending Veterinarian", value: "veterinarian" },
   { label: "Veterinary Nurse", value: "veterinary-nurse" },
-  { label: "Agricultural Producer", value: "producer" },
-  { label: "Veterinary Assistant", value: "veterinary-assistant" },
-  { label: "Clinical Professor", value: "professor" },
 ];
 
 const ROLE_ORDER = new Map(ROLE_OPTIONS.map((option, index) => [option.value, index] as const));
@@ -200,6 +195,8 @@ type PersonaEditorState = {
   autoPreviewError?: string | null;
   autoPreviewLoading?: boolean;
   autoPreviewOpen?: boolean;
+  autoPortraitLoading?: boolean;
+  autoPortraitError?: string | null;
   rolePromptLoading: Record<string, boolean>;
   rolePromptErrors: Record<string, string | null>;
 };
@@ -301,7 +298,10 @@ export default function PersonasAdminPage() {
           ? payload?.personas ?? []
           : [];
 
-        const editorRows: PersonaEditorState[] = rows.map((persona): PersonaEditorState => {
+        // Filter to only Owner and Nurse
+        const filteredRows = rows.filter(p => p.role_key === "owner" || p.role_key === "veterinary-nurse");
+
+        const editorRows: PersonaEditorState[] = filteredRows.map((persona): PersonaEditorState => {
           const metadataClone = cloneRecord(
             (persona.metadata && typeof persona.metadata === "object" && !Array.isArray(persona.metadata)
               ? (persona.metadata as Record<string, unknown>)
@@ -328,6 +328,8 @@ export default function PersonasAdminPage() {
             autoPreviewError: null,
             autoPreviewLoading: false,
             autoPreviewOpen: false,
+            autoPortraitLoading: false,
+            autoPortraitError: null,
             rolePromptLoading: {},
             rolePromptErrors: {},
           };
@@ -372,9 +374,9 @@ export default function PersonasAdminPage() {
         const rows = Array.isArray(payload?.personas)
           ? payload?.personas ?? []
           : [];
-        const ownerRows = rows.filter((persona) => persona.role_key === "owner");
+        const filteredRows = rows.filter((persona) => persona.role_key === "owner" || persona.role_key === "veterinary-nurse");
 
-        const editorRows: PersonaEditorState[] = ownerRows.map((persona): PersonaEditorState => {
+        const editorRows: PersonaEditorState[] = filteredRows.map((persona): PersonaEditorState => {
           const metadataClone = cloneRecord(
             (persona.metadata && typeof persona.metadata === "object" && !Array.isArray(persona.metadata)
               ? (persona.metadata as Record<string, unknown>)
@@ -401,6 +403,8 @@ export default function PersonasAdminPage() {
             autoPreviewError: null,
             autoPreviewLoading: false,
             autoPreviewOpen: false,
+            autoPortraitLoading: false,
+            autoPortraitError: null,
             rolePromptLoading: {},
             rolePromptErrors: {},
           };
@@ -843,10 +847,64 @@ export default function PersonasAdminPage() {
     }
   };
 
-  const handleOpenChat = (roleKey: string) => {
-    if (!selectedCaseId) return;
-    router.push(`/attempts/new?caseId=${encodeURIComponent(selectedCaseId)}&role=${encodeURIComponent(roleKey)}`);
+  const handleAutoPortrait = async (scope: PersonaScope, roleKey: string) => {
+    if (!authHeaders) return;
+
+    if (scope === "case" && !selectedCaseId) {
+      updateDraft(scope, roleKey, (prev) => ({
+        ...prev,
+        autoPortraitLoading: false,
+        autoPortraitError: "Select a case first",
+      }));
+      return;
+    }
+
+    updateDraft(scope, roleKey, (prev) => ({
+      ...prev,
+      autoPortraitLoading: true,
+      autoPortraitError: null,
+    }));
+
+    try {
+      const requestBody =
+        scope === "case"
+          ? { caseId: selectedCaseId, roleKey }
+          : { roleKey };
+
+      const response = await axios.post(
+        "/api/personas/auto-portrait",
+        requestBody,
+        { headers: authHeaders }
+      );
+
+      const payload = response.data as { imageUrl?: string } | undefined;
+      const imageUrl = payload?.imageUrl;
+
+      if (!imageUrl) {
+        throw new Error("No image URL returned");
+      }
+
+      updateDraft(scope, roleKey, (prev) => {
+        const next = {
+          ...prev,
+          draftImageUrl: imageUrl,
+          autoPortraitLoading: false,
+          autoPortraitError: null,
+        };
+        next.isDirty = computePersonaDirty(next);
+        return next;
+      });
+    } catch (error) {
+      const message = extractAxiosMessage(error) ?? "Failed to generate portrait";
+      updateDraft(scope, roleKey, (prev) => ({
+        ...prev,
+        autoPortraitLoading: false,
+        autoPortraitError: message,
+      }));
+    }
   };
+
+
 
   const renderPersonaRow = (row: PersonaEditorState) => {
     const { scope } = row;
@@ -865,26 +923,26 @@ export default function PersonasAdminPage() {
         className="rounded-lg border bg-card p-6 shadow-sm"
       >
         <header className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-semibold">
-              {resolveRoleLabel(row.persona.role_key)}
-            </h2>
-            <p className="text-sm text-muted-foreground">Persona ID: {personaIdLabel}</p>
-            <p className="text-xs text-muted-foreground">{scopeDescription}</p>
-            <p className="text-xs text-muted-foreground">
-              Last updated: {formatIso(row.persona.updated_at)}
-            </p>
+          <div className="flex items-center gap-4">
+            {row.draftImageUrl && (
+              <img
+                src={row.draftImageUrl}
+                alt="Avatar"
+                className="h-16 w-16 rounded-full border object-cover"
+              />
+            )}
+            <div>
+              <h2 className="text-xl font-semibold">
+                {resolveRoleLabel(row.persona.role_key)}
+              </h2>
+              <p className="text-sm text-muted-foreground">Persona ID: {personaIdLabel}</p>
+              <p className="text-xs text-muted-foreground">{scopeDescription}</p>
+              <p className="text-xs text-muted-foreground">
+                Last updated: {formatIso(row.persona.updated_at)}
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
-            {showOpenChat ? (
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => handleOpenChat(row.persona.role_key)}
-              >
-                Open Chat
-              </Button>
-            ) : null}
             <div className="relative flex items-center gap-1">
               <Button
                 type="button"
@@ -956,22 +1014,36 @@ export default function PersonasAdminPage() {
             <Label htmlFor={`image-${scope}-${row.persona.role_key}`}>
               Portrait URL
             </Label>
-            <Input
-              id={`image-${scope}-${row.persona.role_key}`}
-              placeholder="https://"
-              value={row.draftImageUrl}
-              onChange={(event) =>
-                handleInputChange(
-                  scope,
-                  row.persona.role_key,
-                  "image",
-                  event.target.value
-                )
-              }
-            />
+            <div className="flex gap-2">
+              <Input
+                id={`image-${scope}-${row.persona.role_key}`}
+                placeholder="https://"
+                value={row.draftImageUrl}
+                onChange={(event) =>
+                  handleInputChange(
+                    scope,
+                    row.persona.role_key,
+                    "image",
+                    event.target.value
+                  )
+                }
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleAutoPortrait(scope, row.persona.role_key)}
+                disabled={row.autoPortraitLoading}
+                title="Auto-generate portrait"
+              >
+                {row.autoPortraitLoading ? "Generating..." : "Auto-generate"}
+              </Button>
+            </div>
             <p className="text-xs text-muted-foreground">
               Used by the chat UI. Leave blank to remove.
             </p>
+            {row.autoPortraitError && (
+              <p className="text-xs text-red-600">{row.autoPortraitError}</p>
+            )}
           </div>
         </div>
 
@@ -1178,7 +1250,7 @@ export default function PersonasAdminPage() {
           <p className="text-center text-muted-foreground">No owner persona found for this case.</p>
         ) : (
           <div className="grid gap-6">
-            {casePersonaRows.map(renderPersonaRow)}
+            {casePersonaRows.filter(p => p.persona.role_key === "owner" || p.persona.role_key === "veterinary-nurse").map(renderPersonaRow)}
           </div>
         )}
       </section>

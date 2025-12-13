@@ -16,7 +16,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       title: "Physical Examination",
       description: "Report physical examination findings exactly as recorded when asked.",
       completed: false,
-      role: "Veterinarian",
+      role: "Veterinary Nurse",
       roleInfoKey: "getPhysicalExamPrompt",
     },
     {
@@ -111,7 +111,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       description:
         "Report the documented udder and physical findings whenever the student asks.",
       completed: false,
-      role: "Veterinary Assistant",
+      role: "Veterinary Nurse",
       roleInfoKey: "getPhysicalExamPrompt",
     },
     {

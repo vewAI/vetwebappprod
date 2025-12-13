@@ -15,13 +15,57 @@ type DbCase = {
   difficulty?: string | null;
   estimated_time?: number | string | null;
   image_url?: string | null;
+  tags?: string[] | null;
+  is_published?: boolean | null;
 };
 
-export async function fetchCases(): Promise<Case[]> {
-  const { data, error } = await supabase
+export type FetchCasesOptions = {
+  limit?: number;
+  offset?: number;
+  tags?: string[];
+  difficulty?: string;
+  species?: string;
+  search?: string;
+  includeUnpublished?: boolean;
+};
+
+export async function fetchCases(options: FetchCasesOptions = {}): Promise<Case[]> {
+  let query = supabase
     .from("cases")
     .select("*")
     .order("created_at", { ascending: true });
+
+  if (!options.includeUnpublished) {
+    query = query.eq("is_published", true);
+  }
+
+  if (options.limit) {
+    query = query.limit(options.limit);
+  }
+  
+  if (options.offset) {
+    const from = options.offset;
+    const to = from + (options.limit || 10) - 1;
+    query = query.range(from, to);
+  }
+
+  if (options.difficulty) {
+    query = query.eq("difficulty", options.difficulty);
+  }
+
+  if (options.species) {
+    query = query.eq("species", options.species);
+  }
+
+  if (options.tags && options.tags.length > 0) {
+    query = query.contains("tags", options.tags);
+  }
+
+  if (options.search) {
+    query = query.or(`title.ilike.%${options.search}%,description.ilike.%${options.search}%`);
+  }
+
+  const { data, error } = await query;
   if (error) throw error;
   return (data ?? []).map(mapDbCaseToCase);
 }
@@ -80,5 +124,7 @@ function mapDbCaseToCase(dbCase: DbCase): Case {
         ? dbCase.estimated_time
         : Number(dbCase.estimated_time || 0),
     imageUrl: dbCase.image_url ?? "",
+    tags: dbCase.tags ?? [],
+    isPublished: dbCase.is_published ?? false,
   };
 }

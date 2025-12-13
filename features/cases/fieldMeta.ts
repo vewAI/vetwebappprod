@@ -3,9 +3,15 @@ export type CaseFieldKey =
 	| "title"
 	| "description"
 	| "species"
+	| "patient_name"
+	| "patient_age"
+	| "patient_sex"
 	| "condition"
 	| "category"
 	| "difficulty"
+	| "version"
+	| "tags"
+	| "is_published"
 	| "estimated_time"
 	| "image_url"
 	| "details"
@@ -32,6 +38,7 @@ export type CaseFieldMeta = {
 	help?: string;
 	multiline?: boolean;
 	rows?: number;
+	options?: string[];
 };
 
 const metaList: CaseFieldMeta[] = [
@@ -58,8 +65,38 @@ const metaList: CaseFieldMeta[] = [
 	{
 		key: "species",
 		label: "Species",
-		placeholder: "Equine",
-		help: "Primary species or patient type for the scenario (e.g., Equine, Canine, Bovine).",
+		placeholder: "Select species...",
+		help: "Primary species or patient type for the scenario.",
+		options: [
+			"Equine",
+			"Bovine",
+			"Canine",
+			"Feline",
+			"Ovine",
+			"Caprine",
+			"Porcine",
+			"Camelid",
+			"Avian",
+		],
+	},
+	{
+		key: "patient_name",
+		label: "Patient Name",
+		placeholder: "e.g. Buster",
+		help: "Name of the animal patient.",
+	},
+	{
+		key: "patient_age",
+		label: "Patient Age",
+		placeholder: "e.g. 8 years",
+		help: "Age of the patient.",
+	},
+	{
+		key: "patient_sex",
+		label: "Patient Sex",
+		placeholder: "Select sex...",
+		help: "Sex/Gender of the patient.",
+		options: ["Male", "Female", "Gelding", "Mare", "Stallion", "Steer", "Heifer", "Bull", "Cow"],
 	},
 	{
 		key: "condition",
@@ -70,14 +107,48 @@ const metaList: CaseFieldMeta[] = [
 	{
 		key: "category",
 		label: "Discipline / category",
-		placeholder: "Equine Infectious Disease",
+		placeholder: "Select category...",
 		help: "Used to group cases for browsing and analytics.",
+		options: [
+			"Internal Medicine",
+			"Surgery",
+			"Infectious Disease",
+			"Theriogenology",
+			"Anesthesiology",
+			"Dermatology",
+			"Ophthalmology",
+			"Neurology",
+			"Cardiology",
+			"Oncology",
+			"Dentistry",
+			"Sports Medicine",
+			"Preventive Medicine",
+		],
 	},
 	{
 		key: "difficulty",
 		label: "Difficulty",
 		placeholder: "Easy | Medium | Hard",
 		help: "Learner-facing difficulty indicator. Also influences feedback tone.",
+	},
+	{
+		key: "version",
+		label: "Version",
+		placeholder: "1",
+		help: "Incremental version number for tracking case updates.",
+	},
+	{
+		key: "tags",
+		label: "Tags",
+		placeholder: "colic, equine, emergency",
+		help: "Comma-separated tags for search and filtering.",
+	},
+	{
+		key: "is_published",
+		label: "Published",
+		placeholder: "true/false",
+		help: "Whether the case is visible to students.",
+		options: ["true", "false"],
 	},
 	{
 		key: "estimated_time",
@@ -93,11 +164,11 @@ const metaList: CaseFieldMeta[] = [
 	},
 	{
 		key: "details",
-		label: "Case details (JSON)",
-		placeholder: '{"presenting_complaint": "Owner reports..."}',
-		help: "Structured metadata (JSON) such as presenting complaint, duration, learning objectives, etc.",
+		label: "Details",
+		placeholder: "Detailed presenting complaint, history, and other relevant info...",
+		help: "Full text details of the case. Previously JSON, now plain text.",
 		multiline: true,
-		rows: 6,
+		rows: 10,
 	},
 	{
 		key: "physical_exam_findings",

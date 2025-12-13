@@ -14,6 +14,7 @@ import {
   getFieldMeta,
 } from "@/features/cases/fieldMeta";
 import { CaseMediaEditor } from "@/features/cases/components/case-media-editor";
+import { TimeProgressionEditor } from "@/features/cases/components/case-time-progression-editor";
 import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
 
 export default function CaseEntryForm() {
@@ -34,7 +35,9 @@ export default function CaseEntryForm() {
   }, [form.id]);
 
   function handleChange(
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >
   ) {
     const { name, value } = e.target;
     if (!getFieldMeta(name)) return;
@@ -191,14 +194,6 @@ Remain collaborative, use everyday language, and avoid offering your own medical
     } finally {
       setLoading(false);
     }
-
-        <div className="border border-dashed border-muted-foreground/40 rounded-lg p-4">
-          <CaseMediaEditor
-            caseId={caseIdForMedia}
-            value={mediaItems}
-            onChange={setMediaItems}
-          />
-        </div>
   }
 
   return (
@@ -208,6 +203,37 @@ Remain collaborative, use everyday language, and avoid offering your own medical
         {orderedCaseFieldKeys.map((key) => {
           const meta = caseFieldMeta[key];
           const helpId = meta.help ? `${key}-help` : undefined;
+
+          if (meta.options && meta.options.length > 0) {
+            return (
+              <div key={key}>
+                <label className="block font-medium mb-1" htmlFor={key}>
+                  {meta.label}
+                </label>
+                <select
+                  name={key}
+                  value={form[key]}
+                  onChange={handleChange}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-describedby={helpId}
+                >
+                  <option value="" disabled>
+                    {meta.placeholder || "Select..."}
+                  </option>
+                  {meta.options.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+                {meta.help && (
+                  <p id={helpId} className="mt-1 text-sm text-muted-foreground">
+                    {meta.help}
+                  </p>
+                )}
+              </div>
+            );
+          }
 
           if (key === "image_url") {
             return (
@@ -296,6 +322,24 @@ Remain collaborative, use everyday language, and avoid offering your own medical
             </div>
           );
         })}
+
+        {caseIdForMedia && (
+          <div className="space-y-6 pt-4">
+            <div className="border border-dashed border-muted-foreground/40 rounded-lg p-4">
+              <h3 className="text-lg font-medium mb-4">Case Media</h3>
+              <CaseMediaEditor
+                caseId={caseIdForMedia}
+                value={mediaItems}
+                onChange={setMediaItems}
+              />
+            </div>
+
+            <div className="border border-dashed border-muted-foreground/40 rounded-lg p-4">
+              <TimeProgressionEditor caseId={caseIdForMedia} />
+            </div>
+          </div>
+        )}
+
         <Button type="submit" disabled={loading} className="w-full">
           {loading ? "Submitting..." : "Submit"}
         </Button>

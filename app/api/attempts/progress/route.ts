@@ -82,27 +82,34 @@ export async function POST(req: Request) {
     }
 
     const attemptId = body.attemptId;
-    const stageIndex = coerceStageIndex(body.stageIndex);
-    const timeSpentSeconds = coerceTimeSpent(body.timeSpentSeconds);
-    const messageRows = mapMessagesToRows(attemptId, body.messages);
-
-    const updatePayload: AttemptsTableUpdate = {
-      last_stage_index: stageIndex,
-      time_spent_seconds: timeSpentSeconds,
-    };
-
-    const { error: updateError } = await supabase
-      .from("attempts")
-      .update(updatePayload)
-      .eq("id", attemptId);
-
-    if (updateError) {
-      console.error("Attempt progress update failed", updateError);
-      return NextResponse.json(
-        { error: updateError.message ?? "Failed to update attempt" },
-        { status: 500 }
-      );
+    
+    // Build update payload dynamically to allow partial updates
+    const updatePayload: Record<string, unknown> = {};
+    
+    if (body.stageIndex !== undefined) {
+      updatePayload.last_stage_index = coerceStageIndex(body.stageIndex);
     }
+    
+    if (body.timeSpentSeconds !== undefined) {
+      updatePayload.time_spent_seconds = coerceTimeSpent(body.timeSpentSeconds);
+    }
+
+    if (Object.keys(updatePayload).length > 0) {
+      const { error: updateError } = await supabase
+        .from("attempts")
+        .update(updatePayload)
+        .eq("id", attemptId);
+
+      if (updateError) {
+        console.error("Attempt progress update failed", updateError);
+        return NextResponse.json(
+          { error: updateError.message },
+          { status: 500 }
+        );
+      }
+    }
+
+    const messageRows = mapMessagesToRows(attemptId, body.messages);
 
     const { error: deleteError } = await supabase
       .from("attempt_messages")

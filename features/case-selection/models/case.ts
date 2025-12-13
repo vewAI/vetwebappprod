@@ -8,4 +8,6 @@ export type Case = {
     difficulty: "Easy" | "Medium" | "Hard"
     estimatedTime: number
     imageUrl: string
+    tags?: string[]
+    isPublished?: boolean
 };

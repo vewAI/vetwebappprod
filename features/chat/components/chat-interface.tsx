@@ -3,7 +3,7 @@
 import type React from "react";
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { SendIcon, PenLine, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
+import { SendIcon, PenLine, Mic, MicOff, Volume2, VolumeX, Pause, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useSTT } from "@/features/speech/hooks/useSTT";
@@ -46,6 +46,9 @@ import {
 } from "@/features/chat/utils/stage-readiness-intent";
 import { dispatchStageIntentEvent } from "@/features/chat/models/stage-intent-events";
 import { dispatchStageReadinessEvent } from "@/features/chat/models/stage-readiness-events";
+import { useCaseTimepoints } from "@/features/cases/hooks/useCaseTimepoints";
+import type { CaseTimepoint } from "@/features/cases/models/caseTimepoint";
+import { useAuth } from "@/features/auth/services/authService";
 
 const STAGE_KEYWORD_SYNONYMS: Record<string, string[]> = {
   examination: ["exam"],
@@ -138,6 +141,7 @@ type ChatInterfaceProps = {
     messages?: Message[],
     timeSpentSeconds?: number
   ) => void;
+  initialTimeSpentSeconds?: number;
 };
 
 type PersonaDirectoryEntry = {
@@ -162,15 +166,17 @@ export function ChatInterface({
   currentStageIndex,
   stages,
   onProceedToNextStage,
+  initialTimeSpentSeconds = 0,
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const { timepoints } = useCaseTimepoints(caseId);
   const latestInitialMessagesRef = useRef<Message[]>(initialMessages ?? []);
   const lastHydratedAttemptKeyRef = useRef<string | null>(null);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [connectionNotice, setConnectionNotice] = useState<string | null>(null);
   const [showNotepad, setShowNotepad] = useState(false);
-  const [timeSpentSeconds, setTimeSpentSeconds] = useState(0);
+  const [timeSpentSeconds, setTimeSpentSeconds] = useState(initialTimeSpentSeconds);
   const [ttsEnabled, setTtsEnabled] = useState<boolean>(
     () => Boolean(attemptId) || true
   );
@@ -182,7 +188,16 @@ export function ChatInterface({
   );
   // Voice Mode (mic) should default ON when an attempt is open; otherwise off.
   const [voiceMode, setVoiceMode] = useState<boolean>(() => Boolean(attemptId));
+  
+  // Auto-save (throttled) — keeps the existing delete+insert server behavior
+  const { saveProgress } = useSaveAttempt(attemptId);
+  const lastSavedAtRef = useRef<number>(0);
+  const lastSavedSnapshotRef = useRef<string>("");
+
+  const [isPaused, setIsPaused] = useState(false);
   const [showStartSpeakingPrompt, setShowStartSpeakingPrompt] = useState(true);
+  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
+  const { role } = useAuth();
   const [startSequenceActive, setStartSequenceActive] = useState(false);
   const [personaDirectory, setPersonaDirectory] = useState<
     Record<string, PersonaDirectoryEntry>
@@ -831,7 +846,8 @@ export function ChatInterface({
   const playTtsAndPauseStt = async (
     text: string,
     voice?: string,
-    meta?: TtsPlaybackMeta
+    meta?: TtsPlaybackMeta,
+    gender?: "male" | "female"
   ) => {
     if (!text) return;
     stopActiveTtsPlayback();
@@ -860,10 +876,14 @@ export function ChatInterface({
           await speakRemote(ttsText, voice, meta);
         } catch (bufErr) {
           try {
+            // Show fallback notice to all users so they know why the voice changed
+            setFallbackNotice("High-quality voice unavailable. Using browser fallback.");
+            setTimeout(() => setFallbackNotice(null), 4000);
+
             if (ttsAvailable && speakAsync) {
-              await speakAsync(ttsText);
+              await speakAsync(ttsText, "en-US", gender);
             } else if (ttsAvailable) {
-              speak(ttsText);
+              speak(ttsText, "en-US", gender);
             }
           } catch (e) {
             console.error("TTS playback failed:", e);
@@ -898,12 +918,17 @@ export function ChatInterface({
       const normalizedRoleKey = resolveChatPersonaRoleKey(stage.role, roleName);
       const personaMeta = await ensurePersonaMetadata(normalizedRoleKey);
 
-      const voiceSex: "male" | "female" | "neutral" =
+      let voiceSex: "male" | "female" | "neutral" =
         personaMeta?.sex === "male" ||
         personaMeta?.sex === "female" ||
         personaMeta?.sex === "neutral"
           ? (personaMeta.sex as "male" | "female" | "neutral")
           : "neutral";
+
+      // Patch: Ensure nurse is female if not specified
+      if (normalizedRoleKey === "veterinary-nurse" && voiceSex === "neutral") {
+        voiceSex = "female";
+      }
 
       const voiceForRole = getOrAssignVoiceForRole(normalizedRoleKey, attemptId, {
         preferredVoice: personaMeta?.voiceId,
@@ -1162,12 +1187,18 @@ export function ChatInterface({
       const normalizedPersonaKey = safePersonaRoleKey;
       const portraitUrl = response.portraitUrl;
       const serverVoiceId = normalizeVoiceId(response.voiceId);
-      const responseVoiceSex: "male" | "female" | "neutral" =
+      let responseVoiceSex: "male" | "female" | "neutral" =
         response.personaSex === "male" ||
         response.personaSex === "female" ||
         response.personaSex === "neutral"
           ? response.personaSex
           : "neutral";
+
+      // Patch: Ensure nurse is female if not specified
+      if (normalizedPersonaKey === "veterinary-nurse" && responseVoiceSex === "neutral") {
+        responseVoiceSex = "female";
+      }
+
       const resolvedVoiceForRole = getOrAssignVoiceForRole(
         normalizedPersonaKey,
         attemptId,
@@ -1247,7 +1278,8 @@ export function ChatInterface({
               await playTtsAndPauseStt(
                 response.content,
                 finalVoiceForRole,
-                ttsMeta
+                ttsMeta,
+                responseVoiceSex === "male" || responseVoiceSex === "female" ? responseVoiceSex : undefined
               );
             } catch (streamErr) {
               playbackError = streamErr;
@@ -1275,7 +1307,8 @@ export function ChatInterface({
               await playTtsAndPauseStt(
                 response.content,
                 finalVoiceForRole,
-                ttsMeta
+                ttsMeta,
+                responseVoiceSex === "male" || responseVoiceSex === "female" ? responseVoiceSex : undefined
               );
             } catch (err) {
               console.error("TTS failed:", err);
@@ -1381,6 +1414,22 @@ export function ChatInterface({
         keywordSet: stageKeywordSets[nextIndex] ?? [],
         stageIndex: currentStageIndex,
       };
+
+      // Manual override for "talk to owner" if next stage involves owner
+      const lower = trimmed.toLowerCase();
+      const nextRole = nextStage.role?.toLowerCase() || "";
+      if (
+        (nextRole.includes("owner") || nextRole.includes("client")) &&
+        (lower.includes("talk to the owner") || lower.includes("speak to the owner") || lower.includes("talk to owner"))
+      ) {
+        return {
+          matched: true,
+          intent: "advance",
+          confidence: "high",
+          heuristics: ["manual-owner-override"],
+          reason: "User explicitly asked to talk to owner",
+        };
+      }
 
       const detection = detectStageReadinessIntent(trimmed, context, {
         enablePhaseThree: ENABLE_PHASE_THREE_STAGE_INTENT,
@@ -1552,12 +1601,18 @@ export function ChatInterface({
         const normalizedPersonaKey = safePersonaRoleKey;
         const portraitUrl = response.portraitUrl;
         const serverVoiceId = normalizeVoiceId(response.voiceId);
-        const responseVoiceSex: "male" | "female" | "neutral" =
+        let responseVoiceSex: "male" | "female" | "neutral" =
           response.personaSex === "male" ||
           response.personaSex === "female" ||
           response.personaSex === "neutral"
             ? response.personaSex
             : "neutral";
+
+        // Patch: Ensure nurse is female if not specified
+        if (normalizedPersonaKey === "veterinary-nurse" && responseVoiceSex === "neutral") {
+          responseVoiceSex = "female";
+        }
+
         const resolvedVoiceForRole = getOrAssignVoiceForRole(
           normalizedPersonaKey,
           attemptId,
@@ -1677,6 +1732,25 @@ export function ChatInterface({
   const toggleVoiceMode = useCallback(() => {
     setVoiceModeEnabled(!voiceModeRef.current);
   }, [setVoiceModeEnabled]);
+
+  const togglePause = useCallback(async () => {
+    if (isPaused) {
+      setIsPaused(false);
+      setVoiceModeEnabled(true);
+      setTtsEnabledState(true);
+    } else {
+      setIsPaused(true);
+      if (isListening) {
+        stop();
+      }
+      stopActiveTtsPlayback();
+      try {
+        await saveProgress(currentStageIndex, messages, timeSpentSeconds);
+      } catch (e) {
+        console.error("Failed to save progress on pause:", e);
+      }
+    }
+  }, [isPaused, isListening, stop, saveProgress, messages, currentStageIndex, timeSpentSeconds, setVoiceModeEnabled, setTtsEnabledState]);
 
   const pulseVoiceModeControls = useCallback(async () => {
     const wait = (ms: number) =>
@@ -1913,25 +1987,64 @@ export function ChatInterface({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attemptId]);
 
+  const handleTimepointUnlock = useCallback(async (tp: CaseTimepoint) => {
+     const role = tp.persona_role_key || "owner";
+     const content = tp.stage_prompt || tp.summary || "A new timepoint has been reached.";
+     
+     const normalizedRoleKey = resolveChatPersonaRoleKey(role, role);
+     const personaMeta = await ensurePersonaMetadata(normalizedRoleKey);
+     
+     const voiceSex = personaMeta?.sex === "male" || personaMeta?.sex === "female" ? personaMeta.sex : "neutral";
+     const voiceForRole = getOrAssignVoiceForRole(normalizedRoleKey, attemptId, {
+        preferredVoice: personaMeta?.voiceId,
+        sex: voiceSex,
+     });
+     
+     const newMessage = chatService.createAssistantMessage(
+        content,
+        currentStageIndex,
+        personaMeta?.displayName || role,
+        personaMeta?.portraitUrl,
+        voiceForRole,
+        personaMeta?.sex,
+        normalizedRoleKey
+     );
+     
+     setMessages(prev => [...prev, newMessage]);
+  }, [currentStageIndex, attemptId, ensurePersonaMetadata]);
+
+  const handleTimepointUnlockRef = useRef(handleTimepointUnlock);
+  useEffect(() => {
+    handleTimepointUnlockRef.current = handleTimepointUnlock;
+  }, [handleTimepointUnlock]);
+
   // Timer to track time spent on the case
   useEffect(() => {
-    // Only start the timer if we have an attempt ID
-    if (!attemptId) return;
+    // Only start the timer if we have an attempt ID and not paused
+    if (!attemptId || isPaused) return;
 
     // Set up a timer that increments every second
     const timer = setInterval(() => {
-      setTimeSpentSeconds((prev) => prev + 1);
+      setTimeSpentSeconds((prev) => {
+        const next = prev + 1;
+        
+        // Check for timepoint unlocks
+        timepoints.forEach((tp) => {
+          const unlockTime = (tp.available_after_hours || 0) * 3600;
+          if (next === unlockTime) {
+             handleTimepointUnlockRef.current?.(tp);
+          }
+        });
+
+        return next;
+      });
     }, 1000);
 
     // Clean up the timer when the component unmounts
     return () => clearInterval(timer);
-  }, [attemptId]);
+  }, [attemptId, timepoints]);
 
   // Auto-save (throttled) ��� keeps the existing delete+insert server behavior
-  const { saveProgress } = useSaveAttempt(attemptId);
-  const lastSavedAtRef = useRef<number>(0);
-  const lastSavedSnapshotRef = useRef<string>("");
-
   useEffect(() => {
     const attemptKey = attemptId ?? "__no_attempt__";
     const nextMessages = Array.isArray(latestInitialMessagesRef.current)
@@ -2128,6 +2241,7 @@ export function ChatInterface({
     }
     const stageResult = evaluateStageCompletion(currentStageIndex, messages);
     if (stageResult.status === "insufficient") {
+      // If we haven't warned the user yet for this stage, do so now.
       if (!advanceGuard || advanceGuard.stageIndex !== currentStageIndex) {
         setAdvanceGuard({
           stageIndex: currentStageIndex,
@@ -2135,13 +2249,28 @@ export function ChatInterface({
           metrics: stageResult.metrics,
         });
         await emitStageReadinessPrompt(currentStageIndex, stageResult);
+        reset();
+        baseInputRef.current = "";
+        return;
       }
-      reset();
-      baseInputRef.current = "";
-      return;
+      // If we HAVE warned them (advanceGuard is set), allow them to proceed
+      // by falling through to the logic below.
     }
 
     isAdvancingRef.current = true;
+
+    // Check if we are completing the examination (last stage)
+    if (currentStageIndex >= stages.length - 1) {
+      try {
+        onProceedToNextStage(messages, timeSpentSeconds);
+      } catch (e) {
+        console.error("Error in onProceedToNextStage (completion):", e);
+      } finally {
+        isAdvancingRef.current = false;
+      }
+      return;
+    }
+
     const targetIndex = Math.min(currentStageIndex + 1, stages.length - 1);
 
     const introText = getStageAssistantIntro(targetIndex);
@@ -2149,18 +2278,34 @@ export function ChatInterface({
     // labels the speaker appropriately (e.g., Owner, Laboratory Technician)
     const stageRole = stages[targetIndex]?.role ?? "Virtual Assistant";
     const roleName = String(stageRole);
-    const normalizedRoleKey = resolveChatPersonaRoleKey(stageRole, roleName);
+    let normalizedRoleKey = resolveChatPersonaRoleKey(stageRole, roleName);
+
+    // Fix: If the intro text explicitly claims to be the veterinary nurse,
+    // but the stage role is generic (e.g. "Veterinarian"), force the nurse persona.
+    // This ensures the correct avatar (with picture) and voice are used.
+    if (
+      introText.includes("I'm the veterinary nurse") &&
+      normalizedRoleKey !== "veterinary-nurse"
+    ) {
+      normalizedRoleKey = "veterinary-nurse";
+    }
+
     const personaMeta = await ensurePersonaMetadata(normalizedRoleKey);
 
     // Create assistant message using persona metadata when available so the
     // client sees the correct speaker (owner vs assistant vs lab tech) with
     // a consistent portrait and voice.
-    const voiceSex: "male" | "female" | "neutral" =
+    let voiceSex: "male" | "female" | "neutral" =
       personaMeta?.sex === "male" ||
       personaMeta?.sex === "female" ||
       personaMeta?.sex === "neutral"
         ? personaMeta.sex
         : "neutral";
+
+    // Patch: Ensure nurse is female if not specified
+    if (normalizedRoleKey === "veterinary-nurse" && voiceSex === "neutral") {
+      voiceSex = "female";
+    }
 
     const voiceForRole = getOrAssignVoiceForRole(normalizedRoleKey, attemptId, {
       preferredVoice: personaMeta?.voiceId,
@@ -2282,6 +2427,11 @@ export function ChatInterface({
           {connectionNotice}
         </div>
       )}
+      {fallbackNotice && (
+        <div className="w-full bg-blue-100 text-blue-900 px-4 py-2 text-sm text-center z-40">
+          {fallbackNotice}
+        </div>
+      )}
       {/* Intro toast (central, non-blocking) */}
       {introMounted && (
         <div className="fixed inset-0 flex items-start justify-center pt-24 pointer-events-none z-50">
@@ -2379,6 +2529,19 @@ export function ChatInterface({
             </Button>
 
             <div className="flex gap-2 items-center">
+              {/* Pause Button */}
+              <Button
+                type="button"
+                size="sm"
+                variant={isPaused ? "default" : "secondary"}
+                className="flex items-center gap-2 px-4"
+                onClick={togglePause}
+                title={isPaused ? "Resume case" : "Pause case"}
+              >
+                {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+                {isPaused ? "Resume" : "Pause"}
+              </Button>
+
               {/* Big voice-mode toggle */}
               <Button
                 type="button"

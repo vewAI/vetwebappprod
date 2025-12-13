@@ -25,6 +25,9 @@ export type CaseSeed = {
   get_owner_follow_up_feedback_prompt: string;
   get_owner_diagnosis_prompt: string;
   get_overall_feedback_prompt: string;
+  tags?: string[];
+  is_published?: boolean;
+  version?: number;
 };
 
 const placeholderImage =
@@ -43,6 +46,9 @@ export const CASE_SEEDS: CaseSeed[] = [
     difficulty: "Medium",
     estimated_time: 25,
     image_url: placeholderImage,
+    tags: ["equine", "infectious", "respiratory"],
+    is_published: true,
+    version: 1,
     details: {
       presenting_complaint:
         "Owner reports 36 hours of reduced appetite, fever, and new mandibular swelling.",

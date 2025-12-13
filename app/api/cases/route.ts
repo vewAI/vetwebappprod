@@ -34,6 +34,74 @@ function normalizeIncomingMedia(raw: unknown): CaseMediaItem[] {
     } satisfies CaseMediaItem;
   });
 }
+
+function normalizeCaseBody(body: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...body };
+
+  // estimated_time
+  if (next["estimated_time"] !== undefined && next["estimated_time"] !== "") {
+    const n = Number(next["estimated_time"]);
+    next["estimated_time"] = isNaN(n) ? null : n;
+  } else {
+    next["estimated_time"] = null;
+  }
+
+  // details
+  if (next["details"] !== undefined && next["details"] !== "") {
+    try {
+      if (typeof next["details"] === "string") {
+        next["details"] = JSON.parse(next["details"] as string);
+      }
+    } catch {
+      // keep as string
+    }
+  } else {
+    next["details"] = null;
+  }
+
+  // media
+  if (Object.prototype.hasOwnProperty.call(next, "media")) {
+    const rawMedia = next["media"];
+    let parsedMedia: unknown = rawMedia;
+    if (typeof rawMedia === "string") {
+      try {
+        parsedMedia = JSON.parse(rawMedia);
+      } catch {
+        parsedMedia = [];
+      }
+    }
+    next["media"] = normalizeIncomingMedia(parsedMedia);
+  } else {
+    next["media"] = [];
+  }
+
+  // tags
+  if (next["tags"] !== undefined) {
+    if (typeof next["tags"] === "string") {
+      next["tags"] = next["tags"].split(",").map((t: string) => t.trim()).filter((t: string) => t.length > 0);
+    } else if (!Array.isArray(next["tags"])) {
+      next["tags"] = [];
+    }
+  }
+
+  // is_published
+  if (next["is_published"] !== undefined) {
+    if (typeof next["is_published"] === "string") {
+      next["is_published"] = next["is_published"] === "true";
+    } else {
+      next["is_published"] = Boolean(next["is_published"]);
+    }
+  }
+
+  // version
+  if (next["version"] !== undefined && next["version"] !== "") {
+    const v = Number(next["version"]);
+    next["version"] = isNaN(v) ? 1 : Math.floor(v);
+  }
+
+  return next;
+}
+
 export async function GET(req: Request) {
   const auth = await requireUser(req, { requireAdmin: true });
   if ("error" in auth) {
@@ -84,51 +152,8 @@ export async function POST(req: Request) {
       body = { details: String(parsed ?? "") };
     }
 
-    // Convert estimated_time to number if present
-    const rawEstimated = body["estimated_time"];
-    if (rawEstimated !== undefined && rawEstimated !== "") {
-      const n = Number(rawEstimated as unknown);
-      if (isNaN(n)) {
-        return NextResponse.json(
-          { error: "estimated_time must be a number" },
-          { status: 400 }
-        );
-      }
-      body["estimated_time"] = n;
-    } else {
-      body["estimated_time"] = null;
-    }
-
-    // Convert details to JSON if present and not empty
-    const rawDetails = body["details"];
-    if (rawDetails !== undefined && rawDetails !== "") {
-      try {
-        if (typeof rawDetails === "string") {
-          body["details"] = JSON.parse(rawDetails as string);
-        }
-      } catch {
-        // If not valid JSON, keep as string
-        body["details"] = rawDetails;
-      }
-    } else {
-      body["details"] = null;
-    }
-
-    // Normalize multimedia payloads
-    if (Object.prototype.hasOwnProperty.call(body, "media")) {
-      const rawMedia = body["media"];
-      let parsedMedia: unknown = rawMedia;
-      if (typeof rawMedia === "string") {
-        try {
-          parsedMedia = JSON.parse(rawMedia);
-        } catch {
-          parsedMedia = [];
-        }
-      }
-      body["media"] = normalizeIncomingMedia(parsedMedia);
-    } else {
-      body["media"] = [];
-    }
+    // Normalize fields (estimated_time, details, media, tags, etc.)
+    body = normalizeCaseBody(body);
 
     // Validate required fields (customize as needed)
     // If no id provided, generate one from title or uuid so the UI doesn't have to supply it.
@@ -218,7 +243,7 @@ export async function PUT(req: Request) {
   }
   const { supabase } = auth;
   try {
-    const body = await req.json();
+    let body = await req.json();
     if (!body || !body.id) {
       return NextResponse.json(
         { error: "id is required for update" },
@@ -226,31 +251,7 @@ export async function PUT(req: Request) {
       );
     }
 
-    // Convert estimated_time to number if present
-    if (body.estimated_time !== undefined && body.estimated_time !== "") {
-      body.estimated_time = Number(body.estimated_time);
-      if (isNaN(body.estimated_time)) {
-        return NextResponse.json(
-          { error: "estimated_time must be a number" },
-          { status: 400 }
-        );
-      }
-    } else {
-      body.estimated_time = null;
-    }
-
-    if (Object.prototype.hasOwnProperty.call(body, "media")) {
-      const rawMedia = body.media;
-      let parsedMedia: unknown = rawMedia;
-      if (typeof rawMedia === "string") {
-        try {
-          parsedMedia = JSON.parse(rawMedia as string);
-        } catch {
-          parsedMedia = [];
-        }
-      }
-      body.media = normalizeIncomingMedia(parsedMedia);
-    }
+    body = normalizeCaseBody(body);
 
     // Try to update the row
     const { data, error } = await supabase

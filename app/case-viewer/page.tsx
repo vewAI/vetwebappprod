@@ -17,6 +17,9 @@ import {
   normalizeCaseMedia,
   type CaseMediaItem,
 } from "@/features/cases/models/caseMedia";
+import { TimeProgressionEditor } from "@/features/cases/components/case-time-progression-editor";
+import { caseConfig } from "@/features/config/case-config";
+import { resolveChatPersonaRoleKey } from "@/features/chat/utils/persona-guardrails";
 
 type CaseRecord = Record<string, unknown>;
 
@@ -147,7 +150,32 @@ export default function CaseViewerPage() {
           );
         }
 
-        setPersonas(combined);
+        // Filter personas based on the roles defined in caseConfig for this case
+        const stages = caseConfig[caseId] || [];
+        const allowedRoles = new Set<string>();
+        
+        // Always include owner
+        allowedRoles.add("owner");
+        
+        // Add roles from stages
+        stages.forEach(stage => {
+          if (stage.role) {
+            const normalized = resolveChatPersonaRoleKey(stage.role, stage.role);
+            if (normalized) allowedRoles.add(normalized);
+          }
+        });
+
+        const filtered = combined.filter(p => {
+          // If it's a case-specific persona (like owner), keep it if it matches the case
+          if (p.case_id === caseId) return true;
+          
+          // If it's a global persona, check if its role is used in this case
+          if (p.role_key && allowedRoles.has(p.role_key)) return true;
+          
+          return false;
+        });
+
+        setPersonas(filtered);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         setPersonasError(`Failed to load personas: ${message}`);
@@ -477,6 +505,9 @@ export default function CaseViewerPage() {
 
   const formatValue = (value: unknown, pretty = false) => {
     if (value === undefined || value === null) return "";
+    if (Array.isArray(value) && value.every((v) => typeof v === "string")) {
+      return value.join(", ");
+    }
     if (typeof value === "object") {
       try {
         return JSON.stringify(value, null, pretty ? 2 : 0);
@@ -747,6 +778,14 @@ export default function CaseViewerPage() {
           />
         </div>
       )}
+      {formState && caseIdValue && (
+        <div className="mb-6">
+          <TimeProgressionEditor
+            caseId={caseIdValue}
+            readOnly={!editable}
+          />
+        </div>
+      )}
       <form className="space-y-4">
         {formState &&
           orderedCaseFieldKeys.map((key) => {
@@ -756,6 +795,38 @@ export default function CaseViewerPage() {
             const automation = automationState[key];
             const isAutomatable = isCaseFieldAutomatable(key);
             const canAutoGenerate = editable && isAutomatable;
+
+            if (meta.options && meta.options.length > 0) {
+              return (
+                <div key={key}>
+                  <label className="block font-medium mb-1" htmlFor={key}>
+                    {meta.label}
+                  </label>
+                  <select
+                    name={key}
+                    value={formatValue(rawValue)}
+                    disabled={!editable}
+                    onChange={(e) => updateField(key, e.target.value)}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-describedby={helpId}
+                  >
+                    <option value="" disabled>
+                      {meta.placeholder || "Select..."}
+                    </option>
+                    {meta.options.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                  {meta.help && (
+                    <p id={helpId} className="mt-1 text-sm text-muted-foreground">
+                      {meta.help}
+                    </p>
+                  )}
+                </div>
+              );
+            }
 
             if (key === "image_url") {
               return (

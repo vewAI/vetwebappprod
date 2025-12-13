@@ -42,7 +42,7 @@ export function isSupportedVoice(id?: string | null): id is string {
 
 function sanitizeVoiceMap(map: Record<string, string> | undefined | null) {
   const result: Record<string, string> = {};
-  if (!map) return result;
+  if (!map) return { result, mutated: false };
   let mutated = false;
   for (const [role, voiceId] of Object.entries(map)) {
     if (isSupportedVoice(voiceId)) {
@@ -97,6 +97,19 @@ export function getOrAssignVoiceForRole(
     if (mutated && typeof window !== "undefined") {
       window.sessionStorage.setItem(key, JSON.stringify(map));
     }
+
+    // If a preferred voice is specified and valid, it should override any
+    // previously cached random assignment. This ensures that if the backend
+    // configuration changes (e.g. fixing a wrong voice ID), the client
+    // updates immediately.
+    if (safePreferredVoice && map[role] !== safePreferredVoice) {
+      const updated = { ...map, [role]: safePreferredVoice };
+      if (typeof window !== "undefined") {
+        window.sessionStorage.setItem(key, JSON.stringify(updated));
+      }
+      return safePreferredVoice;
+    }
+
     if (map[role]) return map[role];
 
     if (safePreferredVoice) {

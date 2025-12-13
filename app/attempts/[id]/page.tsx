@@ -8,6 +8,7 @@ import {
   deleteAttempt,
   saveAttemptProgress,
   completeAttempt,
+  updateAttemptTime,
 } from "@/features/attempts/services/attemptService";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +23,7 @@ import type {
 import type { Message } from "@/features/chat/models/chat";
 import type { Stage } from "@/features/stages/types";
 import { ChatInterface } from "@/features/chat/components/chat-interface";
+import { CaseTimeline } from "@/features/cases/components/case-timeline";
 
 export default function ViewAttemptPage() {
   const params = useParams();
@@ -240,12 +242,15 @@ export default function ViewAttemptPage() {
             {(() => {
               if (chatMode) {
                 return (
-                  <ChatInterface
+                  <div className="flex flex-col lg:flex-row gap-4 items-start">
+                    <div className="flex-1 w-full">
+                      <ChatInterface
                     caseId={attempt.caseId}
                     attemptId={attempt.id}
                     initialMessages={messages}
                     currentStageIndex={attempt.lastStageIndex}
                     stages={stages}
+                    initialTimeSpentSeconds={attempt.timeSpentSeconds}
                     onProceedToNextStage={async (
                       msgs?: Message[],
                       timeSpentSeconds = 0
@@ -288,10 +293,27 @@ export default function ViewAttemptPage() {
                           err
                         );
                         // Fallback: reload to ensure UI sync
-                        window.location.reload();
+                        // window.location.reload();
                       }
                     }}
                   />
+                    </div>
+                    <div className="w-full lg:w-64 shrink-0">
+                      <CaseTimeline
+                        caseId={attempt.caseId}
+                        elapsedSeconds={attempt.timeSpentSeconds}
+                        onFastForward={async (targetSeconds) => {
+                          if (targetSeconds <= attempt.timeSpentSeconds) return;
+                          const success = await updateAttemptTime(attempt.id, targetSeconds);
+                          if (success) {
+                            // Refresh attempt to update UI
+                            const { attempt: updated } = await getAttemptById(attempt.id);
+                            if (updated) setAttempt(updated);
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
                 );
               }
 
