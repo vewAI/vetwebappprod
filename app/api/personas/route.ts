@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     const { data, error } = await supabase
       .from("case_personas")
       .select(
-        "id, case_id, role_key, display_name, status, image_url, prompt, behavior_prompt, metadata, generated_by, last_generated_at, updated_at"
+        "id, case_id, role_key, display_name, status, image_url, prompt, behavior_prompt, metadata, generated_by, last_generated_at, updated_at, sex"
       )
       .eq("case_id", caseId)
       .order("role_key", { ascending: true });
@@ -75,6 +75,7 @@ export async function PUT(request: NextRequest) {
     behavior_prompt: behaviorPrompt,
     metadata,
     prompt,
+    sex,
   } = payload as Record<string, unknown>;
 
   if (!id && (!caseId || !roleKey)) {
@@ -94,6 +95,9 @@ export async function PUT(request: NextRequest) {
   }
   if (typeof behaviorPrompt === "string" || behaviorPrompt === null) {
     updatePayload.behavior_prompt = behaviorPrompt;
+  }
+  if (typeof sex === "string" && ["male", "female", "neutral"].includes(sex)) {
+    updatePayload.sex = sex;
   }
   if (
     metadata === null ||

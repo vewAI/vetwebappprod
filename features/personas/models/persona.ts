@@ -14,9 +14,10 @@ export interface PersonaRecord {
   lastGeneratedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+  sex?: PersonaSex | null;
 }
 
-export type PersonaSex = "female" | "male";
+export type PersonaSex = "female" | "male" | "neutral";
 
 export interface PersonaPronouns {
   subject: "she" | "he";
@@ -40,6 +41,7 @@ export interface PersonaSeed {
   displayName: string;
   prompt: string;
   behaviorPrompt: string;
+  imageUrl?: string;
   metadata?: Record<string, unknown>;
   sharedPersonaKey?: string;
 }

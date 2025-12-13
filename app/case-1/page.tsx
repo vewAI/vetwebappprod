@@ -39,7 +39,7 @@ export default function Case1Page() {
     }
     loadCase();
   }, [caseId]);
-  const { user } = useAuth();
+  const { user, session } = useAuth();
 
   const [isMobile, setIsMobile] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
@@ -196,10 +196,19 @@ export default function Case1Page() {
           setShowCompletionDialog(true);
 
           // Call the API to generate feedback
-          const response = await axios.post("/api/overall-feedback", {
-            caseId: caseId,
-            messages: messages,
-          });
+          const token = session?.access_token;
+          const response = await axios.post(
+            "/api/overall-feedback",
+            {
+              caseId: caseId,
+              messages: messages,
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
 
           // Set the feedback content
           setFeedbackContent((response.data as { feedback: string }).feedback);

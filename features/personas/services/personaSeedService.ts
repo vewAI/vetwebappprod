@@ -16,14 +16,14 @@ const OWNER_LINE_REGEX = /owner\s*:\s*([^\n]+)/i;
 const NAME_TOKEN_REGEX = /([A-Z][A-Za-z'\-]+)(?:\s+[A-Z][A-Za-z'\-]+)?/;
 
 const FALLBACK_OWNER_SURNAMES = [
-  "Hughes",
-  "Sutton",
-  "Carroll",
-  "Ellis",
-  "Whitaker",
-  "Kavanagh",
-  "Abbott",
-  "Baxter",
+  "Smith",
+  "Johnson",
+  "Williams",
+  "Brown",
+  "Jones",
+  "Garcia",
+  "Miller",
+  "Davis",
 ];
 
 export const SHARED_CASE_ID = "__global__";
@@ -96,6 +96,14 @@ export function buildPersonaSeeds(
     };
     const identity = resolvePersonaIdentity(caseId, key, identityContext);
     const seed = template(identityContext, identity);
+
+    let imageUrl: string | undefined;
+    if (key === "owner") {
+      imageUrl = safeString(caseBody["owner_avatar_url"], "");
+    } else if (key === "veterinary-nurse") {
+      imageUrl = safeString(caseBody["nurse_avatar_url"], "");
+    }
+
     const mergedMetadata: Record<string, unknown> = {
       ...(seed.metadata ?? {}),
       identity,
@@ -104,6 +112,7 @@ export function buildPersonaSeeds(
     };
     seeds.push({
       ...seed,
+      imageUrl: imageUrl || undefined,
       metadata: mergedMetadata,
       sharedPersonaKey,
     });
@@ -308,7 +317,7 @@ function sanitizeName(raw: string, caseId: string): string {
 
 function fallbackOwnerName(caseId: string): string {
   const surnames = FALLBACK_OWNER_SURNAMES;
-  const firstNames = ["Amelia", "Imogen", "Charlotte", "Elise", "Sofia", "Anya", "Clara", "Beatrice"];
+  const firstNames = ["Sarah", "Emma", "Mary", "Elizabeth", "Jennifer", "Susan", "Jessica", "Karen"];
   const firstIndex = Math.abs(hashCase(caseId)) % firstNames.length;
   const lastIndex = Math.abs(hashCase(`${caseId}:owner`)) % surnames.length;
   return `${firstNames[firstIndex]} ${surnames[lastIndex]}`;

@@ -52,10 +52,6 @@ export async function ensureCasePersonas(
   const pendingUpdates: Record<string, unknown>[] = [];
 
   for (const seed of seeds) {
-    if (seed.roleKey !== "owner") {
-      continue;
-    }
-
     const existing = existingRoleMap.get(seed.roleKey);
     const sharedPersona = seed.sharedPersonaKey
       ? await loadSharedPersona(
@@ -72,7 +68,7 @@ export async function ensureCasePersonas(
     const prompt = sharedPersona?.prompt ?? seed.prompt;
     const behaviorPrompt =
       sharedPersona?.behavior_prompt ?? existing?.behavior_prompt ?? seed.behaviorPrompt;
-    const imageUrl = resolveImageUrl(existing, sharedPersona);
+    const imageUrl = resolveImageUrl(existing, sharedPersona, seed);
     const status = resolveStatus(existing, sharedPersona, imageUrl);
 
     if (!existing) {
@@ -181,8 +177,12 @@ function mergeMetadata(
 
 function resolveImageUrl(
   existing: DbPersonaRow | undefined,
-  sharedPersona: DbPersonaRow | null
+  sharedPersona: DbPersonaRow | null,
+  seed: PersonaSeed
 ): string | null {
+  if (seed.imageUrl) {
+    return seed.imageUrl;
+  }
   if (sharedPersona?.image_url) {
     return sharedPersona.image_url;
   }

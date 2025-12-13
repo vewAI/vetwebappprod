@@ -15,6 +15,7 @@ import {
 } from "@/features/cases/fieldMeta";
 import { CaseMediaEditor } from "@/features/cases/components/case-media-editor";
 import { TimeProgressionEditor } from "@/features/cases/components/case-time-progression-editor";
+import { AvatarSelector } from "@/features/cases/components/avatar-selector";
 import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
 
 export default function CaseEntryForm() {
@@ -257,6 +258,28 @@ Remain collaborative, use everyday language, and avoid offering your own medical
                     className="w-full"
                   />
                 </div>
+                {meta.help && (
+                  <p id={helpId} className="mt-1 text-sm text-muted-foreground">
+                    {meta.help}
+                  </p>
+                )}
+              </div>
+            );
+          }
+
+          if (meta.isAvatarSelector) {
+            return (
+              <div key={key}>
+                <label className="block font-medium mb-1" htmlFor={key}>
+                  {meta.label}
+                </label>
+                <AvatarSelector
+                  role={meta.avatarRole ?? "owner"}
+                  value={form[key]}
+                  onChange={(url) =>
+                    setForm((prev) => ({ ...prev, [key]: url }))
+                  }
+                />
                 {meta.help && (
                   <p id={helpId} className="mt-1 text-sm text-muted-foreground">
                     {meta.help}

@@ -397,6 +397,7 @@ export function ChatInterface({
     [stages]
   );
   const isAdvancingRef = useRef<boolean>(false);
+  const isPlayingAudioRef = useRef<boolean>(false);
   const nextStageIntentTimeoutRef = useRef<number | null>(null);
   const handleProceedRef = useRef<(() => Promise<void>) | null>(null);
   const scheduleAutoProceedRef = useRef<(() => void) | null>(null);
@@ -680,7 +681,9 @@ export function ChatInterface({
                   ? identity.voiceId
                   : undefined,
             sex:
-              typeof metadata?.sex === "string"
+              typeof row?.sex === "string"
+                ? row.sex
+                : typeof metadata?.sex === "string"
                 ? (metadata.sex as string)
                 : typeof identity?.sex === "string"
                   ? identity.sex
@@ -734,7 +737,9 @@ export function ChatInterface({
                     ? identity.voiceId
                     : undefined,
               sex:
-                typeof metadata?.sex === "string"
+                typeof row?.sex === "string"
+                  ? row.sex
+                  : typeof metadata?.sex === "string"
                   ? (metadata.sex as string)
                   : typeof identity?.sex === "string"
                     ? identity.sex
@@ -851,15 +856,20 @@ export function ChatInterface({
   ) => {
     if (!text) return;
     stopActiveTtsPlayback();
+    isPlayingAudioRef.current = true;
     let stoppedForPlayback = false;
     try {
-      if (isListening) {
-        stoppedForPlayback = true;
+      if (isListening || voiceMode) {
+        // If voice mode is on, we want to ensure we resume listening after playback,
+        // even if we are currently stopped (e.g. due to pulseVoiceModeControls).
         resumeListeningRef.current = true;
-        try {
-          stop();
-        } catch (e) {
-          // ignore
+        if (isListening) {
+          stoppedForPlayback = true;
+          try {
+            stop();
+          } catch (e) {
+            // ignore
+          }
         }
       }
 
@@ -891,9 +901,10 @@ export function ChatInterface({
         }
       }
     } finally {
+      isPlayingAudioRef.current = false;
       // Resume listening if we previously stopped for playback and voiceMode
       // is still enabled.
-      if (stoppedForPlayback && resumeListeningRef.current) {
+      if (resumeListeningRef.current) {
         resumeListeningRef.current = false;
         if (voiceMode) {
           setTimeout(() => start(), 50);
@@ -925,8 +936,8 @@ export function ChatInterface({
           ? (personaMeta.sex as "male" | "female" | "neutral")
           : "neutral";
 
-      // Patch: Ensure nurse is female if not specified
-      if (normalizedRoleKey === "veterinary-nurse" && voiceSex === "neutral") {
+      // Patch: Ensure nurse and owner are female if not specified
+      if ((normalizedRoleKey === "veterinary-nurse" || normalizedRoleKey === "owner") && voiceSex === "neutral") {
         voiceSex = "female";
       }
 
@@ -1091,6 +1102,9 @@ export function ChatInterface({
       setMessages(snapshot);
     }
     setInput("");
+    if (voiceMode) {
+      reset();
+    }
 
     const stageResult = evaluateStageCompletion(currentStageIndex, snapshot);
     const hasNextStage = currentStageIndex < stages.length - 1;
@@ -1608,8 +1622,8 @@ export function ChatInterface({
             ? response.personaSex
             : "neutral";
 
-        // Patch: Ensure nurse is female if not specified
-        if (normalizedPersonaKey === "veterinary-nurse" && responseVoiceSex === "neutral") {
+        // Patch: Ensure nurse and owner are female if not specified
+        if ((normalizedPersonaKey === "veterinary-nurse" || normalizedPersonaKey === "owner") && responseVoiceSex === "neutral") {
           responseVoiceSex = "female";
         }
 
@@ -1715,7 +1729,9 @@ export function ChatInterface({
           reset();
           setInput("");
           baseInputRef.current = "";
-          start();
+          if (!isPlayingAudioRef.current) {
+            start();
+          }
         } else {
           // User disabled voice mode -> mark and stop any active capture
           userToggledOffRef.current = true;
@@ -1916,7 +1932,7 @@ export function ChatInterface({
   useEffect(() => {
     if (!attemptId) return;
     if (userToggledOffRef.current) return;
-    if (voiceMode && !isListening && !startedListeningRef.current) {
+    if (voiceMode && !isListening && !startedListeningRef.current && !isPlayingAudioRef.current) {
       try {
         // Auto-start listening for the attempt. We clear the input and the
         // committed base buffer so dictation starts fresh.
@@ -1934,7 +1950,7 @@ export function ChatInterface({
   useEffect(() => {
     if (!voiceMode) return;
     if (userToggledOffRef.current) return;
-    if (isListening || startedListeningRef.current) return;
+    if (isListening || startedListeningRef.current || isPlayingAudioRef.current) return;
     try {
       reset();
       start();
@@ -1971,7 +1987,7 @@ export function ChatInterface({
     // `voiceMode` state variable (it may not have updated yet in this
     // render), instead use the startedListeningRef to ensure we only start
     // once.
-    if (!startedListeningRef.current) {
+    if (!startedListeningRef.current && !isPlayingAudioRef.current) {
       try {
         reset();
         setInput("");
@@ -2302,8 +2318,8 @@ export function ChatInterface({
         ? personaMeta.sex
         : "neutral";
 
-    // Patch: Ensure nurse is female if not specified
-    if (normalizedRoleKey === "veterinary-nurse" && voiceSex === "neutral") {
+    // Patch: Ensure nurse and owner are female if not specified
+    if ((normalizedRoleKey === "veterinary-nurse" || normalizedRoleKey === "owner") && voiceSex === "neutral") {
       voiceSex = "female";
     }
 

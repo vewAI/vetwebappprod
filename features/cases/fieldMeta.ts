@@ -29,7 +29,9 @@ export type CaseFieldKey =
 	| "get_owner_follow_up_prompt"
 	| "get_owner_follow_up_feedback_prompt"
 	| "get_owner_diagnosis_prompt"
-	| "get_overall_feedback_prompt";
+	| "get_overall_feedback_prompt"
+	| "owner_avatar_url"
+	| "nurse_avatar_url";
 
 export type CaseFieldMeta = {
 	key: CaseFieldKey;
@@ -39,6 +41,8 @@ export type CaseFieldMeta = {
 	multiline?: boolean;
 	rows?: number;
 	options?: string[];
+	isAvatarSelector?: boolean;
+	avatarRole?: "owner" | "nurse";
 };
 
 const metaList: CaseFieldMeta[] = [
@@ -163,6 +167,22 @@ const metaList: CaseFieldMeta[] = [
 		help: "Optional image displayed on case cards. Upload or paste a direct image URL.",
 	},
 	{
+		key: "owner_avatar_url",
+		label: "Owner Avatar",
+		placeholder: "Select an avatar...",
+		help: "Choose the visual appearance for the owner.",
+		isAvatarSelector: true,
+		avatarRole: "owner",
+	},
+	{
+		key: "nurse_avatar_url",
+		label: "Nurse Avatar",
+		placeholder: "Select an avatar...",
+		help: "Choose the visual appearance for the veterinary nurse.",
+		isAvatarSelector: true,
+		avatarRole: "nurse",
+	},
+	{
 		key: "details",
 		label: "Details",
 		placeholder: "Detailed presenting complaint, history, and other relevant info...",
@@ -193,6 +213,20 @@ const metaList: CaseFieldMeta[] = [
 		help: "Guides the owner persona's tone, concerns, and information boundaries.",
 		multiline: true,
 		rows: 6,
+	},
+	{
+		key: "owner_avatar_url",
+		label: "Owner Avatar",
+		help: "Select an avatar for the owner.",
+		isAvatarSelector: true,
+		avatarRole: "owner",
+	},
+	{
+		key: "nurse_avatar_url",
+		label: "Nurse Avatar",
+		help: "Select an avatar for the nurse.",
+		isAvatarSelector: true,
+		avatarRole: "nurse",
 	},
 	{
 		key: "history_feedback",

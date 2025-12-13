@@ -35,6 +35,7 @@ type PersonaRecord = {
   generated_by: string | null;
   last_generated_at: string | null;
   updated_at: string | null;
+  sex?: "male" | "female" | "neutral" | null;
 };
 
 type RolePromptField = {
@@ -184,6 +185,7 @@ type PersonaEditorState = {
   draftImageUrl: string;
   draftMetadata: Record<string, unknown> | null;
   draftRolePrompts: Record<string, string>;
+  draftSex: "male" | "female" | "neutral" | null;
   isDirty: boolean;
   saving: boolean;
   saveMessage?: string | null;
@@ -206,6 +208,7 @@ function computePersonaDirty(state: PersonaEditorState): boolean {
   const baseDisplay = state.persona.display_name ?? "";
   const baseImage = state.persona.image_url ?? "";
   const basePrompt = state.persona.prompt ?? "";
+  const baseSex = state.persona.sex ?? null;
   const originalRolePrompts = extractRolePrompts(state.persona.metadata ?? null);
   const hasRolePromptChange = !areRolePromptMapsEqual(
     state.draftRolePrompts,
@@ -217,6 +220,7 @@ function computePersonaDirty(state: PersonaEditorState): boolean {
     state.draftDisplayName !== baseDisplay ||
     state.draftImageUrl !== baseImage ||
     state.draftPrompt !== basePrompt ||
+    state.draftSex !== baseSex ||
     hasRolePromptChange
   );
 }
@@ -317,6 +321,7 @@ export default function PersonasAdminPage() {
             draftImageUrl: persona.image_url ?? "",
             draftMetadata: metadataClone,
             draftRolePrompts: rolePrompts,
+            draftSex: persona.sex ?? null,
             isDirty: false,
             saving: false,
             saveMessage: null,
@@ -392,6 +397,7 @@ export default function PersonasAdminPage() {
             draftImageUrl: persona.image_url ?? "",
             draftMetadata: metadataClone,
             draftRolePrompts: rolePrompts,
+            draftSex: persona.sex ?? null,
             isDirty: false,
             saving: false,
             saveMessage: null,
@@ -450,7 +456,7 @@ export default function PersonasAdminPage() {
   const handleInputChange = (
     scope: PersonaScope,
     roleKey: string,
-    field: "behavior" | "display" | "image" | "prompt",
+    field: "behavior" | "display" | "image" | "prompt" | "sex",
     value: string
   ) => {
     updateDraft(scope, roleKey, (prev) => {
@@ -463,6 +469,8 @@ export default function PersonasAdminPage() {
         next.draftImageUrl = value;
       } else if (field === "prompt") {
         next.draftPrompt = value;
+      } else if (field === "sex") {
+        next.draftSex = value as "male" | "female" | "neutral" | null;
       }
       next.isDirty = computePersonaDirty(next);
       next.saveMessage = null;
@@ -593,6 +601,7 @@ export default function PersonasAdminPage() {
             behavior_prompt: target.draftBehaviorPrompt || null,
             prompt: target.draftPrompt || null,
             metadata: target.draftMetadata ?? null,
+            sex: target.draftSex,
           },
           { headers: authHeaders }
         );
@@ -614,6 +623,7 @@ export default function PersonasAdminPage() {
               draftImageUrl: updated.image_url ?? "",
               draftMetadata: metadataClone,
               draftRolePrompts: extractRolePrompts(updated.metadata ?? null),
+              draftSex: updated.sex ?? null,
               saving: false,
               saveMessage: "Persona updated",
             };
@@ -641,6 +651,7 @@ export default function PersonasAdminPage() {
           behavior_prompt: target.draftBehaviorPrompt || null,
           prompt: target.draftPrompt || null,
           metadata: target.draftMetadata ?? null,
+          sex: target.draftSex,
         },
         { headers: authHeaders }
       );
@@ -662,6 +673,7 @@ export default function PersonasAdminPage() {
             draftImageUrl: updated.image_url ?? "",
             draftMetadata: metadataClone,
             draftRolePrompts: extractRolePrompts(updated.metadata ?? null),
+            draftSex: updated.sex ?? null,
             saving: false,
             saveMessage: "Persona updated",
           };
@@ -1008,6 +1020,32 @@ export default function PersonasAdminPage() {
             />
             <p className="text-xs text-muted-foreground">
               Currently shown to students and admins.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`sex-${scope}-${row.persona.role_key}`}>
+              Sex
+            </Label>
+            <select
+              id={`sex-${scope}-${row.persona.role_key}`}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              value={row.draftSex ?? ""}
+              onChange={(event) =>
+                handleInputChange(
+                  scope,
+                  row.persona.role_key,
+                  "sex",
+                  event.target.value
+                )
+              }
+            >
+              <option value="">Unspecified</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="neutral">Neutral</option>
+            </select>
+            <p className="text-xs text-muted-foreground">
+              Determines voice selection (Male/Female/Neutral).
             </p>
           </div>
           <div className="space-y-2">

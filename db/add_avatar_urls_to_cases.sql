@@ -1,0 +1,3 @@
+ALTER TABLE cases
+ADD COLUMN IF NOT EXISTS owner_avatar_url TEXT,
+ADD COLUMN IF NOT EXISTS nurse_avatar_url TEXT;
