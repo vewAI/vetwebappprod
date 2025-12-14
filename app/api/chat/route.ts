@@ -147,30 +147,7 @@ export async function POST(request: NextRequest) {
         enhancedMessages.unshift({ role: "system", content: ownerBackground });
       }
 
-      // Inject available media for on-demand access
-      const onDemandMedia = caseMedia.filter((m) => m.trigger !== "auto");
-      if (onDemandMedia.length > 0) {
-        const mediaList = onDemandMedia
-          .map(
-            (m) =>
-              `- [MEDIA:${m.id}] ${m.type.toUpperCase()}: ${
-                m.caption || "No description"
-              }`
-          )
-          .join("\n");
 
-        const mediaPrompt = `
-You have access to the following medical records and diagnostics.
-If the student asks to see them, you can "show" them by including the media tag in your response.
-Do not show them unless asked.
-
-Available Media:
-${mediaList}
-
-To show a media item, simply include its tag (e.g. [MEDIA:123]) in your response text.
-`;
-        enhancedMessages.unshift({ role: "system", content: mediaPrompt });
-      }
     }
 
     let displayRole: string | undefined = undefined;
@@ -229,6 +206,69 @@ To show a media item, simply include its tag (e.g. [MEDIA:123]) in your response
     }
 
     personaRoleKey = resolveChatPersonaRoleKey(stageRole, displayRole);
+
+    // Filter media relevant to the current stage
+    const stageTokens = new Set<string>();
+    const pushToken = (set: Set<string>, value?: string | null) => {
+      if (!value) return;
+      const token = value.toString().trim().toLowerCase();
+      if (token) {
+        set.add(token);
+      }
+    };
+
+    if (stageDescriptor) {
+      pushToken(stageTokens, stageDescriptor.id);
+      pushToken(stageTokens, stageDescriptor.title);
+      pushToken(stageTokens, stageDescriptor.role);
+    }
+    pushToken(stageTokens, stageRole);
+    pushToken(stageTokens, displayRole);
+    pushToken(stageTokens, personaRoleKey);
+
+    const relevantMedia = caseMedia.filter((item) => {
+      const stageRef = item.stage ?? {};
+      const refTokens = new Set<string>();
+      pushToken(refTokens, stageRef.stageId);
+      pushToken(refTokens, stageRef.stageKey);
+      pushToken(refTokens, stageRef.roleKey);
+
+      // If no stage reference, it's global/available to all
+      if (!refTokens.size) {
+        return true;
+      }
+
+      // Otherwise, must match at least one token from current stage
+      for (const token of refTokens) {
+        if (stageTokens.has(token)) {
+          return true;
+        }
+      }
+      return false;
+    });
+
+    if (relevantMedia.length > 0) {
+      const mediaList = relevantMedia
+        .map(
+          (m) =>
+            `- [MEDIA:${m.id}] ${m.type.toUpperCase()} [${
+              m.trigger === "auto" ? "AUTO-SHOW" : "ON-DEMAND"
+            }]: ${m.caption || "No description"}`
+        )
+        .join("\n");
+
+      const mediaPrompt = `
+You have access to the following medical records and diagnostics.
+- Items marked [AUTO-SHOW] should be presented IMMEDIATELY in your first response for this stage, without waiting to be asked.
+- Items marked [ON-DEMAND] should ONLY be shown if the student explicitly asks for them.
+
+Available Media:
+${mediaList}
+
+To show a media item, simply include its tag (e.g. [MEDIA:123]) in your response text.
+`;
+      enhancedMessages.unshift({ role: "system", content: mediaPrompt });
+    }
 
     type PersonaTableRow = {
       role_key?: string | null;
@@ -477,28 +517,7 @@ To show a media item, simply include its tag (e.g. [MEDIA:123]) in your response
       }
     }
 
-    const stageTokens = new Set<string>();
-    const appendToken = (value?: string | null) => {
-      if (!value) return;
-      const token = value.toString().trim().toLowerCase();
-      if (token) {
-        stageTokens.add(token);
-      }
-    };
-    const pushToken = (set: Set<string>, value?: string | null) => {
-      if (!value) return;
-      const token = value.toString().trim().toLowerCase();
-      if (token) {
-        set.add(token);
-      }
-    };
-    appendToken(stageDescriptor?.id);
-    appendToken(stageDescriptor?.title);
-    appendToken(stageDescriptor?.role);
-    appendToken(stageRole);
-    appendToken(displayRole);
-    appendToken(personaRoleKey);
-
+    // Reuse stageTokens and pushToken from earlier
     const matchingMedia = caseMedia.filter((item) => {
       const stageRef = item.stage ?? {};
       const refTokens = new Set<string>();

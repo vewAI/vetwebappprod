@@ -161,3 +161,27 @@ export function stopListening(): void {
     micStream = null;
   }
 }
+
+/**
+ * Abort listening immediately (discards any buffered audio)
+ */
+export function abortListening(): void {
+  shouldRestart = false;
+  starting = false;
+  if (recognition) {
+    try {
+      recognition.abort();
+    } catch (e) {
+      // Ignore errors
+    }
+    recognition = null;
+  }
+  if (micStream) {
+    try {
+      micStream.getTracks().forEach((track) => track.stop());
+    } catch (err) {
+      console.warn("Failed to stop microphone stream", err);
+    }
+    micStream = null;
+  }
+}

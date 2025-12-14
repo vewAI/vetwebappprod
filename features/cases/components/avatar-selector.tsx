@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,28 +10,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { supabase } from "@/lib/supabase";
 
-// Static lists of avatars as requested
-const OWNER_AVATARS = Array.from({ length: 50 }, (_, i) => ({
-  id: `owner-${i + 1}`,
-  url: `/avatars/owner/owner_${i + 1}.jpg`, // Assuming these exist or will exist
-  label: `Owner ${i + 1}`,
-}));
-
-// Fallback to some placeholder images if local assets don't exist yet
-// Using a placeholder service for demonstration if real assets aren't there
-const getPlaceholder = (role: string, i: number) => 
-  `https://api.dicebear.com/7.x/avataaars/svg?seed=${role}${i}`;
-
-const OWNER_OPTIONS = Array.from({ length: 50 }, (_, i) => ({
-  url: getPlaceholder("owner", i),
-  label: `Owner ${i + 1}`,
-}));
-
-const NURSE_OPTIONS = Array.from({ length: 5 }, (_, i) => ({
-  url: getPlaceholder("nurse", i),
-  label: `Nurse ${i + 1}`,
-}));
+type AvatarOption = {
+  url: string;
+  label: string;
+};
 
 type AvatarSelectorProps = {
   role: "owner" | "nurse";
@@ -41,8 +25,89 @@ type AvatarSelectorProps = {
 };
 
 export function AvatarSelector({ role, value, onChange, readOnly }: AvatarSelectorProps) {
-  const options = role === "owner" ? OWNER_OPTIONS : NURSE_OPTIONS;
-  const [open, setOpen] = React.useState(false);
+  const [options, setOptions] = useState<AvatarOption[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return; // Only fetch when dialog opens
+
+    async function fetchAvatars() {
+      setLoading(true);
+      try {
+        const newOptions: AvatarOption[] = [];
+
+        if (role === "nurse") {
+          // Fetch global nurse personas
+          const { data: globalNurses } = await supabase
+            .from("global_personas")
+            .select("display_name, image_url")
+            .eq("role_key", "veterinary-nurse")
+            .not("image_url", "is", null);
+
+          // Also fetch any case-specific nurses that might exist
+          const { data: caseNurses } = await supabase
+            .from("case_personas")
+            .select("display_name, image_url")
+            .eq("role_key", "veterinary-nurse")
+            .not("image_url", "is", null)
+            .limit(20);
+
+          if (globalNurses) {
+            globalNurses.forEach((p) => {
+              if (p.image_url) {
+                newOptions.push({
+                  url: p.image_url,
+                  label: p.display_name || "Global Nurse",
+                });
+              }
+            });
+          }
+          
+          if (caseNurses) {
+            caseNurses.forEach((p) => {
+              if (p.image_url) {
+                // Avoid duplicates if URL is same
+                if (!newOptions.some(opt => opt.url === p.image_url)) {
+                  newOptions.push({
+                    url: p.image_url,
+                    label: p.display_name || "Case Nurse",
+                  });
+                }
+              }
+            });
+          }
+        } else if (role === "owner") {
+          // Fetch case-specific owners (from all cases, to allow reuse)
+          const { data: caseOwners } = await supabase
+            .from("case_personas")
+            .select("display_name, image_url")
+            .eq("role_key", "owner")
+            .not("image_url", "is", null)
+            .limit(50); // Limit to recent 50 to avoid overload
+
+          if (caseOwners) {
+            caseOwners.forEach((p) => {
+              if (p.image_url) {
+                newOptions.push({
+                  url: p.image_url,
+                  label: p.display_name || "Owner",
+                });
+              }
+            });
+          }
+        }
+
+        setOptions(newOptions);
+      } catch (err) {
+        console.error("Failed to fetch avatars", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    void fetchAvatars();
+  }, [role, open]);
 
   if (readOnly) {
     return (
@@ -88,26 +153,36 @@ export function AvatarSelector({ role, value, onChange, readOnly }: AvatarSelect
             <DialogTitle>Select {role === "owner" ? "Owner" : "Nurse"} Avatar</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-4 sm:grid-cols-6 gap-4 p-4">
-            {options.map((opt, idx) => (
-              <button
-                key={idx}
-                className={`relative aspect-square overflow-hidden rounded-lg border-2 transition-all hover:border-primary ${
-                  value === opt.url ? "border-primary ring-2 ring-primary ring-offset-2" : "border-transparent"
-                }`}
-                onClick={() => {
-                  onChange(opt.url);
-                  setOpen(false);
-                }}
-              >
-                <Image
-                  src={opt.url}
-                  alt={opt.label}
-                  fill
-                  className="object-cover"
-                  unoptimized
-                />
-              </button>
-            ))}
+            {loading ? (
+              <div className="col-span-full text-center py-8 text-muted-foreground">
+                Loading avatars...
+              </div>
+            ) : options.length === 0 ? (
+              <div className="col-span-full text-center py-8 text-muted-foreground">
+                No avatars found. {role === "nurse" ? "Check global personas." : "Generate personas in cases first."}
+              </div>
+            ) : (
+              options.map((opt, idx) => (
+                <button
+                  key={idx}
+                  className={`relative aspect-square overflow-hidden rounded-lg border-2 transition-all hover:border-primary ${
+                    value === opt.url ? "border-primary ring-2 ring-primary ring-offset-2" : "border-transparent"
+                  }`}
+                  onClick={() => {
+                    onChange(opt.url);
+                    setOpen(false);
+                  }}
+                >
+                  <Image
+                    src={opt.url}
+                    alt={opt.label}
+                    fill
+                    className="object-cover"
+                    unoptimized
+                  />
+                </button>
+              ))
+            )}
           </div>
         </DialogContent>
       </Dialog>

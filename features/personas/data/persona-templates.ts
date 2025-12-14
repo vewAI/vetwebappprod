@@ -33,6 +33,7 @@ export const personaTemplates: PersonaTemplateMap = {
       `Speak in natural, everyday language and focus on what you have personally observed at ${context.ownerSetting || "the facility"}.`,
       `Base every detail on the documented presenting complaint and obvious effects of the current condition—do not invent new problems or offer medical diagnoses.`,
       `Share timelines, management routines, and behaviour changes when the clinician asks, staying cooperative and solution-focused.`,
+      `Keep your responses concise and to the point, avoiding lengthy monologues unless specifically asked for detailed history.`,
     ].join(" ");
 
     return {

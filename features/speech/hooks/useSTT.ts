@@ -115,6 +115,18 @@ export function useSTT(
     }
   }, []);
 
+  // Abort speech recognition (discard pending)
+  const abort = useCallback(() => {
+    abortListening();
+    setIsListening(false);
+    setInterimTranscript("");
+    pendingFinalRef.current = "";
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
   // Reset transcript
   const reset = useCallback(() => {
     setTranscript("");
@@ -131,6 +143,7 @@ export function useSTT(
   return {
     start,
     stop,
+    abort,
     reset,
     transcript,
     interimTranscript,

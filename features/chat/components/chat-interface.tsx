@@ -523,7 +523,7 @@ export function ChatInterface({
     return s;
   };
 
-  const { isListening, transcript, interimTranscript, start, stop, reset } =
+  const { isListening, transcript, interimTranscript, start, stop, abort, reset } =
     useSTT(
       (finalText: string) => {
       console.debug(
@@ -866,16 +866,23 @@ export function ChatInterface({
         // even if we are currently stopped (e.g. due to pulseVoiceModeControls).
         resumeListeningRef.current = true;
         
-        // Always attempt to stop if voice mode is on, to ensure mic is off during playback
+        // Always attempt to stop if voice mode is on, to ensure mic is off during playback.
+        // Use abort() to immediately discard any pending audio buffer to prevent
+        // self-recording of the TTS start.
         try {
-          stop();
+          if (abort) {
+            abort();
+          } else {
+            stop();
+          }
           stoppedForPlayback = true;
         } catch (e) {
           // ignore
         }
         
-        // Give a moment for the mic to fully release
-        await new Promise(resolve => setTimeout(resolve, 200));
+        // Give a moment for the mic to fully release. Increased to 500ms to prevent
+        // self-recording of the TTS start.
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
 
       // Try streaming first for low latency, fall back to buffered playback
@@ -1114,12 +1121,13 @@ export function ChatInterface({
     const guardActive =
       advanceGuard && advanceGuard.stageIndex === currentStageIndex;
     if (guardActive) {
-      setAdvanceGuard(null);
       const guardResponse = detectAdvanceGuardResponse(trimmed);
       if (guardResponse === "confirm" && hasNextStage) {
+        setAdvanceGuard(null);
         clearStageIntentLocks();
         shouldAutoAdvance = true;
       } else if (guardResponse === "decline") {
+        setAdvanceGuard(null);
         lockStageIntent("stay");
         shouldAutoAdvance = false;
       }
@@ -1141,22 +1149,28 @@ export function ChatInterface({
       if (stageResult.status === "ready" && !stageLocked) {
         shouldAutoAdvance = true;
       } else if (stageResult.status !== "ready") {
-        if (userMessage) {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === userMessage!.id ? { ...m, status: "sent" } : m
-            )
-          );
+        // If we have already warned the user for this stage (guardActive), allow them to proceed
+        // if they persist (intent === "advance").
+        if (guardActive) {
+          shouldAutoAdvance = true;
+        } else {
+          if (userMessage) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === userMessage!.id ? { ...m, status: "sent" } : m
+              )
+            );
+          }
+          setAdvanceGuard({
+            stageIndex: currentStageIndex,
+            askedAt: Date.now(),
+            metrics: stageResult.metrics,
+          });
+          await emitStageReadinessPrompt(currentStageIndex, stageResult);
+          reset();
+          baseInputRef.current = "";
+          return;
         }
-        setAdvanceGuard({
-          stageIndex: currentStageIndex,
-          askedAt: Date.now(),
-          metrics: stageResult.metrics,
-        });
-        await emitStageReadinessPrompt(currentStageIndex, stageResult);
-        reset();
-        baseInputRef.current = "";
-        return;
       }
     } else if (
       !shouldAutoAdvance &&
@@ -1490,7 +1504,7 @@ export function ChatInterface({
     if (!normalized) return "none";
 
     if (
-      /\b(yes|yeah|yep|ready|sure|absolutely|of course|do it|let's go|lets go|move on|advance|proceed)\b/.test(
+      /\b(yes|yeah|yep|ready|sure|absolutely|of course|do it|let's go|lets go|move on|advance|proceed|next)\b/.test(
         normalized
       )
     ) {

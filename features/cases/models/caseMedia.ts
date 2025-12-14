@@ -111,6 +111,9 @@ export function normalizeCaseMedia(input: unknown): CaseMediaItem[] {
       if (loop !== undefined) {
         item.loop = loop;
       }
+      if (value.trigger === "auto" || value.trigger === "on_demand") {
+        item.trigger = value.trigger;
+      }
       const metadata = coerceJsonRecord(value.metadata);
       item.metadata = metadata;
       return item;
