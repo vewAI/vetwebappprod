@@ -30,6 +30,13 @@ export default function UserManagementPage() {
   const [newUserFullName, setNewUserFullName] = useState("");
   const [creating, setCreating] = useState(false);
 
+  // Edit state
+  const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
+  const [editEmail, setEditEmail] = useState("");
+  const [editPassword, setEditPassword] = useState("");
+  const [editFullName, setEditFullName] = useState("");
+  const [updating, setUpdating] = useState(false);
+
   useEffect(() => {
     fetchUsers();
   }, []);
@@ -106,6 +113,41 @@ export default function UserManagementPage() {
       );
     } catch (err: any) {
       alert(err.response?.data?.error || err.message);
+    }
+  };
+
+  const startEditing = (user: UserProfile) => {
+    setEditingUser(user);
+    setEditEmail(user.email);
+    setEditPassword("");
+    setEditFullName("");
+  };
+
+  const handleUpdateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser) return;
+    try {
+      setUpdating(true);
+      const token = await getAccessToken();
+      await axios.put(
+        "/api/admin/users",
+        {
+          userId: editingUser.user_id,
+          email: editEmail,
+          password: editPassword || undefined,
+          fullName: editFullName || undefined,
+          role: editingUser.role,
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      setEditingUser(null);
+      await fetchUsers();
+    } catch (err: any) {
+      alert(err.response?.data?.error || err.message);
+    } finally {
+      setUpdating(false);
     }
   };
 
@@ -214,13 +256,22 @@ export default function UserManagementPage() {
                         {new Date(user.created_at).toLocaleDateString()}
                       </td>
                       <td className="px-6 py-4">
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => handleDeleteUser(user.user_id)}
-                        >
-                          Delete
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => startEditing(user)}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => handleDeleteUser(user.user_id)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -230,6 +281,58 @@ export default function UserManagementPage() {
           )}
         </CardContent>
       </Card>
+
+      {editingUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <CardTitle>Edit User</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleUpdateUser} className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Email</Label>
+                  <Input
+                    type="email"
+                    required
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>New Password (optional)</Label>
+                  <Input
+                    type="password"
+                    placeholder="Leave blank to keep unchanged"
+                    value={editPassword}
+                    onChange={(e) => setEditPassword(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Full Name (optional)</Label>
+                  <Input
+                    placeholder="Update full name"
+                    value={editFullName}
+                    onChange={(e) => setEditFullName(e.target.value)}
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setEditingUser(null)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={updating}>
+                    {updating ? "Updating..." : "Update User"}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

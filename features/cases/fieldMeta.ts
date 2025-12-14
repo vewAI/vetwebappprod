@@ -215,20 +215,6 @@ const metaList: CaseFieldMeta[] = [
 		rows: 6,
 	},
 	{
-		key: "owner_avatar_url",
-		label: "Owner Avatar",
-		help: "Select an avatar for the owner.",
-		isAvatarSelector: true,
-		avatarRole: "owner",
-	},
-	{
-		key: "nurse_avatar_url",
-		label: "Nurse Avatar",
-		help: "Select an avatar for the nurse.",
-		isAvatarSelector: true,
-		avatarRole: "nurse",
-	},
-	{
 		key: "history_feedback",
 		label: "History feedback prompt",
 		placeholder: "Instructions for the professor persona when critiquing history-taking...",

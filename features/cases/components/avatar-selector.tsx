@@ -37,11 +37,32 @@ type AvatarSelectorProps = {
   role: "owner" | "nurse";
   value?: string;
   onChange: (url: string) => void;
+  readOnly?: boolean;
 };
 
-export function AvatarSelector({ role, value, onChange }: AvatarSelectorProps) {
+export function AvatarSelector({ role, value, onChange, readOnly }: AvatarSelectorProps) {
   const options = role === "owner" ? OWNER_OPTIONS : NURSE_OPTIONS;
   const [open, setOpen] = React.useState(false);
+
+  if (readOnly) {
+    return (
+      <div className="flex items-center gap-4">
+        {value ? (
+          <div className="relative h-16 w-16 overflow-hidden rounded-full border">
+            <Image
+              src={value}
+              alt="Selected avatar"
+              fill
+              className="object-cover"
+              unoptimized
+            />
+          </div>
+        ) : (
+          <span className="text-sm text-muted-foreground">No avatar selected</span>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center gap-4">

@@ -146,6 +146,31 @@ export async function POST(request: NextRequest) {
       if (ownerBackground) {
         enhancedMessages.unshift({ role: "system", content: ownerBackground });
       }
+
+      // Inject available media for on-demand access
+      const onDemandMedia = caseMedia.filter((m) => m.trigger !== "auto");
+      if (onDemandMedia.length > 0) {
+        const mediaList = onDemandMedia
+          .map(
+            (m) =>
+              `- [MEDIA:${m.id}] ${m.type.toUpperCase()}: ${
+                m.caption || "No description"
+              }`
+          )
+          .join("\n");
+
+        const mediaPrompt = `
+You have access to the following medical records and diagnostics.
+If the student asks to see them, you can "show" them by including the media tag in your response.
+Do not show them unless asked.
+
+Available Media:
+${mediaList}
+
+To show a media item, simply include its tag (e.g. [MEDIA:123]) in your response text.
+`;
+        enhancedMessages.unshift({ role: "system", content: mediaPrompt });
+      }
     }
 
     let displayRole: string | undefined = undefined;
@@ -581,7 +606,21 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     });
 
     const assistantRawContent = response.choices[0].message.content ?? "";
-    const assistantContent = stripLeadingPersonaIntro(assistantRawContent, [
+    
+    // Parse on-demand media tags
+    let content = assistantRawContent;
+    const mediaIds: string[] = [];
+    const mediaRegex = /\[MEDIA:([a-zA-Z0-9-]+)\]/g;
+    let match;
+    while ((match = mediaRegex.exec(content)) !== null) {
+      mediaIds.push(match[1]);
+    }
+    // Remove tags from content
+    content = content.replace(mediaRegex, "").trim();
+
+    const requestedMedia = caseMedia.filter(m => mediaIds.includes(m.id));
+
+    const assistantContent = stripLeadingPersonaIntro(content, [
       personaNameForChat,
       displayRole,
       stageRole,
@@ -595,7 +634,7 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
       voiceId: personaVoiceId,
       personaSex,
       personaRoleKey,
-      media: matchingMedia,
+      media: requestedMedia,
     });
   } catch (error) {
     console.error("Error in chat API:", error);

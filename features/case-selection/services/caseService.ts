@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Case } from "../models/case";
+import { normalizeCaseMedia } from "@/features/cases/models/caseMedia";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -17,6 +18,7 @@ type DbCase = {
   image_url?: string | null;
   tags?: string[] | null;
   is_published?: boolean | null;
+  media?: unknown;
 };
 
 export type FetchCasesOptions = {
@@ -126,5 +128,6 @@ function mapDbCaseToCase(dbCase: DbCase): Case {
     imageUrl: dbCase.image_url ?? "",
     tags: dbCase.tags ?? [],
     isPublished: dbCase.is_published ?? false,
+    media: normalizeCaseMedia(dbCase.media),
   };
 }

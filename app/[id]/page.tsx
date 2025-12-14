@@ -220,6 +220,7 @@ export default function CaseChatPage() {
           currentStageIndex={currentStageIndex}
           stages={stages}
           onProceedToNextStage={handleProceedToNextStage}
+          caseMedia={caseItem.media}
         />
       </div>
 

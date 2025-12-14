@@ -4,7 +4,8 @@ import { requireUser } from "@/app/api/_lib/auth";
 import { ensureSharedPersonas } from "@/features/personas/services/globalPersonaPersistence";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireUser(request, { requireAdmin: true });
+  // Allow any authenticated user to read global personas (needed for chat UI)
+  const auth = await requireUser(request);
   if ("error" in auth) {
     return auth.error;
   }

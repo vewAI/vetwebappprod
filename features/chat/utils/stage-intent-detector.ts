@@ -29,6 +29,9 @@ const DIRECTION_WORDS = [
   "wrap up",
   "finish",
   "complete",
+  "make",
+  "run",
+  "initiate",
 ];
 
 const POSTPONE_PATTERN = /\b(later|after|eventually|not yet|hold on|wait|still working)\b/;
@@ -176,7 +179,7 @@ export function detectStageIntentLegacy(
   const letsDoStageRegex =
     stagePhrase && stagePhrase.length > 0
       ? new RegExp(
-          `\\blet(?:'s|s| us)?\\s+(?:do|start|begin|perform|move|head|go|transition|switch)\\s+(?:to\\s+|into\\s+|with\\s+)?(?:the\\s+|a\\s+)?${escapeRegExp(
+          `\\blet(?:'s|s| us)?\\s+(?:do|start|begin|perform|move|head|go|transition|switch|make|run|initiate)\\s+(?:to\\s+|into\\s+|with\\s+)?(?:the\\s+|a\\s+)?${escapeRegExp(
             stagePhrase
           )}\\b`
         )
@@ -184,7 +187,7 @@ export function detectStageIntentLegacy(
   const doStageRegex =
     stagePhrase && stagePhrase.length > 0
       ? new RegExp(
-          `\\b(?:do|perform|start|begin|commence|conduct)\\s+(?:the\\s+|a\\s+)?${escapeRegExp(
+          `\\b(?:do|perform|start|begin|commence|conduct|make|run|initiate)\\s+(?:the\\s+|a\\s+)?${escapeRegExp(
             stagePhrase
           )}\\b`
         )

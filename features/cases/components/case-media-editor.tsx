@@ -421,6 +421,30 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                         }
                         placeholder="https://..."
                       />
+
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor={`media-trigger-${item.id}`}>Display Mode</Label>
+                        <select
+                          id={`media-trigger-${item.id}`}
+                          className="w-full rounded border border-input bg-card text-card-foreground px-2 py-1 text-sm"
+                          value={item.trigger ?? "on_demand"}
+                          onChange={(e) =>
+                            updateItem(index, (curr) => ({
+                              ...curr,
+                              trigger: e.target.value as "auto" | "on_demand",
+                            }))
+                          }
+                          disabled={readOnly}
+                        >
+                          <option value="on_demand">On Demand (Ask to see)</option>
+                          <option value="auto">Auto (Show at stage start)</option>
+                        </select>
+                        <p className="text-xs text-muted-foreground">
+                          "Auto" shows the media immediately when the assigned stage begins.
+                          "On Demand" requires the student to ask for it.
+                        </p>
+                      </div>
+
                       {!readOnly && (
                         <label className="flex flex-col gap-2 text-sm">
                           <span>Upload file</span>

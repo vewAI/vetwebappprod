@@ -142,6 +142,7 @@ type ChatInterfaceProps = {
     timeSpentSeconds?: number
   ) => void;
   initialTimeSpentSeconds?: number;
+  caseMedia?: CaseMediaItem[];
 };
 
 type PersonaDirectoryEntry = {
@@ -167,6 +168,7 @@ export function ChatInterface({
   stages,
   onProceedToNextStage,
   initialTimeSpentSeconds = 0,
+  caseMedia = [],
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const { timepoints } = useCaseTimepoints(caseId);
@@ -863,14 +865,17 @@ export function ChatInterface({
         // If voice mode is on, we want to ensure we resume listening after playback,
         // even if we are currently stopped (e.g. due to pulseVoiceModeControls).
         resumeListeningRef.current = true;
-        if (isListening) {
+        
+        // Always attempt to stop if voice mode is on, to ensure mic is off during playback
+        try {
+          stop();
           stoppedForPlayback = true;
-          try {
-            stop();
-          } catch (e) {
-            // ignore
-          }
+        } catch (e) {
+          // ignore
         }
+        
+        // Give a moment for the mic to fully release
+        await new Promise(resolve => setTimeout(resolve, 200));
       }
 
       // Try streaming first for low latency, fall back to buffered playback
@@ -907,7 +912,8 @@ export function ChatInterface({
       if (resumeListeningRef.current) {
         resumeListeningRef.current = false;
         if (voiceMode) {
-          setTimeout(() => start(), 50);
+          // Resume after a longer delay to avoid picking up echo/reverb
+          setTimeout(() => start(), 800);
         }
       }
     }
@@ -935,11 +941,6 @@ export function ChatInterface({
         personaMeta?.sex === "neutral"
           ? (personaMeta.sex as "male" | "female" | "neutral")
           : "neutral";
-
-      // Patch: Ensure nurse and owner are female if not specified
-      if ((normalizedRoleKey === "veterinary-nurse" || normalizedRoleKey === "owner") && voiceSex === "neutral") {
-        voiceSex = "female";
-      }
 
       const voiceForRole = getOrAssignVoiceForRole(normalizedRoleKey, attemptId, {
         preferredVoice: personaMeta?.voiceId,
@@ -1207,11 +1208,6 @@ export function ChatInterface({
         response.personaSex === "neutral"
           ? response.personaSex
           : "neutral";
-
-      // Patch: Ensure nurse is female if not specified
-      if (normalizedPersonaKey === "veterinary-nurse" && responseVoiceSex === "neutral") {
-        responseVoiceSex = "female";
-      }
 
       const resolvedVoiceForRole = getOrAssignVoiceForRole(
         normalizedPersonaKey,
@@ -1622,11 +1618,6 @@ export function ChatInterface({
             ? response.personaSex
             : "neutral";
 
-        // Patch: Ensure nurse and owner are female if not specified
-        if ((normalizedPersonaKey === "veterinary-nurse" || normalizedPersonaKey === "owner") && responseVoiceSex === "neutral") {
-          responseVoiceSex = "female";
-        }
-
         const resolvedVoiceForRole = getOrAssignVoiceForRole(
           normalizedPersonaKey,
           attemptId,
@@ -1752,8 +1743,15 @@ export function ChatInterface({
   const togglePause = useCallback(async () => {
     if (isPaused) {
       setIsPaused(false);
+      // Ensure voice mode and TTS are enabled when resuming
       setVoiceModeEnabled(true);
       setTtsEnabledState(true);
+      
+      // If voice mode was already on (so setVoiceModeEnabled didn't trigger start),
+      // we need to manually restart listening now that we are unpaused.
+      if (voiceModeRef.current && !isListening) {
+        start();
+      }
     } else {
       setIsPaused(true);
       if (isListening) {
@@ -1766,7 +1764,7 @@ export function ChatInterface({
         console.error("Failed to save progress on pause:", e);
       }
     }
-  }, [isPaused, isListening, stop, saveProgress, messages, currentStageIndex, timeSpentSeconds, setVoiceModeEnabled, setTtsEnabledState]);
+  }, [isPaused, isListening, stop, start, saveProgress, messages, currentStageIndex, timeSpentSeconds, setVoiceModeEnabled, setTtsEnabledState]);
 
   const pulseVoiceModeControls = useCallback(async () => {
     const wait = (ms: number) =>
@@ -2208,10 +2206,20 @@ export function ChatInterface({
     const stage = stages[currentStageIndex];
     const stageTitle = stage?.title ?? `Stage ${currentStageIndex + 1}`;
     const tip = getStageTip(caseId, currentStageIndex);
-    setStageIndicator({
-      title: stageTitle,
-      body: tip,
-    });
+    
+    if (tip) {
+      setStageIndicator({
+        title: stageTitle,
+        body: tip,
+      });
+      // Auto-hide after 8 seconds
+      const timer = setTimeout(() => {
+        setStageIndicator(null);
+      }, 8000);
+      return () => clearTimeout(timer);
+    } else {
+      setStageIndicator(null);
+    }
   }, [caseId, currentStageIndex, stages]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -2318,15 +2326,21 @@ export function ChatInterface({
         ? personaMeta.sex
         : "neutral";
 
-    // Patch: Ensure nurse and owner are female if not specified
-    if ((normalizedRoleKey === "veterinary-nurse" || normalizedRoleKey === "owner") && voiceSex === "neutral") {
-      voiceSex = "female";
-    }
-
     const voiceForRole = getOrAssignVoiceForRole(normalizedRoleKey, attemptId, {
       preferredVoice: personaMeta?.voiceId,
       sex: voiceSex,
     });
+
+    // Find auto-trigger media for this stage
+    const targetStage = stages[targetIndex];
+    const autoMedia = caseMedia.filter((m) => {
+      if (m.trigger !== "auto") return false;
+      // Match by stage ID or Key
+      if (m.stage?.stageId && m.stage.stageId === targetStage?.id) return true;
+      if (m.stage?.stageKey && m.stage.stageKey === targetStage?.id) return true;
+      return false;
+    });
+
     const assistantMsg = chatService.createAssistantMessage(
       introText,
       targetIndex,
@@ -2334,7 +2348,8 @@ export function ChatInterface({
       personaMeta?.portraitUrl,
       voiceForRole,
       personaMeta?.sex,
-      normalizedRoleKey
+      normalizedRoleKey,
+      autoMedia.length > 0 ? autoMedia : undefined
     );
     upsertPersonaDirectory(normalizedRoleKey, {
       displayName: personaMeta?.displayName ?? roleName,
@@ -2496,19 +2511,25 @@ export function ChatInterface({
           </Button>
         </div>
       )}
+      {/* Stage Tip Toast (central, non-blocking) */}
+      {stageIndicator && (
+        <div className="fixed top-24 left-0 right-0 flex justify-center pointer-events-none z-40">
+          <div className="bg-muted/90 backdrop-blur-sm border border-border text-foreground px-4 py-3 rounded-lg shadow-lg max-w-md text-center pointer-events-auto animate-in fade-in slide-in-from-top-4 duration-300">
+            <div className="font-semibold text-sm mb-1">{stageIndicator.title}</div>
+            <div className="text-sm">{stageIndicator.body}</div>
+            <button 
+              onClick={() => setStageIndicator(null)}
+              className="absolute top-1 right-2 text-muted-foreground hover:text-foreground"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Chat messages area */}
       <div className="flex-1 overflow-y-auto p-4">
         <div className="mx-auto max-w-3xl space-y-4">
-          {stageIndicator && (
-            <div className="flex justify-center">
-              <div className="flex items-start gap-2 rounded-xl border border-border bg-muted/50 px-4 py-2 text-xs text-muted-foreground">
-                <span className="font-semibold text-foreground">
-                  {stageIndicator.title}
-                </span>
-                <span>{stageIndicator.body}</span>
-              </div>
-            </div>
-          )}
           {messages.map((message) => (
             <ChatMessage
               key={message.id}
@@ -2592,7 +2613,7 @@ export function ChatInterface({
             </div>
           </div>
 
-          {voiceMode && audioDevicesSupported && (
+          {audioDevicesSupported && (
             <div className="mb-4 space-y-2">
               {audioNotice && (
                 <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">

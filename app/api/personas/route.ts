@@ -130,7 +130,7 @@ export async function PUT(request: NextRequest) {
 
     const { data, error } = await query
       .select(
-        "id, case_id, role_key, display_name, status, image_url, prompt, behavior_prompt, metadata, generated_by, last_generated_at, updated_at"
+        "id, case_id, role_key, display_name, status, image_url, prompt, behavior_prompt, metadata, generated_by, last_generated_at, updated_at, sex"
       )
       .single();
 

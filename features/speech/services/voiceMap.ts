@@ -124,6 +124,14 @@ export function getOrAssignVoiceForRole(
       if (!sex || sex === "neutral") {
         return VOICE_PRESETS;
       }
+      // Prioritize strict gender match
+      const strictMatches = VOICE_PRESETS.filter(
+        (preset) => preset.gender === sex
+      );
+      if (strictMatches.length > 0) {
+        return strictMatches;
+      }
+      
       const matches = VOICE_PRESETS.filter(
         (preset) => preset.gender === sex || preset.gender === "neutral"
       );

@@ -22,6 +22,12 @@ export default function AdminPage() {
       >
         Manage Personas
       </Button>
+      <Button
+        className="mb-4 ml-2"
+        onClick={() => router.push("/admin/user-management")}
+      >
+        Manage Users
+      </Button>
       {/* Add other admin controls here */}
     </div>
   );

@@ -1,3 +1,5 @@
+import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
+
 export type Case = {
     id: string
     title: string
@@ -10,4 +12,5 @@ export type Case = {
     imageUrl: string
     tags?: string[]
     isPublished?: boolean
+    media?: CaseMediaItem[]
 };

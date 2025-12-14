@@ -18,6 +18,7 @@ export interface CaseMediaItem {
   thumbnailUrl?: string;
   loop?: boolean;
   metadata?: Record<string, unknown> | null;
+  trigger?: "auto" | "on_demand";
 }
 
 export function isCaseMediaItem(value: unknown): value is CaseMediaItem {

@@ -13,6 +13,7 @@ import {
 import { isCaseFieldAutomatable } from "@/features/prompts/services/casePromptAutomation";
 import { useAuth } from "@/features/auth/services/authService";
 import { CaseMediaEditor } from "@/features/cases/components/case-media-editor";
+import { AvatarSelector } from "@/features/cases/components/avatar-selector";
 import {
   normalizeCaseMedia,
   type CaseMediaItem,
@@ -873,6 +874,27 @@ export default function CaseViewerPage() {
                       {automation.message}
                     </p>
                   ) : null}
+                </div>
+              );
+            }
+
+            if (meta.isAvatarSelector) {
+              return (
+                <div key={key}>
+                  <label className="block font-medium mb-1" htmlFor={key}>
+                    {meta.label}
+                  </label>
+                  <AvatarSelector
+                    role={meta.avatarRole || "owner"}
+                    value={formatValue(rawValue)}
+                    onChange={(url) => updateField(key, url)}
+                    readOnly={!editable}
+                  />
+                  {meta.help && (
+                    <p id={helpId} className="mt-1 text-sm text-muted-foreground">
+                      {meta.help}
+                    </p>
+                  )}
                 </div>
               );
             }
