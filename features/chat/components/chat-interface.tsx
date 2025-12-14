@@ -913,7 +913,7 @@ export function ChatInterface({
         resumeListeningRef.current = false;
         if (voiceMode) {
           // Resume after a longer delay to avoid picking up echo/reverb
-          setTimeout(() => start(), 800);
+          setTimeout(() => start(), 1200);
         }
       }
     }
@@ -1219,10 +1219,14 @@ export function ChatInterface({
       );
       const assistantVoiceId = serverVoiceId ?? resolvedVoiceForRole;
 
+      // Use the specific persona name if available in the directory, otherwise fall back to the role name
+      const existingPersona = normalizedPersonaKey ? personaDirectoryRef.current[normalizedPersonaKey] : undefined;
+      const finalDisplayName = existingPersona?.displayName ?? roleName;
+
       const aiMessage = chatService.createAssistantMessage(
         response.content,
         currentStageIndex,
-        roleName,
+        finalDisplayName,
         portraitUrl,
         assistantVoiceId,
         response.personaSex,
@@ -1727,12 +1731,14 @@ export function ChatInterface({
           // User disabled voice mode -> mark and stop any active capture
           userToggledOffRef.current = true;
           stopAndMaybeSend();
+          // Explicitly stop listening to ensure mic is off
+          stop();
           setTtsEnabledState(false);
         }
         return next;
       });
     },
-    [reset, start, stopAndMaybeSend, setTtsEnabledState]
+    [reset, start, stopAndMaybeSend, stop, setTtsEnabledState]
   );
 
   // Toggle voice mode (persistent listening until toggled off)

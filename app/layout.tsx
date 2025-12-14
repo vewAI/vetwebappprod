@@ -4,6 +4,7 @@ import "./globals.css";
 import { AuthProvider } from "@/features/auth/services/authService";
 import { ProtectedRoute } from "@/features/auth/components/protected-route";
 import { Navbar } from "@/features/navigation/components/navbar";
+import { SpeechDeviceProvider } from "@/features/speech/context/audio-device-context";
 
 const geistSans = GeistSans;
 
@@ -25,17 +26,19 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <AuthProvider>
-          {process.env.NEXT_PUBLIC_ENABLE_AUTH_PROTECTION === "true" ? (
-            <ProtectedRoute>
-              <Navbar />
-              <main>{children}</main>
-            </ProtectedRoute>
-          ) : (
-            <>
-              <Navbar />
-              <main>{children}</main>
-            </>
-          )}
+          <SpeechDeviceProvider>
+            {process.env.NEXT_PUBLIC_ENABLE_AUTH_PROTECTION === "true" ? (
+              <ProtectedRoute>
+                <Navbar />
+                <main>{children}</main>
+              </ProtectedRoute>
+            ) : (
+              <>
+                <Navbar />
+                <main>{children}</main>
+              </>
+            )}
+          </SpeechDeviceProvider>
         </AuthProvider>
       </body>
     </html>

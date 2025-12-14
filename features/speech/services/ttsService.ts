@@ -93,6 +93,8 @@ export async function speakRemote(
   const blob = new Blob([buf], { type: contentType });
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
+  // Preload metadata to reduce startup latency
+  audio.preload = "auto";
   await applyPreferredOutputDevice(audio);
 
   // Return a promise that resolves when playback ends (or rejects on error)
@@ -213,6 +215,8 @@ export async function speakRemoteStream(
   );
 
   const audio = new Audio(url);
+  // Preload metadata to reduce startup latency
+  audio.preload = "auto";
   await applyPreferredOutputDevice(audio);
 
   return await new Promise<HTMLAudioElement>((resolve, reject) => {
