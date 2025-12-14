@@ -83,6 +83,7 @@ export async function POST(request: NextRequest) {
     // If we have a valid caseId, fetch owner_background and roleInfo and prepend them
     // so the LLM is influenced by the owner's personality plus any stage-specific role info.
     let ownerBackground: string | null = null;
+    let roleInfoPromptContent: string | null = null;
     let caseRecord: Record<string, unknown> | null = null;
     let caseMedia: CaseMediaItem[] = [];
     if (caseId) {
@@ -137,17 +138,12 @@ export async function POST(request: NextRequest) {
         );
 
         if (roleInfoPrompt) {
-          // Unshift role info first; ownerBackground will be unshifted after to ensure it
-          // appears first in the message list (highest priority personality instruction).
-          enhancedMessages.unshift({ role: "system", content: roleInfoPrompt });
+          roleInfoPromptContent = roleInfoPrompt;
         }
       }
 
-      if (ownerBackground) {
-        enhancedMessages.unshift({ role: "system", content: ownerBackground });
-      }
-
-
+      // We will unshift ownerBackground and roleInfoPrompt later to control the order
+      // relative to media prompts.
     }
 
     let displayRole: string | undefined = undefined;
@@ -259,15 +255,35 @@ export async function POST(request: NextRequest) {
 
       const mediaPrompt = `
 You have access to the following medical records and diagnostics.
-- Items marked [AUTO-SHOW] should be presented IMMEDIATELY in your first response for this stage, without waiting to be asked.
+- Items marked [AUTO-SHOW] MUST be presented IMMEDIATELY in your very first response for this stage. Do not ask the user if they want to see it. Just show it.
 - Items marked [ON-DEMAND] should ONLY be shown if the student explicitly asks for them.
 
 Available Media:
 ${mediaList}
 
-To show a media item, simply include its tag (e.g. [MEDIA:123]) in your response text.
+CRITICAL INSTRUCTION:
+To show a media item, you MUST include its tag (e.g. [MEDIA:123]) in your response text.
+If an item is marked [AUTO-SHOW], you MUST include its tag (e.g. [MEDIA:123]) at the start of your response.
+If you are listing diagnostic results (like bloodwork or ultrasound), you MUST include the corresponding [MEDIA:ID] tag if one exists.
 `;
       enhancedMessages.unshift({ role: "system", content: mediaPrompt });
+    }
+
+    // Unshift role info and owner background AFTER media prompt
+    // This results in the array order: [owner, role, media]
+    // Because unshift adds to the front:
+    // 1. Media -> [media]
+    // 2. Role -> [role, media]
+    // 3. Owner -> [owner, role, media]
+    // This ensures Media instructions (like [AUTO-SHOW]) appear LAST in the system messages,
+    // giving them higher priority/recency than the Role instructions.
+
+    if (roleInfoPromptContent) {
+      enhancedMessages.unshift({ role: "system", content: roleInfoPromptContent });
+    }
+
+    if (ownerBackground) {
+      enhancedMessages.unshift({ role: "system", content: ownerBackground });
     }
 
     type PersonaTableRow = {

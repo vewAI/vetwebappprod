@@ -25,10 +25,12 @@ function coerceTimeSpent(value: unknown): number {
   return Math.floor(numeric);
 }
 
+/*
 type AttemptsTableUpdate = {
   last_stage_index: number;
   time_spent_seconds: number;
 };
+*/
 
 type AttemptMessageRow = {
   attempt_id: string;

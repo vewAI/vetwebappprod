@@ -15,7 +15,8 @@ export type RolePromptKey =
   | "getPhysicalExamPrompt"
   | "getDiagnosticPrompt"
   | "getOwnerFollowUpPrompt"
-  | "getOwnerDiagnosisPrompt";
+  | "getOwnerDiagnosisPrompt"
+  | "getTreatmentPlanPrompt";
 
 type RolePromptContext = {
   caseRow: CaseRow;
@@ -93,7 +94,7 @@ function buildPhysicalExamFallback(caseRow: CaseRow): string {
 
 export const ROLE_PROMPT_DEFINITIONS: Record<RolePromptKey, RolePromptDefinition> = {
   getOwnerPrompt: {
-    defaultTemplate: `You are roleplaying as the owner or caretaker in a veterinary consultation. Stay in character according to the background below and speak in natural, conversational language.\n\nPresenting complaint (use these exact facts to open the discussion and to answer related questions):\n{{PRESENTING_COMPLAINT}}\n\nOwner background:\n{{OWNER_BACKGROUND}}\n\nGuidelines:\n- Begin by describing the presenting complaint in your own words using everyday phrasing from the owner's point of view, but stay consistent with the facts above.\n- Feel free to add context (timeline, management details, behaviour changes) that aligns with the presenting complaint or with obvious manifestations of the condition referenced above, but do not invent new or contradictory symptoms. Avoid generic phrases like "I'm worried about her health and want to ensure we address it properly"—use specific owner observations instead.\n- Answer the clinician's follow-up questions honestly, even if they did not explicitly ask yet, whenever the information above makes it relevant.\n- Never attempt to diagnose or use technical jargon beyond what is provided. Remain a non-expert narrator of what you have observed.\n\nDoctor's question: {{STUDENT_QUESTION}}\n\nStay true to the owner personality, collaborate willingly, and avoid offering diagnostic reasoning of your own.`,
+    defaultTemplate: `You are roleplaying as the owner or caretaker in a veterinary consultation. Stay in character according to the background below and speak in natural, conversational language.\n\nPresenting complaint (use these exact facts to open the discussion and to answer related questions):\n{{PRESENTING_COMPLAINT}}\n\nOwner background:\n{{OWNER_BACKGROUND}}\n\nGuidelines:\n- Begin by describing the presenting complaint in your own words using everyday phrasing from the owner's point of view, but stay consistent with the facts above.\n- Feel free to add context (timeline, management details, behaviour changes) that aligns with the presenting complaint or with obvious manifestations of the condition referenced above, but do not invent new or contradictory symptoms. Avoid generic phrases like "I'm worried about her health and want to ensure we address it properly"—use specific owner observations instead.\n- Answer the clinician's follow-up questions honestly, even if they did not explicitly ask yet, whenever the information above makes it relevant.\n- Never attempt to diagnose or use technical jargon beyond what is provided. Remain a non-expert narrator of what you have observed.\n- Always refer to the user as 'Doctor' or 'Vet'.\n\nDoctor's question: {{STUDENT_QUESTION}}\n\nStay true to the owner personality, collaborate willingly, and avoid offering diagnostic reasoning of your own.`,
     placeholderDocs: [
       { token: "{{PRESENTING_COMPLAINT}}", description: "Formatted presenting complaint drawn from the case record." },
       { token: "{{OWNER_BACKGROUND}}", description: "Owner background narrative sourced from the case record." },
@@ -124,7 +125,7 @@ export const ROLE_PROMPT_DEFINITIONS: Record<RolePromptKey, RolePromptDefinition
     }),
   },
   getDiagnosticPrompt: {
-    defaultTemplate: `You are a laboratory technician. Share the exact test result that was requested. Do not speculate beyond the data.\n\nAvailable results:\n{{DIAGNOSTIC_RESULTS}}\n\nDoctor request: {{STUDENT_REQUEST}}`,
+    defaultTemplate: `You are a laboratory technician. Share the test results. If any result is marked [AUTO-SHOW], provide it immediately. Otherwise, wait for the student to request specific items. Do not speculate beyond the data.\n\nAvailable results:\n{{DIAGNOSTIC_RESULTS}}\n\nDoctor request: {{STUDENT_REQUEST}}`,
     placeholderDocs: [
       { token: "{{DIAGNOSTIC_RESULTS}}", description: "Laboratory and diagnostic findings for the case." },
       { token: "{{STUDENT_REQUEST}}", description: "Latest clinician question or request." },
@@ -139,7 +140,7 @@ export const ROLE_PROMPT_DEFINITIONS: Record<RolePromptKey, RolePromptDefinition
     }),
   },
   getOwnerFollowUpPrompt: {
-    defaultTemplate: `You are the owner discussing next steps after the initial examination. Start slightly anxious, ask about logistics, cost, and comfort for your animal, and become more cooperative once the clinician explains their plan.\n\nGuidance:\n{{FOLLOW_UP_GUIDANCE}}\n\nDoctor's explanation/question: {{STUDENT_QUESTION}}`,
+    defaultTemplate: `You are the owner discussing next steps after the initial examination. Start slightly anxious, ask about logistics, cost, and comfort for your animal, and become more cooperative once the clinician explains their plan.\n\nRules:\n- You are a layperson, NOT a vet. Do not use medical jargon.\n- Always refer to the user as 'Doctor' or 'Vet'.\n- Do not ask for clinical history from the doctor; you are the one who knows the animal's history.\n\nGuidance:\n{{FOLLOW_UP_GUIDANCE}}\n\nDoctor's explanation/question: {{STUDENT_QUESTION}}`,
     placeholderDocs: [
       { token: "{{FOLLOW_UP_GUIDANCE}}", description: "Owner follow-up guidance from the case." },
       { token: "{{STUDENT_QUESTION}}", description: "Latest clinician explanation or question." },
@@ -153,7 +154,7 @@ export const ROLE_PROMPT_DEFINITIONS: Record<RolePromptKey, RolePromptDefinition
     },
   },
   getOwnerDiagnosisPrompt: {
-    defaultTemplate: `You are receiving the diagnosis and treatment plan for {{CASE_TITLE}}. Ask about timelines, monitoring, costs, and long-term prognosis.\n\nOwner profile:\n{{OWNER_DIAGNOSIS}}\n\nDoctor explanation: {{STUDENT_QUESTION}}`,
+    defaultTemplate: `You are receiving the diagnosis and treatment plan for {{CASE_TITLE}}. Ask about timelines, monitoring, costs, and long-term prognosis.\n\nRules:\n- You are a layperson, NOT a vet.\n- Always refer to the user as 'Doctor' or 'Vet'.\n\nOwner profile:\n{{OWNER_DIAGNOSIS}}\n\nDoctor explanation: {{STUDENT_QUESTION}}`,
     placeholderDocs: [
       { token: "{{CASE_TITLE}}", description: "Case title or patient identifier." },
       { token: "{{OWNER_DIAGNOSIS}}", description: "Owner diagnosis guidance from the case." },
@@ -167,6 +168,17 @@ export const ROLE_PROMPT_DEFINITIONS: Record<RolePromptKey, RolePromptDefinition
         STUDENT_QUESTION: userMessage,
       };
     },
+  },
+  getTreatmentPlanPrompt: {
+    defaultTemplate: `You are a veterinary nurse/technician receiving treatment instructions from the veterinarian (student).\n\nPatient: {{CASE_TITLE}}\n\nRules:\n- Listen carefully to the treatment plan.\n- Confirm the instructions clearly (e.g., "Understood, I will administer X").\n- If the instructions are vague, ask for clarification (e.g., "What dosage would you like?").\n- Do not offer your own treatment plan; follow the student's lead.\n\nStudent instructions: {{STUDENT_REQUEST}}`,
+    placeholderDocs: [
+      { token: "{{CASE_TITLE}}", description: "Case title or patient identifier." },
+      { token: "{{STUDENT_REQUEST}}", description: "Latest clinician instructions." },
+    ],
+    buildReplacements: ({ caseRow, userMessage }) => ({
+      CASE_TITLE: getCaseTitle(caseRow),
+      STUDENT_REQUEST: userMessage,
+    }),
   },
 };
 

@@ -27,6 +27,7 @@ export type FetchCasesOptions = {
   tags?: string[];
   difficulty?: string;
   species?: string;
+  category?: string; // Added category/discipline
   search?: string;
   includeUnpublished?: boolean;
 };
@@ -39,6 +40,10 @@ export async function fetchCases(options: FetchCasesOptions = {}): Promise<Case[
 
   if (!options.includeUnpublished) {
     query = query.eq("is_published", true);
+  }
+
+  if (options.category) {
+    query = query.eq("category", options.category);
   }
 
   if (options.limit) {
@@ -104,6 +109,27 @@ export async function fetchCaseById(id: string): Promise<Case | null> {
     // On any error, return null (page will show notFound). Consider logging during debugging.
     console.error("fetchCaseById error:", e);
     return null;
+  }
+}
+
+export async function fetchDisciplines(): Promise<string[]> {
+  try {
+    // Try to fetch from 'disciplines' table first
+    const { data, error } = await supabase.from("disciplines").select("name");
+    if (!error && data) {
+      return data.map((d) => d.name).sort();
+    }
+    
+    // Fallback: fetch distinct categories from cases
+    const { data: cases } = await supabase.from("cases").select("category");
+    if (cases) {
+      const categories = new Set(cases.map(c => c.category).filter(Boolean));
+      return Array.from(categories).sort() as string[];
+    }
+    return [];
+  } catch (e) {
+    console.error("Failed to fetch disciplines", e);
+    return [];
   }
 }
 

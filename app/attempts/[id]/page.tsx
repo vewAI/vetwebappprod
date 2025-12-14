@@ -24,6 +24,7 @@ import type { Message } from "@/features/chat/models/chat";
 import type { Stage } from "@/features/stages/types";
 import { ChatInterface } from "@/features/chat/components/chat-interface";
 import { CaseTimeline } from "@/features/cases/components/case-timeline";
+import { supabase } from "@/lib/supabase";
 
 export default function ViewAttemptPage() {
   const params = useParams();
@@ -37,6 +38,31 @@ export default function ViewAttemptPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("conversation");
   const [isDeleting, setIsDeleting] = useState(false);
+  const [missingPersonas, setMissingPersonas] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!attempt?.caseId) return;
+
+    const checkPersonas = async () => {
+      const { data: personas } = await supabase
+        .from("case_personas")
+        .select("role_key")
+        .eq("case_id", attempt.caseId);
+
+      const hasOwner = personas?.some((p) => p.role_key === "owner");
+      const hasNurse = personas?.some((p) => p.role_key === "veterinary-nurse");
+
+      const missing = [];
+      if (!hasOwner) missing.push("Owner");
+      if (!hasNurse) missing.push("Nurse");
+
+      if (missing.length > 0) {
+        setMissingPersonas(missing);
+      }
+    };
+
+    checkPersonas();
+  }, [attempt]);
 
   useEffect(() => {
     const loadAttempt = async () => {
@@ -433,6 +459,27 @@ export default function ViewAttemptPage() {
           </div>
         )}
       </div>
+
+      {missingPersonas.length > 0 && (
+        <div className="fixed bottom-4 right-4 bg-destructive text-destructive-foreground px-6 py-4 rounded-lg shadow-lg z-50 animate-in slide-in-from-bottom-5 max-w-md border border-destructive/50">
+          <div className="flex justify-between items-start gap-4">
+            <div>
+              <h3 className="font-bold text-lg mb-1">Missing Configuration</h3>
+              <p className="text-sm opacity-90">
+                This case is missing: <strong>{missingPersonas.join(" & ")}</strong>.
+                <br />
+                Please contact an administrator to assign personas.
+              </p>
+            </div>
+            <button
+              onClick={() => setMissingPersonas([])}
+              className="text-destructive-foreground/80 hover:text-destructive-foreground p-1 hover:bg-destructive-foreground/10 rounded"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

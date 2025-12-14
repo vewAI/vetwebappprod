@@ -110,6 +110,7 @@ type PersonaPortraitArgs = {
   caseId: string;
   stageRole?: string | null;
   displayRole?: string | null;
+  force?: boolean;
 };
 
 type PersonaPortraitResult = {
@@ -127,6 +128,7 @@ type GlobalPortraitArgs = {
   roleKey: string;
   displayRole?: string | null;
   stageRole?: string | null;
+  force?: boolean;
 };
 
 type GlobalPortraitOptions = {
@@ -140,6 +142,7 @@ async function getGlobalPersonaPortrait({
   roleKey,
   displayRole,
   stageRole,
+  force,
 }: GlobalPortraitArgs): Promise<PersonaPortraitResult> {
   let personaRow = await ensureGlobalPersonaRowExists(supabase, roleKey);
   if (!personaRow) {
@@ -193,7 +196,7 @@ async function getGlobalPersonaPortrait({
     }
   }
 
-  if (personaRow.image_url && personaRow.status === "ready") {
+  if (!force && personaRow.image_url && personaRow.status === "ready") {
     const existingIdentity = (personaMetadata?.identity ?? identity) as
       | PersonaIdentity
       | undefined;
@@ -249,7 +252,7 @@ async function getGlobalPersonaPortrait({
 
     while (true) {
       try {
-        response = await openai.images.generate(currentPayload);
+        response = await openai.images.generate(currentPayload, { timeout: 60000 }); // Increase timeout to 60s
         modelUsed = currentPayload.model ?? IMAGE_MODEL;
         if (typeof currentPayload.size === "string") {
           sizeUsed = normalizeImageSize(
@@ -667,6 +670,7 @@ export async function getOrGeneratePersonaPortrait({
   caseId,
   stageRole,
   displayRole,
+  force,
 }: PersonaPortraitArgs): Promise<PersonaPortraitResult> {
   const roleKey = resolvePersonaRoleKey(stageRole, displayRole);
   if (!roleKey) return {};
@@ -678,6 +682,7 @@ export async function getOrGeneratePersonaPortrait({
       roleKey,
       stageRole,
       displayRole,
+      force,
     });
   }
 
@@ -702,7 +707,7 @@ export async function getOrGeneratePersonaPortrait({
     stageRole ??
     roleKey;
 
-  if (personaRow?.image_url && personaRow.status === "ready") {
+  if (!force && personaRow?.image_url && personaRow.status === "ready") {
     const existingIdentity = (personaMetadata?.identity ?? identity) as
       | PersonaIdentity
       | undefined;

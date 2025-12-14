@@ -34,6 +34,13 @@
 	- analytics screens (attempt timelines, feedback summaries, rubric scoring).
 - Implement evaluation pipelines: capture rubric inputs, store in dedicated tables, expose instructor feedback to students via `app/attempts/[id]`.
 
+## UI/UX Improvements
+- **Skip Stage Button**: Add a developer-mode or fallback button to manually force a stage transition. This is very helpful if the AI gets stuck in a loop or refuses to acknowledge a valid answer.
+- **Feedback Loading State**: When the case is finished, show a skeleton loader or a "Generating feedback..." animation while the AI compiles the report, so the user knows something is happening.
+- **Collapsible Feedback**: The feedback reports can be long. Wrapping them in an accordion or collapsible section (e.g., "Show Detailed Feedback") would make the UI cleaner.
+- **Input Validation**: Disable the send button or show a tooltip if the user tries to send an empty message or a message that is too short (e.g., just ".").
+- **Mobile Optimization**: Ensure the chat interface (especially the microphone button and text input) is easily usable on mobile devices, where screen real estate is limited.
+
 ## Next Steps
 - Schedule discovery sessions with stakeholders (students, professors) to validate avatar expectations and case authoring flows.
 - Produce technical spike documents estimating integration effort for top avatar providers and RBAC changes.

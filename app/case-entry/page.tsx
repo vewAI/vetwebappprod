@@ -276,8 +276,18 @@ Remain collaborative, use everyday language, and avoid offering your own medical
                 <AvatarSelector
                   role={meta.avatarRole ?? "owner"}
                   value={form[key]}
-                  onChange={(url) =>
-                    setForm((prev) => ({ ...prev, [key]: url }))
+                  onChange={(url, roleKey) =>
+                    setForm((prev) => {
+                      const next = { ...prev, [key]: url };
+                      if (roleKey) {
+                        if (meta.avatarRole === "nurse") {
+                          next["nurse_persona_id"] = roleKey;
+                        } else if (meta.avatarRole === "owner") {
+                          next["owner_persona_id"] = roleKey;
+                        }
+                      }
+                      return next;
+                    })
                   }
                 />
                 {meta.help && (

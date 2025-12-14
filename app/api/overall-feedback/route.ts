@@ -43,7 +43,17 @@ export async function POST(request: Request) {
 
     // Get the appropriate prompt based on case ID
     let feedbackPrompt: string | undefined;
-    if (caseId === "case-1") {
+
+    // Try to get prompt from case row first (for dynamic cases)
+    if (caseRow) {
+      const rolePrompts = (caseRow.role_prompts as Record<string, string>) || {};
+      if (rolePrompts.get_overall_feedback_prompt) {
+        feedbackPrompt = rolePrompts.get_overall_feedback_prompt;
+      }
+    }
+
+    // Fallback for hardcoded cases if not found in DB
+    if (!feedbackPrompt && caseId === "case-1") {
       if (typeof case1RoleInfo.getOverallFeedbackPrompt === "function") {
         // If the function accepts two args, pass caseRow first
         const fn = case1RoleInfo.getOverallFeedbackPrompt as unknown;
@@ -60,11 +70,11 @@ export async function POST(request: Request) {
         feedbackPrompt =
           case1RoleInfo.getOverallFeedbackPrompt as unknown as string;
       }
-    } else {
-      return NextResponse.json(
-        { error: "Unsupported case ID" },
-        { status: 400 }
-      );
+    } 
+    
+    // Generic fallback if still no prompt
+    if (!feedbackPrompt) {
+       feedbackPrompt = `Please provide constructive feedback for the student's performance using the context below. Focus on history taking, physical exam thoroughness, diagnostic reasoning, and client communication.\n\n${context}`;
     }
 
     // If OpenAI API key is not configured, return a helpful fallback

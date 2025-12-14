@@ -31,7 +31,9 @@ export type CaseFieldKey =
 	| "get_owner_diagnosis_prompt"
 	| "get_overall_feedback_prompt"
 	| "owner_avatar_url"
-	| "nurse_avatar_url";
+	| "nurse_avatar_url"
+	| "owner_persona_id"
+	| "nurse_persona_id";
 
 export type CaseFieldMeta = {
 	key: CaseFieldKey;

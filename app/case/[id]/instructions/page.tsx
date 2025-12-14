@@ -10,6 +10,8 @@ import { Loader2, ArrowLeft, Clock, Play } from "lucide-react";
 import { fetchCaseById } from "@/features/case-selection/services/caseService";
 import type { Case } from "@/features/case-selection/models/case";
 import type { Attempt } from "@/features/attempts/models/attempt";
+import { GuidedTour } from "@/components/ui/guided-tour";
+import { HelpTip } from "@/components/ui/help-tip";
 
 export default function CaseInstructionsPage() {
   const { id } = useParams() as { id: string };
@@ -20,6 +22,12 @@ export default function CaseInstructionsPage() {
   const [attempts, setAttempts] = useState<Attempt[]>([]);
 
   const [caseData, setCaseData] = useState<Case | null>(null);
+
+  const tourSteps = [
+    { element: '#case-title', popover: { title: 'Case Details', description: 'Review the case title, estimated time, and overview before starting.' } },
+    { element: '#start-button', popover: { title: 'Start Case', description: 'Click here to begin the simulation. A new attempt will be created.' } },
+    { element: '#past-attempts', popover: { title: 'Past Attempts', description: 'View your previous attempts and their status here.' } },
+  ];
 
   useEffect(() => {
     async function loadCase() {
@@ -69,7 +77,7 @@ export default function CaseInstructionsPage() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="mb-6">
+      <div className="flex items-center justify-between mb-6">
         <Link
           href="/"
           className="inline-flex items-center text-sm text-muted-foreground hover:text-primary"
@@ -77,14 +85,18 @@ export default function CaseInstructionsPage() {
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Case Selection
         </Link>
+        <GuidedTour steps={tourSteps} tourId="case-instructions" />
       </div>
 
       <div className="grid gap-8 md:grid-cols-[2fr_1fr]">
         <div>
           <div className="mb-8">
-            <h1 className="text-3xl font-bold tracking-tight text-primary md:text-4xl mb-4">
-              {caseData.title}
-            </h1>
+            <div className="flex items-center gap-2 mb-4">
+              <h1 id="case-title" className="text-3xl font-bold tracking-tight text-primary md:text-4xl">
+                {caseData.title}
+              </h1>
+              <HelpTip content="This is the specific case you are about to undertake." />
+            </div>
 
             <div className="flex items-center text-sm text-muted-foreground mb-4">
               <Clock className="mr-1 h-4 w-4" />
@@ -126,7 +138,7 @@ export default function CaseInstructionsPage() {
               </ul>
             </div>
 
-            <div className="mt-8">
+            <div id="start-button" className="mt-8 flex items-center gap-2">
               <Button
                 onClick={handleStartCase}
                 disabled={isStarting}
@@ -144,13 +156,17 @@ export default function CaseInstructionsPage() {
                   </>
                 )}
               </Button>
+              <HelpTip content="Clicking this will launch the simulation environment." />
             </div>
           </div>
         </div>
 
-        <div>
+        <div id="past-attempts">
           <div className="bg-muted p-6 rounded-lg">
-            <h2 className="text-xl font-semibold mb-4">Your Past Attempts</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold">Your Past Attempts</h2>
+              <HelpTip content="A history of your previous sessions with this case." />
+            </div>
 
             {isLoading ? (
               <div className="flex justify-center items-center py-8">

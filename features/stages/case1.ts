@@ -19,7 +19,7 @@ export function getTransitionMessage(stageIndex: number): Message {
       break;
     case 3:
       content =
-        "Provide the exact laboratory results the student requests, without interpretation or recommendations.";
+        "Provide the laboratory results. If any results are marked for immediate display, show them now. Otherwise, wait for the student's request.";
       break;
     case 4:
       content =

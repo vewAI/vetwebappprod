@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { startListening, stopListening } from "../services/sttService";
+import { startListening, stopListening, abortListening } from "../services/sttService";
 
 type UseSttOptions = {
   inputDeviceId?: string | null;

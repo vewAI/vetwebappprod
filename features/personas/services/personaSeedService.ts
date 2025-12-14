@@ -98,23 +98,34 @@ export function buildPersonaSeeds(
     const seed = template(identityContext, identity);
 
     let imageUrl: string | undefined;
+    let specificPersonaId: string | undefined;
+
     if (key === "owner") {
       imageUrl = safeString(caseBody["owner_avatar_url"], "");
+      specificPersonaId = safeString(caseBody["owner_persona_id"], "");
     } else if (key === "veterinary-nurse") {
       imageUrl = safeString(caseBody["nurse_avatar_url"], "");
+      specificPersonaId = safeString(caseBody["nurse_persona_id"], "");
     }
+
+    const effectiveSharedKey = specificPersonaId || sharedPersonaKey;
+
+    // If we have a specific persona ID, re-resolve identity to ensure consistent naming
+    const effectiveIdentity = effectiveSharedKey 
+      ? resolvePersonaIdentity(caseId, key, { ...context, sharedPersonaKey: effectiveSharedKey })
+      : identity;
 
     const mergedMetadata: Record<string, unknown> = {
       ...(seed.metadata ?? {}),
-      identity,
-      sex: identity.sex,
-      voiceId: identity.voiceId,
+      identity: effectiveIdentity,
+      sex: effectiveIdentity.sex,
+      voiceId: effectiveIdentity.voiceId,
     };
     seeds.push({
       ...seed,
       imageUrl: imageUrl || undefined,
       metadata: mergedMetadata,
-      sharedPersonaKey,
+      sharedPersonaKey: effectiveSharedKey,
     });
   });
 

@@ -23,6 +23,7 @@ import {
   initializeStages,
   markStageCompleted,
 } from "@/features/stages/services/stageService";
+import { GuidedTour } from "@/components/ui/guided-tour";
 
 export default function CaseChatPage() {
   const params = useParams();
@@ -34,6 +35,12 @@ export default function CaseChatPage() {
   // UI state
   const [isMobile, setIsMobile] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
+
+  const tourSteps = [
+    { element: '#progress-sidebar', popover: { title: 'Progress Tracker', description: 'Track your progress through the different stages of the consultation (History, Exam, etc.).' } },
+    { element: '#chat-interface', popover: { title: 'Chat Interface', description: 'Interact with the virtual client and patient here. Type your questions or actions.' } },
+    { element: '#stage-controls', popover: { title: 'Stage Controls', description: 'Use the buttons here to advance to the next stage when you are ready.' } },
+  ];
 
   // Attempt & stages
   const [isCreatingAttempt, setIsCreatingAttempt] = useState(false);
@@ -193,7 +200,10 @@ export default function CaseChatPage() {
   const initialMessages: Message[] = [];
 
   return (
-    <div className="flex h-[calc(100vh-1rem)] overflow-hidden rounded-lg border shadow-sm">
+    <div className="flex h-[calc(100vh-1rem)] overflow-hidden rounded-lg border shadow-sm relative">
+      <div className="absolute top-2 right-2 z-50">
+        <GuidedTour steps={tourSteps} tourId="chat-interface" />
+      </div>
       {isMobile && (
         <button
           onClick={() => setShowSidebar(!showSidebar)}
@@ -203,7 +213,7 @@ export default function CaseChatPage() {
         </button>
       )}
 
-      <div className={`${showSidebar ? "block" : "hidden"} w-64 md:block`}>
+      <div id="progress-sidebar" className={`${showSidebar ? "block" : "hidden"} w-64 md:block`}>
         <ProgressSidebar
           caseItem={caseItem}
           stages={stages}
@@ -212,7 +222,7 @@ export default function CaseChatPage() {
         />
       </div>
 
-      <div className="flex-1">
+      <div id="chat-interface" className="flex-1">
         <ChatInterface
           caseId={caseItem.id}
           attemptId={attemptId || undefined}

@@ -49,6 +49,8 @@ import { dispatchStageReadinessEvent } from "@/features/chat/models/stage-readin
 import { useCaseTimepoints } from "@/features/cases/hooks/useCaseTimepoints";
 import type { CaseTimepoint } from "@/features/cases/models/caseTimepoint";
 import { useAuth } from "@/features/auth/services/authService";
+import { HelpTip } from "@/components/ui/help-tip";
+import { GuidedTour } from "@/components/ui/guided-tour";
 
 const STAGE_KEYWORD_SYNONYMS: Record<string, string[]> = {
   examination: ["exam"],
@@ -131,6 +133,8 @@ const STAGE_STAY_BLOCK_WINDOW_MS = 45_000;
 const normalizeVoiceId = (voice?: string | null) =>
   voice && isSupportedVoice(voice) ? voice : undefined;
 
+import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
+
 type ChatInterfaceProps = {
   caseId: string;
   attemptId?: string;
@@ -170,6 +174,14 @@ export function ChatInterface({
   initialTimeSpentSeconds = 0,
   caseMedia = [],
 }: ChatInterfaceProps) {
+  const tourSteps = [
+    { element: '#chat-messages', popover: { title: 'Conversation History', description: 'Read the dialogue between you and the virtual characters here.' } },
+    { element: '#chat-input', popover: { title: 'Input Area', description: 'Type your questions or responses here. You can also use voice input.' } },
+    { element: '#send-button', popover: { title: 'Send Message', description: 'Click to send your message to the virtual character.' } },
+    { element: '#voice-controls', popover: { title: 'Voice Controls', description: 'Toggle voice input (microphone) and text-to-speech (speaker) on or off.' } },
+    { element: '#notepad-toggle', popover: { title: 'Notepad', description: 'Open the notepad to jot down important findings or notes during the case.' } },
+  ];
+
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const { timepoints } = useCaseTimepoints(caseId);
   const latestInitialMessagesRef = useRef<Message[]>(initialMessages ?? []);
@@ -247,7 +259,32 @@ export function ChatInterface({
   >(null);
   const [advanceGuard, setAdvanceGuard] = useState<
     { stageIndex: number; askedAt: number; metrics: StageCompletionMetrics } | null
-  >(null);
+  >(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(`advanceGuard-${attemptId}`);
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          console.warn("Failed to parse saved advanceGuard", e);
+        }
+      }
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      if (advanceGuard) {
+        localStorage.setItem(
+          `advanceGuard-${attemptId}`,
+          JSON.stringify(advanceGuard)
+        );
+      } else {
+        localStorage.removeItem(`advanceGuard-${attemptId}`);
+      }
+    }
+  }, [advanceGuard, attemptId]);
   const ensurePersonaMetadata = useCallback(
     async (roleKey: string | null | undefined) => {
       if (!roleKey) return undefined;
@@ -693,6 +730,7 @@ export function ChatInterface({
           };
         }
 
+        /*
         try {
           const globalResponse = await fetch("/api/global-personas");
           if (!globalResponse.ok) {
@@ -751,6 +789,7 @@ export function ChatInterface({
         } catch (globalErr) {
           console.warn("Failed to load shared personas", globalErr);
         }
+        */
         if (!cancelled) {
           setPersonaDirectory(next);
           personaDirectoryRef.current = next;
@@ -926,6 +965,8 @@ export function ChatInterface({
     }
   };
 
+  const [showProceedHint, setShowProceedHint] = useState(false);
+
   const emitStageReadinessPrompt = useCallback(
     async (stageIndex: number, result: StageCompletionResult) => {
       const stage = stages[stageIndex];
@@ -937,6 +978,9 @@ export function ChatInterface({
       const cautionText = specializedPrompt
         ? "Are you sure you have gathered enough physical exam findings before moving on, Doctor?"
         : `Are you sure you have enough information before leaving ${stageTitle.toLowerCase()}?`;
+
+      // Show the hint when this prompt is triggered
+      setShowProceedHint(true);
 
       const roleName = stage.role ?? "Virtual Assistant";
       const normalizedRoleKey = resolveChatPersonaRoleKey(stage.role, roleName);
@@ -1110,6 +1154,8 @@ export function ChatInterface({
       setMessages(snapshot);
     }
     setInput("");
+    // Clear hint on send
+    setShowProceedHint(false);
     if (voiceMode) {
       reset();
     }
@@ -1118,8 +1164,24 @@ export function ChatInterface({
     const hasNextStage = currentStageIndex < stages.length - 1;
     let shouldAutoAdvance = false;
 
+    const lastMessage = messages[messages.length - 1];
+    // Check the last 3 messages for the guard prompt to be robust against
+    // intervening system messages or UI artifacts.
+    const recentMessages = messages.slice(-3).reverse();
+    const isRecentMessageGuard = recentMessages.some(
+      (msg) =>
+        msg.role === "assistant" &&
+        (msg.content?.includes(
+          "Are you sure you have gathered enough physical exam findings"
+        ) ||
+          msg.content?.includes(
+            "Are you sure you have enough information before leaving"
+          ))
+    );
+
     const guardActive =
-      advanceGuard && advanceGuard.stageIndex === currentStageIndex;
+      (advanceGuard && advanceGuard.stageIndex === currentStageIndex) ||
+      isRecentMessageGuard;
     if (guardActive) {
       const guardResponse = detectAdvanceGuardResponse(trimmed);
       if (guardResponse === "confirm" && hasNextStage) {
@@ -1533,6 +1595,8 @@ export function ChatInterface({
     } catch (e) {
       // ignore
     }
+    // Clear hint if auto-sending
+    setShowProceedHint(false);
     return sendUserMessage(text);
   };
 
@@ -2334,6 +2398,9 @@ export function ChatInterface({
       normalizedRoleKey = "veterinary-nurse";
     }
 
+    // Clear hint when proceeding
+    setShowProceedHint(false);
+
     const personaMeta = await ensurePersonaMetadata(normalizedRoleKey);
 
     // Create assistant message using persona metadata when available so the
@@ -2472,6 +2539,9 @@ export function ChatInterface({
 
   return (
     <div className="relative flex h-full flex-col">
+      <div className="absolute top-2 right-2 z-50">
+        <GuidedTour steps={tourSteps} tourId="chat-interface" autoStart={true} />
+      </div>
       {/* Connection notice banner */}
       {connectionNotice && (
         <div className="w-full bg-yellow-200 text-yellow-900 px-4 py-2 text-sm text-center z-40">
@@ -2548,7 +2618,7 @@ export function ChatInterface({
       )}
 
       {/* Chat messages area */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div id="chat-messages" className="flex-1 overflow-y-auto p-4">
         <div className="mx-auto max-w-3xl space-y-4">
           {messages.map((message) => (
             <ChatMessage
@@ -2568,7 +2638,7 @@ export function ChatInterface({
       </div>
 
       {/* Proceed to Next Stage button */}
-      <div className="border-t bg-background p-4">
+      <div id="stage-controls" className="border-t bg-background p-4">
         <div className="mx-auto max-w-3xl">
           <div className="flex justify-between items-center mb-4 gap-4">
             <Button
@@ -2646,6 +2716,13 @@ export function ChatInterface({
 
           {/* Input area */}
           <form onSubmit={handleSubmit} className="relative">
+            {showProceedHint && (
+              <div className="absolute -top-12 left-0 right-0 flex justify-center pointer-events-none z-10">
+                <div className="bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-bounce">
+                  If you have no more questions click on the [Proceed...] button
+                </div>
+              </div>
+            )}
             <Textarea
               id="chat-input"
               name="chat-message"

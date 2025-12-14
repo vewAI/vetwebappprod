@@ -43,7 +43,7 @@ export function getStageTransitionMessage(
       return {
         id: `stage-transition-${stageIndex}`,
         role: "system",
-        content: `Proceeding to ${title}. ${desc}`,
+        content: `Proceeding to ${title}. ${desc} If you have any media items or results marked [AUTO-SHOW], you must present them immediately without waiting for a request.`,
         timestamp: new Date().toISOString(),
         stageIndex,
       };
@@ -52,17 +52,17 @@ export function getStageTransitionMessage(
 
 const STAGE_TIP_FALLBACKS: Record<string, string> = {
   history:
-    "Stage tip: Share the recorded presenting complaint and observations that fit the documented condition, and answer follow-up questions openly (without offering diagnoses).",
+    "Stage tip: Start the clinical interview and gather all the information you can about the case.",
   physical:
-    "Stage tip: Report the documented physical examination findings exactly as requested.",
+    "Stage tip: Ask the nurse about all the examination findings you consider necessary.",
   diagnostics:
-    "Stage tip: Provide the requested diagnostic data without suggesting additional steps.",
+    "Stage tip: Explain the probable diagnostics and the tests you'd like to run.",
   lab:
-    "Stage tip: Give the precise laboratory results that have already been recorded when asked.",
+    "Stage tip: Ask the nurse for all the test results and diagnostic imaging you may need.",
   plan:
-    "Stage tip: State the recorded assessment and plan only when the student or client asks.",
+    "Stage tip: Give indications to the nurse with details about the treatment plan.",
   communication:
-    "Stage tip: Respond to client questions with the documented diagnosis and instructions—no unsolicited advice.",
+    "Stage tip: Explain the final diagnostic and treatment options you can offer.",
 };
 
 function classifyStageForTip(title: string | undefined, description: string | undefined): keyof typeof STAGE_TIP_FALLBACKS {

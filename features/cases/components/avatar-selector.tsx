@@ -15,12 +15,13 @@ import { supabase } from "@/lib/supabase";
 type AvatarOption = {
   url: string;
   label: string;
+  roleKey?: string;
 };
 
 type AvatarSelectorProps = {
   role: "owner" | "nurse";
   value?: string;
-  onChange: (url: string) => void;
+  onChange: (url: string, roleKey?: string) => void;
   readOnly?: boolean;
 };
 
@@ -41,17 +42,17 @@ export function AvatarSelector({ role, value, onChange, readOnly }: AvatarSelect
           // Fetch global nurse personas
           const { data: globalNurses } = await supabase
             .from("global_personas")
-            .select("display_name, image_url")
-            .eq("role_key", "veterinary-nurse")
+            .select("display_name, image_url, role_key")
+            .ilike("role_key", "veterinary-nurse%")
             .not("image_url", "is", null);
 
           // Also fetch any case-specific nurses that might exist
           const { data: caseNurses } = await supabase
             .from("case_personas")
-            .select("display_name, image_url")
-            .eq("role_key", "veterinary-nurse")
+            .select("display_name, image_url, role_key")
+            .ilike("role_key", "veterinary-nurse%")
             .not("image_url", "is", null)
-            .limit(20);
+            .limit(50);
 
           if (globalNurses) {
             globalNurses.forEach((p) => {
@@ -59,6 +60,7 @@ export function AvatarSelector({ role, value, onChange, readOnly }: AvatarSelect
                 newOptions.push({
                   url: p.image_url,
                   label: p.display_name || "Global Nurse",
+                  roleKey: p.role_key,
                 });
               }
             });
@@ -72,27 +74,51 @@ export function AvatarSelector({ role, value, onChange, readOnly }: AvatarSelect
                   newOptions.push({
                     url: p.image_url,
                     label: p.display_name || "Case Nurse",
+                    roleKey: p.role_key,
                   });
                 }
               }
             });
           }
         } else if (role === "owner") {
+          // Fetch global owner personas
+          const { data: globalOwners } = await supabase
+            .from("global_personas")
+            .select("display_name, image_url, role_key")
+            .ilike("role_key", "owner%")
+            .not("image_url", "is", null);
+
           // Fetch case-specific owners (from all cases, to allow reuse)
           const { data: caseOwners } = await supabase
             .from("case_personas")
-            .select("display_name, image_url")
+            .select("display_name, image_url, role_key")
             .eq("role_key", "owner")
             .not("image_url", "is", null)
-            .limit(50); // Limit to recent 50 to avoid overload
+            .limit(100); // Increased limit to allow for more variety (requested 60+)
+
+          if (globalOwners) {
+            globalOwners.forEach((p) => {
+              if (p.image_url) {
+                newOptions.push({
+                  url: p.image_url,
+                  label: p.display_name || "Global Owner",
+                  roleKey: p.role_key,
+                });
+              }
+            });
+          }
 
           if (caseOwners) {
             caseOwners.forEach((p) => {
               if (p.image_url) {
-                newOptions.push({
-                  url: p.image_url,
-                  label: p.display_name || "Owner",
-                });
+                // Avoid duplicates
+                if (!newOptions.some(opt => opt.url === p.image_url)) {
+                  newOptions.push({
+                    url: p.image_url,
+                    label: p.display_name || "Owner",
+                    roleKey: p.role_key,
+                  });
+                }
               }
             });
           }
@@ -169,7 +195,7 @@ export function AvatarSelector({ role, value, onChange, readOnly }: AvatarSelect
                     value === opt.url ? "border-primary ring-2 ring-primary ring-offset-2" : "border-transparent"
                   }`}
                   onClick={() => {
-                    onChange(opt.url);
+                    onChange(opt.url, opt.roleKey);
                     setOpen(false);
                   }}
                 >

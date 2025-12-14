@@ -7,7 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { useAuth } from "@/features/auth/services/authService";
+import { AdminTour } from "@/components/admin/AdminTour";
+import { HelpTip } from "@/components/ui/help-tip";
 import {
   ROLE_PROMPT_DEFINITIONS,
   type RolePromptKey,
@@ -199,6 +208,8 @@ type PersonaEditorState = {
   autoPreviewOpen?: boolean;
   autoPortraitLoading?: boolean;
   autoPortraitError?: string | null;
+  autoPortraitPreviewUrl?: string | null;
+  autoPortraitPreviewOpen?: boolean;
   rolePromptLoading: Record<string, boolean>;
   rolePromptErrors: Record<string, string | null>;
 };
@@ -243,9 +254,9 @@ export default function PersonasAdminPage() {
   const [loadingCases, setLoadingCases] = useState(false);
   const [casesError, setCasesError] = useState<string | null>(null);
 
-  const [globalPersonaRows, setGlobalPersonaRows] = useState<PersonaEditorState[]>([]);
-  const [globalError, setGlobalError] = useState<string | null>(null);
-  const [globalLoading, setGlobalLoading] = useState(false);
+  // const [globalPersonaRows, setGlobalPersonaRows] = useState<PersonaEditorState[]>([]);
+  // const [globalError, setGlobalError] = useState<string | null>(null);
+  // const [globalLoading, setGlobalLoading] = useState(false);
 
   const [casePersonaRows, setCasePersonaRows] = useState<PersonaEditorState[]>([]);
   const [personasError, setPersonasError] = useState<string | null>(null);
@@ -285,11 +296,12 @@ export default function PersonasAdminPage() {
 
   useEffect(() => {
     if (!authHeaders) {
-      setGlobalPersonaRows([]);
-      setGlobalError(null);
+      // setGlobalPersonaRows([]);
+      // setGlobalError(null);
       return;
     }
 
+    /*
     async function loadGlobalPersonas() {
       setGlobalLoading(true);
       setGlobalError(null);
@@ -356,6 +368,7 @@ export default function PersonasAdminPage() {
     }
 
     void loadGlobalPersonas();
+    */
   }, [authHeaders]);
 
   useEffect(() => {
@@ -411,6 +424,8 @@ export default function PersonasAdminPage() {
             autoPreviewOpen: false,
             autoPortraitLoading: false,
             autoPortraitError: null,
+            autoPortraitPreviewUrl: null,
+            autoPortraitPreviewOpen: false,
             rolePromptLoading: {},
             rolePromptErrors: {},
           };
@@ -443,8 +458,8 @@ export default function PersonasAdminPage() {
     roleKey: string,
     updater: (prev: PersonaEditorState) => PersonaEditorState
   ) => {
-    const setter =
-      scope === "global" ? setGlobalPersonaRows : setCasePersonaRows;
+    if (scope === "global") return;
+    const setter = setCasePersonaRows;
 
     setter((prevEntries) =>
       prevEntries.map((entry) =>
@@ -513,7 +528,8 @@ export default function PersonasAdminPage() {
   ) => {
     if (!authHeaders) return;
 
-    const rows = scope === "global" ? globalPersonaRows : casePersonaRows;
+    if (scope === "global") return;
+    const rows = casePersonaRows;
     const target = rows.find((entry) => entry.persona.role_key === roleKey);
     const effectiveCaseId =
       scope === "case"
@@ -584,13 +600,15 @@ export default function PersonasAdminPage() {
 
   const handleSave = async (scope: PersonaScope, roleKey: string) => {
     if (!authHeaders) return;
-    const rows = scope === "global" ? globalPersonaRows : casePersonaRows;
+    if (scope === "global") return;
+    const rows = casePersonaRows;
     const target = rows.find((entry) => entry.persona.role_key === roleKey);
     if (!target || !target.isDirty) return;
 
     updateDraft(scope, roleKey, (prev) => ({ ...prev, saving: true, error: null }));
 
     try {
+      /*
       if (scope === "global") {
         const response = await axios.put(
           "/api/global-personas",
@@ -639,6 +657,7 @@ export default function PersonasAdminPage() {
         }
         return;
       }
+      */
 
       const response = await axios.put(
         "/api/personas",
@@ -750,7 +769,8 @@ export default function PersonasAdminPage() {
   };
 
   const toggleAutoBehaviorPreview = (scope: PersonaScope, roleKey: string) => {
-    const rows = scope === "global" ? globalPersonaRows : casePersonaRows;
+    if (scope === "global") return;
+    const rows = casePersonaRows;
     const target = rows.find((entry) => entry.persona.role_key === roleKey);
     if (!target) return;
 
@@ -880,8 +900,8 @@ export default function PersonasAdminPage() {
     try {
       const requestBody =
         scope === "case"
-          ? { caseId: selectedCaseId, roleKey }
-          : { roleKey };
+          ? { caseId: selectedCaseId, roleKey, force: true }
+          : { roleKey, force: true };
 
       const response = await axios.post(
         "/api/personas/auto-portrait",
@@ -896,16 +916,13 @@ export default function PersonasAdminPage() {
         throw new Error("No image URL returned");
       }
 
-      updateDraft(scope, roleKey, (prev) => {
-        const next = {
-          ...prev,
-          draftImageUrl: imageUrl,
-          autoPortraitLoading: false,
-          autoPortraitError: null,
-        };
-        next.isDirty = computePersonaDirty(next);
-        return next;
-      });
+      updateDraft(scope, roleKey, (prev) => ({
+        ...prev,
+        autoPortraitPreviewUrl: imageUrl,
+        autoPortraitPreviewOpen: true,
+        autoPortraitLoading: false,
+        autoPortraitError: null,
+      }));
     } catch (error) {
       const message = extractAxiosMessage(error) ?? "Failed to generate portrait";
       updateDraft(scope, roleKey, (prev) => ({
@@ -916,11 +933,32 @@ export default function PersonasAdminPage() {
     }
   };
 
+  const confirmAutoPortrait = (scope: PersonaScope, roleKey: string) => {
+    updateDraft(scope, roleKey, (prev) => {
+      const next = {
+        ...prev,
+        draftImageUrl: prev.autoPortraitPreviewUrl ?? prev.draftImageUrl,
+        autoPortraitPreviewOpen: false,
+        autoPortraitPreviewUrl: null,
+      };
+      next.isDirty = computePersonaDirty(next);
+      return next;
+    });
+  };
+
+  const discardAutoPortrait = (scope: PersonaScope, roleKey: string) => {
+    updateDraft(scope, roleKey, (prev) => ({
+      ...prev,
+      autoPortraitPreviewOpen: false,
+      autoPortraitPreviewUrl: null,
+    }));
+  };
+
 
 
   const renderPersonaRow = (row: PersonaEditorState) => {
     const { scope } = row;
-    const showOpenChat = scope === "case";
+    // const showOpenChat = scope === "case";
     const personaIdLabel = row.persona.id;
     const scopeDescription =
       scope === "global"
@@ -1190,33 +1228,78 @@ export default function PersonasAdminPage() {
         {row.autoError ? (
           <p className="mt-3 text-sm text-red-600">{row.autoError}</p>
         ) : null}
+
+        <Dialog open={row.autoPortraitPreviewOpen} onOpenChange={(open) => !open && discardAutoPortrait(scope, row.persona.role_key)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Review Generated Portrait</DialogTitle>
+            </DialogHeader>
+            <div className="flex flex-col items-center gap-4 py-4">
+              {row.autoPortraitPreviewUrl ? (
+                <img 
+                  src={row.autoPortraitPreviewUrl} 
+                  alt="Generated Portrait" 
+                  className="max-h-64 rounded-md border object-cover"
+                />
+              ) : (
+                <p>No image to preview.</p>
+              )}
+              <p className="text-sm text-muted-foreground text-center">
+                Do you want to use this image for the persona?
+              </p>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => discardAutoPortrait(scope, row.persona.role_key)}>
+                Discard
+              </Button>
+              <Button onClick={() => confirmAutoPortrait(scope, row.persona.role_key)}>
+                Use Image
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </section>
     );
   };
 
   const selectedCase = caseSummaries.find((entry) => entry.id === selectedCaseId);
 
+  const tourSteps = [
+    { element: '#persona-title', popover: { title: 'Persona Management', description: 'Configure the AI personalities for each case.' } },
+    { element: '#case-selector-container', popover: { title: 'Select Case', description: 'Choose a case to edit its specific personas (Owner, Nurse).' } },
+    { element: '#case-personas-section', popover: { title: 'Persona List', description: 'Edit details for each persona here.' } },
+  ];
+
   return (
     <div className="max-w-6xl mx-auto p-8 space-y-6">
       <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Persona Management</h1>
-          <p className="text-sm text-muted-foreground">
-            Update persona display names, behavior prompts, portrait URLs, and conversation templates.
-          </p>
+        <div className="flex items-center gap-2">
+          <div>
+            <h1 id="persona-title" className="text-2xl font-bold">Persona Management</h1>
+            <p className="text-sm text-muted-foreground">
+              Update persona display names, behavior prompts, portrait URLs, and conversation templates.
+            </p>
+          </div>
+          <HelpTip content="Manage the AI characters that students interact with." />
         </div>
-        <Button
-          variant="outline"
-          type="button"
-          onClick={() => router.push("/admin")}
-        >
-          Back to Admin
-        </Button>
+        <div className="flex items-center gap-2">
+          <AdminTour steps={tourSteps} tourId="persona-management" />
+          <Button
+            variant="outline"
+            type="button"
+            onClick={() => router.push("/admin")}
+          >
+            Back to Admin
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <div className="md:col-span-2">
-          <Label htmlFor="case-selector">Select case</Label>
+        <div id="case-selector-container" className="md:col-span-2">
+          <div className="flex items-center gap-2 mb-2">
+            <Label htmlFor="case-selector">Select case</Label>
+            <HelpTip content="Personas are specific to each case. Select one to begin editing." />
+          </div>
           <div className="relative">
             <select
               id="case-selector"
@@ -1253,7 +1336,7 @@ export default function PersonasAdminPage() {
           </div>
         ) : null}
       </div>
-      <section className="space-y-4">
+      {/* <section className="space-y-4">
         <div>
           <h2 className="text-xl font-semibold">Shared Personas</h2>
           <p className="text-sm text-muted-foreground">
@@ -1271,9 +1354,9 @@ export default function PersonasAdminPage() {
             {globalPersonaRows.map(renderPersonaRow)}
           </div>
         )}
-      </section>
+      </section> */}
 
-      <section className="space-y-4">
+      <section id="case-personas-section" className="space-y-4">
         <div>
           <h2 className="text-xl font-semibold">Case Personas</h2>
           <p className="text-sm text-muted-foreground">

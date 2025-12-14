@@ -16,7 +16,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { roleKey, caseId } = body;
+    const { roleKey, caseId, force } = body;
 
     if (!roleKey) {
       return NextResponse.json({ error: "Missing roleKey" }, { status: 400 });
@@ -43,6 +43,7 @@ export async function POST(request: Request) {
       openai,
       caseId: targetCaseId,
       stageRole: roleKey,
+      force: !!force,
     });
 
     return NextResponse.json({ 
