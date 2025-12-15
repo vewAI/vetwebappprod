@@ -5,6 +5,7 @@ import React, {
   useContext,
   useEffect,
   useState,
+  useRef,
   ReactNode,
 } from "react";
 import { User, Session } from "@supabase/supabase-js";
@@ -42,6 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<string | null>(null);
   const [profileLoading, setProfileLoading] = useState<boolean>(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const lastUserIdRef = useRef<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -96,11 +98,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Fetch profile (role) whenever session changes
   useEffect(() => {
     const fetchProfile = async () => {
-      setProfileLoading(true);
+      const currentUserId = session?.user?.id;
+      const isSameUser = currentUserId && currentUserId === lastUserIdRef.current;
+      
+      // Only show loading state if user changed or we don't have a role yet
+      if (!isSameUser || !role) {
+        setProfileLoading(true);
+      }
+      
       // If we don't have a user id or an access token, skip fetching
-      if (!session?.user?.id || !session?.access_token) {
+      if (!currentUserId || !session?.access_token) {
         setRole(null);
         setProfileLoading(false);
+        lastUserIdRef.current = null;
         return;
       }
 
@@ -125,6 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const profile = json?.profile ?? null;
         setRole(profile?.role ?? null);
         setProfileLoading(false);
+        lastUserIdRef.current = currentUserId;
       } catch (err) {
         console.error(
           "Unexpected error fetching profile via /api/profile:",

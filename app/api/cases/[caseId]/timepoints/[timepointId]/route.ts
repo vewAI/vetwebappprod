@@ -9,24 +9,32 @@ export async function PATCH(
   if ("error" in auth) {
     return auth.error;
   }
-  const { supabase } = auth;
+  const { supabase, adminSupabase } = auth;
   const { timepointId } = await params;
 
   try {
     const body = await req.json();
+    const db = adminSupabase || supabase;
 
-    const { data, error } = await supabase
+    const updatePayload: Record<string, unknown> = {
+      sequence_index: body.sequence_index,
+      label: body.label,
+      summary: body.summary,
+      available_after_hours: body.available_after_hours,
+      after_stage_id: body.after_stage_id,
+      persona_role_key: body.persona_role_key,
+      stage_prompt: body.stage_prompt,
+      updated_at: new Date().toISOString(),
+    };
+
+    // Sync legacy column if key is provided
+    if (body.persona_role_key !== undefined) {
+      updatePayload.persona_role = body.persona_role_key;
+    }
+
+    const { data, error } = await db
       .from("case_timepoints")
-      .update({
-        sequence_index: body.sequence_index,
-        label: body.label,
-        summary: body.summary,
-        available_after_hours: body.available_after_hours,
-        after_stage_id: body.after_stage_id,
-        persona_role_key: body.persona_role_key,
-        stage_prompt: body.stage_prompt,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq("id", timepointId)
       .select()
       .single();
@@ -49,10 +57,11 @@ export async function DELETE(
   if ("error" in auth) {
     return auth.error;
   }
-  const { supabase } = auth;
+  const { supabase, adminSupabase } = auth;
   const { timepointId } = await params;
+  const db = adminSupabase || supabase;
 
-  const { error } = await supabase
+  const { error } = await db
     .from("case_timepoints")
     .delete()
     .eq("id", timepointId);

@@ -265,6 +265,7 @@ CRITICAL INSTRUCTION:
 To show a media item, you MUST include its tag (e.g. [MEDIA:123]) in your response text.
 If an item is marked [AUTO-SHOW], you MUST include its tag (e.g. [MEDIA:123]) at the start of your response.
 If you are listing diagnostic results (like bloodwork or ultrasound), you MUST include the corresponding [MEDIA:ID] tag if one exists.
+DO NOT generate markdown image links (like ![alt](url)) or text descriptions of URLs. ONLY use the [MEDIA:ID] tag.
 `;
       enhancedMessages.unshift({ role: "system", content: mediaPrompt });
     }

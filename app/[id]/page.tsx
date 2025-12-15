@@ -13,6 +13,7 @@ import { CompletionDialog } from "@/features/feedback/components/completion-dial
 import {
   createAttempt,
   completeAttempt,
+  getAttemptById,
 } from "@/features/attempts/services/attemptService";
 import { useSaveAttempt } from "@/features/attempts/hooks/useSaveAttempt";
 import { useAuth } from "@/features/auth/services/authService";
@@ -51,6 +52,8 @@ export default function CaseChatPage() {
     return initializeStages(caseStages);
   });
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
+  const [initialMessages, setInitialMessages] = useState<Message[]>([]);
+  const [isRestoring, setIsRestoring] = useState(true);
 
   const { saveProgress } = useSaveAttempt(attemptId);
   const { user, session } = useAuth();
@@ -77,6 +80,39 @@ export default function CaseChatPage() {
 
     if (existingAttemptId) {
       setAttemptId(existingAttemptId);
+      
+      // Restore attempt state
+      getAttemptById(existingAttemptId).then(({ attempt, messages }) => {
+        if (attempt) {
+          const lastIndex = attempt.lastStageIndex || 0;
+          setCurrentStageIndex(lastIndex);
+          
+          // Mark previous stages as completed
+          let updatedStages = [...stages];
+          for (let i = 0; i < lastIndex; i++) {
+            updatedStages = markStageCompleted(updatedStages, i);
+          }
+          setStages(updatedStages);
+        }
+        
+        if (messages) {
+          const mappedMessages: Message[] = messages.map((m) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            timestamp: m.timestamp,
+            stageIndex: m.stageIndex,
+            displayRole: m.displayRole,
+            status: "sent",
+          }));
+          setInitialMessages(mappedMessages);
+        }
+      }).catch(err => {
+        console.error("Failed to restore attempt", err);
+      }).finally(() => {
+        setIsRestoring(false);
+      });
+      
       return;
     }
 
@@ -95,6 +131,7 @@ export default function CaseChatPage() {
         console.error("Error creating attempt:", error);
       } finally {
         setIsCreatingAttempt(false);
+        setIsRestoring(false);
       }
     };
 
@@ -194,10 +231,8 @@ export default function CaseChatPage() {
     }
   };
 
-  if (loading) return <div className="p-8 text-center">Loading case...</div>;
+  if (loading || isRestoring) return <div className="p-8 text-center">Loading case...</div>;
   if (!caseItem) return notFound();
-
-  const initialMessages: Message[] = [];
 
   return (
     <div className="flex h-[calc(100vh-1rem)] overflow-hidden rounded-lg border shadow-sm relative">
