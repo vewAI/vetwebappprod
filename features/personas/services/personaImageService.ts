@@ -295,7 +295,7 @@ async function getGlobalPersonaPortrait({
       }
     }
 
-    const b64 = response.data?.[0]?.b64_json;
+    const b64 = (response as any).data?.[0]?.b64_json;
     if (!b64) {
       throw new Error("Image generation returned no data");
     }
@@ -791,7 +791,7 @@ export async function getOrGeneratePersonaPortrait({
       }
     }
 
-    const b64 = response.data?.[0]?.b64_json;
+    const b64 = (response as any).data?.[0]?.b64_json;
     if (!b64) {
       throw new Error("Image generation returned no data");
     }
