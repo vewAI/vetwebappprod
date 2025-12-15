@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/lib/supabase";
+import { getStagesForCase } from "@/features/stages/services/stageService";
 import type {
   CaseMediaItem,
   CaseMediaType,
@@ -208,6 +209,11 @@ function clone(items: CaseMediaItem[]): CaseMediaItem[] {
 export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: CaseMediaEditorProps) {
   const [uploadState, setUploadState] = useState<UploadState>({ uploadingIndex: null, error: null });
   const [advancedOpen, setAdvancedOpen] = useState<Record<string, boolean>>({});
+
+  const stages = useMemo(() => {
+    if (!caseId) return [];
+    return getStagesForCase(caseId);
+  }, [caseId]);
 
   const items = useMemo(() => clone(value), [value]);
 
@@ -469,23 +475,52 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
 
                     <div className="space-y-3">
                       <Label htmlFor={`media-stage-key-${item.id}`}>
-                        Stage key
+                        Stage Assignment
                       </Label>
-                      <Input
+                      <select
                         id={`media-stage-key-${item.id}`}
-                        value={stage.stageKey ?? ""}
-                        readOnly={readOnly}
-                        onChange={(event) =>
-                          updateItem(index, (current) => ({
-                            ...current,
-                            stage: {
-                              ...ensureStageRef(current.stage),
-                              stageKey: event.target.value || undefined,
-                            },
-                          }))
-                        }
-                        placeholder="stage-intro"
-                      />
+                        className="w-full rounded border border-input bg-card text-card-foreground px-2 py-1 text-sm"
+                        value={stage.stageId ?? ""}
+                        disabled={readOnly}
+                        onChange={(event) => {
+                          const selectedId = event.target.value;
+                          if (!selectedId) {
+                            updateItem(index, (current) => ({
+                              ...current,
+                              stage: {
+                                ...ensureStageRef(current.stage),
+                                stageId: undefined,
+                                stageKey: undefined,
+                                roleKey: undefined,
+                              },
+                            }));
+                            return;
+                          }
+                          const selectedStage = stages.find(
+                            (s) => s.id === selectedId
+                          );
+                          if (selectedStage) {
+                            updateItem(index, (current) => ({
+                              ...current,
+                              stage: {
+                                ...ensureStageRef(current.stage),
+                                stageId: selectedStage.id,
+                                stageKey: selectedStage.title,
+                                roleKey: selectedStage.role,
+                              },
+                            }));
+                          }
+                        }}
+                      >
+                        <option value="">
+                          -- Global (Available in all stages) --
+                        </option>
+                        {stages.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.title} ({s.role})
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
 

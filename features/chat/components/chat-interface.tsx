@@ -2344,6 +2344,10 @@ export function ChatInterface({
       return `Hi Doc, do you have any news for me?`;
     }
 
+    if (title.toLowerCase().includes("treatment plan")) {
+      return "What are your indications and treatment plan, Doctor?";
+    }
+
     return `I'm the veterinary nurse supporting this case. I'm ready to share the documented findings for the ${title.toLowerCase()} whenever you need them.`;
   };
 

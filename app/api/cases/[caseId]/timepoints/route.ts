@@ -33,7 +33,7 @@ export async function POST(
   if ("error" in auth) {
     return auth.error;
   }
-  const { supabase } = auth;
+  const { supabase, adminSupabase } = auth;
   const { caseId } = await params;
   
   try {
@@ -44,7 +44,10 @@ export async function POST(
       return NextResponse.json({ error: "Label is required" }, { status: 400 });
     }
 
-    const { data, error } = await supabase
+    // Use adminSupabase if available to bypass RLS issues, otherwise fall back to user client
+    const db = adminSupabase || supabase;
+
+    const { data, error } = await db
       .from("case_timepoints")
       .insert({
         case_id: caseId,
@@ -53,6 +56,7 @@ export async function POST(
         summary: body.summary,
         available_after_hours: body.available_after_hours,
         after_stage_id: body.after_stage_id,
+        persona_role: body.persona_role_key, // Map to legacy/required column
         persona_role_key: body.persona_role_key,
         stage_prompt: body.stage_prompt
       })

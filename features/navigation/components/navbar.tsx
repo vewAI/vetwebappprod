@@ -6,13 +6,14 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/features/auth/services/authService";
 import { Button } from "@/components/ui/button";
-import { Menu, X, Home, LayoutDashboard, LogOut, History } from "lucide-react";
+import { Menu, X, Home, LayoutDashboard, LogOut, History, GraduationCap } from "lucide-react";
 import { ThemeToggle } from "@/features/navigation/components/theme-toggle";
 
 export function Navbar() {
   const { user, signOut, isAdmin, role, profileLoading } = useAuth();
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const isProfessor = role === "professor" || isAdmin;
 
   // do not render on login page
   if (pathname === "/login") {
@@ -55,6 +56,15 @@ export function Navbar() {
               <History className="size-4" />
               <span>My Attempts</span>
             </Link>
+            {isProfessor && (
+              <Link
+                href="/professor"
+                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground hover:text-primary transition-colors"
+              >
+                <GraduationCap className="size-4" />
+                <span>Professor</span>
+              </Link>
+            )}
             {isAdmin && (
               <Link
                 href="/admin"
@@ -143,6 +153,16 @@ export function Navbar() {
               <History className="size-5" />
               <span>My Attempts</span>
             </Link>
+            {isProfessor && (
+              <Link
+                href="/professor"
+                className="flex items-center gap-2 rounded-md px-3 py-2 text-base font-medium text-foreground hover:bg-accent hover:text-accent-foreground"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                <GraduationCap className="size-5" />
+                <span>Professor</span>
+              </Link>
+            )}
             <div className="flex items-center gap-2 rounded-md px-3 py-2">
               <ThemeToggle size="sm" className="h-8 w-8" />
               <span className="text-sm text-muted-foreground">Theme</span>

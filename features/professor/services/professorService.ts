@@ -43,26 +43,28 @@ export const professorService = {
   },
 
   async getProfessorStudents(professorId: string) {
-    // This assumes we can join with profiles or auth.users. 
-    // Since auth.users is not directly accessible via simple join usually without a view or specific setup,
-    // we might need to rely on a public profiles table if it exists.
-    // Based on the migration script, we have 'professor_students' linking to 'auth.users'.
-    // We usually have a 'profiles' table that mirrors users for public info.
-    
-    const { data, error } = await supabase
+    // Fetch relationships first
+    const { data: relations, error: relError } = await supabase
       .from("professor_students")
-      .select(`
-        *,
-        student:profiles!student_id (
-          id,
-          email,
-          full_name,
-          avatar_url
-        )
-      `)
+      .select("*")
       .eq("professor_id", professorId);
 
-    if (error) throw error;
-    return data;
+    if (relError) throw relError;
+    if (!relations || relations.length === 0) return [];
+
+    // Fetch profiles for the students
+    const studentIds = relations.map((r) => r.student_id);
+    const { data: profiles, error: profError } = await supabase
+      .from("profiles")
+      .select("id, user_id, email, full_name, avatar_url") // Ensure user_id is selected for matching
+      .in("user_id", studentIds);
+
+    if (profError) throw profError;
+
+    // Merge data manually since foreign key might be missing in schema cache
+    return relations.map((rel) => ({
+      ...rel,
+      student: profiles?.find((p) => p.user_id === rel.student_id) || null,
+    }));
   }
 };
