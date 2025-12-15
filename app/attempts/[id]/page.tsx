@@ -445,6 +445,20 @@ export default function ViewAttemptPage() {
                   </div>
                 </div>
               </div>
+            ) : attempt.completionStatus === "completed" ? (
+              <div className="border rounded-lg p-8 text-center bg-muted/30 animate-pulse">
+                <div className="flex flex-col items-center justify-center gap-4">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <div>
+                    <h3 className="text-lg font-medium mb-2">
+                      Generating Overall Assessment...
+                    </h3>
+                    <p className="text-muted-foreground">
+                      The AI is analyzing your performance across all stages. This may take a moment.
+                    </p>
+                  </div>
+                </div>
+              </div>
             ) : (
               <div className="border rounded-lg p-8 text-center bg-muted/30">
                 <h3 className="text-lg font-medium mb-2">

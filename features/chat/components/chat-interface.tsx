@@ -3,9 +3,15 @@
 import type React from "react";
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { SendIcon, PenLine, Mic, MicOff, Volume2, VolumeX, Pause, Play } from "lucide-react";
+import { SendIcon, PenLine, Mic, MicOff, Volume2, VolumeX, Pause, Play, SkipForward } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useSTT } from "@/features/speech/hooks/useSTT";
 import { useMicButton } from "@/features/speech/hooks/useMicButton";
 import { useTTS } from "@/features/speech/hooks/useTTS";
@@ -2640,11 +2646,11 @@ export function ChatInterface({
       {/* Proceed to Next Stage button */}
       <div id="stage-controls" className="border-t bg-background p-4">
         <div className="mx-auto max-w-3xl">
-          <div className="flex justify-between items-center mb-4 gap-4">
+          <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
             <Button
               onClick={handleProceed}
               disabled={false}
-              className={`flex-1 ${
+              className={`w-full sm:flex-1 ${
                 isLastStage
                   ? "bg-gradient-to-l from-green-500 to-teal-500 hover:from-green-600 hover:to-teal-600"
                   : "bg-gradient-to-l from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600"
@@ -2655,7 +2661,7 @@ export function ChatInterface({
               {nextStageTitle}
             </Button>
 
-            <div className="flex gap-2 items-center">
+            <div className="flex gap-2 items-center w-full sm:w-auto justify-center sm:justify-end">
               {/* Pause Button */}
               <Button
                 type="button"
@@ -2666,7 +2672,7 @@ export function ChatInterface({
                 title={isPaused ? "Resume case" : "Pause case"}
               >
                 {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-                {isPaused ? "Resume" : "Pause"}
+                <span className="hidden sm:inline">{isPaused ? "Resume" : "Pause"}</span>
               </Button>
 
               {/* Big voice-mode toggle */}
@@ -2683,7 +2689,8 @@ export function ChatInterface({
                 }
               >
                 <Mic className="h-4 w-4" />
-                {voiceMode ? "Voice Mode: On" : "Voice Mode: Off"}
+                <span className="hidden sm:inline">{voiceMode ? "Voice Mode: On" : "Voice Mode: Off"}</span>
+                <span className="sm:hidden">{voiceMode ? "On" : "Off"}</span>
               </Button>
 
               {/* TTS toggle */}
@@ -2777,35 +2784,65 @@ export function ChatInterface({
               )}
             </Button>
             {/* Send button */}
-            <Button
-              type="submit"
-              id="send-button"
-              size="icon"
-              disabled={isLoading || !input.trim()}
-              className={`absolute bottom-2 right-2 ${
-                input.trim()
-                  ? "bg-gradient-to-l from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600 border-none"
-                  : ""
-              } ${
-                autoSendFlash
-                  ? "animate-pulse ring-2 ring-offset-1 ring-blue-300"
-                  : ""
-              }`}
-            >
-              <SendIcon className="h-5 w-5" />
-            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      type="submit"
+                      id="send-button"
+                      size="icon"
+                      disabled={isLoading || !input.trim() || input.trim().length < 2}
+                      className={`absolute bottom-2 right-2 ${
+                        input.trim() && input.trim().length >= 2
+                          ? "bg-gradient-to-l from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600 border-none"
+                          : ""
+                      } ${
+                        autoSendFlash
+                          ? "animate-pulse ring-2 ring-offset-1 ring-blue-300"
+                          : ""
+                      }`}
+                    >
+                      <SendIcon className="h-5 w-5" />
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {input.trim().length > 0 && input.trim().length < 2 && (
+                  <TooltipContent>
+                    <p>Message too short</p>
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
           </form>
 
           <div className="mt-2 flex justify-between text-xs text-muted-foreground">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="flex items-center gap-1 text-xs"
-              onClick={() => setShowNotepad(!showNotepad)}
-            >
-              <PenLine className="h-3.5 w-3.5" />
-              {showNotepad ? "Hide Notepad" : "Show Notepad"}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="flex items-center gap-1 text-xs"
+                onClick={() => setShowNotepad(!showNotepad)}
+              >
+                <PenLine className="h-3.5 w-3.5" />
+                {showNotepad ? "Hide Notepad" : "Show Notepad"}
+              </Button>
+              {/* Developer Skip Button - Hidden by default unless needed, or we can just show it */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="flex items-center gap-1 text-xs text-muted-foreground/50 hover:text-destructive"
+                onClick={() => {
+                  if (confirm("Force skip to next stage? This bypasses AI checks.")) {
+                    handleProceed();
+                  }
+                }}
+                title="Force Skip Stage (Dev)"
+              >
+                <SkipForward className="h-3.5 w-3.5" />
+                Skip
+              </Button>
+            </div>
             <span>Press Enter to send, Shift+Enter for new line</span>
           </div>
         </div>

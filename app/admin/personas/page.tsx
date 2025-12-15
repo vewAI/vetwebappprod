@@ -975,6 +975,7 @@ export default function PersonasAdminPage() {
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             {row.draftImageUrl && (
+              /* eslint-disable-next-line @next/next/no-img-element */
               <img
                 src={row.draftImageUrl}
                 alt="Avatar"
@@ -1236,6 +1237,7 @@ export default function PersonasAdminPage() {
             </DialogHeader>
             <div className="flex flex-col items-center gap-4 py-4">
               {row.autoPortraitPreviewUrl ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
                 <img 
                   src={row.autoPortraitPreviewUrl} 
                   alt="Generated Portrait" 

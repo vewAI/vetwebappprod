@@ -11,7 +11,7 @@ interface AdminTourProps {
   tourId: string // Unique ID to track if user has seen it (optional, for future use)
 }
 
-export function AdminTour({ steps, tourId }: AdminTourProps) {
+export function AdminTour({ steps }: AdminTourProps) {
   const driverObj = useRef<ReturnType<typeof driver>>(null)
 
   useEffect(() => {

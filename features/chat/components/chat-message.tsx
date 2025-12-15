@@ -1,9 +1,10 @@
-import { User, Bot } from "lucide-react";
+import { User, Bot, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Message } from "@/features/chat/models/chat";
 import { useEffect, useState } from "react";
 import type { Stage } from "@/features/stages/types";
 import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
+import { Button } from "@/components/ui/button";
 
 type MediaRendererProps = {
   items: CaseMediaItem[];
@@ -124,6 +125,45 @@ type ChatMessageProps = {
   onRetry?: (id: string) => void;
 };
 
+function CollapsibleContent({ content }: { content: string }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const isLong = content.length > 500;
+  const isFeedback = content.toLowerCase().includes("feedback") || content.toLowerCase().includes("summary");
+
+  if (!isLong && !isFeedback) {
+    return <div className="whitespace-pre-wrap text-sm">{content}</div>;
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className={cn("whitespace-pre-wrap text-sm", !isExpanded && "line-clamp-6 max-h-40 overflow-hidden relative")}>
+        {content}
+        {!isExpanded && (
+          <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-background to-transparent" />
+        )}
+      </div>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        {isExpanded ? (
+          <>
+            <ChevronUp className="mr-1 h-3 w-3" />
+            Show Less
+          </>
+        ) : (
+          <>
+            <ChevronDown className="mr-1 h-3 w-3" />
+            Show More
+          </>
+        )}
+      </Button>
+    </div>
+  );
+}
+
 export function ChatMessage({ message, stages, onRetry }: ChatMessageProps) {
   const isUser = message.role === "user";
   const [formattedTime, setFormattedTime] = useState<string>("");
@@ -206,7 +246,11 @@ export function ChatMessage({ message, stages, onRetry }: ChatMessageProps) {
             <div className="ml-2 text-xs text-muted-foreground">Sent</div>
           )}
         </div>
-        <div className="whitespace-pre-wrap text-sm">{message.content}</div>
+        {isUser ? (
+          <div className="whitespace-pre-wrap text-sm">{message.content}</div>
+        ) : (
+          <CollapsibleContent content={message.content} />
+        )}
         {Array.isArray(message.media) && message.media.length > 0 ? (
           <MediaRenderer items={message.media} />
         ) : null}
