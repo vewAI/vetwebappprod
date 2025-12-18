@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
     if (caseId) {
       try {
         const dbStart = Date.now();
-        debugEventBus.emitEvent('info', 'DB', `Fetching case data for ${caseId}`);
+        // debugEventBus.emitEvent('info', 'DB', `Fetching case data for ${caseId}`);
         const { data: caseRow, error: caseErr } = await supabase
           .from("cases")
           // fetch the complete row so we can derive persona identities and prompts
@@ -100,11 +100,11 @@ export async function POST(request: NextRequest) {
           .maybeSingle();
         
         if (caseRow) {
-             debugEventBus.emitEvent('success', 'DB', `Case data fetched in ${Date.now() - dbStart}ms`);
+             // debugEventBus.emitEvent('success', 'DB', `Case data fetched in ${Date.now() - dbStart}ms`);
         }
 
         if (caseErr) {
-          debugEventBus.emitEvent('error', 'DB', `Failed to fetch case: ${caseErr.message}`);
+          // debugEventBus.emitEvent('error', 'DB', `Failed to fetch case: ${caseErr.message}`);
           console.warn(
             "Could not fetch case owner_background:",
             caseErr.message ?? caseErr
