@@ -62,6 +62,11 @@ export function useProfessor() {
         if (!user) return;
         await professorService.removeCaseFromProfessor(user.id, caseId);
         await fetchCases();
+    },
+    createStudent: async (data: { email: string; password: string; fullName: string; institutionId?: string }) => {
+        if (!user) return;
+        await professorService.createStudent(user.id, data);
+        await fetchStudents();
     }
   };
 }

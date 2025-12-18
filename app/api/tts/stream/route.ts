@@ -43,6 +43,60 @@ export async function GET(req: Request) {
     }
 
     const OPENAI_KEY = process.env.OPENAI_API_KEY;
+    const ELEVENLABS_KEY = process.env.ELEVENLABS_API_KEY;
+
+    // Check if it's an ElevenLabs voice
+    const elevenLabsVoices: Record<string, string> = {
+      "charlie": "IKne3meq5aSn9XLyUdCD",
+      "george": "JBFqnCBsd6RMkjVDRZzb",
+      "harry": "SOYHLrjzK2X1ezoPC6cr",
+      "alice": "Xb7hH8MSUJpSbSDYk0k2",
+      "charlotte": "XB0fDUnXU5powFXDhCwa",
+      "lily": "pFZP5JQG7iQjIQuC4Bku",
+      "matilda": "XrExE9yKIg1WjnnlVkGX"
+    };
+
+    if (elevenLabsVoices[voice]) {
+      if (ELEVENLABS_KEY) {
+        const voiceId = elevenLabsVoices[voice];
+        // Use the streaming endpoint
+        const elevenLabsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`, {
+          method: "POST",
+          headers: {
+            "xi-api-key": ELEVENLABS_KEY,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            text,
+            model_id: "eleven_monolingual_v1",
+            voice_settings: {
+              stability: 0.5,
+              similarity_boost: 0.75
+            }
+          }),
+        });
+
+        if (elevenLabsRes.ok) {
+           if (id) void takeAsync(id);
+           return new Response(elevenLabsRes.body, {
+             status: 200,
+             headers: {
+               "Content-Type": "audio/mpeg",
+               "Cache-Control": "no-store",
+             },
+           });
+        } else {
+           const errText = await elevenLabsRes.text().catch(() => "");
+           console.error(`[tts stream] ElevenLabs error (voice=${voice}):`, errText);
+           // Fallback to OpenAI
+           voice = "alloy";
+        }
+      } else {
+         console.warn(`[tts stream] ElevenLabs key missing for voice ${voice}, falling back to OpenAI`);
+         voice = "alloy";
+      }
+    }
+
     if (!OPENAI_KEY) {
       return NextResponse.json(
         { error: "OPENAI_API_KEY not configured" },
@@ -55,15 +109,41 @@ export async function GET(req: Request) {
     // providerResponse.body directly so the client receives a streaming
     // response (chunked transfer). This allows the browser audio element to
     // begin playback earlier and reduce time-to-first-sound.
-    const providerRes = await fetch("https://api.openai.com/v1/audio/speech", {
+    let providerRes = await fetch("https://api.openai.com/v1/audio/speech", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${OPENAI_KEY}`,
         "Content-Type": "application/json",
         Accept: "audio/mpeg",
       },
-      body: JSON.stringify({ model: "gpt-4o-mini-tts", voice, input: text }),
+      body: JSON.stringify({ model: "tts-1", voice, input: text }),
     });
+
+    // If tts-1 fails with model_not_found, try tts-1-hd
+    if (!providerRes.ok && providerRes.status === 400) {
+       const errText = await providerRes.text().catch(() => "");
+       if (errText.includes("model_not_found")) {
+         console.warn("[tts stream] tts-1 model not found, retrying with tts-1-hd");
+         providerRes = await fetch("https://api.openai.com/v1/audio/speech", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${OPENAI_KEY}`,
+              "Content-Type": "application/json",
+              Accept: "audio/mpeg",
+            },
+            body: JSON.stringify({ model: "tts-1-hd", voice, input: text }),
+          });
+       } else {
+         // If we can't retry, we need to return the error.
+         // Since we consumed the body to check the error, we can't reuse providerRes.
+         // We'll return the error response directly.
+         console.error(`[tts stream] upstream 400 error: ${errText}`);
+         return NextResponse.json(
+            { error: "TTS provider error", detail: errText },
+            { status: 502 }
+         );
+       }
+    }
 
     if (!providerRes.ok) {
       const detail = await providerRes.text().catch(() => "");

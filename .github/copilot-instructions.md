@@ -2,56 +2,94 @@
 
 ## Project Overview
 
-- This is a Next.js 13+ app using the `/app` directory structure, TypeScript, and Tailwind CSS.
-- Major features are organized in `features/`, each with its own components, models, services, and hooks.
-- Supabase is used for backend/auth (see `lib/supabase.ts` and `.env.local` for keys).
-- OpenAI API integration is present (see `.env.local`).
+- **Framework:** Next.js 13+ (App Router), TypeScript, Tailwind CSS.
+- **Backend:** Supabase (Auth, DB, Storage), OpenAI API.
+- **Architecture:** Feature-based modular architecture (`features/`).
+- **State Management:** React Hooks, Context (where needed).
 
 ## Key Architectural Patterns
 
-- **App Routing:** All pages and API routes are under `app/`. Dynamic routes use `[id]` syntax.
-- **Feature Modules:** Each feature (e.g., `attempts`, `auth`, `case-selection`, `chat`) is self-contained with its own subfolders for components, models, services, and hooks.
-- **UI Components:** Shared UI elements are in `components/ui/`.
-- **Service Layer:** API and business logic are abstracted in `features/*/services/`.
-- **Models:** Data types/interfaces are defined in `features/*/models/`.
-- **Config:** Project-wide configuration is in `features/config/`.
+- **Feature Modules (`features/*`):**
+  - **Self-contained:** Each feature (e.g., `chat`, `auth`, `cases`) owns its domain.
+  - **Structure:**
+    - `components/`: UI components specific to the feature.
+    - `models/`: TypeScript interfaces/types.
+    - `services/`: Business logic and API calls (client-side).
+    - `hooks/`: Custom React hooks.
+    - `utils/`: Helper functions and unit tests (`*.test.ts`).
+    - `prompts/`: AI prompts and configurations.
+- **App Routing (`app/*`):**
+  - **Pages:** `app/[route]/page.tsx`.
+  - **API Routes:** `app/api/[route]/route.ts`.
+  - **Auth Middleware:** Use `requireUser` from `@/app/api/_lib/auth` in API routes.
+- **Service Layer:**
+  - **Client-side:** Services in `features/*/services/` use `axios` and `buildAuthHeaders` (from `@/lib/auth-headers`) to communicate with API routes.
+  - **Server-side:** API routes orchestrate logic using feature-specific services and utilities.
 
 ## Developer Workflows
 
-- **Start Dev Server:** `npm run dev` (or `yarn dev`, etc.)
-- **Build:** `npm run build`
-- **Lint:** `npm run lint` (uses ESLint config in `eslint.config.mjs`)
-- **Tailwind:** Config in `tailwind.config.ts`, styles in `app/globals.css`.
-- **Environment Variables:** Set in `.env.local` (Supabase, OpenAI keys).
+- **Development:** `npm run dev` (Turbopack enabled).
+- **Testing:** `npm run test` (uses `tsx --test` for unit tests).
+  - **Location:** Tests are co-located in `utils/` or `__tests__/` within features.
+- **Data Seeding:**
+  - `npm run seed:cases`: Populate/refresh case data.
+  - `npm run generate:portraits`: Generate persona images.
+- **Linting:** `npm run lint`.
 
 ## Project-Specific Conventions
 
-- **TypeScript:** All code is in TS/TSX. Prefer explicit types and interfaces.
-- **File Naming:** Use kebab-case for files, PascalCase for components.
-- **Hooks:** Custom hooks live in `features/*/hooks/`.
-- **API Routes:** Use Next.js route handlers in `app/api/*/route.ts`.
-- **Dynamic Routing:** Use `[id]` folders for dynamic segments.
-- **Feedback/Chat:** Feedback and chat features are modular and use their own services/models.
+- **TypeScript:** Strict typing. Prefer interfaces over types for object definitions.
+- **File Naming:** Kebab-case for files (`chat-service.ts`), PascalCase for components (`ChatWindow.tsx`).
+- **Imports:** Use `@/` alias for root imports.
+- **API Communication:**
+  - **Client:** Use `axios` with `buildAuthHeaders`. Handle network errors (check `navigator.onLine`).
+  - **Server:** Use `NextResponse`.
+- **Styling:** Tailwind CSS with `cn` utility (clsx + tailwind-merge) for class composition.
+
+## Domain Logic & Business Rules
+
+- **Speech-to-Text (STT):**
+  - Located in `features/speech/services/sttService.ts`.
+  - **Rule:** Always check context for homophones and prefer veterinary terminology (e.g., "udder" over "other", "creatinine" over "creating").
+  - Use `postProcessTranscript` and `SpeechGrammarList` to enforce this.
+- **Time Progression:**
+  - Cases evolve through `CaseTimepoint` records.
+  - **Rule:** When time progresses, the AI context must be explicitly updated (via `stage_prompt` or system messages) to reflect the new time and patient status.
 
 ## Integration Points
 
-- **Supabase:** Initialized in `lib/supabase.ts` using env vars.
-- **OpenAI:** API key in `.env.local`, used in backend services.
-- **External UI:** Tailwind for styling, Geist font via `next/font`.
+- **Supabase:**
+  - Client: `lib/supabase.ts`.
+  - Auth: `lib/auth-headers.ts` (client), `app/api/_lib/auth.ts` (server).
+- **OpenAI:**
+  - Configured in API routes using `process.env.OPENAI_API_KEY`.
+- **External Resources:**
+  - Merck Manual integration in `features/external-resources`.
 
 ## Examples
 
-- To add a new feature, create a folder in `features/` with `components/`, `models/`, `services/`, and `hooks/` as needed.
-- To add a new API route, create a file in `app/api/[route]/route.ts`.
-- To add a new page, create a file in `app/[route]/page.tsx`.
+- **Adding a Feature:** Create `features/new-feature/` with `components`, `models`, `services`.
+- **API Route:**
+  ```typescript
+  import { requireUser } from "@/app/api/_lib/auth";
+  import { NextResponse } from "next/server";
 
-## References
+  export async function POST(req: Request) {
+    const user = await requireUser();
+    // ... logic
+    return NextResponse.json({ success: true });
+  }
+  ```
+- **Client Service:**
+  ```typescript
+  import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
+  import axios from "axios";
 
-- See `README.md` for basic setup.
-- See `features/` for modular feature structure.
-- See `app/` for routing and page structure.
-- See `.env.local` for required environment variables.
-
----
-
-If any conventions or workflows are unclear, please ask for clarification or examples from the codebase.
+  export const myService = {
+    doSomething: async () => {
+      const token = await getAccessToken();
+      const headers = await buildAuthHeaders({}, token);
+      return axios.post("/api/my-route", {}, { headers });
+    }
+  };
+  ```

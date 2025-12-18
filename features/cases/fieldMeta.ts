@@ -33,7 +33,8 @@ export type CaseFieldKey =
 	| "owner_avatar_url"
 	| "nurse_avatar_url"
 	| "owner_persona_id"
-	| "nurse_persona_id";
+	| "nurse_persona_id"
+	| "findings_release_strategy";
 
 export type CaseFieldMeta = {
 	key: CaseFieldKey;
@@ -167,6 +168,13 @@ const metaList: CaseFieldMeta[] = [
 		label: "Hero image URL",
 		placeholder: "https://...",
 		help: "Optional image displayed on case cards. Upload or paste a direct image URL.",
+	},
+	{
+		key: "findings_release_strategy",
+		label: "Findings Release Strategy",
+		placeholder: "Select strategy...",
+		help: "Controls how the avatar reveals diagnostic findings.",
+		options: ["immediate", "on_demand"],
 	},
 	{
 		key: "owner_avatar_url",

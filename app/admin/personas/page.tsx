@@ -17,10 +17,14 @@ import {
 import { useAuth } from "@/features/auth/services/authService";
 import { AdminTour } from "@/components/admin/AdminTour";
 import { HelpTip } from "@/components/ui/help-tip";
+import { AvatarSelector } from "@/features/cases/components/avatar-selector";
 import {
   ROLE_PROMPT_DEFINITIONS,
   type RolePromptKey,
 } from "@/features/role-info/services/roleInfoService";
+import { VOICE_PRESETS } from "@/features/speech/services/voiceMap";
+import { speakRemote, stopActiveTtsPlayback } from "@/features/speech/services/ttsService";
+import { Play, Square, Loader2 } from "lucide-react";
 
 const ROLE_OPTIONS: { label: string; value: string }[] = [
   { label: "Owner", value: "owner" },
@@ -196,6 +200,8 @@ type PersonaEditorState = {
   draftRolePrompts: Record<string, string>;
   draftSex: "male" | "female" | "neutral" | null;
   isDirty: boolean;
+  voicePreviewLoading?: boolean;
+  voicePreviewPlaying?: boolean;
   saving: boolean;
   saveMessage?: string | null;
   error?: string | null;
@@ -471,7 +477,7 @@ export default function PersonasAdminPage() {
   const handleInputChange = (
     scope: PersonaScope,
     roleKey: string,
-    field: "behavior" | "display" | "image" | "prompt" | "sex",
+    field: "behavior" | "display" | "image" | "prompt" | "sex" | "voice",
     value: string
   ) => {
     updateDraft(scope, roleKey, (prev) => {
@@ -486,6 +492,9 @@ export default function PersonasAdminPage() {
         next.draftPrompt = value;
       } else if (field === "sex") {
         next.draftSex = value as "male" | "female" | "neutral" | null;
+      } else if (field === "voice") {
+        const currentMeta = (next.draftMetadata as Record<string, unknown>) || {};
+        next.draftMetadata = { ...currentMeta, voiceId: value };
       }
       next.isDirty = computePersonaDirty(next);
       next.saveMessage = null;
@@ -954,7 +963,42 @@ export default function PersonasAdminPage() {
     }));
   };
 
+  const handleVoicePreview = async (scope: PersonaScope, roleKey: string) => {
+    const rows = casePersonaRows;
+    const target = rows.find((entry) => entry.persona.role_key === roleKey);
+    if (!target) return;
 
+    if (target.voicePreviewPlaying) {
+      stopActiveTtsPlayback();
+      updateDraft(scope, roleKey, (prev) => ({
+        ...prev,
+        voicePreviewPlaying: false,
+      }));
+      return;
+    }
+
+    const voiceId = (target.draftMetadata as any)?.voiceId;
+    if (!voiceId) return;
+
+    updateDraft(scope, roleKey, (prev) => ({
+      ...prev,
+      voicePreviewLoading: true,
+      voicePreviewPlaying: true,
+    }));
+
+    try {
+      const text = "Hello, I am the voice for this persona.";
+      await speakRemote(text, voiceId);
+    } catch (error) {
+      console.error("Voice preview failed", error);
+    } finally {
+      updateDraft(scope, roleKey, (prev) => ({
+        ...prev,
+        voicePreviewLoading: false,
+        voicePreviewPlaying: false,
+      }));
+    }
+  };
 
   const renderPersonaRow = (row: PersonaEditorState) => {
     const { scope } = row;
@@ -1088,39 +1132,112 @@ export default function PersonasAdminPage() {
             </p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor={`image-${scope}-${row.persona.role_key}`}>
-              Portrait URL
+            <Label htmlFor={`voice-${scope}-${row.persona.role_key}`}>
+              Voice
             </Label>
             <div className="flex gap-2">
-              <Input
-                id={`image-${scope}-${row.persona.role_key}`}
-                placeholder="https://"
-                value={row.draftImageUrl}
+              <select
+                id={`voice-${scope}-${row.persona.role_key}`}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                value={(row.draftMetadata as any)?.voiceId ?? ""}
                 onChange={(event) =>
                   handleInputChange(
                     scope,
                     row.persona.role_key,
-                    "image",
+                    "voice",
                     event.target.value
                   )
                 }
-              />
+              >
+                <option value="">Auto-assign</option>
+                {VOICE_PRESETS.filter((voice) => {
+                  // Strict gender filtering:
+                  // If persona is Female -> Only Female voices
+                  // If persona is Male -> Only Male voices
+                  // If persona is Neutral/Unset -> All voices (or Neutral)
+                  if (row.draftSex === "female") return voice.gender === "female";
+                  if (row.draftSex === "male") return voice.gender === "male";
+                  return true;
+                })
+                .sort((a, b) => {
+                  // Priority: British accents first
+                  if (a.accent === "british" && b.accent !== "british") return -1;
+                  if (a.accent !== "british" && b.accent === "british") return 1;
+                  return 0;
+                })
+                .map((voice) => (
+                  <option key={voice.id} value={voice.id}>
+                    {voice.label}
+                  </option>
+                ))}
+              </select>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => handleAutoPortrait(scope, row.persona.role_key)}
-                disabled={row.autoPortraitLoading}
-                title="Auto-generate portrait"
+                size="icon"
+                onClick={() => handleVoicePreview(scope, row.persona.role_key)}
+                disabled={!(row.draftMetadata as any)?.voiceId || row.voicePreviewLoading}
+                title="Preview Voice"
               >
-                {row.autoPortraitLoading ? "Generating..." : "Auto-generate"}
+                {row.voicePreviewLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : row.voicePreviewPlaying ? (
+                  <Square className="h-4 w-4 fill-current" />
+                ) : (
+                  <Play className="h-4 w-4" />
+                )}
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Used by the chat UI. Leave blank to remove.
+              Specific voice for TTS. Overrides sex-based default.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`image-${scope}-${row.persona.role_key}`}>
+              Portrait
+            </Label>
+            <div className="flex gap-2">
+              <AvatarSelector
+                role={row.persona.role_key === "veterinary-nurse" ? "nurse" : "owner"}
+                value={row.draftImageUrl}
+                onChange={(url) =>
+                  handleInputChange(
+                    scope,
+                    row.persona.role_key,
+                    "image",
+                    url
+                  )
+                }
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Used by the chat UI. Select from bank, upload, or generate.
             </p>
             {row.autoPortraitError && (
               <p className="text-xs text-red-600">{row.autoPortraitError}</p>
             )}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`prompt-${scope}-${row.persona.role_key}`}>
+              Visual Description (Looks)
+            </Label>
+            <Textarea
+              id={`prompt-${scope}-${row.persona.role_key}`}
+              placeholder="Describe the physical appearance for image generation..."
+              rows={4}
+              value={row.draftPrompt}
+              onChange={(event) =>
+                handleInputChange(
+                  scope,
+                  row.persona.role_key,
+                  "prompt",
+                  event.target.value
+                )
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              Used to generate the avatar image.
+            </p>
           </div>
         </div>
 

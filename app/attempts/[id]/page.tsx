@@ -470,6 +470,18 @@ export default function ViewAttemptPage() {
                 </p>
               </div>
             )}
+
+            {/* Professor Feedback */}
+            {attempt.professorFeedback && (
+              <div className="mt-8">
+                <h2 className="text-2xl font-bold mb-4 text-purple-700">Professor Feedback</h2>
+                <div className="border rounded-lg p-6 bg-purple-50 border-purple-200">
+                  <div className="prose prose-sm dark:prose-invert max-w-none text-purple-900">
+                    {attempt.professorFeedback}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -70,7 +70,7 @@ export function useSTT(
         setInterimTranscript(text);
       }
     },
-    [onFinal, debounceMs]
+    [debounceMs]
   );
 
   // Start speech recognition

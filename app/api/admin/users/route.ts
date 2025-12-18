@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/app/api/_lib/auth";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { z } from "zod";
+
+const createUserSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+  fullName: z.string().min(2, "Full name must be at least 2 characters"),
+  role: z.enum(["student", "professor", "admin"]),
+  institution_id: z.string().optional(),
+});
 
 export async function GET(request: NextRequest) {
   const auth = await requireUser(request);
@@ -49,28 +58,67 @@ export async function POST(request: NextRequest) {
   const auth = await requireUser(request);
   if ("error" in auth) return auth.error;
   
-  // Admins can create anyone. Professors can create students?
-  // User said "let admins and professors assign...", didn't explicitly say professors can create users.
-  // But usually user management implies creation.
-  // Let's allow professors to create 'student' users only.
-  
   if (auth.role !== "admin" && auth.role !== "professor") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  const { email, password, role, fullName, institution_id } = await request.json();
-  
-  if (auth.role === "professor" && role !== "student") {
-     return NextResponse.json({ error: "Professors can only create students" }, { status: 403 });
-  }
-
-  if (!email || !password) {
-    return NextResponse.json({ error: "Email and password required" }, { status: 400 });
   }
 
   const adminClient = getSupabaseAdminClient();
   if (!adminClient) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch (e) {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  // Validate input
+  const validation = createUserSchema.safeParse(body);
+  if (!validation.success) {
+    return NextResponse.json({ error: validation.error.issues[0].message }, { status: 400 });
+  }
+
+  let { email, password, role, fullName, institution_id } = validation.data;
+  
+  // Strict Scoping for Professors
+  if (auth.role === "professor") {
+    if (role !== "student") {
+        return NextResponse.json({ error: "Professors can only create students" }, { status: 403 });
+    }
+
+    // Fetch professor's institution
+    const { data: professorProfile, error: profError } = await adminClient
+        .from("profiles")
+        .select("institution_id")
+        .eq("user_id", auth.user.id)
+        .single();
+
+    if (profError || !professorProfile?.institution_id) {
+        return NextResponse.json({ error: "You must belong to an institution to create students." }, { status: 403 });
+    }
+    
+    // Force the institution ID
+    institution_id = professorProfile.institution_id;
+
+    // Rate Limiting: Check how many students this professor created in the last hour
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { count, error: countError } = await adminClient
+        .from("professor_students")
+        .select("*", { count: "exact", head: true })
+        .eq("professor_id", auth.user.id)
+        .gte("created_at", oneHourAgo);
+
+    if (countError) {
+        console.error("Rate limit check failed:", countError);
+        // Fail open or closed? Closed is safer.
+        return NextResponse.json({ error: "Failed to verify rate limit" }, { status: 500 });
+    }
+
+    if (count !== null && count >= 10) {
+        return NextResponse.json({ error: "Rate limit exceeded. You can only create 10 students per hour." }, { status: 429 });
+    }
   }
 
   // Create user in Auth
@@ -95,6 +143,8 @@ export async function POST(request: NextRequest) {
   const updates: Record<string, unknown> = {};
   if (role) updates.role = role;
   if (institution_id) updates.institution_id = institution_id;
+  // Set force_password_change to true for new users created by admins/professors
+  updates.force_password_change = true;
 
   if (Object.keys(updates).length > 0) {
     // Wait a bit for trigger? Or just upsert.

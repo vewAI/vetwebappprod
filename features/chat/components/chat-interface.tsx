@@ -12,6 +12,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useSTT } from "@/features/speech/hooks/useSTT";
 import { useMicButton } from "@/features/speech/hooks/useMicButton";
 import { useTTS } from "@/features/speech/hooks/useTTS";
@@ -180,6 +188,13 @@ export function ChatInterface({
   initialTimeSpentSeconds = 0,
   caseMedia = [],
 }: ChatInterfaceProps) {
+  // State for timepoint progression dialog
+  const [showTimepointDialog, setShowTimepointDialog] = useState(false);
+  const [pendingTimepoint, setPendingTimepoint] = useState<any>(null);
+
+  // Handlers for dialog actions (implement as no-ops or TODOs for now)
+  const handleSnoozeTimepoint = () => setShowTimepointDialog(false);
+  const confirmTimepointUnlock = () => setShowTimepointDialog(false);
   const tourSteps = [
     { element: '#chat-messages', popover: { title: 'Conversation History', description: 'Read the dialogue between you and the virtual characters here.' } },
     { element: '#chat-input', popover: { title: 'Input Area', description: 'Type your questions or responses here. You can also use voice input.' } },
@@ -187,6 +202,12 @@ export function ChatInterface({
     { element: '#voice-controls', popover: { title: 'Voice Controls', description: 'Toggle voice input (microphone) and text-to-speech (speaker) on or off.' } },
     { element: '#notepad-toggle', popover: { title: 'Notepad', description: 'Open the notepad to jot down important findings or notes during the case.' } },
   ];
+
+  // Toast for timepoint progression
+  const [timepointToast, setTimepointToast] = useState<
+    | { title: string; body: string }
+    | null
+  >(null);
 
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const { timepoints } = useCaseTimepoints(caseId);
@@ -1160,6 +1181,7 @@ export function ChatInterface({
       setMessages(snapshot);
     }
     setInput("");
+    baseInputRef.current = "";
     // Clear hint on send
     setShowProceedHint(false);
     if (voiceMode) {
@@ -2048,105 +2070,23 @@ export function ChatInterface({
     }
   }, [voiceMode, isListening, reset, start]);
 
-  // Auto-focus textarea when loaded
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.focus();
-    }
-    // attemptId changes or other hooks update.
-  }, []);
-
-  // attemptId changes or other hooks update.
+  // Auto-pause attempt and show toast if user leaves the chat page
   useEffect(() => {
     if (!attemptId) return;
-
-    // Only initialize voice mode once per attemptId. Some hooks (start/reset)
-    // may change identity during runtime which could re-run this effect and
-    // inadvertently re-enable voice mode after the user explicitly toggled
-    // it off. Use prevAttemptIdRef to ensure we only run this initialization
-    // when the attemptId actually changes.
-    if (prevAttemptIdRef.current === attemptId) return;
-    prevAttemptIdRef.current = attemptId;
-
-    // Ensure voiceMode state is ON when an attempt opens
-    setVoiceMode(true);
-
-    // Start listening once when an attempt opens. Don't gate on the
-    // `voiceMode` state variable (it may not have updated yet in this
-    // render), instead use the startedListeningRef to ensure we only start
-    // once.
-    if (!startedListeningRef.current && !isPlayingAudioRef.current) {
-      try {
-        reset();
-        setInput("");
-        baseInputRef.current = "";
-        start();
-        startedListeningRef.current = true;
-      } catch (e) {
-        console.error("Failed to start STT after attempt opened:", e);
-      }
-    }
-    // Run only when attemptId changes; intentionally omit start/reset from
-    // the dependency list to avoid re-running due to identity changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attemptId]);
-
-  const handleTimepointUnlock = useCallback(async (tp: CaseTimepoint) => {
-     const role = tp.persona_role_key || "owner";
-     const content = tp.stage_prompt || tp.summary || "A new timepoint has been reached.";
-     
-     const normalizedRoleKey = resolveChatPersonaRoleKey(role, role);
-     const personaMeta = await ensurePersonaMetadata(normalizedRoleKey);
-     
-     const voiceSex = personaMeta?.sex === "male" || personaMeta?.sex === "female" ? personaMeta.sex : "neutral";
-     const voiceForRole = getOrAssignVoiceForRole(normalizedRoleKey, attemptId, {
-        preferredVoice: personaMeta?.voiceId,
-        sex: voiceSex,
-     });
-     
-     const newMessage = chatService.createAssistantMessage(
-        content,
-        currentStageIndex,
-        personaMeta?.displayName || role,
-        personaMeta?.portraitUrl,
-        voiceForRole,
-        personaMeta?.sex,
-        normalizedRoleKey
-     );
-     
-     setMessages(prev => [...prev, newMessage]);
-  }, [currentStageIndex, attemptId, ensurePersonaMetadata]);
-
-  const handleTimepointUnlockRef = useRef(handleTimepointUnlock);
-  useEffect(() => {
-    handleTimepointUnlockRef.current = handleTimepointUnlock;
-  }, [handleTimepointUnlock]);
-
-  // Timer to track time spent on the case
-  useEffect(() => {
-    // Only start the timer if we have an attempt ID and not paused
-    if (!attemptId || isPaused) return;
-
-    // Set up a timer that increments every second
-    const timer = setInterval(() => {
-      setTimeSpentSeconds((prev) => {
-        const next = prev + 1;
-        
-        // Check for timepoint unlocks
-        timepoints.forEach((tp) => {
-          const unlockTime = (tp.available_after_hours || 0) * 3600;
-          if (next === unlockTime) {
-             handleTimepointUnlockRef.current?.(tp);
-          }
+    const handleVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        setIsPaused(true);
+        setTimepointToast({
+          title: "Attempt Paused",
+          body: "You left the case. The attempt is paused. Re-enter to unpause.",
         });
-
-        return next;
-      });
-    }, 1000);
-
-    // Clean up the timer when the component unmounts
-    return () => clearInterval(timer);
-  }, [attemptId, timepoints]);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [attemptId]);
 
   // Auto-save (throttled) ��� keeps the existing delete+insert server behavior
   useEffect(() => {
@@ -2477,8 +2417,8 @@ export function ChatInterface({
         // Use per-role voice for the assistant intro as well
         const introMeta = {
           roleKey: normalizedRoleKey,
-          displayRole: assistantMsg.displayRole,
-          role: roleName,
+          displayRole: roleName,
+          role: stageRole ?? roleName,
           caseId,
           metadata: {
             stageId: stages[targetIndex]?.id,
@@ -2851,6 +2791,41 @@ export function ChatInterface({
           </div>
         </div>
       </div>
+
+      {/* Timepoint Toast */}
+      {timepointToast && (
+        <div className="fixed top-24 left-0 right-0 flex justify-center pointer-events-none z-50">
+          <div className="bg-primary text-primary-foreground px-6 py-4 rounded-lg shadow-lg max-w-md text-center pointer-events-auto animate-in fade-in slide-in-from-top-4 duration-300">
+            <div className="font-bold text-lg mb-1">{timepointToast.title}</div>
+            <div className="text-sm">{timepointToast.body}</div>
+            <button 
+              onClick={() => setTimepointToast(null)}
+              className="absolute top-1 right-2 text-primary-foreground/80 hover:text-primary-foreground"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+
+      <Dialog open={showTimepointDialog} onOpenChange={setShowTimepointDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Time Progression</DialogTitle>
+            <DialogDescription>
+              It is now {pendingTimepoint?.label}. Do you want to proceed with the updates for this time?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={handleSnoozeTimepoint}>
+              Wait
+            </Button>
+            <Button onClick={confirmTimepointUnlock}>
+              Advance
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Notepad */}
       <Notepad isOpen={showNotepad} onClose={() => setShowNotepad(false)} />

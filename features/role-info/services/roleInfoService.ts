@@ -110,34 +110,52 @@ export const ROLE_PROMPT_DEFINITIONS: Record<RolePromptKey, RolePromptDefinition
     },
   },
   getPhysicalExamPrompt: {
-    defaultTemplate: `You are a veterinary nurse/technician assisting the student. You have already performed the physical examination and have the results ready.\n\nCompleted examination record:\n{{FINDINGS}}\n\nRules:\n- Your role is to PROVIDE information, NOT to ask the student for it.\n- When the student asks for findings (e.g., "what are the findings?", "vitals?", "heart rate?"), you must look up the relevant data in the record above and report it clearly.\n- Do not ask the student what they found. You are the one holding the clipboard with the data.\n- If the student asks for something not in the record, state that it was not recorded or is normal/unremarkable if appropriate for the context, but do not make up specific abnormal values not present in the data.\n- Be helpful, professional, and concise.\n\nStudent request: {{STUDENT_REQUEST}}`,
+    defaultTemplate: `You are a veterinary nurse/technician assisting the student. You have already performed the physical examination and have the results ready.\n\nCompleted examination record:\n{{FINDINGS}}\n\nRules:\n- Your role is to PROVIDE information, NOT to ask the student for it.\n- ALWAYS report temperatures in Fahrenheit (°F). If the record above uses Celsius, convert it to Fahrenheit before speaking (Formula: °F = °C × 1.8 + 32).\n- Do not ask the student what they found. You are the one holding the clipboard with the data.\n- If the student asks for something not in the record, state that it was not recorded or is normal/unremarkable if appropriate for the context, but do not make up specific abnormal values not present in the data.\n- Be helpful, professional, and concise.\n\nRelease Strategy:\n{{RELEASE_STRATEGY_INSTRUCTION}}\n\nStudent request: {{STUDENT_REQUEST}}`,
     placeholderDocs: [
       { token: "{{FINDINGS}}", description: "Physical examination findings for the case." },
       { token: "{{STUDENT_REQUEST}}", description: "Latest clinician question or request." },
+      { token: "{{RELEASE_STRATEGY_INSTRUCTION}}", description: "Instruction on how to reveal findings (all at once vs on demand)." },
     ],
-    buildReplacements: ({ caseRow, userMessage }) => ({
-      FINDINGS: getText(
-        caseRow,
-        "physical_exam_findings",
-        buildPhysicalExamFallback(caseRow)
-      ),
-      STUDENT_REQUEST: userMessage,
-    }),
+    buildReplacements: ({ caseRow, userMessage }) => {
+      const strategy = getText(caseRow, "findings_release_strategy", "immediate");
+      const instruction = strategy === "on_demand"
+        ? "If the student asks for findings generally (e.g., 'what are the vitals?'), ask them to be specific. Do NOT provide all findings at once. Only release specific values or systems when explicitly requested."
+        : "If the student asks for findings generally, provide the complete list of available findings immediately.";
+      
+      return {
+        FINDINGS: getText(
+          caseRow,
+          "physical_exam_findings",
+          buildPhysicalExamFallback(caseRow)
+        ),
+        STUDENT_REQUEST: userMessage,
+        RELEASE_STRATEGY_INSTRUCTION: instruction,
+      };
+    },
   },
   getDiagnosticPrompt: {
-    defaultTemplate: `You are a laboratory technician. Share the test results. If any result is marked [AUTO-SHOW], provide it immediately. Otherwise, wait for the student to request specific items. Do not speculate beyond the data.\n\nAvailable results:\n{{DIAGNOSTIC_RESULTS}}\n\nDoctor request: {{STUDENT_REQUEST}}`,
+    defaultTemplate: `You are a laboratory technician. You have access to the following diagnostic results:\n\n{{DIAGNOSTIC_RESULTS}}\n\nRules:\n- If the student asks for a specific test or value (e.g., "calcium", "ketones", "CBC"), LOOK CAREFULLY at the results above.\n- If the value is there, provide it exactly as written.\n- If the value is NOT there, state clearly that it is not available.\n- If any result is marked [AUTO-SHOW], provide it immediately.\n- Do not invent or hallucinate results not listed above.\n- If the student asks for information NOT in the results (e.g. "what is the usual treatment for X?", "what are the symptoms of Y?"), you MAY use the 'search_merck_manual' tool to find general veterinary information to assist them, but clearly state that this is general info and not specific to this patient's test results.\n\nRelease Strategy:\n{{RELEASE_STRATEGY_INSTRUCTION}}\n\nStudent request: {{STUDENT_REQUEST}}`,
     placeholderDocs: [
       { token: "{{DIAGNOSTIC_RESULTS}}", description: "Laboratory and diagnostic findings for the case." },
       { token: "{{STUDENT_REQUEST}}", description: "Latest clinician question or request." },
+      { token: "{{RELEASE_STRATEGY_INSTRUCTION}}", description: "Instruction on how to reveal findings (all at once vs on demand)." },
     ],
-    buildReplacements: ({ caseRow, userMessage }) => ({
-      DIAGNOSTIC_RESULTS: getText(
-        caseRow,
-        "diagnostic_findings",
-        "No diagnostic tests have been performed yet."
-      ),
-      STUDENT_REQUEST: userMessage,
-    }),
+    buildReplacements: ({ caseRow, userMessage }) => {
+      const strategy = getText(caseRow, "findings_release_strategy", "immediate");
+      const instruction = strategy === "on_demand"
+        ? "If the student asks for results generally, ask them to be specific. Do NOT provide all findings at once. Only release specific values or groups of values (e.g. 'CBC', 'Chem') when explicitly requested."
+        : "If the student asks for results generally, provide all available diagnostic findings immediately.";
+
+      return {
+        DIAGNOSTIC_RESULTS: getText(
+          caseRow,
+          "diagnostic_findings",
+          "No diagnostic tests have been performed yet."
+        ),
+        STUDENT_REQUEST: userMessage,
+        RELEASE_STRATEGY_INSTRUCTION: instruction,
+      };
+    },
   },
   getOwnerFollowUpPrompt: {
     defaultTemplate: `You are the owner discussing next steps after the initial examination. Start slightly anxious, ask about logistics, cost, and comfort for your animal, and become more cooperative once the clinician explains their plan.\n\nRules:\n- You are a layperson, NOT a vet. Do not use medical jargon.\n- Always refer to the user as 'Doctor' or 'Vet'.\n- Do not ask for clinical history from the doctor; you are the one who knows the animal's history.\n\nGuidance:\n{{FOLLOW_UP_GUIDANCE}}\n\nDoctor's explanation/question: {{STUDENT_QUESTION}}`,

@@ -16,6 +16,7 @@ type DbCase = {
   difficulty?: string | null;
   estimated_time?: number | string | null;
   image_url?: string | null;
+  gif_url?: string | null;
   tags?: string[] | null;
   is_published?: boolean | null;
   media?: unknown;
@@ -133,6 +134,36 @@ export async function fetchDisciplines(): Promise<string[]> {
   }
 }
 
+export async function fetchAssignedCases(userId: string): Promise<Case[]> {
+  // 1. Get professors for this student
+  const { data: professors } = await supabase
+    .from("professor_students")
+    .select("professor_id")
+    .eq("student_id", userId);
+
+  if (!professors || professors.length === 0) return [];
+
+  const professorIds = professors.map(p => p.professor_id);
+
+  // 2. Get cases assigned by these professors
+  const { data: assignedCases } = await supabase
+    .from("professor_cases")
+    .select("case_id")
+    .in("professor_id", professorIds);
+
+  if (!assignedCases || assignedCases.length === 0) return [];
+
+  const caseIds = assignedCases.map(c => c.case_id);
+
+  // 3. Fetch case details
+  const { data: cases } = await supabase
+    .from("cases")
+    .select("*")
+    .in("id", caseIds);
+
+  return (cases ?? []).map(mapDbCaseToCase);
+}
+
 function mapDbCaseToCase(dbCase: DbCase): Case {
   return {
     id: dbCase.id ?? "",
@@ -152,6 +183,7 @@ function mapDbCaseToCase(dbCase: DbCase): Case {
         ? dbCase.estimated_time
         : Number(dbCase.estimated_time || 0),
     imageUrl: dbCase.image_url ?? "",
+    gifUrl: dbCase.gif_url ?? undefined,
     tags: dbCase.tags ?? [],
     isPublished: dbCase.is_published ?? false,
     media: normalizeCaseMedia(dbCase.media),

@@ -7,6 +7,7 @@ export interface Attempt {
     completedAt?: string;
     completionStatus: 'in_progress' | 'completed' | 'abandoned';
     overallFeedback?: string;
+    professorFeedback?: string;
     lastStageIndex: number;
     timeSpentSeconds: number;
   }

@@ -20,6 +20,7 @@ type AuthContextType = {
   role: string | null;
   isAdmin: boolean;
   profileLoading: boolean;
+  forcePasswordChange: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -32,6 +33,7 @@ const AuthContext = createContext<AuthContextType>({
   role: null,
   isAdmin: false,
   profileLoading: false,
+  forcePasswordChange: false,
   signIn: async () => {},
   signOut: async () => {},
 });
@@ -41,6 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<string | null>(null);
+  const [forcePasswordChange, setForcePasswordChange] = useState(false);
   const [profileLoading, setProfileLoading] = useState<boolean>(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const lastUserIdRef = useRef<string | null>(null);
@@ -134,6 +137,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const json = await res.json();
         const profile = json?.profile ?? null;
         setRole(profile?.role ?? null);
+        setForcePasswordChange(profile?.force_password_change ?? false);
+        
+        if (profile?.force_password_change) {
+            router.push("/change-password");
+        }
+
         setProfileLoading(false);
         lastUserIdRef.current = currentUserId;
       } catch (err) {
@@ -142,6 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           err
         );
         setRole(null);
+        setForcePasswordChange(false);
         setProfileLoading(false);
       }
     };
@@ -194,6 +204,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role,
         isAdmin: role === "admin",
         profileLoading,
+        forcePasswordChange,
         signIn,
         signOut,
       }}

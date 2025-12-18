@@ -5,23 +5,28 @@
 export type VoicePreset = {
   id: string;
   label: string;
-  gender?: "male" | "female" | "neutral";
+  gender: "male" | "female" | "neutral";
+  accent: "american" | "british" | "australian" | "other";
+  provider: "openai" | "elevenlabs";
 };
  
 export const VOICE_PRESETS: VoicePreset[] = [
-  { id: "alloy", label: "Alloy (neutral)", gender: "neutral" },
-  { id: "verse", label: "Verse (male)", gender: "male" },
-  { id: "coral", label: "Coral (female)", gender: "female" },
-  { id: "nova", label: "Nova (female)", gender: "female" },
-  { id: "onyx", label: "Onyx (male)", gender: "male" },
-  { id: "echo", label: "Echo (neutral)", gender: "neutral" },
-  { id: "shimmer", label: "Shimmer (female)", gender: "female" },
-  { id: "ballad", label: "Ballad (male)", gender: "male" },
-  { id: "ash", label: "Ash (neutral)", gender: "neutral" },
-  { id: "sage", label: "Sage (neutral)", gender: "neutral" },
-  { id: "marin", label: "Marin (female)", gender: "female" },
-  { id: "cedar", label: "Cedar (male)", gender: "male" },
-  { id: "fable", label: "Fable (neutral)", gender: "neutral" },
+  // OpenAI Voices (Standard, Reliable)
+  { id: "fable", label: "Fable (British Male)", gender: "male", accent: "british", provider: "openai" },
+  { id: "onyx", label: "Onyx (American Male)", gender: "male", accent: "american", provider: "openai" },
+  { id: "echo", label: "Echo (American Male)", gender: "male", accent: "american", provider: "openai" },
+  { id: "alloy", label: "Alloy (American Neutral)", gender: "neutral", accent: "american", provider: "openai" },
+  { id: "shimmer", label: "Shimmer (American Female)", gender: "female", accent: "american", provider: "openai" },
+  { id: "nova", label: "Nova (American Female)", gender: "female", accent: "american", provider: "openai" },
+  
+  // ElevenLabs Voices (High Quality, British Priority)
+  { id: "charlie", label: "Charlie (British Male)", gender: "male", accent: "british", provider: "elevenlabs" },
+  { id: "george", label: "George (British Male)", gender: "male", accent: "british", provider: "elevenlabs" },
+  { id: "harry", label: "Harry (British Male)", gender: "male", accent: "british", provider: "elevenlabs" },
+  { id: "alice", label: "Alice (British Female)", gender: "female", accent: "british", provider: "elevenlabs" },
+  { id: "charlotte", label: "Charlotte (British Female)", gender: "female", accent: "british", provider: "elevenlabs" },
+  { id: "lily", label: "Lily (British Female)", gender: "female", accent: "british", provider: "elevenlabs" },
+  { id: "matilda", label: "Matilda (British Female)", gender: "female", accent: "british", provider: "elevenlabs" },
 ];
 
 const STORAGE_PREFIX = "vmap:";
@@ -121,21 +126,25 @@ export function getOrAssignVoiceForRole(
     }
 
     const candidateVoices = (() => {
-      if (!sex || sex === "neutral") {
-        return VOICE_PRESETS;
+      let pool = VOICE_PRESETS;
+
+      // 1. Filter by Gender (Strict)
+      if (sex && sex !== "neutral") {
+        const genderMatches = pool.filter((p) => p.gender === sex);
+        if (genderMatches.length > 0) {
+          pool = genderMatches;
+        }
       }
-      // Prioritize strict gender match
-      const strictMatches = VOICE_PRESETS.filter(
-        (preset) => preset.gender === sex
-      );
-      if (strictMatches.length > 0) {
-        return strictMatches;
+
+      // 2. Prioritize British Accent
+      // If British voices exist in the pool, restrict selection to them.
+      // This ensures auto-assigned voices are British by default.
+      const britishMatches = pool.filter((p) => p.accent === "british");
+      if (britishMatches.length > 0) {
+        return britishMatches;
       }
-      
-      const matches = VOICE_PRESETS.filter(
-        (preset) => preset.gender === sex || preset.gender === "neutral"
-      );
-      return matches.length ? matches : VOICE_PRESETS;
+
+      return pool;
     })();
 
     // Pick a voice deterministically based on role+attempt so it's stable.

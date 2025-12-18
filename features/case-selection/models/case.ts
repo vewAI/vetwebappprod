@@ -10,6 +10,7 @@ export type Case = {
     difficulty: "Easy" | "Medium" | "Hard"
     estimatedTime: number
     imageUrl: string
+    gifUrl?: string
     tags?: string[]
     isPublished?: boolean
     media?: CaseMediaItem[]

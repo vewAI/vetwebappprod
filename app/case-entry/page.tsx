@@ -17,6 +17,7 @@ import { CaseMediaEditor } from "@/features/cases/components/case-media-editor";
 import { TimeProgressionEditor } from "@/features/cases/components/case-time-progression-editor";
 import { AvatarSelector } from "@/features/cases/components/avatar-selector";
 import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
+import { generateRandomCase } from "@/features/cases/services/caseGenerationService";
 
 export default function CaseEntryForm() {
   const [expandedField, setExpandedField] = useState<CaseFieldKey | null>(
@@ -34,6 +35,20 @@ export default function CaseEntryForm() {
     const raw = form.id?.trim();
     return raw ? raw : undefined;
   }, [form.id]);
+
+  const handleRandomCase = async () => {
+    setLoading(true);
+    try {
+      const response = await axios.post("/api/cases/generate-random");
+      setForm((prev) => ({ ...prev, ...(response.data as any) }));
+      setSuccess("Random case generated from Merck Manual data!");
+    } catch (err) {
+      console.error(err);
+      setError("Failed to generate random case.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   function handleChange(
     e: React.ChangeEvent<
@@ -199,7 +214,12 @@ Remain collaborative, use everyday language, and avoid offering your own medical
 
   return (
     <div className="max-w-2xl mx-auto p-8">
-      <h1 className="text-2xl font-bold mb-6">Add New Case</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Add New Case</h1>
+        <Button type="button" variant="outline" onClick={handleRandomCase}>
+          Create Random Case
+        </Button>
+      </div>
       <form onSubmit={handleSubmit} className="space-y-4">
         {orderedCaseFieldKeys.map((key) => {
           const meta = caseFieldMeta[key];

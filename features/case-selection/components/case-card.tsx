@@ -22,17 +22,24 @@ type CaseCardProps = {
 export function CaseCard({ caseItem }: CaseCardProps) {
   const [isHovered, setIsHovered] = useState(false);
 
+  // Use gifUrl if available and hovered, otherwise fallback to imageUrl
+  const displayImage = (isHovered && caseItem.gifUrl) ? caseItem.gifUrl : caseItem.imageUrl;
+
   return (
     <Card
       className="overflow-hidden transition-all duration-300 hover:shadow-lg"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      // Mobile focus handling
+      onFocus={() => setIsHovered(true)}
+      onBlur={() => setIsHovered(false)}
+      tabIndex={0} // Make focusable
     >
       <div className="relative h-48 w-full overflow-hidden bg-gray-100">
         <img
           src={
-            /^https?:\/\//.test(String(caseItem.imageUrl ?? ""))
-              ? String(caseItem.imageUrl)
+            /^https?:\/\//.test(String(displayImage ?? ""))
+              ? String(displayImage)
               : "/placeholder.svg"
           }
           alt={caseItem.title}

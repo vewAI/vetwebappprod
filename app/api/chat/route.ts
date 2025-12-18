@@ -20,6 +20,7 @@ import {
   normalizeCaseMedia,
   type CaseMediaItem,
 } from "@/features/cases/models/caseMedia";
+import { searchMerckManual } from "@/features/external-resources/services/merckService";
 
 const openai = new OpenAi({
   apiKey: process.env.OPENAI_API_KEY,
@@ -84,18 +85,26 @@ export async function POST(request: NextRequest) {
     // so the LLM is influenced by the owner's personality plus any stage-specific role info.
     let ownerBackground: string | null = null;
     let roleInfoPromptContent: string | null = null;
+    let timepointPrompt: string | null = null;
     let caseRecord: Record<string, unknown> | null = null;
     let caseMedia: CaseMediaItem[] = [];
     if (caseId) {
       try {
+        const dbStart = Date.now();
+        debugEventBus.emitEvent('info', 'DB', `Fetching case data for ${caseId}`);
         const { data: caseRow, error: caseErr } = await supabase
           .from("cases")
           // fetch the complete row so we can derive persona identities and prompts
           .select("*")
           .eq("id", caseId)
           .maybeSingle();
+        
+        if (caseRow) {
+             debugEventBus.emitEvent('success', 'DB', `Case data fetched in ${Date.now() - dbStart}ms`);
+        }
 
         if (caseErr) {
+          debugEventBus.emitEvent('error', 'DB', `Failed to fetch case: ${caseErr.message}`);
           console.warn(
             "Could not fetch case owner_background:",
             caseErr.message ?? caseErr
@@ -107,14 +116,10 @@ export async function POST(request: NextRequest) {
           if (caseRow.owner_background) {
             ownerBackground = String(caseRow.owner_background);
             // Replace common placeholder markers the prompts may contain so the
-            // LLM doesn't echo things like "[Your Name]" literally. Prefer the
-            // case title (usually the horse name) when available, otherwise fall
-            // back to a neutral label.
-            const titleFromRow = (caseRow as { title?: string } | null)?.title;
-            const replacement =
-              titleFromRow && String(titleFromRow).trim() !== ""
-                ? String(titleFromRow)
-                : "Owner";
+            // LLM doesn't echo things like "[Your Name]" literally.
+            // We use a generic "the owner" replacement to avoid hallucinating the horse's name
+            // as the owner's name (which happened when using titleFromRow).
+            const replacement = "the owner";
             ownerBackground = ownerBackground.replace(
               /\[Your Name\]/g,
               replacement
@@ -123,6 +128,20 @@ export async function POST(request: NextRequest) {
               /\{owner_name\}/g,
               replacement
             );
+          }
+        }
+
+        // Fetch timepoint-specific prompt
+        if (typeof stageIndex === "number") {
+          const { data: timepoint } = await supabase
+            .from("case_timepoints")
+            .select("stage_prompt, label")
+            .eq("case_id", caseId)
+            .eq("sequence_index", stageIndex)
+            .maybeSingle();
+          
+          if (timepoint?.stage_prompt) {
+            timepointPrompt = `CURRENT TIME: ${timepoint.label}\nCONTEXT UPDATE: ${timepoint.stage_prompt}`;
           }
         }
       } catch (e) {
@@ -278,6 +297,10 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     // 3. Owner -> [owner, role, media]
     // This ensures Media instructions (like [AUTO-SHOW]) appear LAST in the system messages,
     // giving them higher priority/recency than the Role instructions.
+
+    if (timepointPrompt) {
+      enhancedMessages.unshift({ role: "system", content: timepointPrompt });
+    }
 
     if (roleInfoPromptContent) {
       enhancedMessages.unshift({ role: "system", content: roleInfoPromptContent });
@@ -634,14 +657,67 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
 
     enhancedMessages.unshift({ role: "system", content: systemGuideline });
 
-    const response = await openai.chat.completions.create({
+    // Define tools
+    const tools: OpenAi.Chat.Completions.ChatCompletionTool[] = [
+      {
+        type: "function",
+        function: {
+          name: "search_merck_manual",
+          description: "Search the Merck Veterinary Manual for information about pathologies, treatments, or species when internal case data is insufficient.",
+          parameters: {
+            type: "object",
+            properties: {
+              query: {
+                type: "string",
+                description: "The search query (e.g., 'canine parvovirus treatment', 'feline hyperthyroidism symptoms').",
+              },
+            },
+            required: ["query"],
+          },
+        },
+      },
+    ];
+
+    let response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      messages: enhancedMessages,
+      messages: enhancedMessages as any[],
       temperature: 0.7,
       max_tokens: 1000,
+      tools: tools,
+      tool_choice: "auto",
     });
 
-    const assistantRawContent = response.choices[0].message.content ?? "";
+    let message = response.choices[0].message;
+
+    // Handle tool calls
+    if (message.tool_calls) {
+      enhancedMessages.push(message); // Add the assistant's tool call message
+
+      for (const toolCall of message.tool_calls as any[]) {
+        if (toolCall.function.name === "search_merck_manual") {
+          const args = JSON.parse(toolCall.function.arguments);
+          const searchResult = await searchMerckManual(args.query);
+          
+          enhancedMessages.push({
+            tool_call_id: toolCall.id,
+            role: "tool",
+            content: searchResult,
+          });
+        }
+      }
+
+      // Second call to OpenAI to get the final answer
+      response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: enhancedMessages as any[],
+        temperature: 0.7,
+        max_tokens: 1000,
+      });
+      
+      message = response.choices[0].message;
+    }
+
+    const assistantRawContent = message.content ?? "";
     
     // Parse on-demand media tags
     let content = assistantRawContent;

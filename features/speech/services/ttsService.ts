@@ -8,6 +8,7 @@ import {
   getAccessToken,
 } from "@/lib/auth-headers";
 import { getPreferredOutputDevice } from "./deviceRegistry";
+import { debugEventBus } from "@/lib/debug-events";
 
 type TtsMeta = Omit<TtsEventDetail, "audio"> | undefined;
 
@@ -69,6 +70,9 @@ export async function speakRemote(
 ): Promise<HTMLAudioElement> {
   if (!text) throw new Error("text required");
 
+  const startTime = Date.now();
+  debugEventBus.emitEvent('info', 'TTS', 'Requesting speech synthesis', { textLength: text.length, voice });
+
   const token = await getAccessToken();
   if (!token) {
     throw new Error("Not authenticated");
@@ -85,10 +89,12 @@ export async function speakRemote(
 
   if (!res.ok) {
     const body = await res.text();
+    debugEventBus.emitEvent('error', 'TTS', `Remote TTS failed: ${res.status}`, { body });
     throw new Error(`Remote TTS failed: ${res.status} ${body}`);
   }
 
   const buf = await res.arrayBuffer();
+  debugEventBus.emitEvent('success', 'TTS', `Audio received in ${Date.now() - startTime}ms`, { size: buf.byteLength });
   const contentType = res.headers.get("content-type") ?? "audio/mpeg";
   const blob = new Blob([buf], { type: contentType });
   const url = URL.createObjectURL(blob);

@@ -879,24 +879,7 @@ export default function CaseViewerPage() {
             }
 
             if (meta.isAvatarSelector) {
-              return (
-                <div key={key}>
-                  <label className="block font-medium mb-1" htmlFor={key}>
-                    {meta.label}
-                  </label>
-                  <AvatarSelector
-                    role={meta.avatarRole || "owner"}
-                    value={formatValue(rawValue)}
-                    onChange={(url) => updateField(key, url)}
-                    readOnly={!editable}
-                  />
-                  {meta.help && (
-                    <p id={helpId} className="mt-1 text-sm text-muted-foreground">
-                      {meta.help}
-                    </p>
-                  )}
-                </div>
-              );
+              return null; // Hidden in viewer
             }
 
             if (meta.multiline) {

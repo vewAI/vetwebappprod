@@ -66,5 +66,75 @@ export const professorService = {
       ...rel,
       student: profiles?.find((p) => p.user_id === rel.student_id) || null,
     }));
+  },
+
+  async createStudent(professorId: string, studentData: { email: string; password: string; fullName: string; institutionId?: string }) {
+    // 1. Create the user via Admin API
+    const response = await fetch('/api/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...studentData,
+        role: 'student'
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to create student');
+    }
+
+    const { user } = await response.json();
+
+    // 2. Link to professor
+    const { error: linkError } = await supabase
+      .from("professor_students")
+      .insert({
+        professor_id: professorId,
+        student_id: user.id
+      });
+
+    if (linkError) {
+      // If linking fails, we might want to warn the user, but the account is created.
+      // Ideally we should rollback, but we can't easily rollback the API call.
+      // For now, throw error so UI knows something went wrong.
+      throw new Error(`Student created but failed to link to professor: ${linkError.message}`);
+    }
+
+    return user;
+  },
+
+  async getClassStats(professorId: string) {
+    // 1. Get all students
+    const { data: relations } = await supabase
+      .from("professor_students")
+      .select("student_id")
+      .eq("professor_id", professorId);
+    
+    if (!relations || relations.length === 0) return null;
+    const studentIds = relations.map(r => r.student_id);
+
+    // 2. Get all attempts for these students
+    const { data: attempts, error } = await supabase
+      .from("attempts")
+      .select("id, completion_status, time_spent_seconds, created_at")
+      .in("user_id", studentIds);
+
+    if (error) throw error;
+
+    // 3. Calculate stats
+    const totalAttempts = attempts.length;
+    const completedAttempts = attempts.filter(a => a.completion_status === 'completed').length;
+    const completionRate = totalAttempts > 0 ? (completedAttempts / totalAttempts) * 100 : 0;
+    
+    const totalTime = attempts.reduce((acc, curr) => acc + (curr.time_spent_seconds || 0), 0);
+    const avgTime = totalAttempts > 0 ? totalTime / totalAttempts : 0;
+
+    return {
+      totalAttempts,
+      completedAttempts,
+      completionRate,
+      avgTime
+    };
   }
 };

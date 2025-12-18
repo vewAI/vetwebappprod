@@ -9,6 +9,7 @@ export type CaseSeed = {
   difficulty: "Easy" | "Medium" | "Hard";
   estimated_time: number;
   image_url: string;
+  gif_url?: string;
   details: Record<string, unknown>;
   physical_exam_findings: string;
   diagnostic_findings: string;
@@ -45,7 +46,8 @@ export const CASE_SEEDS: CaseSeed[] = [
     category: "Equine Infectious Disease",
     difficulty: "Medium",
     estimated_time: 25,
-    image_url: placeholderImage,
+    image_url: "https://images.unsplash.com/photo-1553284965-83fd3e82fa5a?auto=format&fit=crop&w=800&q=80",
+    gif_url: "https://media.giphy.com/media/2k0sUXCWw7Ko/giphy.gif",
     tags: ["equine", "infectious", "respiratory"],
     is_published: true,
     version: 1,
@@ -61,7 +63,7 @@ export const CASE_SEEDS: CaseSeed[] = [
         "Communicate isolation and biosecurity in a calm, client-centered manner",
       ],
     },
-    physical_exam_findings: `Vital signs:\n- Temp: 39.7°C\n- HR: 48 bpm\n- RR: 16 bpm\nAdditional findings:\n- Enlarged (2 cm) warm submandibular lymph node\n- Mild serous nasal discharge\n- Mildly reduced gut sounds, otherwise WNL`,
+    physical_exam_findings: `Vital signs:\n- Temp: 103.5°F\n- HR: 48 bpm\n- RR: 16 bpm\nAdditional findings:\n- Enlarged (2 cm) warm submandibular lymph node\n- Mild serous nasal discharge\n- Mildly reduced gut sounds, otherwise WNL`,
     diagnostic_findings: `Available diagnostics when requested:\n- CBC: mild neutrophilia (14.8 x10^9/L)\n- Fibrinogen: 5.5 g/L\n- Serum biochemistry: within normal limits\n- Nasopharyngeal swab PCR: pending\n- Lymph node ultrasound: reveals hypoechoic core with surrounding edema`,
     owner_background: `Role: Horse owner (Catalina belongs to Elena, a young professional rider).\nTone: Initially anxious but appreciative when the vet explains things clearly.\nKey concerns: keeping the barn manager informed, cost of diagnostics, and how long Catalina must be isolated.`,
     history_feedback: `Focus feedback on exposure history, vaccination status, recent travel, and questions about other horses on the property. Praise organised questioning and highlight any missing outbreak-management items.`,
@@ -93,7 +95,8 @@ export const CASE_SEEDS: CaseSeed[] = [
     category: "Small Animal Internal Medicine",
     difficulty: "Hard",
     estimated_time: 30,
-    image_url: placeholderImage,
+    image_url: "https://images.unsplash.com/photo-1587300003388-59208cc962cb?auto=format&fit=crop&w=800&q=80",
+    gif_url: "https://media.giphy.com/media/4Zo41lhzKt6iZ8xff9/giphy.gif",
     details: {
       presenting_complaint:
         "Owner reports sudden onset of vomiting followed by watery, then bloody, diarrhea. Appetite zero; lethargic and unwilling to stand.",
@@ -106,7 +109,7 @@ export const CASE_SEEDS: CaseSeed[] = [
         "Communicate intensive care requirements empathetically",
       ],
     },
-    physical_exam_findings: `Vital signs:\n- Temp: 39.6°C\n- HR: 180 bpm (weak pulses)\n- RR: 40 bpm\nOther findings:\n- Severe dehydration (~10%), tacky gums, CRT 3 sec\n- Abdominal pain on palpation, splenomegaly not appreciated\n- Melena present on rectal exam`,
+    physical_exam_findings: `Vital signs:\n- Temp: 103.3°F\n- HR: 180 bpm (weak pulses)\n- RR: 40 bpm\nOther findings:\n- Severe dehydration (~10%), tacky gums, CRT 3 sec\n- Abdominal pain on palpation, splenomegaly not appreciated\n- Melena present on rectal exam`,
     diagnostic_findings: `Laboratory data available on request:\n- SNAP Parvo antigen: Strong positive\n- CBC: WBC 1.2 x10^9/L (marked leukopenia), HCT 58% (hemoconcentration), platelets 110 x10^9/L\n- Electrolytes: Na 132 mmol/L, K 3.0 mmol/L, Cl 91 mmol/L\n- Blood glucose: 62 mg/dL\n- Abdominal ultrasound: Diffuse fluid-filled intestinal loops, no intussusception`,
     owner_background: `Role: Laura, first-time dog guardian. Works remotely and is deeply attached to Milo. Financially stretched but willing to use savings if prognosis justifies it.`,
     history_feedback: `Feedback should emphasise vaccination timelines, exposure to unvaccinated dogs, onset/progression of GI signs, and assessment of home hydration attempts.`,
@@ -150,7 +153,7 @@ export const CASE_SEEDS: CaseSeed[] = [
         "Coach producers through hygiene improvements without blame",
       ],
     },
-    physical_exam_findings: `Focused udder exam:\n- Right rear quarter swollen, warm, mildly painful\n- Milk stripping: watery with flakes and streaks of blood\n- Supramammary lymph node enlarged\nSystemic exam:\n- Temp: 39.1°C, HR: 88 bpm, rumen motility WNL`,
+    physical_exam_findings: `Focused udder exam:\n- Right rear quarter swollen, warm, mildly painful\n- Milk stripping: watery with flakes and streaks of blood\n- Supramammary lymph node enlarged\nSystemic exam:\n- Temp: 102.4°F, HR: 88 bpm, rumen motility WNL`,
     diagnostic_findings: `Available data:\n- Cow-side CMT: strong positive (+++) in RR quarter\n- Bulk-tank SCC trend: rising from 180k to 420k over 4 weeks\n- Milk culture: Staphylococcus aureus (beta-lactamase positive)\n- PCR panel: confirms Staph aureus, negative for Mycoplasma\n- Sensitivity: susceptible to ceftiofur, pirlimycin; resistant to penicillin`,
     owner_background: `Role: Daniel, herd manager for a family-owned dairy. Pragmatic, focuses on throughput, and worries about withholding milk. Balances animal welfare with tight margins.`,
     history_feedback: `Encourage systematic questioning about milking routines, post-dip contact time, liner maintenance, and culling strategy. Note any missed opportunities to explore staff training or cow comfort.`,

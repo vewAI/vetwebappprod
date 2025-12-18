@@ -5,6 +5,8 @@ import { useProfessor } from '../hooks/useProfessor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
+import { CreateStudentDialog } from './CreateStudentDialog';
+import { ProfessorAnalytics } from './ProfessorAnalytics';
 
 export function ProfessorDashboard() {
   const { cases, students, loading, isProfessor, error } = useProfessor();
@@ -31,6 +33,7 @@ export function ProfessorDashboard() {
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">Professor Dashboard</h1>
         <div className="space-x-2">
+            <CreateStudentDialog />
             <Button asChild variant="outline">
                 <Link href="/case-entry">Create New Case</Link>
             </Button>
@@ -39,6 +42,8 @@ export function ProfessorDashboard() {
             </Button>
         </div>
       </div>
+
+      <ProfessorAnalytics />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card>
@@ -114,6 +119,9 @@ export function ProfessorDashboard() {
                       <h3 className="font-semibold">{item.student?.full_name || 'Unknown Student'}</h3>
                       <p className="text-sm text-gray-500">{item.student?.email}</p>
                     </div>
+                    <Button variant="outline" size="sm" asChild className="ml-auto">
+                        <Link href={`/professor/students/${item.student_id}`}>View Progress</Link>
+                    </Button>
                   </li>
                 ))}
               </ul>

@@ -81,15 +81,16 @@ export function CaseTimeline({ caseId, elapsedSeconds, className, onFastForward 
               <div className="flex items-center gap-2">
                 <span className="font-medium text-sm">{item.label}</span>
                 {!item.isUnlocked && <Lock className="h-3 w-3 text-muted-foreground" />}
-                {!item.isUnlocked && isAdmin && onFastForward && (
+                {!item.isUnlocked && onFastForward && (
                   <Button 
                     variant="ghost" 
-                    size="icon" 
-                    className="h-5 w-5 ml-auto" 
-                    title="Fast Forward (Admin)"
+                    size="sm" 
+                    className="h-6 px-2 ml-auto text-xs" 
+                    title="Advance to this timepoint"
                     onClick={() => onFastForward((item.available_after_hours || 0) * 3600)}
                   >
-                    <FastForward className="h-3 w-3" />
+                    <FastForward className="h-3 w-3 mr-1" />
+                    Advance
                   </Button>
                 )}
               </div>

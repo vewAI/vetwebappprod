@@ -5,9 +5,23 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { AdminTour } from "@/components/admin/AdminTour";
 import { HelpTip } from "@/components/ui/help-tip";
+import { DebugToggle } from "@/components/admin/DebugToggle";
 
 export default function AdminPage() {
   const router = useRouter();
+  const [debug, setDebug] = React.useState<boolean>(
+    typeof window !== "undefined"
+      ? window.localStorage.getItem("debugOverlay") === "true"
+      : false
+  );
+
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("debugOverlay", debug ? "true" : "false");
+      // Optionally, dispatch a custom event for listeners
+      window.dispatchEvent(new CustomEvent("debugOverlayToggle", { detail: debug }));
+    }
+  }, [debug]);
 
   const tourSteps = [
     { element: '#admin-title', popover: { title: 'Admin Dashboard', description: 'Welcome to the central hub for managing the application.' } },
@@ -26,7 +40,8 @@ export default function AdminPage() {
         </div>
         <AdminTour steps={tourSteps} tourId="admin-dashboard" />
       </div>
-      
+      <DebugToggle enabled={debug} onToggle={setDebug} />
+
       <div className="grid gap-4">
         <div className="flex items-center gap-2">
           <Button id="btn-new-case" className="w-full justify-start" onClick={() => router.push("/case-entry")}>
