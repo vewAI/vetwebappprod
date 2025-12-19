@@ -21,6 +21,36 @@ export function CaseTimeline({ caseId, elapsedSeconds, className, onFastForward 
   const [loading, setLoading] = useState(false);
   const isAdmin = session?.user?.user_metadata?.role === "admin" || session?.user?.user_metadata?.role === "professor";
 
+  // Contextual help for Time Progression
+  const timeProgressionHelp = (
+    <div className="mb-4 p-4 rounded-lg bg-slate-800/80 text-slate-100 text-sm shadow">
+      <strong>Time Progression Feature Explanation</strong>
+      <ul className="list-disc ml-6 mt-2">
+        <li>Each case is divided into timepoints (stages or checkpoints).</li>
+        <li>As the user progresses, the app updates the context to reflect the new timepoint (e.g., new symptoms, lab results, or events).</li>
+        <li>The AI and UI update to show only relevant information for the current timepoint.</li>
+        <li>Advancing time triggers new prompts, system messages, and sometimes new actions or decisions.</li>
+        <li>This allows simulation of real clinical progression, decision-making, and evolving patient status.</li>
+      </ul>
+      <div className="mt-2">
+        <strong>How Fake Time Works in Conversation Flow</strong>
+        <ul className="list-disc ml-6 mt-2">
+          <li>"Fake time" means the simulation advances through key clinical moments, not real clock time.</li>
+          <li>Each timepoint represents a new stage in the case, such as exam, diagnosis, or treatment.</li>
+          <li>When you advance time, the conversation and available actions update to match the new stage.</li>
+        </ul>
+      </div>
+      <div className="mt-2">
+        <strong>Student Experience</strong>
+        <ul className="list-disc ml-6 mt-2">
+          <li>Students interact with the case as if it unfolds in real time, making decisions at each stage.</li>
+          <li>They receive feedback, new information, and prompts as the case progresses.</li>
+          <li>This approach helps students practice clinical reasoning and adapt to evolving scenarios.</li>
+        </ul>
+      </div>
+    </div>
+  );
+
   useEffect(() => {
     if (caseId) {
       fetchTimepoints();
@@ -56,11 +86,12 @@ export function CaseTimeline({ caseId, elapsedSeconds, className, onFastForward 
     ...timepoints.map(tp => {
       const requiredSeconds = (tp.available_after_hours || 0) * 3600;
       const isUnlocked = elapsedSeconds >= requiredSeconds;
-      return {
-        ...tp,
-        isUnlocked,
-      };
-    })
+      return (
+        <div className={cn("w-full", className)}>
+          {timeProgressionHelp}
+          {/* ...existing code... */}
+        </div>
+      );
   ];
 
   return (

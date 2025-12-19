@@ -5,6 +5,7 @@ import { AuthProvider } from "@/features/auth/services/authService";
 import { ProtectedRoute } from "@/features/auth/components/protected-route";
 import { Navbar } from "@/features/navigation/components/navbar";
 import { SpeechDeviceProvider } from "@/features/speech/context/audio-device-context";
+import MobileSpeechControls from "@/features/speech/components/mobile-speech-controls";
 import { AdminDebugOverlay } from "@/features/admin/components/AdminDebugOverlay";
 
 const geistSans = GeistSans;
@@ -33,11 +34,13 @@ export default function RootLayout({
               <ProtectedRoute>
                 <Navbar />
                 <main>{children}</main>
+                <MobileSpeechControls />
               </ProtectedRoute>
             ) : (
               <>
                 <Navbar />
                 <main>{children}</main>
+                <MobileSpeechControls />
               </>
             )}
           </SpeechDeviceProvider>

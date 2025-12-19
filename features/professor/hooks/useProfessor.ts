@@ -45,6 +45,26 @@ export function useProfessor() {
     }
   }, [isProfessor, fetchCases, fetchStudents]);
 
+  // Listen for external assignment changes (admin actions) and refresh students
+  useEffect(() => {
+    const handler = (e: Event) => {
+      try {
+        const detail = (e as CustomEvent)?.detail || {};
+        // If this event indicates a relevant change, refresh the student list
+        if (!detail) return;
+        // If professorId matches current user id or students array changed, refresh
+        if (detail.professorId === user?.id || Array.isArray(detail.studentIds)) {
+          fetchStudents();
+        }
+      } catch (err) {
+        console.warn('professor assign event handler failed', err);
+      }
+    };
+
+    window.addEventListener('professor-assign-changed', handler as EventListener);
+    return () => window.removeEventListener('professor-assign-changed', handler as EventListener);
+  }, [user?.id, fetchStudents]);
+
   return {
     cases,
     students,

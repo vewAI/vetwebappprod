@@ -42,6 +42,11 @@ export default function UserManagementPage() {
   // User Form State
   const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
+  // Assignment UI state
+  const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
+  const [assigningStudent, setAssigningStudent] = useState<UserProfile | null>(null);
+  const [assignedProfessorIds, setAssignedProfessorIds] = useState<Record<string, boolean>>({});
+  const [assignSubmitting, setAssignSubmitting] = useState(false);
   const [userForm, setUserForm] = useState({
     email: "",
     password: "",
@@ -50,6 +55,12 @@ export default function UserManagementPage() {
     institution_id: "",
   });
   const [userSubmitting, setUserSubmitting] = useState(false);
+  // Selection for bulk operations
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Record<string, boolean>>({});
+  const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
+  const [bulkProfessorId, setBulkProfessorId] = useState<string | null>(null);
+  // Simple toast/notification state
+  const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 
   // Institution Form State
   const [isInstDialogOpen, setIsInstDialogOpen] = useState(false);
@@ -80,6 +91,12 @@ export default function UserManagementPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Simple toast helper
+  const showToast = (type: 'success' | 'error' | 'info', message: string, ttl = 4000) => {
+    setToast({ type, message });
+    window.setTimeout(() => setToast(null), ttl);
   };
 
   const handleUserSubmit = async (e: React.FormEvent) => {
@@ -171,6 +188,91 @@ export default function UserManagementPage() {
       institution_id: user.institution_id || "",
     });
     setIsUserDialogOpen(true);
+  };
+
+  const openAssignDialog = async (student: UserProfile) => {
+    setAssigningStudent(student);
+    setIsAssignDialogOpen(true);
+    // Fetch assignments for this student
+    try {
+      const token = await getAccessToken();
+      const headers = { Authorization: `Bearer ${token}` };
+      const resp = await axios.get<{ assignments: any[] }>(`/api/admin/professor-students?studentId=${student.user_id}`, { headers });
+      const assigned = resp.data.assignments || [];
+      const map: Record<string, boolean> = {};
+      assigned.forEach((a) => {
+        if (a?.professor_id) map[a.professor_id] = true;
+      });
+      setAssignedProfessorIds(map);
+    } catch (e) {
+      console.warn("Failed to fetch assignments", e);
+      setAssignedProfessorIds({});
+    }
+  };
+
+  const toggleAssignment = async (professorId: string, currentlyAssigned: boolean) => {
+    if (!assigningStudent) return;
+    setAssignSubmitting(true);
+    try {
+      const token = await getAccessToken();
+      const headers = { Authorization: `Bearer ${token}` };
+      // Optimistically update UI
+      setAssignedProfessorIds((s) => ({ ...s, [professorId]: !currentlyAssigned }));
+      if (currentlyAssigned) {
+        // DELETE
+        try {
+          await axios.delete(`/api/admin/professor-students?professorId=${professorId}&studentId=${assigningStudent.user_id}`, { headers });
+          try { window.dispatchEvent(new CustomEvent('professor-assign-changed', { detail: { action: 'unassign', professorId, studentIds: [assigningStudent.user_id] } })); } catch(_) {}
+        } catch (err) {
+          // revert
+          setAssignedProfessorIds((s) => ({ ...s, [professorId]: true }));
+          throw err;
+        }
+      } else {
+        // POST
+        try {
+          await axios.post(`/api/admin/professor-students`, { professorId, studentId: assigningStudent.user_id }, { headers });
+          try { window.dispatchEvent(new CustomEvent('professor-assign-changed', { detail: { action: 'assign', professorId, studentIds: [assigningStudent.user_id] } })); } catch(_) {}
+        } catch (err) {
+          // revert
+          setAssignedProfessorIds((s) => ({ ...s, [professorId]: false }));
+          throw err;
+        }
+      }
+      showToast('success', currentlyAssigned ? 'Unassigned student' : 'Assigned student');
+    } catch (err: unknown) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const error = err as any;
+      alert(error.response?.data?.error || error.message);
+    } finally {
+      setAssignSubmitting(false);
+    }
+  };
+
+  // Bulk assign selected students to a chosen professor
+  const bulkAssignSelected = async () => {
+    if (!bulkProfessorId) return;
+    const studentIds = Object.keys(selectedStudentIds).filter((id) => selectedStudentIds[id]);
+    if (studentIds.length === 0) return showToast('info', 'No students selected');
+    setAssignSubmitting(true);
+    try {
+      const token = await getAccessToken();
+      const headers = { Authorization: `Bearer ${token}` };
+      // Post assignments in parallel
+      await Promise.all(studentIds.map((sid) => axios.post('/api/admin/professor-students', { professorId: bulkProfessorId, studentId: sid }, { headers }).catch((e) => ({ error: e }))));
+      showToast('success', `Assigned ${studentIds.length} student(s)`);
+      // notify professor(s)
+      try { window.dispatchEvent(new CustomEvent('professor-assign-changed', { detail: { action: 'bulk-assign', professorId: bulkProfessorId, studentIds } })); } catch(_) {}
+      // clear selection and close dialog
+      setSelectedStudentIds({});
+      setIsBulkDialogOpen(false);
+    } catch (err: unknown) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const error = err as any;
+      showToast('error', error?.response?.data?.error || error?.message || 'Bulk assign failed');
+    } finally {
+      setAssignSubmitting(false);
+    }
   };
 
   const tourSteps = [
@@ -286,12 +388,87 @@ export default function UserManagementPage() {
                 </form>
               </DialogContent>
             </Dialog>
+            <div className="ml-2 inline-block">
+              <Button variant="outline" onClick={() => setIsBulkDialogOpen(true)} disabled={Object.values(selectedStudentIds).filter(Boolean).length === 0}>Bulk Assign</Button>
+            </div>
+
+            {/* Bulk assign dialog */}
+            <Dialog open={isBulkDialogOpen} onOpenChange={(open) => setIsBulkDialogOpen(open)}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Bulk Assign Students</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="text-sm">Assign {Object.values(selectedStudentIds).filter(Boolean).length} selected student(s) to a professor.</div>
+                  <div>
+                    <Label>Professor</Label>
+                    <select className="w-full p-2 border rounded" value={bulkProfessorId ?? ''} onChange={e => setBulkProfessorId(e.target.value || null)}>
+                      <option value="">-- Select Professor --</option>
+                      {users.filter(u => u.role === 'professor').map(p => (
+                        <option key={p.user_id} value={p.user_id}>{p.email}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => setIsBulkDialogOpen(false)}>Cancel</Button>
+                    <Button onClick={bulkAssignSelected} disabled={assignSubmitting || !bulkProfessorId}>{assignSubmitting ? 'Assigning...' : 'Assign'}</Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
           </CardHeader>
           <CardContent>
+            {/* Toast area */}
+            {toast && (
+              <div className={`fixed top-6 right-6 z-50 rounded-md px-4 py-2 shadow-md ${toast.type === 'success' ? 'bg-green-600 text-white' : toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'}`}>
+                {toast.message}
+              </div>
+            )}
+            {/* Assign dialog for admin to assign students to professors */}
+            <Dialog open={isAssignDialogOpen} onOpenChange={(open) => {
+              setIsAssignDialogOpen(open);
+              if (!open) {
+                setAssigningStudent(null);
+                setAssignedProfessorIds({});
+              }
+            }}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Assign Student to Professors</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="text-sm text-muted-foreground">Select one or more professors to assign to the student.</div>
+                  <div className="grid gap-2 max-h-64 overflow-auto">
+                    {users.filter(u => u.role === 'professor').map(prof => (
+                      <div key={prof.user_id} className="flex items-center justify-between border rounded p-2">
+                        <div>{prof.email}</div>
+                        <div>
+                          <Button size="sm" onClick={() => toggleAssignment(prof.user_id, Boolean(assignedProfessorIds[prof.user_id]))} disabled={assignSubmitting}>
+                            {assignedProfessorIds[prof.user_id] ? "Unassign" : "Assign"}
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                    {users.filter(u => u.role === 'professor').length === 0 && (
+                      <div className="p-4 text-sm text-muted-foreground">No professors available.</div>
+                    )}
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
             <div className="rounded-md border">
               <table className="w-full text-sm text-left">
                 <thead className="bg-muted/50 text-muted-foreground">
                   <tr>
+                    <th className="p-3">
+                      <input type="checkbox" aria-label="Select all students" onChange={(e) => {
+                        const checked = e.target.checked;
+                        const next: Record<string, boolean> = {};
+                        users.filter(u => u.role === 'student').forEach(s => { next[s.user_id] = checked; });
+                        setSelectedStudentIds(next);
+                      }} />
+                    </th>
                     <th className="p-3 font-medium">Email</th>
                     <th className="p-3 font-medium">Role</th>
                     <th className="p-3 font-medium">Institution</th>
@@ -302,6 +479,11 @@ export default function UserManagementPage() {
                 <tbody>
                   {users.map(user => (
                     <tr key={user.id} className="border-t hover:bg-muted/50">
+                      <td className="p-3">
+                        {user.role === 'student' ? (
+                          <input type="checkbox" checked={!!selectedStudentIds[user.user_id]} onChange={(e) => setSelectedStudentIds(s => ({ ...s, [user.user_id]: e.target.checked }))} />
+                        ) : null}
+                      </td>
                       <td className="p-3">{user.email}</td>
                       <td className="p-3">
                         <Badge variant={user.role === "admin" ? "destructive" : user.role === "professor" ? "default" : "secondary"}>
@@ -311,10 +493,15 @@ export default function UserManagementPage() {
                       <td className="p-3">{user.institutions?.name || "-"}</td>
                       <td className="p-3">{new Date(user.created_at).toLocaleDateString()}</td>
                       <td className="p-3 text-right space-x-2">
-                        <Button variant="ghost" size="sm" onClick={() => openEditUser(user)}>Edit</Button>
-                        {userRole === "admin" && (
-                          <Button variant="destructive" size="sm" onClick={() => handleDeleteUser(user.user_id)}>Delete</Button>
-                        )}
+                        <div className="flex items-center justify-end space-x-2">
+                          <Button variant="ghost" size="sm" onClick={() => openEditUser(user)}>Edit</Button>
+                          {user.role === "student" && userRole === "admin" && (
+                            <Button variant="secondary" size="sm" onClick={() => openAssignDialog(user)}>Assign</Button>
+                          )}
+                          {userRole === "admin" && (
+                            <Button variant="destructive" size="sm" onClick={() => handleDeleteUser(user.user_id)}>Delete</Button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -358,6 +545,7 @@ export default function UserManagementPage() {
                   </form>
                 </DialogContent>
               </Dialog>
+              
             )}
           </CardHeader>
           <CardContent>

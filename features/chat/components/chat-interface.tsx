@@ -208,6 +208,21 @@ export function ChatInterface({
     | { title: string; body: string }
     | null
   >(null);
+  // Control visibility to allow animate-out before removing the toast
+  const [toastVisible, setToastVisible] = useState(false);
+
+  useEffect(() => {
+    if (timepointToast) {
+      // show immediately when toast is set
+      setToastVisible(true);
+    }
+  }, [timepointToast]);
+
+  const hideTimepointToastWithFade = (duration = 300) => {
+    setToastVisible(false);
+    // remove the toast after animation completes
+    setTimeout(() => setTimepointToast(null), duration);
+  };
 
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const { timepoints } = useCaseTimepoints(caseId);
@@ -1864,6 +1879,8 @@ export function ChatInterface({
       if (voiceModeRef.current && !isListening) {
         start();
       }
+      // fade out the "Attempt Paused" toast when resuming
+      if (timepointToast) hideTimepointToastWithFade(300);
     } else {
       setIsPaused(true);
       if (isListening) {
@@ -2795,11 +2812,15 @@ export function ChatInterface({
       {/* Timepoint Toast */}
       {timepointToast && (
         <div className="fixed top-24 left-0 right-0 flex justify-center pointer-events-none z-50">
-          <div className="bg-primary text-primary-foreground px-6 py-4 rounded-lg shadow-lg max-w-md text-center pointer-events-auto animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className={`bg-primary text-primary-foreground px-6 py-4 rounded-lg shadow-lg max-w-md text-center pointer-events-auto ${
+            toastVisible
+              ? 'animate-in fade-in slide-in-from-top-4 duration-300'
+              : 'animate-out fade-out slide-out-to-top-4 duration-300'
+          }`}>
             <div className="font-bold text-lg mb-1">{timepointToast.title}</div>
             <div className="text-sm">{timepointToast.body}</div>
             <button 
-              onClick={() => setTimepointToast(null)}
+              onClick={() => hideTimepointToastWithFade()}
               className="absolute top-1 right-2 text-primary-foreground/80 hover:text-primary-foreground"
             >
               ×

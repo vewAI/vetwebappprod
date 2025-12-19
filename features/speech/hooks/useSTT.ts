@@ -18,6 +18,9 @@ export function useSTT(
   const [interimTranscript, setInterimTranscript] = useState("");
   const startInFlightRef = useRef(false);
 
+  // Device detection for mobile optimizations
+  const isMobile = typeof window !== "undefined" && /Mobi|Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(window.navigator.userAgent);
+
   // Buffer for final chunks and debounce timer to merge nearby final events
   const pendingFinalRef = useRef<string>("");
   const timerRef = useRef<number | null>(null);
@@ -30,6 +33,21 @@ export function useSTT(
   useEffect(() => {
     onFinalRef.current = onFinal;
   }, [onFinal]);
+
+  // Mobile-specific: auto-restart STT if interrupted
+  useEffect(() => {
+    if (!isMobile || !isListening) return;
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible" && !isListening) {
+        // Try to restart listening if interrupted
+        start();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [isMobile, isListening]);
 
   // Helper to schedule onFinal after debounceMs of silence
   const scheduleOnFinal = (chunk: string) => {

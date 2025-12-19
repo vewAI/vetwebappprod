@@ -34,23 +34,16 @@ const CORRECTIONS: Record<string, string> = {
 
 function postProcessTranscript(text: string): string {
   let processed = text;
-  
-  // Context-aware replacements for "other" -> "udder"
-  // If the text contains bovine-related terms, be more aggressive
-  const isBovineContext = /cow|bovine|calf|milk|teat|mastitis|quarter/i.test(text);
-  
-  if (isBovineContext) {
-    processed = processed.replace(/\bother\b/gi, "udder");
-  } else {
-    // Specific phrases where "other" is likely "udder"
-    processed = processed.replace(/\b(the|my|her|cow's|left|right|front|rear)\s+other\b/gi, "$1 udder");
-    processed = processed.replace(/\bother\s+(swelling|edema|pain|heat)\b/gi, "udder $1");
-  }
+
+  // Always prefer vet homophones: replace 'other' with 'udder' in all contexts
+  processed = processed.replace(/\bother\b/gi, "udder");
+  processed = processed.replace(/\b(the|my|her|cow's|left|right|front|rear)\s+other\b/gi, "$1 udder");
+  processed = processed.replace(/\bother\s+(swelling|edema|pain|heat)\b/gi, "udder $1");
 
   // General corrections
   for (const [wrong, right] of Object.entries(CORRECTIONS)) {
     if (wrong.trim() === "other") continue; // Handled above
-    const pattern = new RegExp(`\\b${wrong}\\b`, "gi");
+    const pattern = new RegExp(`\b${wrong}\b`, "gi");
     processed = processed.replace(pattern, right);
   }
 

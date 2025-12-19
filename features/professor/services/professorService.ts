@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
 import { ProfessorCase, ProfessorStudent } from "../models/types";
 
 export const professorService = {
@@ -70,13 +71,16 @@ export const professorService = {
 
   async createStudent(professorId: string, studentData: { email: string; password: string; fullName: string; institutionId?: string }) {
     // 1. Create the user via Admin API
+    const token = await getAccessToken();
+    const headers = await buildAuthHeaders({ 'Content-Type': 'application/json' }, token);
+
     const response = await fetch('/api/admin/users', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         ...studentData,
-        role: 'student'
-      })
+        role: 'student',
+      }),
     });
 
     if (!response.ok) {
@@ -102,6 +106,67 @@ export const professorService = {
     }
 
     return user;
+  },
+
+  // Feedback APIs
+  async getFeedbackForStudent(studentId: string) {
+    const { data, error } = await supabase
+      .from('professor_feedback')
+      .select('*')
+      .eq('student_id', studentId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  },
+
+  async postFeedback(professorId: string, studentId: string, message: string, meta?: Record<string, unknown>) {
+    const payload: any = {
+      professor_id: professorId,
+      student_id: studentId,
+      message,
+      metadata: meta || null,
+      created_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase.from('professor_feedback').insert(payload).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  // Case assignment to student
+  async assignCaseToStudent(professorId: string, studentId: string, caseId: string) {
+    const { data, error } = await supabase
+      .from('professor_assigned_cases')
+      .insert({ professor_id: professorId, student_id: studentId, case_id: caseId, assigned_at: new Date().toISOString() })
+      .select()
+      .single();
+
+    // Supabase may return an empty error object in some environments; validate
+    // the response and throw a clear error when no row is returned.
+    if (error && Object.keys(error).length > 0) {
+      throw error;
+    }
+
+    if (!data) {
+      throw new Error('Assignment failed: no row returned from database');
+    }
+
+    return data;
+  },
+
+  async getAssignedCasesForStudent(studentId: string) {
+    const { data, error } = await supabase
+      .from('professor_assigned_cases')
+      .select(`*, case:cases (id, title, difficulty, species, image_url)`)
+      .eq('student_id', studentId)
+      .order('assigned_at', { ascending: false });
+
+    // Supabase client may return an empty error object in some failure modes.
+    // Treat any non-informative error as a non-fatal condition and return an
+    // empty array to keep the UI resilient.
+    if (error && Object.keys(error).length > 0) throw error;
+    return data || [];
   },
 
   async getClassStats(professorId: string) {
