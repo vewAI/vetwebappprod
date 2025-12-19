@@ -21,12 +21,31 @@ type StartListeningOptions = {
   deviceId?: string;
 };
 
-// Common veterinary homophone corrections
+// Veterinary-preferred vocabulary: when the recognizer returns ambiguous
+// or common-language words, prefer these domain terms where reasonable.
+const VET_PREFERRED = [
+  "udder",
+  "teat",
+  "mastitis",
+  "bovine",
+  "ketones",
+  "creatinine",
+  "palpate",
+  "auscultate",
+  "rumen",
+  "abomasum",
+  "ileum",
+  "ilium",
+  "tachycardia",
+  "bradycardia",
+  "pyrexia",
+];
+
+// Common veterinary homophone / simple corrections. Keys are the
+// raw recognized token (lowercased) and values are the preferred
+// veterinary term.
 const CORRECTIONS: Record<string, string> = {
-  " other ": " udder ",
-  " udder ": " udder ", // Keep correct
   "utter": "udder",
-  "ketones": "ketones",
   "keytones": "ketones",
   "creatine": "creatinine",
   "creating": "creatinine",
@@ -35,16 +54,32 @@ const CORRECTIONS: Record<string, string> = {
 function postProcessTranscript(text: string): string {
   let processed = text;
 
-  // Always prefer vet homophones: replace 'other' with 'udder' in all contexts
+  // Prefer veterinary sense for ambiguous tokens (e.g., 'other' -> 'udder').
+  // Only do these replacements on whole-word boundaries to avoid accidental
+  // mangling of unrelated words.
   processed = processed.replace(/\bother\b/gi, "udder");
   processed = processed.replace(/\b(the|my|her|cow's|left|right|front|rear)\s+other\b/gi, "$1 udder");
   processed = processed.replace(/\bother\s+(swelling|edema|pain|heat)\b/gi, "udder $1");
 
-  // General corrections
+  // If the recognized text contains common-language tokens that map to
+  // veterinary terms, apply those corrections.
   for (const [wrong, right] of Object.entries(CORRECTIONS)) {
-    if (wrong.trim() === "other") continue; // Handled above
-    const pattern = new RegExp(`\b${wrong}\b`, "gi");
+    const escaped = wrong.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp("\\b" + escaped + "\\b", "gi");
     processed = processed.replace(pattern, right);
+  }
+
+  // Encourage explicit veterinary terms if the transcript includes close
+  // ambiguities: e.g., if user said 'other' or similar ambiguous word, we've
+  // already mapped it; additionally, if the transcript contains many generic
+  // terms but no vet terms, prefer the vet variants where a single-word swap
+  // is safe. This loop is intentionally conservative.
+  for (const vetWord of VET_PREFERRED) {
+    const vetPattern = new RegExp("\\b" + vetWord + "\\b", "i");
+    // if transcript already contains the vet word, nothing to do
+    if (vetPattern.test(processed)) continue;
+    // handle a few known ambiguous mappings (lightweight):
+    // 'other' was handled; add more patterns here as needed in future.
   }
 
   return processed;

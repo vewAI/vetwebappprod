@@ -38,13 +38,23 @@ export default function CaseEntryForm() {
 
   const handleRandomCase = async () => {
     setLoading(true);
+    setSuccess("");
+    setError("");
     try {
       const response = await axios.post("/api/cases/generate-random");
-      setForm((prev) => ({ ...prev, ...(response.data as any) }));
-      setSuccess("Random case generated from Merck Manual data!");
+      const data = response.data as any;
+      if (data && !data.error) {
+        setForm((prev) => ({ ...prev, ...(data as any) }));
+        setSuccess("Random case generated from Merck Manual data!");
+      } else {
+        throw new Error(data?.error || "No data returned");
+      }
     } catch (err) {
-      console.error(err);
-      setError("Failed to generate random case.");
+      console.warn("Remote generation failed, using local fallback", err);
+      // Local fallback to ensure button always produces a usable case
+      const local = generateRandomCase();
+      setForm((prev) => ({ ...prev, ...(local as any) }));
+      setSuccess("Random case generated from local templates (fallback).");
     } finally {
       setLoading(false);
     }
@@ -216,9 +226,17 @@ Remain collaborative, use everyday language, and avoid offering your own medical
     <div className="max-w-2xl mx-auto p-8">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Add New Case</h1>
-        <Button type="button" variant="outline" onClick={handleRandomCase}>
-          Create Random Case
-        </Button>
+        <div className="text-right">
+          <Button type="button" variant="outline" onClick={handleRandomCase} disabled={loading}>
+            {loading ? "Generating..." : "Create Random Case"}
+          </Button>
+          <p className="text-xs text-muted-foreground mt-2 max-w-xs">
+            Generates a realistic, commonly encountered veterinary case using
+            the Merck Veterinary Manual as a source and AI to format the case.
+            If server-side search or AI is unavailable, a local fallback case
+            template will be used instead.
+          </p>
+        </div>
       </div>
       <form onSubmit={handleSubmit} className="space-y-4">
         {orderedCaseFieldKeys.map((key) => {
