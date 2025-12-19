@@ -53,20 +53,30 @@ const CORRECTIONS: Record<string, string> = {
 
 function postProcessTranscript(text: string): string {
   let processed = text;
+  const substitutions: Array<{ from: string; to: string }> = [];
 
   // Prefer veterinary sense for ambiguous tokens (e.g., 'other' -> 'udder').
   // Only do these replacements on whole-word boundaries to avoid accidental
-  // mangling of unrelated words.
+  // mangling of unrelated words. Record substitutions for telemetry.
+  const beforeOther = processed;
   processed = processed.replace(/\bother\b/gi, "udder");
+  if (processed !== beforeOther) substitutions.push({ from: "other", to: "udder" });
+  const beforeOther2 = processed;
   processed = processed.replace(/\b(the|my|her|cow's|left|right|front|rear)\s+other\b/gi, "$1 udder");
+  if (processed !== beforeOther2) substitutions.push({ from: "other (positional)", to: "udder" });
+  const beforeOther3 = processed;
   processed = processed.replace(/\bother\s+(swelling|edema|pain|heat)\b/gi, "udder $1");
+  if (processed !== beforeOther3) substitutions.push({ from: "other <symptom>", to: "udder <symptom>" });
 
   // If the recognized text contains common-language tokens that map to
   // veterinary terms, apply those corrections.
   for (const [wrong, right] of Object.entries(CORRECTIONS)) {
     const escaped = wrong.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const pattern = new RegExp("\\b" + escaped + "\\b", "gi");
-    processed = processed.replace(pattern, right);
+    const before = processed;
+    const after = processed.replace(pattern, right);
+    if (after !== before) substitutions.push({ from: wrong, to: right });
+    processed = after;
   }
 
   // Encourage explicit veterinary terms if the transcript includes close
@@ -76,10 +86,18 @@ function postProcessTranscript(text: string): string {
   // is safe. This loop is intentionally conservative.
   for (const vetWord of VET_PREFERRED) {
     const vetPattern = new RegExp("\\b" + vetWord + "\\b", "i");
-    // if transcript already contains the vet word, nothing to do
     if (vetPattern.test(processed)) continue;
-    // handle a few known ambiguous mappings (lightweight):
-    // 'other' was handled; add more patterns here as needed in future.
+  }
+
+  // Emit lightweight telemetry so we can tune corrections without leaking
+  // user audio/text. This uses the existing debugEventBus.
+  try {
+    if (substitutions.length > 0) {
+      // Emit names only; do not include full transcripts to avoid PII leakage.
+      (debugEventBus as any).emitEvent?.('info', 'STT', 'Applied vet substitutions', { substitutions });
+    }
+  } catch {
+    // ignore telemetry failures
   }
 
   return processed;
