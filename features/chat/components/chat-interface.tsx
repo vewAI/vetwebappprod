@@ -2506,7 +2506,7 @@ export function ChatInterface({
 
   return (
     <div className="relative flex h-full flex-col">
-      <div className="absolute top-2 right-2 z-50">
+      <div className="absolute top-16 right-4 z-50">
         <GuidedTour steps={tourSteps} tourId="chat-interface" autoStart={true} />
       </div>
       {/* Connection notice banner */}

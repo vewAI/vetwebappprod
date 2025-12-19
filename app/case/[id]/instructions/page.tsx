@@ -20,6 +20,10 @@ export default function CaseInstructionsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
   const [attempts, setAttempts] = useState<Attempt[]>([]);
+  const [assignedProfessorId, setAssignedProfessorId] = useState<string | null>(null);
+  const [professorFeedback, setProfessorFeedback] = useState<any[]>([]);
+  const [replyText, setReplyText] = useState("");
+  const [sendingReply, setSendingReply] = useState(false);
 
   const [caseData, setCaseData] = useState<Case | null>(null);
 
@@ -54,6 +58,35 @@ export default function CaseInstructionsPage() {
 
     loadAttempts();
   }, [id, user]);
+
+  // Check whether this student has this case assigned and load professor feedback
+  useEffect(() => {
+    let cancelled = false;
+    async function loadAssignmentAndFeedback() {
+      if (!user) return;
+      try {
+        const { professorService } = await import("@/features/professor/services/professorService");
+        const assigned = await professorService.getAssignedCasesForStudent(user.id);
+        const match = Array.isArray(assigned) ? assigned.find((a: any) => a.case_id === id || a.case?.id === id) : null;
+        const profId = match ? (match.professor_id || match.professorId || null) : null;
+        if (!cancelled) setAssignedProfessorId(profId);
+        if (profId) {
+          const resp = await fetch(`/api/professor-feedback?studentId=${encodeURIComponent(user.id)}`, { headers: { Accept: "application/json" } });
+          if (resp.ok) {
+            const json = await resp.json();
+            if (!cancelled) setProfessorFeedback(Array.isArray(json.feedback) ? json.feedback : []);
+          } else {
+            console.warn("Failed to fetch professor feedback", await resp.text());
+            if (!cancelled) setProfessorFeedback([]);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to load assignment/feedback", err);
+      }
+    }
+    loadAssignmentAndFeedback();
+    return () => { cancelled = true; };
+  }, [user, id]);
 
   const handleStartCase = () => {
     setIsStarting(true);
@@ -226,6 +259,71 @@ export default function CaseInstructionsPage() {
               </p>
             )}
           </div>
+          {/* Professor feedback (visible if this case is assigned to the student) */}
+          {assignedProfessorId && (
+            <div className="mt-6">
+              <h3 className="text-lg font-semibold mb-2">Professor Feedback</h3>
+              {professorFeedback.length === 0 ? (
+                <div className="text-sm text-muted-foreground">No feedback yet from your professor.</div>
+              ) : (
+                <div className="space-y-3">
+                  {professorFeedback.map((f) => (
+                    <div key={f.id} className="p-3 rounded-md border bg-background">
+                      <div className="text-xs text-muted-foreground mb-1">{new Date(f.created_at).toLocaleString()}</div>
+                      <div className="text-sm whitespace-pre-wrap">{f.message}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="mt-4">
+                <label className="text-sm font-medium mb-1 block">Message your professor</label>
+                <textarea
+                  className="w-full rounded-md border px-3 py-2 text-sm"
+                  rows={4}
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  placeholder="Write a message to your professor..."
+                />
+                <div className="mt-2 flex justify-end">
+                  <Button
+                    onClick={async () => {
+                      if (!replyText.trim()) return;
+                      setSendingReply(true);
+                      try {
+                        const studentId = user?.id;
+                        if (!studentId) {
+                          console.warn("Cannot send professor message: no authenticated user.");
+                          setSendingReply(false);
+                          return;
+                        }
+
+                        const resp = await fetch("/api/professor-feedback", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ professorId: assignedProfessorId, studentId, message: replyText }),
+                        });
+                        if (resp.ok) {
+                          setReplyText("");
+                          const json = await resp.json();
+                          setProfessorFeedback((prev) => [json.feedback, ...prev]);
+                        } else {
+                          console.error("Failed to send message to professor", await resp.text());
+                        }
+                      } catch (err) {
+                        console.error("Error sending professor message", err);
+                      } finally {
+                        setSendingReply(false);
+                      }
+                    }}
+                    disabled={sendingReply}
+                  >
+                    {sendingReply ? "Sending..." : "Send"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

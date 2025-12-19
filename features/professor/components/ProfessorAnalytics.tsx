@@ -35,34 +35,39 @@ export function ProfessorAnalytics() {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">Total Attempts</CardTitle>
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 items-start">
+      <Card className="p-2">
+        <CardHeader className="pb-1">
+          <CardTitle className="text-xs font-medium text-muted-foreground">Total Attempts</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold">{stats.totalAttempts}</div>
+        <CardContent className="py-2 px-3">
+          <div className="text-lg font-semibold">{stats.totalAttempts}</div>
         </CardContent>
       </Card>
-      
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">Completion Rate</CardTitle>
+
+      <Card className="p-2">
+        <CardHeader className="pb-1">
+          <CardTitle className="text-xs font-medium text-muted-foreground">Completion Rate</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold">{stats.completionRate.toFixed(1)}%</div>
+        <CardContent className="py-2 px-3">
+          <div className="text-lg font-semibold">{stats.completionRate.toFixed(1)}%</div>
           <p className="text-xs text-muted-foreground">{stats.completedAttempts} completed</p>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">Avg. Time Spent</CardTitle>
+      <Card className="p-2">
+        <CardHeader className="pb-1">
+          <CardTitle className="text-xs font-medium text-muted-foreground">Avg. Time Spent</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold">{Math.round(stats.avgTime / 60)} min</div>
+        <CardContent className="py-2 px-3">
+          <div className="text-lg font-semibold">{Math.round(stats.avgTime / 60)} min</div>
         </CardContent>
       </Card>
+
+      {/* Fillers for compact layout on wide screens */}
+      <div className="hidden md:block" />
+      <div className="hidden md:block" />
+      <div className="hidden md:block" />
     </div>
   );
 }

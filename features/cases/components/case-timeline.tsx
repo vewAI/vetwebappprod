@@ -74,7 +74,7 @@ export function CaseTimeline({ caseId, elapsedSeconds, className, onFastForward 
   if (loading) return null;
   if (timepoints.length === 0) return null;
 
-  // Calculate status for each timepoint
+  // Calculate status for each timepoint; produce data objects used by renderer below
   const timelineItems = [
     {
       id: "start",
@@ -83,15 +83,17 @@ export function CaseTimeline({ caseId, elapsedSeconds, className, onFastForward 
       isUnlocked: true,
       available_after_hours: 0,
     },
-    ...timepoints.map(tp => {
+    ...timepoints.map((tp) => {
       const requiredSeconds = (tp.available_after_hours || 0) * 3600;
       const isUnlocked = elapsedSeconds >= requiredSeconds;
-      return (
-        <div className={cn("w-full", className)}>
-          {timeProgressionHelp}
-          {/* ...existing code... */}
-        </div>
-      );
+      return {
+        id: tp.id,
+        label: tp.label || `Timepoint ${tp.id}`,
+        summary: tp.summary || null,
+        isUnlocked,
+        available_after_hours: tp.available_after_hours || 0,
+      };
+    }),
   ];
 
   return (

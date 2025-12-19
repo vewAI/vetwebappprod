@@ -2,6 +2,7 @@
 
 import { CaseCard } from "@/features/case-selection/components/case-card";
 import { useEffect, useState } from "react";
+import { useAuth } from "@/features/auth/services/authService";
 import { fetchCases, fetchDisciplines } from "@/features/case-selection/services/caseService";
 import type { Case } from "@/features/case-selection/models/case";
 import { GuidedTour } from "@/components/ui/guided-tour";
@@ -12,6 +13,8 @@ export default function CaseSelectionPage() {
   const [loading, setLoading] = useState(true);
   const [disciplines, setDisciplines] = useState<string[]>([]);
   const [selectedDiscipline, setSelectedDiscipline] = useState<string>("all");
+  const { user, role } = useAuth();
+  const [hasAssignedCases, setHasAssignedCases] = useState<boolean>(false);
 
   const tourSteps = [
     { element: '#main-title', popover: { title: 'Welcome', description: 'Welcome to the Veterinary OSCE Simulator. Here you can practice your clinical skills.' } },
@@ -27,21 +30,54 @@ export default function CaseSelectionPage() {
     loadData();
   }, []);
 
+  // If the current user is a student, check whether they have any assigned cases
+  useEffect(() => {
+    let cancelled = false;
+    async function checkAssigned() {
+      if (!user?.id || role !== "student") return;
+      try {
+        const { professorService } = await import("@/features/professor/services/professorService");
+        const assigned = await professorService.getAssignedCasesForStudent(user.id);
+        if (!cancelled) setHasAssignedCases(Array.isArray(assigned) && assigned.length > 0);
+      } catch (err) {
+        console.warn("Failed to check assigned cases", err);
+        if (!cancelled) setHasAssignedCases(false);
+      }
+    }
+    checkAssigned();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, role]);
+
   useEffect(() => {
     async function loadCases() {
       setLoading(true);
-      const result = await fetchCases({
-        category: selectedDiscipline === "all" ? undefined : selectedDiscipline
-      });
-      setCases(result);
-      setLoading(false);
+      try {
+        if (selectedDiscipline === "assigned" && user?.id && role === "student") {
+          const { professorService } = await import("@/features/professor/services/professorService");
+          const assigned = await professorService.getAssignedCasesForStudent(user.id);
+          const mapped = Array.isArray(assigned) ? assigned.map((a: any) => a.case).filter(Boolean) : [];
+          setCases(mapped as unknown as Case[]);
+        } else {
+          const result = await fetchCases({
+            category: selectedDiscipline === "all" ? undefined : selectedDiscipline,
+          });
+          setCases(result);
+        }
+      } catch (err) {
+        console.warn("Failed to load cases for selected filter", err);
+        setCases([]);
+      } finally {
+        setLoading(false);
+      }
     }
     loadCases();
-  }, [selectedDiscipline]);
+  }, [selectedDiscipline, user, role]);
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="absolute top-4 right-4">
+      <div className="absolute top-16 right-4 z-50">
         <GuidedTour steps={tourSteps} tourId="main-page" autoStart={true} />
       </div>
       <header className="mb-8 text-center">
@@ -63,6 +99,9 @@ export default function CaseSelectionPage() {
               onChange={(e) => setSelectedDiscipline(e.target.value)}
             >
               <option value="all">Show All Cases</option>
+              {hasAssignedCases && (
+                <option value="assigned">My Assignments</option>
+              )}
               {disciplines.map((d) => (
                 <option key={d} value={d}>
                   {d}

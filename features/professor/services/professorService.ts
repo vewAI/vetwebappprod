@@ -136,6 +136,7 @@ export const professorService = {
 
   // Case assignment to student
   async assignCaseToStudent(professorId: string, studentId: string, caseId: string) {
+    // Accept any caseId string — DB column type should control allowed values.
     const { data, error } = await supabase
       .from('professor_assigned_cases')
       .insert({ professor_id: professorId, student_id: studentId, case_id: caseId, assigned_at: new Date().toISOString() })

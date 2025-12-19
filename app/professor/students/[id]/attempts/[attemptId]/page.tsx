@@ -23,12 +23,25 @@ export default function ReviewAttemptPage() {
 
   useEffect(() => {
     async function load() {
-      const { attempt, messages, feedback } = await getAttemptById(attemptId);
-      if (attempt) {
-        setAttempt(attempt);
-        setMessages(messages);
-        setFeedback(feedback);
-        setProfFeedback(attempt.professorFeedback || '');
+      try {
+        const resp = await fetch(`/api/admin/attempts?attemptId=${encodeURIComponent(attemptId)}`, {
+          headers: { Accept: "application/json" },
+        });
+        if (!resp.ok) {
+          console.error("Failed to load attempt via admin API", await resp.text());
+          setLoading(false);
+          return;
+        }
+        const json = await resp.json();
+        const { attempt, messages: msgs, feedback: fb } = json;
+        if (attempt) {
+          setAttempt(attempt);
+          setMessages(Array.isArray(msgs) ? msgs : []);
+          setFeedback(Array.isArray(fb) ? fb : []);
+          setProfFeedback(attempt.professor_feedback || attempt.professorFeedback || '');
+        }
+      } catch (err) {
+        console.error("Error loading attempt via admin API", err);
       }
       setLoading(false);
     }

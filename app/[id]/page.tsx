@@ -236,7 +236,7 @@ export default function CaseChatPage() {
 
   return (
     <div className="flex h-[calc(100vh-1rem)] overflow-hidden rounded-lg border shadow-sm relative">
-      <div className="absolute top-2 right-2 z-50">
+      <div className="absolute top-16 right-4 z-50">
         <GuidedTour steps={tourSteps} tourId="chat-interface" />
       </div>
       {isMobile && (

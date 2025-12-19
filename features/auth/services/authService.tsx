@@ -150,7 +150,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           "Unexpected error fetching profile via /api/profile:",
           err
         );
-        setRole(null);
+        // If the profile endpoint is temporarily unreachable (network error),
+        // fall back to any role present in the session JWT metadata so that
+        // users (e.g. professors) don't lose access unnecessarily.
+        const fallbackRole =
+          session?.user?.app_metadata?.role ??
+          session?.user?.user_metadata?.role ??
+          null;
+        setRole(fallbackRole ?? null);
         setForcePasswordChange(false);
         setProfileLoading(false);
       }

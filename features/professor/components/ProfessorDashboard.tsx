@@ -45,32 +45,36 @@ export function ProfessorDashboard() {
 
       <ProfessorAnalytics />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Assigned Cases</CardTitle>
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4 items-start">
+        <Card className="p-2">
+          <CardHeader className="pb-1">
+            <CardTitle className="text-xs font-medium text-muted-foreground">Total Assigned Cases</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{cases.length}</div>
+          <CardContent className="py-2 px-3">
+            <div className="text-lg font-semibold">{cases.length}</div>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Students</CardTitle>
+        <Card className="p-2">
+          <CardHeader className="pb-1">
+            <CardTitle className="text-xs font-medium text-muted-foreground">Total Students</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{students.length}</div>
+          <CardContent className="py-2 px-3">
+            <div className="text-lg font-semibold">{students.length}</div>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Pending Reviews</CardTitle>
+        <Card className="p-2">
+          <CardHeader className="pb-1">
+            <CardTitle className="text-xs font-medium text-muted-foreground">Pending Reviews</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">0</div>
+          <CardContent className="py-2 px-3">
+            <div className="text-lg font-semibold">0</div>
             <p className="text-xs text-muted-foreground">Coming soon</p>
           </CardContent>
         </Card>
+        {/* blank placeholders to keep layout compact on wide screens */}
+        <div className="hidden md:block" />
+        <div className="hidden md:block" />
+        <div className="hidden md:block" />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
