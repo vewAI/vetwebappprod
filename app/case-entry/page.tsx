@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import axios from "axios";
+import { getAccessToken, buildAuthHeaders } from "@/lib/auth-headers";
 import ImageUploader from "@/components/ui/image-uploader";
 import {
   caseFieldMeta,
@@ -45,7 +46,9 @@ export default function CaseEntryForm() {
     setSuccess("");
     setError("");
     try {
-      const response = await axios.post("/api/cases/generate-random");
+      const token = await getAccessToken();
+      const headers = await buildAuthHeaders({ "Content-Type": "application/json" }, token);
+      const response = await axios.post("/api/cases/generate-random", {}, { headers });
       const data = response.data as any;
       if (data && !data.error) {
         setForm((prev) => ({ ...prev, ...(data as any) }));
