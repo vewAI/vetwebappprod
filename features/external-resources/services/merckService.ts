@@ -36,7 +36,19 @@ export async function searchMerckManual(query: string): Promise<string> {
     const data = response.data as any;
     const items = data.items || [];
     debugEventBus.emitEvent('success', 'MerckService', `Found ${items.length} results in ${Date.now() - startTime}ms`);
-    
+
+    // Emit a lightweight consult event for admin debugging: include query, results count and top result link (if any).
+    try {
+      debugEventBus.emitEvent('info', 'MerckService', 'Merck consult performed', {
+        query,
+        resultsCount: items.length,
+        topLink: items[0]?.link ?? null,
+        durationMs: Date.now() - startTime,
+      });
+    } catch (e) {
+      // ignore telemetry failures
+    }
+
     if (items.length === 0) return "No results found in Merck Veterinary Manual.";
 
     // Format results

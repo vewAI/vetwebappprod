@@ -12,6 +12,9 @@ let micStream: MediaStream | null = null;
 let shouldRestart = false;
 // Small guard to avoid re-entrant start calls
 let starting = false;
+// Restart protection: avoid infinite start/stop loops by limiting attempts
+let restartAttempts = 0;
+const MAX_RESTARTS = 6; // after this many rapid restarts, stop and surface a warning
 
 /**
  * Start speech recognition
@@ -161,10 +164,23 @@ export async function startListening(
 
     recognition.onstart = () => {
       debugEventBus.emitEvent('success', 'STT', 'Speech recognition started');
+      // reset restart attempts on successful start
+      restartAttempts = 0;
     };
 
     recognition.onerror = (event: any) => {
-      debugEventBus.emitEvent('error', 'STT', `Speech recognition error: ${event.error}`, { error: event.error });
+      debugEventBus.emitEvent('error', 'STT', `Speech recognition error: ${event?.error}`, { error: event?.error });
+      // For some errors we should not attempt to automatically restart
+      const fatalErrors = ["not-allowed", "service-not-allowed", "security", "microphone-disabled"];
+      try {
+        const errCode = String(event?.error || "").toLowerCase();
+        if (fatalErrors.some((e) => errCode.includes(e))) {
+          shouldRestart = false;
+          debugEventBus.emitEvent('warning', 'STT', `Speech recognition fatal error, will not auto-restart: ${errCode}`);
+        }
+      } catch {
+        // ignore
+      }
     };
 
     // Handle results: aggregate interim and final transcripts
@@ -201,14 +217,27 @@ export async function startListening(
       try {
         if (!shouldRestart) return;
         if (starting) return;
-        try {
-          starting = true;
-          recognition.start();
-        } catch (e) {
-          // ignore restart errors
-        } finally {
-          starting = false;
+
+        // Protect against tight restart loops: allow a bounded number of restarts
+        if (restartAttempts >= MAX_RESTARTS) {
+          shouldRestart = false;
+          debugEventBus.emitEvent('warning', 'STT', `Max restart attempts reached (${MAX_RESTARTS}). Auto-restart disabled.`);
+          return;
         }
+
+        // Exponential backoff before restarting
+        const delay = Math.min(1000 * Math.pow(2, restartAttempts), 10000);
+        restartAttempts += 1;
+        setTimeout(() => {
+          try {
+            starting = true;
+            recognition.start();
+          } catch (e) {
+            debugEventBus.emitEvent('error', 'STT', 'Failed to restart speech recognition', { error: String(e) });
+          } finally {
+            starting = false;
+          }
+        }, delay);
       } catch (e) {
         // ignore
       }

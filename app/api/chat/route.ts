@@ -21,6 +21,7 @@ import {
   type CaseMediaItem,
 } from "@/features/cases/models/caseMedia";
 import { searchMerckManual } from "@/features/external-resources/services/merckService";
+import { debugEventBus } from "@/lib/debug-events";
 
 const openai = new OpenAi({
   apiKey: process.env.OPENAI_API_KEY,
@@ -696,8 +697,25 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
       for (const toolCall of message.tool_calls as any[]) {
         if (toolCall.function.name === "search_merck_manual") {
           const args = JSON.parse(toolCall.function.arguments);
+          // Emit an event so admins can see when the assistant requests a Merck Manual lookup during a conversation
+          try {
+            debugEventBus.emitEvent('info', 'MerckConsult', 'Assistant requested Merck Manual lookup', {
+              query: args.query,
+              toolCallId: toolCall.id,
+            });
+          } catch {}
+
           const searchResult = await searchMerckManual(args.query);
-          
+
+          // Also emit that the tool returned (merckService emits a consult event with details too)
+          try {
+            debugEventBus.emitEvent('info', 'MerckConsult', 'Merck lookup returned for assistant', {
+              query: args.query,
+              toolCallId: toolCall.id,
+              preview: typeof searchResult === 'string' ? searchResult.slice(0, 200) : null,
+            });
+          } catch {}
+
           enhancedMessages.push({
             tool_call_id: toolCall.id,
             role: "tool",
