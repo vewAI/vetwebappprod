@@ -38,8 +38,10 @@ export function AdminDebugOverlay() {
       setIsVisible(Boolean(e.detail));
     };
     window.addEventListener("debugOverlayToggle", handleDebugToggle as EventListener);
-    // On mount, sync with localStorage
-    setIsVisible(window.localStorage.getItem("debugOverlay") === "true");
+    // On mount, sync with localStorage. If no explicit preference is stored,
+    // default to visible for admins so failure alerts are visible by default.
+    const stored = window.localStorage.getItem("debugOverlay");
+    setIsVisible(stored === "true" ? true : isAdmin);
     return () => {
       window.removeEventListener("debugOverlayToggle", handleDebugToggle as EventListener);
     };
