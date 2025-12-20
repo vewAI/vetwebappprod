@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAi from "openai";
 import { searchMerckManual } from "@/features/external-resources/services/merckService";
 import { requireUser } from "@/app/api/_lib/auth";
+import { debugEventBus } from "@/lib/debug-events-fixed";
 
 const openai = new OpenAi({
   apiKey: process.env.OPENAI_API_KEY,
@@ -32,8 +33,21 @@ export async function POST(request: NextRequest) {
     
     // 2. Search Merck Manual
     const searchResult = await searchMerckManual(topic);
+    try {
+      debugEventBus.emitEvent(
+        "info",
+        "api/cases/generate-random",
+        "Merck search completed",
+        { topic, length: String((searchResult || "").length) }
+      );
+    } catch (e) {
+      // ignore
+    }
 
-    // 3. Generate Case using OpenAI (if available)
+    // 3. Generate Case using OpenAI (must succeed). We require the
+    // case to be explicitly generated from Merck Manual content. If
+    // generation fails we return an error — no invented local fallback
+    // is permitted.
     const systemPrompt = `You are an expert veterinary educator. 
     Create a realistic clinical case based on the following information from the Merck Veterinary Manual.
     The output must be a JSON object matching the CaseTemplate structure.
@@ -87,45 +101,39 @@ export async function POST(request: NextRequest) {
       const content = completion.choices?.[0]?.message?.content;
       if (content) {
         caseData = JSON.parse(content);
+        try {
+          debugEventBus.emitEvent(
+            "success",
+            "api/cases/generate-random",
+            "Case generated from Merck content",
+            { title: caseData?.title ?? null }
+          );
+        } catch (e) {}
         return NextResponse.json(caseData);
       }
-      // fallthrough to fallback below
+
+      // If the model returned no usable content, fail rather than invent.
+      console.error("OpenAI returned empty content for Merck-sourced generation");
+      try {
+        debugEventBus.emitEvent(
+          "error",
+          "api/cases/generate-random",
+          "OpenAI returned empty content for Merck-sourced generation"
+        );
+      } catch (e) {}
+      return NextResponse.json({ error: "Failed to generate case from Merck Manual" }, { status: 502 });
     } catch (openaiErr) {
-      console.warn("OpenAI generation failed, falling back to Merck-based template", openaiErr);
-      // proceed to build a conservative fallback case from searchResult
+      console.error("OpenAI generation failed for Merck-sourced case", openaiErr);
+      try {
+        debugEventBus.emitEvent(
+          "error",
+          "api/cases/generate-random",
+          "OpenAI generation failed for Merck-sourced case",
+          { error: String(openaiErr) }
+        );
+      } catch (e) {}
+      return NextResponse.json({ error: "Failed to generate case from Merck Manual" }, { status: 502 });
     }
-
-    // If OpenAI isn't available or failed, return a structured fallback
-    const fallback = {
-      title: `${topic} (based on Merck Veterinary Manual)`,
-      description: String(searchResult).slice(0, 1000),
-      species: topic.includes("Equine") || topic.includes("Horse") ? "Equine" : topic.includes("Feline") || topic.includes("Cat") ? "Feline" : topic.includes("Bovine") || topic.includes("Cow") ? "Bovine" : "Canine",
-      patient_name: "Patient",
-      patient_age: "Adult",
-      patient_sex: "Unknown",
-      condition: topic,
-      category: "General Medicine",
-      difficulty: "Medium",
-      tags: topic.toLowerCase(),
-      details: `Source excerpt:\n${searchResult}`,
-      physical_exam_findings: "Physical exam findings will be provided on request.",
-      diagnostic_findings: "Diagnostic findings not generated; request specific tests.",
-      owner_background: "Owner is concerned and cooperative.",
-      history_feedback: "",
-      owner_follow_up: "",
-      owner_follow_up_feedback: "",
-      owner_diagnosis: topic,
-      get_owner_prompt: "You are the owner. Provide concise answers to the student's questions.",
-      get_history_feedback_prompt: "",
-      get_physical_exam_prompt: "",
-      get_diagnostic_prompt: "",
-      get_owner_follow_up_prompt: "",
-      get_owner_follow_up_feedback_prompt: "",
-      get_owner_diagnosis_prompt: "",
-      get_overall_feedback_prompt: "",
-    };
-
-    return NextResponse.json(fallback);
 
   } catch (error) {
     console.error("Error generating random case:", error);

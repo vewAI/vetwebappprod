@@ -14,11 +14,14 @@ import {
   getFieldMeta,
 } from "@/features/cases/fieldMeta";
 import { AdminDebugPanel } from "@/features/admin/components/AdminDebugPanel";
+import { debugEventBus } from "@/lib/debug-events-fixed";
 import { CaseMediaEditor } from "@/features/cases/components/case-media-editor";
 import { TimeProgressionEditor } from "@/features/cases/components/case-time-progression-editor";
 import { AvatarSelector } from "@/features/cases/components/avatar-selector";
 import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
-import { generateRandomCase } from "@/features/cases/services/caseGenerationService";
+// Random case generation must be sourced from Merck Manual via server
+// API. Local fallback generation removed to ensure all cases are
+// traceable to a validated source.
 
 export default function CaseEntryForm() {
   const [expandedField, setExpandedField] = useState<CaseFieldKey | null>(
@@ -47,15 +50,34 @@ export default function CaseEntryForm() {
       if (data && !data.error) {
         setForm((prev) => ({ ...prev, ...(data as any) }));
         setSuccess("Random case generated from Merck Manual data!");
+        try {
+          debugEventBus.emitEvent(
+            "info",
+            "cases/generate-random",
+            "Merck-sourced random case generated",
+            { title: data.title ?? null }
+          );
+        } catch (e) {
+          // ignore client-side emit failures
+        }
       } else {
         throw new Error(data?.error || "No data returned");
       }
     } catch (err) {
-      console.warn("Remote generation failed, using local fallback", err);
-      // Local fallback to ensure button always produces a usable case
-      const local = generateRandomCase();
-      setForm((prev) => ({ ...prev, ...(local as any) }));
-      setSuccess("Random case generated from local templates (fallback).");
+      console.error("Remote Merck-sourced generation failed", err);
+      try {
+        debugEventBus.emitEvent(
+          "error",
+          "cases/generate-random",
+          "Merck-sourced generation failed",
+          { error: String((err as any)?.message ?? err) }
+        );
+      } catch (e) {
+        // ignore
+      }
+      setError(
+        "Unable to generate case from Merck Veterinary Manual. Please try again later. No local fallback is used."
+      );
     } finally {
       setLoading(false);
     }
@@ -233,9 +255,9 @@ Remain collaborative, use everyday language, and avoid offering your own medical
           </Button>
           <p className="text-xs text-muted-foreground mt-2 max-w-xs">
             Generates a realistic, commonly encountered veterinary case using
-            the Merck Veterinary Manual as a source and AI to format the case.
-            If server-side search or AI is unavailable, a local fallback case
-            template will be used instead.
+            the Merck Veterinary Manual as the authoritative source. Cases are
+            produced from Merck content and formatted by AI — no local
+            fallbacks or invented content are used.
           </p>
         </div>
       </div>
