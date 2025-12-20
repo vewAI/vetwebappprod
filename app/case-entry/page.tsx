@@ -13,6 +13,7 @@ import {
   type CaseFieldKey,
   getFieldMeta,
 } from "@/features/cases/fieldMeta";
+import { AdminDebugPanel } from "@/features/admin/components/AdminDebugPanel";
 import { CaseMediaEditor } from "@/features/cases/components/case-media-editor";
 import { TimeProgressionEditor } from "@/features/cases/components/case-time-progression-editor";
 import { AvatarSelector } from "@/features/cases/components/avatar-selector";
@@ -417,6 +418,8 @@ Remain collaborative, use everyday language, and avoid offering your own medical
         {success && <div className="text-green-600 mt-2">{success}</div>}
         {error && <div className="text-red-600 mt-2">{error}</div>}
       </form>
+      {/* Inline admin debug panel (visible only to admins) */}
+      <AdminDebugPanel />
       {/* Modal for expanded field */}
       {expandedField && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">

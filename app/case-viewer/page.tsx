@@ -18,6 +18,7 @@ import {
   normalizeCaseMedia,
   type CaseMediaItem,
 } from "@/features/cases/models/caseMedia";
+import { AdminDebugPanel } from "@/features/admin/components/AdminDebugPanel";
 import { TimeProgressionEditor } from "@/features/cases/components/case-time-progression-editor";
 import { caseConfig } from "@/features/config/case-config";
 import { resolveChatPersonaRoleKey } from "@/features/chat/utils/persona-guardrails";
@@ -1150,6 +1151,8 @@ export default function CaseViewerPage() {
           </div>
         )}
       </form>
+      {/* Inline admin debug panel (visible only to admins) */}
+      <AdminDebugPanel />
     </div>
   );
 }
