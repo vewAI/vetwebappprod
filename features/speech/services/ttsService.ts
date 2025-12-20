@@ -8,7 +8,7 @@ import {
   getAccessToken,
 } from "@/lib/auth-headers";
 import { getPreferredOutputDevice } from "./deviceRegistry";
-import { debugEventBus } from "@/lib/debug-events";
+import { debugEventBus } from "@/lib/debug-events-fixed";
 
 type TtsMeta = Omit<TtsEventDetail, "audio"> | undefined;
 

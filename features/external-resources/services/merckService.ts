@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { debugEventBus } from "@/lib/debug-events";
+import { debugEventBus } from "@/lib/debug-events-fixed";
 
 const GOOGLE_API_KEY = process.env.GOOGLE_SEARCH_API_KEY;
 const GOOGLE_CX = process.env.GOOGLE_SEARCH_CX; // Custom Search Engine ID restricted to merckvetmanual.com

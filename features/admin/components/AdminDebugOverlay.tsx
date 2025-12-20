@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useAuth } from "@/features/auth/services/authService";
-import { debugEventBus, DebugEvent } from "@/lib/debug-events";
+import { debugEventBus, DebugEvent } from "@/lib/debug-events-fixed";
 import { X, AlertTriangle, Info, CheckCircle, AlertCircle, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
 

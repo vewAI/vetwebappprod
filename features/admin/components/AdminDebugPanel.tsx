@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useAuth } from "@/features/auth/services/authService";
-import { debugEventBus, DebugEvent } from "@/lib/debug-events";
+import { debugEventBus, DebugEvent } from "@/lib/debug-events-fixed";
 import { X, Info, AlertTriangle, AlertCircle, CheckCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -13,8 +13,8 @@ export function AdminDebugPanel() {
   useEffect(() => {
     if (!isAdmin) return;
     const handle = (e: DebugEvent) => setEvents((prev) => [e, ...prev].slice(0, 50));
-    debugEventBus.on("debug-event", handle);
-    return () => debugEventBus.off("debug-event", handle);
+        debugEventBus.on("debug-event", handle);
+        return () => { debugEventBus.off("debug-event", handle); };
   }, [isAdmin]);
 
   if (!isAdmin) return null;

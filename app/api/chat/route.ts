@@ -21,7 +21,7 @@ import {
   type CaseMediaItem,
 } from "@/features/cases/models/caseMedia";
 import { searchMerckManual } from "@/features/external-resources/services/merckService";
-import { debugEventBus } from "@/lib/debug-events";
+import { debugEventBus } from "@/lib/debug-events-fixed";
 
 const openai = new OpenAi({
   apiKey: process.env.OPENAI_API_KEY,

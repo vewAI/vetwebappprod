@@ -2,7 +2,7 @@ import axios from "axios";
 import type { Message } from "@/features/chat/models/chat";
 import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
 import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
-import { debugEventBus } from "@/lib/debug-events";
+import { debugEventBus } from "@/lib/debug-events-fixed";
 
 /**
  * Service for handling chat API communication

@@ -1,4 +1,4 @@
-import { debugEventBus } from "@/lib/debug-events";
+import { debugEventBus } from "@/lib/debug-events-fixed";
 
 // Global recognition instance
 type _ResultRow = Record<string, unknown>;
