@@ -105,76 +105,40 @@ export async function GET(req: Request) {
       );
     }
 
-    // Make a server-side POST to the TTS provider and forward the body.
-    // We intentionally do NOT buffer the whole response here — we return
-    // providerResponse.body directly so the client receives a streaming
-    // response (chunked transfer). This allows the browser audio element to
-    // begin playback earlier and reduce time-to-first-sound.
-    let providerRes = await fetch("https://api.openai.com/v1/audio/speech", {
+    // Make a server-side POST to OpenAI using only gpt-4o-mini-tts and forward the body.
+    // If the upstream call fails, return a structured response indicating the
+    // client should fallback to browser voices and include a suggested gender
+    // for voice selection based on the requested voice.
+    const suggestGenderFromVoice = (v: string) => {
+      const female = ["alice", "charlotte", "lily", "matilda"];
+      const male = ["charlie", "george", "harry"];
+      if (female.includes(v)) return "female";
+      if (male.includes(v)) return "male";
+      return "neutral";
+    };
+
+    const providerRes = await fetch("https://api.openai.com/v1/audio/speech", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${OPENAI_KEY}`,
         "Content-Type": "application/json",
         Accept: "audio/mpeg",
       },
-      body: JSON.stringify({ model: "tts-1", voice, input: text }),
+      body: JSON.stringify({ model: "gpt-4o-mini-tts", voice, input: text }),
     });
-
-    // If tts-1 fails with model_not_found, try a series of fallbacks
-    if (!providerRes.ok && providerRes.status === 400) {
-       let errText = await providerRes.text().catch(() => "");
-       if (errText.includes("model_not_found")) {
-         debugEventBus.emitEvent("warning", "api/tts/stream", "tts-1 model not available, attempting fallbacks", { voice });
-         console.warn("[tts stream] tts-1 model not found, retrying with tts-1-hd");
-         providerRes = await fetch("https://api.openai.com/v1/audio/speech", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${OPENAI_KEY}`,
-              "Content-Type": "application/json",
-              Accept: "audio/mpeg",
-            },
-            body: JSON.stringify({ model: "tts-1-hd", voice, input: text }),
-          });
-
-         if (!providerRes.ok && providerRes.status === 400) {
-           errText = await providerRes.text().catch(() => "");
-           if (errText.includes("model_not_found")) {
-             console.warn("[tts stream] tts-1-hd model also not found, trying gpt-4o-mini-tts");
-             debugEventBus.emitEvent("warning", "api/tts/stream", "tts-1-hd also unavailable, trying gpt-4o-mini-tts", { voice });
-             providerRes = await fetch("https://api.openai.com/v1/audio/speech", {
-               method: "POST",
-               headers: {
-                 Authorization: `Bearer ${OPENAI_KEY}`,
-                 "Content-Type": "application/json",
-                 Accept: "audio/mpeg",
-               },
-               body: JSON.stringify({ model: "gpt-4o-mini-tts", voice, input: text }),
-             });
-           }
-         }
-       } else {
-         // If we can't retry, return the error response directly.
-         console.error(`[tts stream] upstream 400 error: ${errText}`);
-         debugEventBus.emitEvent("error", "api/tts/stream", "Upstream TTS provider returned 400", { detail: errText });
-         return NextResponse.json(
-            { error: "TTS provider error", detail: errText },
-            { status: 502 }
-         );
-       }
-    }
 
     if (!providerRes.ok) {
       const detail = await providerRes.text().catch(() => "");
-      try {
-        const snippet = text.length > 200 ? `${text.slice(0, 200)}…` : text;
-        console.error(
-          `[tts stream] upstream ${providerRes.status} ${providerRes.statusText} (voice=${voice}, chars=${text.length})\n${snippet}\n${detail}`
-        );
-      } catch (logError) {
-        console.error("[tts stream] failed to log provider error", logError);
-      }
+      console.error(`[tts stream] gpt-4o-mini-tts error: ${detail}`);
+      debugEventBus.emitEvent("error", "api/tts/stream", "gpt-4o-mini-tts unavailable", { voice, detail });
       return NextResponse.json(
-        { error: "TTS provider error", detail },
+        {
+          error: "TTS provider unavailable",
+          fallback: "browser",
+          voiceRequested: voice,
+          suggestedFallbackVoiceGender: suggestGenderFromVoice(voice),
+          detail,
+        },
         { status: 502 }
       );
     }

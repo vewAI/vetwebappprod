@@ -88,7 +88,24 @@ export async function speakRemote(
   });
 
   if (!res.ok) {
-    const body = await res.text();
+    // Try to parse structured fallback instruction from the server
+    let bodyJson: any = null;
+    try {
+      bodyJson = await res.json();
+    } catch (_) {
+      bodyJson = null;
+    }
+
+    if (bodyJson && bodyJson.fallback === "browser") {
+      debugEventBus.emitEvent('warning', 'TTS', 'Server TTS unavailable, using browser voices', { voice, detail: bodyJson.detail });
+      // Use browser SpeechSynthesis as a fallback. Respect avatar sex if provided in meta.
+      await speakWithSpeechSynthesis(text, voice, meta);
+      // Return a real Audio element placeholder so callers get an HTMLAudioElement.
+      const placeholder = new Audio();
+      return placeholder;
+    }
+
+    const body = await res.text().catch(() => "");
     debugEventBus.emitEvent('error', 'TTS', `Remote TTS failed: ${res.status}`, { body });
     throw new Error(`Remote TTS failed: ${res.status} ${body}`);
   }
@@ -167,6 +184,69 @@ export async function speakRemote(
         // the audio element events so callers can still inspect the element.
       });
     }
+  });
+}
+
+async function speakWithSpeechSynthesis(text: string, voice?: string, meta?: TtsMeta) {
+  const preferredSex = (meta && meta.metadata && (meta.metadata.sex as string)) || undefined;
+  const suggestGenderFromVoice = (v?: string) => {
+    const female = ["alice", "charlotte", "lily", "matilda"];
+    const male = ["charlie", "george", "harry"];
+    if (!v) return "neutral";
+    if (female.includes(v)) return "female";
+    if (male.includes(v)) return "male";
+    return "neutral";
+  };
+
+  const desiredGender = preferredSex ?? suggestGenderFromVoice(voice);
+
+  return new Promise<void>((resolve) => {
+    if (typeof window === "undefined" || !('speechSynthesis' in window)) {
+      console.warn('Browser speechSynthesis not available');
+      resolve();
+      return;
+    }
+
+    const synth = window.speechSynthesis;
+    let voices = synth.getVoices();
+    if (!voices || voices.length === 0) {
+      // Some browsers load voices asynchronously
+      synth.onvoiceschanged = () => {
+        voices = synth.getVoices() || [];
+      };
+    }
+
+    const pickVoice = () => {
+      voices = synth.getVoices() || [];
+      // Prefer en-US voices matching desired gender in the name when possible
+      const genderPriority = desiredGender === 'female' ? ['female','woman','f'] : desiredGender === 'male' ? ['male','man','m'] : [];
+      const byLang = voices.filter(v => v.lang && v.lang.startsWith('en'));
+      let candidate: SpeechSynthesisVoice | undefined;
+      if (genderPriority.length) {
+        candidate = byLang.find(v => genderPriority.some(g => String(v.name).toLowerCase().includes(g)));
+      }
+      if (!candidate) candidate = byLang[0] || voices[0];
+      return candidate;
+    };
+
+    const utter = new SpeechSynthesisUtterance(text);
+    const chosen = pickVoice();
+    if (chosen) utter.voice = chosen;
+    utter.rate = 1;
+    utter.pitch = 1;
+
+    dispatchTtsStart({ ...(meta ?? {}), audio: undefined as unknown as HTMLAudioElement });
+
+    utter.onend = () => {
+      dispatchTtsEnd({ ...(meta ?? {}), audio: undefined as unknown as HTMLAudioElement });
+      resolve();
+    };
+    utter.onerror = () => {
+      dispatchTtsEnd({ ...(meta ?? {}), audio: undefined as unknown as HTMLAudioElement });
+      resolve();
+    };
+
+    synth.speak(utter);
   });
 }
 

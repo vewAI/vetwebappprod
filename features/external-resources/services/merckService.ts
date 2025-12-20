@@ -15,12 +15,11 @@ export async function searchMerckManual(query: string): Promise<string> {
   debugEventBus.emitEvent('info', 'MerckService', `Searching: ${query}`);
 
   if (!GOOGLE_API_KEY || !GOOGLE_CX) {
-    console.warn("Google Search API keys not configured. Returning mock result.");
-    debugEventBus.emitEvent('warning', 'MerckService', 'API keys missing, using mock result');
-    return `[Mock Search Result] Information about "${query}" from Merck Veterinary Manual. 
-    
-    (To enable real search, configure GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_CX in your .env.local file. 
-    The CX should be a Programmable Search Engine restricted to 'merckvetmanual.com'.)`;
+    console.error("Google Search API keys not configured. Aborting Merck consult.");
+    debugEventBus.emitEvent('error', 'MerckService', 'API keys missing - Merck consult aborted', {
+      hint: 'Set GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_CX in server environment (no local fallback allowed)'
+    });
+    throw new Error('Google Search API keys not configured');
   }
 
   try {
@@ -55,7 +54,7 @@ export async function searchMerckManual(query: string): Promise<string> {
     return items.map((item: any) => `Title: ${item.title}\nSnippet: ${item.snippet}\nLink: ${item.link}`).join("\n\n");
   } catch (error) {
     console.error("Error searching Merck Manual:", error);
-    debugEventBus.emitEvent('error', 'MerckService', 'Search failed', { error: String(error) });
-    return "Error performing search.";
+    debugEventBus.emitEvent('error', 'MerckService', 'Search failed', { error: String(error), stack: (error as any)?.stack ?? null });
+    throw error;
   }
 }

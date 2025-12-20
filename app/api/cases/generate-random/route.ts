@@ -31,17 +31,20 @@ export async function POST(request: NextRequest) {
     // 1. Pick a random topic
     const topic = TOPICS[Math.floor(Math.random() * TOPICS.length)];
     
-    // 2. Search Merck Manual
-    const searchResult = await searchMerckManual(topic);
+    // 2. Search Merck Manual (must succeed and be real Merck data)
+    let searchResult: string;
     try {
+      searchResult = await searchMerckManual(topic);
       debugEventBus.emitEvent(
         "info",
         "api/cases/generate-random",
         "Merck search completed",
         { topic, length: String((searchResult || "").length) }
       );
-    } catch (e) {
-      // ignore
+    } catch (searchErr) {
+      console.error("Merck search failed for topic", topic, searchErr);
+      debugEventBus.emitEvent("error", "api/cases/generate-random", "Merck search failed", { topic, error: String(searchErr), stack: (searchErr as any)?.stack ?? null });
+      return NextResponse.json({ error: "Merck search failed; ensure server GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_CX are configured" }, { status: 502 });
     }
 
     // 3. Generate Case using OpenAI (must succeed). We require the
@@ -91,47 +94,40 @@ export async function POST(request: NextRequest) {
 
     let caseData: any = null;
 
+    // 3. Generate Case using OpenAI (must succeed)
+    if (!process.env.OPENAI_API_KEY) {
+      console.error("OPENAI_API_KEY missing in server environment");
+      debugEventBus.emitEvent("error", "api/cases/generate-random", "OPENAI_API_KEY missing");
+      return NextResponse.json({ error: "OpenAI API key not configured on server" }, { status: 500 });
+    }
+
     try {
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: process.env.OPENAI_MODEL ?? "gpt-4o",
         messages: [{ role: "system", content: systemPrompt }],
-        response_format: { type: "json_object" }
+        response_format: { type: "json_object" },
       });
 
       const content = completion.choices?.[0]?.message?.content;
-      if (content) {
-        caseData = JSON.parse(content);
-        try {
-          debugEventBus.emitEvent(
-            "success",
-            "api/cases/generate-random",
-            "Case generated from Merck content",
-            { title: caseData?.title ?? null }
-          );
-        } catch (e) {}
-        return NextResponse.json(caseData);
+      if (!content) {
+        console.error("OpenAI returned empty content for Merck-sourced generation", completion);
+        debugEventBus.emitEvent("error", "api/cases/generate-random", "OpenAI returned empty content", { completion });
+        return NextResponse.json({ error: "OpenAI returned no content" }, { status: 502 });
       }
 
-      // If the model returned no usable content, fail rather than invent.
-      console.error("OpenAI returned empty content for Merck-sourced generation");
       try {
-        debugEventBus.emitEvent(
-          "error",
-          "api/cases/generate-random",
-          "OpenAI returned empty content for Merck-sourced generation"
-        );
-      } catch (e) {}
-      return NextResponse.json({ error: "Failed to generate case from Merck Manual" }, { status: 502 });
+        caseData = JSON.parse(content);
+      } catch (parseErr) {
+        console.error("Failed to parse OpenAI content as JSON", parseErr, content);
+        debugEventBus.emitEvent("error", "api/cases/generate-random", "Failed to parse OpenAI JSON", { error: String(parseErr), content });
+        return NextResponse.json({ error: "Failed to parse model output" }, { status: 502 });
+      }
+
+      debugEventBus.emitEvent("success", "api/cases/generate-random", "Case generated from Merck content", { title: caseData?.title ?? null });
+      return NextResponse.json(caseData);
     } catch (openaiErr) {
       console.error("OpenAI generation failed for Merck-sourced case", openaiErr);
-      try {
-        debugEventBus.emitEvent(
-          "error",
-          "api/cases/generate-random",
-          "OpenAI generation failed for Merck-sourced case",
-          { error: String(openaiErr) }
-        );
-      } catch (e) {}
+      debugEventBus.emitEvent("error", "api/cases/generate-random", "OpenAI generation failed", { error: String(openaiErr), stack: (openaiErr as any)?.stack ?? null });
       return NextResponse.json({ error: "Failed to generate case from Merck Manual" }, { status: 502 });
     }
 
