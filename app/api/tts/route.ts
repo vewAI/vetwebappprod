@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-
 import { requireUser } from "@/app/api/_lib/auth";
+import { debugEventBus } from "@/lib/debug-events-fixed";
 
 // Server-side TTS proxy to a third-party TTS service (OpenAI/E2E)
 // Expects JSON: { text: string, voice?: string }
@@ -94,10 +94,11 @@ export async function POST(req: Request) {
       }),
     });
 
-    // If tts-1 fails with model_not_found, try tts-1-hd
+    // If tts-1 fails with model_not_found, try tts-1-hd and then gpt-4o-mini-tts
     if (!openAiRes.ok && openAiRes.status === 400) {
-       const errText = await openAiRes.text().catch(() => "");
+       let errText = await openAiRes.text().catch(() => "");
        if (errText.includes("model_not_found")) {
+         debugEventBus.emitEvent("warning", "api/tts", "tts-1 unavailable, attempting fallbacks", { voice });
          console.warn("tts-1 model not found, retrying with tts-1-hd");
          openAiRes = await fetch("https://api.openai.com/v1/audio/speech", {
             method: "POST",
@@ -112,9 +113,26 @@ export async function POST(req: Request) {
               input: text,
             }),
           });
+
+         if (!openAiRes.ok && openAiRes.status === 400) {
+           errText = await openAiRes.text().catch(() => "");
+           if (errText.includes("model_not_found")) {
+             console.warn("tts-1-hd not available, trying gpt-4o-mini-tts");
+             debugEventBus.emitEvent("warning", "api/tts", "tts-1-hd unavailable, trying gpt-4o-mini-tts", { voice });
+             openAiRes = await fetch("https://api.openai.com/v1/audio/speech", {
+               method: "POST",
+               headers: {
+                 Authorization: `Bearer ${OPENAI_KEY}`,
+                 "Content-Type": "application/json",
+                 Accept: "audio/mpeg",
+               },
+               body: JSON.stringify({ model: "gpt-4o-mini-tts", voice, input: text }),
+             });
+           }
+         }
        } else {
-         // Restore the error text for the final response if we didn't retry
          console.error("OpenAI TTS error:", errText);
+         debugEventBus.emitEvent("error", "api/tts", "OpenAI TTS returned 400", { detail: errText });
          return NextResponse.json(
             { error: "TTS provider error", detail: errText },
             { status: 502 }
