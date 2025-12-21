@@ -975,6 +975,8 @@ function generateOverallFeedbackPrompt(ctx: GenerationContext): string {
 
 export interface CasePromptAutomationOptions {
   diagnosticCopy?: DiagnosticPromptCopy;
+  usePapers?: boolean;
+  paperTopK?: number;
 }
 
 export function generateCaseFieldContent(
@@ -987,6 +989,23 @@ export function generateCaseFieldContent(
     return null;
   }
   return generateCaseFieldContentForCaseField(
+    ctx.caseId,
+    ctx.field,
+    caseRow,
+    options
+  );
+}
+
+export async function generateCaseFieldContentAsync(
+  definition: PromptDefinition,
+  caseRow: CaseRow,
+  options: CasePromptAutomationOptions = {}
+): Promise<string | null> {
+  const ctx = getGenerationContext(definition, caseRow);
+  if (!ctx) {
+    return null;
+  }
+  return generateCaseFieldContentForCaseFieldAsync(
     ctx.caseId,
     ctx.field,
     caseRow,
@@ -1048,4 +1067,59 @@ export function generateCaseFieldContentForCaseField(
     default:
       return null;
   }
+}
+
+async function fetchPaperSummaries(
+  caseId: string,
+  query: string,
+  topK = 3
+): Promise<string[] | null> {
+  try {
+    const base =
+      process.env.NEXT_PUBLIC_BASE_URL || process.env.BASE_URL || "http://localhost:3000";
+    const url = `${base.replace(/\/$/, "")}/api/cases/${caseId}/papers/query`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, summarize: true, top_k: topK }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data || !Array.isArray(data.results)) return null;
+    return data.results.map((r: any) => r.summary || r.excerpt || r.title).filter(Boolean);
+  } catch (e) {
+    return null;
+  }
+}
+
+export async function generateCaseFieldContentForCaseFieldAsync(
+  caseId: string,
+  field: CaseAutomationField,
+  caseRow: CaseRow,
+  options: CasePromptAutomationOptions = {}
+): Promise<string | null> {
+  const ctx = buildGenerationContext(caseId, field, caseRow);
+  if (!ctx) return null;
+
+  let base = generateCaseFieldContentForCaseField(caseId, field, caseRow, options);
+  if (!base) return null;
+
+  const usePapers = !!options.usePapers;
+  if (!usePapers) return base;
+
+  // If no media or no documents attached, return base
+  const media = Array.isArray(caseRow.media) ? caseRow.media : [];
+  const hasDocs = media.some((m) => m && typeof m === "object" && (m.type === "document" || /pdf|docx|paper/i.test(String(m.contentType || m.mime || m.type || ""))));
+  if (!hasDocs) return base;
+
+  const queryText = ctx.summary || ctx.condition || ctx.title || "";
+  const topK = typeof options.paperTopK === "number" ? options.paperTopK : 3;
+  const summaries = await fetchPaperSummaries(ctx.caseId, queryText, topK);
+  if (!summaries || summaries.length === 0) return base;
+
+  const paperSection = ["Reference papers (brief summaries):"].concat(
+    summaries.map((s) => `- ${s}`)
+  ).join("\n");
+
+  return `${paperSection}\n\n${base}`;
 }

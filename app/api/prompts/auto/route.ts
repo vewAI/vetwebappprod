@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { findPromptDefinition } from "@/features/prompts/registry";
 import {
   generateCaseFieldContent,
+  generateCaseFieldContentAsync,
   type CasePromptAutomationOptions,
 } from "@/features/prompts/services/casePromptAutomation";
 import {
@@ -92,7 +93,9 @@ export async function POST(request: Request) {
     };
   }
 
-  const generated = generateCaseFieldContent(definition, caseRow, options);
+  // Prefer the async generator which can include paper summaries when available
+  options = { ...(options || {}), usePapers: true };
+  const generated = await generateCaseFieldContentAsync(definition, caseRow, options as CasePromptAutomationOptions);
   if (!generated) {
     return NextResponse.json(
       { error: "No automation is available for this field" },

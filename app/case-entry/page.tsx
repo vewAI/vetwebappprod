@@ -16,7 +16,7 @@ import {
 } from "@/features/cases/fieldMeta";
 import { AdminDebugPanel } from "@/features/admin/components/AdminDebugPanel";
 import { debugEventBus } from "@/lib/debug-events-fixed";
-import { CaseMediaEditor } from "@/features/cases/components/case-media-editor";
+import { CaseMediaEditor, uploadFile } from "@/features/cases/components/case-media-editor";
 import { TimeProgressionEditor } from "@/features/cases/components/case-time-progression-editor";
 import { AvatarSelector } from "@/features/cases/components/avatar-selector";
 import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
@@ -35,6 +35,9 @@ export default function CaseEntryForm() {
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
   const [mediaItems, setMediaItems] = useState<CaseMediaItem[]>([]);
+  const [showPaperUploader, setShowPaperUploader] = useState(false);
+  const [uploaderFiles, setUploaderFiles] = useState<FileList | null>(null);
+  const [uploaderUploading, setUploaderUploading] = useState(false);
 
   const caseIdForMedia = useMemo(() => {
     const raw = form.id?.trim();
@@ -46,9 +49,25 @@ export default function CaseEntryForm() {
     setSuccess("");
     setError("");
     try {
+      // If no reference papers attached, ask user if they want to upload one
+      if (mediaItems.length === 0 && !showPaperUploader) {
+        const want = window.confirm(
+          "Attach reference papers to influence generation? Click OK to upload papers, Cancel to proceed without."
+        );
+        if (want) {
+          setShowPaperUploader(true);
+          setLoading(false);
+          return;
+        }
+      }
+
       const token = await getAccessToken();
       const headers = await buildAuthHeaders({ "Content-Type": "application/json" }, token);
-      const response = await axios.post("/api/cases/generate-random", {}, { headers });
+      const body: Record<string, unknown> = {};
+      if (mediaItems.length > 0) {
+        body.references = mediaItems.map((m) => ({ url: m.url, caption: m.caption ?? null }));
+      }
+      const response = await axios.post("/api/cases/generate-random", body, { headers });
       const data = response.data as any;
       if (data && !data.error) {
         setForm((prev) => ({ ...prev, ...(data as any) }));
@@ -83,6 +102,38 @@ export default function CaseEntryForm() {
       );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleUploadReferences = async () => {
+    if (!uploaderFiles || uploaderFiles.length === 0) return;
+    setUploaderUploading(true);
+    try {
+      const uploaded: CaseMediaItem[] = [];
+      for (let i = 0; i < uploaderFiles.length; i++) {
+        const file = uploaderFiles[i];
+        const { url, path } = await uploadFile(file, "document", form.id);
+        uploaded.push({
+          id: `${Date.now()}-${Math.random()}`,
+          type: "document",
+          url,
+          caption: file.name,
+          mimeType: file.type,
+          metadata: { sourcePath: path },
+          trigger: "on_demand",
+        } as CaseMediaItem);
+      }
+      const next = [...mediaItems, ...uploaded];
+      setMediaItems(next);
+      setForm((prev) => (prev ? { ...prev, media: next } : prev));
+      setShowPaperUploader(false);
+      // After uploading, automatically trigger generation
+      setTimeout(() => void handleRandomCase(), 50);
+    } catch (e) {
+      console.error("Reference upload failed", e);
+      setError("Failed to upload reference papers. See console.");
+    } finally {
+      setUploaderUploading(false);
     }
   };
 
@@ -265,6 +316,28 @@ Remain collaborative, use everyday language, and avoid offering your own medical
         </div>
       </div>
       <form onSubmit={handleSubmit} className="space-y-4">
+        {showPaperUploader && (
+          <div className="space-y-2 border p-3 rounded">
+            <div className="flex items-center gap-2">
+              <label className="font-medium">Upload reference papers (PDF/DOCX)</label>
+              <input
+                type="file"
+                accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                multiple
+                onChange={(e) => setUploaderFiles(e.target.files)}
+                className="ml-2"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Button onClick={handleUploadReferences} disabled={uploaderUploading || !uploaderFiles}>
+                {uploaderUploading ? "Uploading..." : "Upload & Use References"}
+              </Button>
+              <Button variant="ghost" onClick={() => setShowPaperUploader(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
         {orderedCaseFieldKeys.map((key) => {
           const meta = caseFieldMeta[key];
           const helpId = meta.help ? `${key}-help` : undefined;

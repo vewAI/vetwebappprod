@@ -52,6 +52,7 @@ import {
   detectStageIntentPhase3,
   type StageIntentContext,
 } from "@/features/chat/utils/stage-intent-detector";
+import axios from "axios";
 import {
   detectStageReadinessIntent,
   type StageReadinessContext,
@@ -161,6 +162,7 @@ type ChatInterfaceProps = {
   ) => void;
   initialTimeSpentSeconds?: number;
   caseMedia?: CaseMediaItem[];
+  followupDay?: number;
 };
 
 type PersonaDirectoryEntry = {
@@ -187,6 +189,7 @@ export function ChatInterface({
   onProceedToNextStage,
   initialTimeSpentSeconds = 0,
   caseMedia = [],
+  followupDay = 1,
 }: ChatInterfaceProps) {
   // State for timepoint progression dialog
   const [showTimepointDialog, setShowTimepointDialog] = useState(false);
@@ -327,6 +330,39 @@ export function ChatInterface({
       }
     }
   }, [advanceGuard, attemptId]);
+
+  // Paper search state
+  const [paperSearchLoading, setPaperSearchLoading] = useState(false);
+  const [paperSearchResults, setPaperSearchResults] = useState<any[] | null>(null);
+
+  const runPaperSearch = async (q: string) => {
+    if (!q || q.trim().length === 0) return;
+    if (!caseId) return;
+    setPaperSearchLoading(true);
+    try {
+      const resp = await axios.post(`/api/cases/${encodeURIComponent(caseId)}/papers/query`, { query: q });
+      const respData = resp.data as any ?? {};
+      setPaperSearchResults(respData.results ?? []);
+      // if results have summaries, append as assistant message
+      if (Array.isArray(respData.results) && respData.results.length > 0) {
+        const best = respData.results[0];
+        const assistantMsg: Message = {
+          id: `paper-sum-${Date.now()}`,
+          role: "assistant",
+          content: best.summary ? `Reference summary: ${best.summary}` : `Found ${respData.results.length} paper(s). See: ${best.url}`,
+          timestamp: new Date().toISOString(),
+          stageIndex: currentStageIndex,
+          displayRole: "Reference",
+          status: "sent",
+        };
+        setMessages((prev) => [...prev, assistantMsg]);
+      }
+    } catch (err) {
+      console.error("Paper search failed", err);
+    } finally {
+      setPaperSearchLoading(false);
+    }
+  };
   const ensurePersonaMetadata = useCallback(
     async (roleKey: string | null | undefined) => {
       if (!roleKey) return undefined;
@@ -1548,20 +1584,31 @@ export function ChatInterface({
         stageIndex: currentStageIndex,
       };
 
-      // Manual override for "talk to owner" if next stage involves owner
+      // Manual override for owner handoff phrasing (include various verbs)
       const lower = trimmed.toLowerCase();
       const nextRole = nextStage.role?.toLowerCase() || "";
-      if (
-        (nextRole.includes("owner") || nextRole.includes("client")) &&
-        (lower.includes("talk to the owner") || lower.includes("speak to the owner") || lower.includes("talk to owner"))
-      ) {
-        return {
-          matched: true,
-          intent: "advance",
-          confidence: "high",
-          heuristics: ["manual-owner-override"],
-          reason: "User explicitly asked to talk to owner",
-        };
+      const ownerPhrases = [
+        "talk to the owner",
+        "speak to the owner",
+        "talk to owner",
+        "inform the owner",
+        "notify the owner",
+        "tell the owner",
+        "call the owner",
+        "contact the owner",
+      ];
+      if (nextRole.includes("owner") || nextRole.includes("client")) {
+        for (const p of ownerPhrases) {
+          if (lower.includes(p)) {
+            return {
+              matched: true,
+              intent: "advance",
+              confidence: "high",
+              heuristics: ["manual-owner-override"],
+              reason: `User explicitly asked to ${p}`,
+            };
+          }
+        }
       }
 
       const detection = detectStageReadinessIntent(trimmed, context, {
@@ -1883,10 +1930,17 @@ export function ChatInterface({
       if (timepointToast) hideTimepointToastWithFade(300);
     } else {
       setIsPaused(true);
-      if (isListening) {
-        stop();
+      // Inactivate voice mode and TTS when pausing the attempt
+      try {
+        setVoiceModeEnabled(false);
+      } catch {
+        // fallback: ensure listeners and TTS are stopped
+        if (isListening) {
+          try { stop(); } catch {};
+        }
       }
       stopActiveTtsPlayback();
+      setTtsEnabledState(false);
       try {
         await saveProgress(currentStageIndex, messages, timeSpentSeconds);
       } catch (e) {
@@ -2520,6 +2574,31 @@ export function ChatInterface({
           {fallbackNotice}
         </div>
       )}
+      {/* Reference papers attached to this case (documents) */}
+      {caseMedia && caseMedia.length > 0 && (
+        (() => {
+          const docs = caseMedia.filter((m) => m.type === "document");
+          if (docs.length === 0) return null;
+          return (
+            <div className="w-full bg-white px-4 py-2 text-sm z-30 border-b">
+              <div className="flex items-center justify-between">
+                <div className="font-medium">Reference Papers</div>
+                <div className="text-xs text-gray-500">{docs.length} available</div>
+              </div>
+              <div className="mt-2 space-y-1">
+                {docs.map((d) => (
+                  <div key={d.id} className="flex items-center justify-between">
+                    <a href={d.url} target="_blank" rel="noreferrer" className="text-sm text-sky-600 hover:underline">
+                      {d.caption ?? d.url.split('/').pop()}
+                    </a>
+                    <div className="text-xs text-gray-400">{d.mimeType ?? ''}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()
+      )}
       {/* Intro toast (central, non-blocking) */}
       {introMounted && (
         <div className="fixed inset-0 flex items-start justify-center pt-24 pointer-events-none z-50">
@@ -2775,6 +2854,18 @@ export function ChatInterface({
                 )}
               </Tooltip>
             </TooltipProvider>
+            <Button
+              type="button"
+              size="icon"
+              title="Search attached reference papers"
+              className="absolute bottom-2 right-14 bg-white text-gray-700 border"
+              onClick={() => {
+                const q = input.trim() || (messages.length > 0 ? messages[messages.length - 1].content : "");
+                void runPaperSearch(q);
+              }}
+            >
+              🔎
+            </Button>
           </form>
 
           <div className="mt-2 flex justify-between text-xs text-muted-foreground">

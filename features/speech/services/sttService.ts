@@ -31,6 +31,7 @@ const VET_PREFERRED = [
   "teat",
   "mastitis",
   "bovine",
+  "borborygmi",
   "ketones",
   "creatinine",
   "palpate",
@@ -52,6 +53,8 @@ const CORRECTIONS: Record<string, string> = {
   "keytones": "ketones",
   "creatine": "creatinine",
   "creating": "creatinine",
+  "borborigmi": "borborygmi",
+  "borborygmi": "borborygmi",
 };
 
 // Phrase-level corrections for multi-word mis-transcriptions.
@@ -150,7 +153,7 @@ export async function startListening(
   const SpeechGrammarList = (window as any).SpeechGrammarList || (window as any).webkitSpeechGrammarList;
   if (SpeechGrammarList) {
     const speechRecognitionList = new SpeechGrammarList();
-    const grammar = '#JSGF V1.0; grammar veterinary; public <term> = udder | teat | mastitis | bovine | ketones | creatinine | palpate | auscultate ;';
+    const grammar = '#JSGF V1.0; grammar veterinary; public <term> = udder | teat | mastitis | bovine | ketones | creatinine | palpate | auscultate | borborygmi | borborygmus ;';
     speechRecognitionList.addFromString(grammar, 1);
     recognition.grammars = speechRecognitionList;
   }

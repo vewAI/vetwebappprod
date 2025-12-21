@@ -24,7 +24,10 @@ import {
   initializeStages,
   markStageCompleted,
 } from "@/features/stages/services/stageService";
+import { createFollowup } from "@/features/attempts/services/attemptMutationService";
+import { useCaseTimepoints } from "@/features/cases/hooks/useCaseTimepoints";
 import { GuidedTour } from "@/components/ui/guided-tour";
+import CasePapersUploader from "@/features/cases/components/case-papers-uploader";
 
 export default function CaseChatPage() {
   const params = useParams();
@@ -153,6 +156,8 @@ export default function CaseChatPage() {
   const [showCompletionDialog, setShowCompletionDialog] = useState(false);
   const [feedbackContent, setFeedbackContent] = useState("");
   const [lastMessagesForExport, setLastMessagesForExport] = useState<Message[] | null>(null);
+  const [followupDay, setFollowupDay] = useState<number>(1);
+  const { timepoints, loading: timepointsLoading } = useCaseTimepoints(caseItem?.id ?? "");
 
   const handleProceedToNextStage = async (
     messages?: Message[],
@@ -236,6 +241,22 @@ export default function CaseChatPage() {
     }
   };
 
+  // Helper: derive display stages based on followup day
+  function deriveDisplayStages(baseStages: Stage[], day: number): Stage[] {
+    if (!day || day <= 1) return baseStages;
+    // For follow-up days, duplicate relevant stages and prefix the title to indicate the day
+    const followupSuffix = `-followup-day-${day}`;
+    const duplicated = baseStages.map((s) => {
+      const copy = { ...s } as Stage & { id?: string };
+      // Ensure a unique id for the duplicated stage
+      copy.id = `${s.id ?? s.title}-${followupSuffix}`;
+      copy.title = `Day ${day} - ${s.title}`;
+      copy.completed = false;
+      return copy;
+    });
+    return duplicated;
+  }
+
   if (loading || isRestoring) return <div className="p-8 text-center">Loading case...</div>;
   if (!caseItem) return notFound();
 
@@ -263,14 +284,60 @@ export default function CaseChatPage() {
       </div>
 
       <div id="chat-interface" className="flex-1">
+        {/* Professor uploader + Papers list */}
+        {user && (user.role === "professor" || user.role === "admin") && caseItem?.id && (
+          <div className="p-3">
+            <CasePapersUploader
+              caseId={caseItem.id}
+              onUploaded={async () => {
+                // refresh case metadata after upload
+                try {
+                  const refreshed = await fetchCaseById(caseItem.id);
+                  setCaseItem(refreshed);
+                } catch (err) {
+                  console.error("Failed to refresh case after paper upload", err);
+                }
+              }}
+            />
+          </div>
+        )}
+        {/* Follow-up Day selector (only show when case has timepoints/time progression enabled) */}
+        {timepoints && timepoints.length > 0 && (
+          <div className="p-3 flex items-center gap-3">
+            <span className="text-sm text-gray-500">Session:</span>
+            <select
+              value={String(followupDay)}
+              onChange={async (e) => {
+                const next = Number(e.target.value || 1);
+                // Only create followup records when switching to day > 1
+                if (next > 1 && attemptId) {
+                  try {
+                    await createFollowup(attemptId, next, `Follow-up day ${next} started`);
+                  } catch (err) {
+                    console.error("Failed to create followup record:", err);
+                  }
+                }
+                setFollowupDay(next);
+              }}
+              className="rounded px-2 py-1 border"
+            >
+              <option value="1">Day 1</option>
+              <option value="2">Day 2</option>
+              <option value="3">Day 3</option>
+            </select>
+            <span className="text-sm text-gray-400">{timepoints.length} timepoints</span>
+          </div>
+        )}
+
         <ChatInterface
           caseId={caseItem.id}
           attemptId={attemptId || undefined}
           initialMessages={initialMessages}
           currentStageIndex={currentStageIndex}
-          stages={stages}
+          stages={deriveDisplayStages(stages, followupDay)}
           onProceedToNextStage={handleProceedToNextStage}
           caseMedia={caseItem.media}
+          followupDay={followupDay}
         />
       </div>
 

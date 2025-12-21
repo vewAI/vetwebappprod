@@ -28,6 +28,17 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    // Parse optional references from body
+    let references: Array<{ url?: string; caption?: string }>|undefined;
+    try {
+      const body = await request.json().catch(() => null);
+      if (body && Array.isArray(body.references)) {
+        references = body.references.map((r: any) => ({ url: String(r.url ?? ""), caption: r.caption ?? null }));
+      }
+    } catch (e) {
+      references = undefined;
+    }
+
     // 1. Pick a random topic
     const topic = TOPICS[Math.floor(Math.random() * TOPICS.length)];
     
@@ -51,12 +62,37 @@ export async function POST(request: NextRequest) {
     // case to be explicitly generated from Merck Manual content. If
     // generation fails we return an error — no invented local fallback
     // is permitted.
+    // If references were provided, attempt to fetch their text (best-effort)
+    let referencesText = "";
+    if (Array.isArray(references) && references.length > 0) {
+      const pieces: string[] = [];
+      for (const ref of references) {
+        if (!ref.url) continue;
+        try {
+          const r = await fetch(ref.url, { method: "GET" });
+          const ct = r.headers.get("content-type") ?? "";
+          if (ct.includes("text") || ct.includes("html")) {
+            const txt = await r.text();
+            pieces.push(`Reference (${ref.caption ?? ref.url}):\n${txt.substring(0, 3000)}`);
+          } else {
+            pieces.push(`Reference (${ref.caption ?? ref.url}): ${ref.url}`);
+          }
+        } catch (e) {
+          pieces.push(`Reference (${ref.caption ?? ref.url}): ${ref.url}`);
+        }
+      }
+      if (pieces.length > 0) {
+        referencesText = `\n\nUser-provided references (included verbatim or by URL):\n${pieces.join("\n\n")}`;
+      }
+    }
+
     const systemPrompt = `You are an expert veterinary educator. 
     Create a realistic clinical case based on the following information from the Merck Veterinary Manual.
     The output must be a JSON object matching the CaseTemplate structure.
     
     Information:
     ${searchResult}
+    ${referencesText}
     
     Structure required (JSON):
     {

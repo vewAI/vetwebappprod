@@ -67,7 +67,7 @@ function ensureStageRef(stage?: CaseMediaStageRef | null): CaseMediaStageRef {
   return {};
 }
 
-async function uploadFile(
+export async function uploadFile(
   file: File,
   type: CaseMediaType,
   caseId?: string,
