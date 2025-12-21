@@ -54,6 +54,15 @@ const CORRECTIONS: Record<string, string> = {
   "creating": "creatinine",
 };
 
+// Phrase-level corrections for multi-word mis-transcriptions.
+const PHRASE_CORRECTIONS: Record<string, string> = {
+  "kitchen buddies": "ketone bodies",
+  "kitchen buddy": "ketone body",
+  "old findingd": "all findings",
+  "old findings": "all findings",
+  "give me old findings": "give me all findings",
+};
+
 function postProcessTranscript(text: string): string {
   let processed = text;
   const substitutions: Array<{ from: string; to: string }> = [];
@@ -73,6 +82,16 @@ function postProcessTranscript(text: string): string {
 
   // If the recognized text contains common-language tokens that map to
   // veterinary terms, apply those corrections.
+  // First apply phrase-level corrections to handle multi-word mis-hearings
+  for (const [wrongPhrase, rightPhrase] of Object.entries(PHRASE_CORRECTIONS)) {
+    const escaped = wrongPhrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp("\\b" + escaped + "\\b", "gi");
+    const before = processed;
+    const after = processed.replace(pattern, rightPhrase);
+    if (after !== before) substitutions.push({ from: wrongPhrase, to: rightPhrase });
+    processed = after;
+  }
+
   for (const [wrong, right] of Object.entries(CORRECTIONS)) {
     const escaped = wrong.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const pattern = new RegExp("\\b" + escaped + "\\b", "gi");
