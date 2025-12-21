@@ -11,6 +11,7 @@ interface CompletionDialogProps {
   feedback: string
   isLoading: boolean
   caseId: string
+  messages?: Array<any>
 }
 
 export function CompletionDialog({ 
@@ -19,8 +20,10 @@ export function CompletionDialog({
   feedback, 
   isLoading, 
   caseId 
+  , messages = []
 }: CompletionDialogProps) {
   const router = useRouter()
+  const [isDownloading, setIsDownloading] = useState(false)
   
   const handleReturnHome = () => {
     router.push('/')
@@ -80,13 +83,49 @@ export function CompletionDialog({
               <Home className="h-4 w-4" />
               Return to Cases
             </Button>
-            <Button
-              onClick={handleRestartCase}
-              className="flex items-center gap-2 bg-gradient-to-l from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600 border-none"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Restart This Case
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={async () => {
+                  try {
+                    setIsDownloading(true)
+                    const resp = await fetch('/api/feedback/export', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ caseId, feedbackHtml: feedback, messages }),
+                    })
+                    if (!resp.ok) {
+                      const txt = await resp.text().catch(() => String(resp.status))
+                      throw new Error(`Export failed: ${txt}`)
+                    }
+                    const blob = await resp.blob()
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = `feedback-${caseId}.pdf`
+                    document.body.appendChild(a)
+                    a.click()
+                    a.remove()
+                    URL.revokeObjectURL(url)
+                  } catch (err) {
+                    console.error('Failed to download feedback', err)
+                    alert('Failed to download feedback. See console for details.')
+                  } finally {
+                    setIsDownloading(false)
+                  }
+                }}
+                className="flex items-center gap-2 bg-gray-100 dark:bg-gray-700"
+              >
+                {isDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Home className="h-4 w-4" />}
+                Download Feedback
+              </Button>
+              <Button
+                onClick={handleRestartCase}
+                className="flex items-center gap-2 bg-gradient-to-l from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600 border-none"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Restart This Case
+              </Button>
+            </div>
           </div>
         </div>
       </div>

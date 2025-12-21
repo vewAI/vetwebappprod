@@ -152,6 +152,7 @@ export default function CaseChatPage() {
   const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false);
   const [showCompletionDialog, setShowCompletionDialog] = useState(false);
   const [feedbackContent, setFeedbackContent] = useState("");
+  const [lastMessagesForExport, setLastMessagesForExport] = useState<Message[] | null>(null);
 
   const handleProceedToNextStage = async (
     messages?: Message[],
@@ -175,6 +176,8 @@ export default function CaseChatPage() {
     } else {
       setStages(markStageCompleted(stages, currentStageIndex));
       if (messages && messages.length > 0) {
+        // keep a copy of the messages so the completion dialog can export them
+        setLastMessagesForExport(messages);
         try {
           setIsGeneratingFeedback(true);
           setShowCompletionDialog(true);
@@ -217,6 +220,8 @@ export default function CaseChatPage() {
         setFeedbackContent(
           "<p>Examination completed! You've finished all stages.</p>"
         );
+        // also capture messages if provided via param
+        setLastMessagesForExport(messages ?? null);
         if (attemptId) {
           try {
             await completeAttempt(attemptId, "Examination completed!");
@@ -275,6 +280,7 @@ export default function CaseChatPage() {
         feedback={feedbackContent}
         isLoading={isGeneratingFeedback}
         caseId={caseItem.id.replace("case-", "")}
+        messages={lastMessagesForExport ?? []}
       />
     </div>
   );
