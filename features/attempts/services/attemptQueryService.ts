@@ -187,3 +187,23 @@ export async function getAttemptsByUserId(userId: string): Promise<Attempt[]> {
 
   return data.map(transformAttempt);
 }
+
+// Get followups for a given attempt
+export async function getFollowupsForAttempt(attemptId: string): Promise<any[]> {
+  try {
+    const { data, error } = await supabase
+      .from("followups")
+      .select("*")
+      .eq("attempt_id", attemptId)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error("Error fetching followups:", error);
+      return [];
+    }
+    return data || [];
+  } catch (err) {
+    console.error("Unexpected error fetching followups:", err);
+    return [];
+  }
+}

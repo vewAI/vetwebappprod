@@ -119,6 +119,51 @@ export async function deleteAttempt(attemptId: string): Promise<boolean> {
   }
 }
 
+// Create a follow-up record for a given attempt (Day 2, Day 3, etc.)
+export async function createFollowup(
+  attemptId: string,
+  followupDay: number = 1,
+  notes?: string
+): Promise<{ success: boolean; followup?: any } | null> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.error("createFollowup: no authenticated user");
+      return null;
+    }
+
+    // Fetch attempt to get case id
+    const { data: attemptData, error: attemptError } = await supabase
+      .from("attempts")
+      .select("id, case_id")
+      .eq("id", attemptId)
+      .single();
+
+    if (attemptError || !attemptData) {
+      console.error("createFollowup: attempt not found", attemptError);
+      return null;
+    }
+
+    const { data, error } = await supabase.from("followups").insert({
+      attempt_id: attemptId,
+      case_id: attemptData.case_id,
+      followup_day: followupDay,
+      notes: notes ?? null,
+      created_by: user.id,
+    }).select().single();
+
+    if (error) {
+      console.error("createFollowup insert error:", error);
+      return { success: false };
+    }
+
+    return { success: true, followup: data };
+  } catch (err) {
+    console.error("Unexpected error creating followup:", err);
+    return null;
+  }
+}
+
 // Update attempt time only (for fast-forward)
 export async function updateAttemptTime(
   attemptId: string,
