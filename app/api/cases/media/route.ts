@@ -39,6 +39,29 @@ export async function POST(req: Request) {
       console.error("Failed to update case media", updateErr);
       return NextResponse.json({ error: "db_update_failed" }, { status: 500 });
     }
+    // Optionally trigger automatic ingest of uploaded papers to populate case fields.
+    // Enable globally with env var AUTO_INGEST_ON_UPLOAD=1 or per-request by sending { autoIngest: true } in the body.
+    const shouldAutoIngest = (process.env.AUTO_INGEST_ON_UPLOAD === "1") || Boolean((body as any)?.autoIngest);
+
+    if (shouldAutoIngest) {
+      try {
+        const ingestUrl = new URL(`/api/cases/${caseId}/papers/ingest`, (req as Request).url);
+        // forward authorization header if present so requireUser in ingest route succeeds
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        const authHeader = (req as Request).headers.get("authorization");
+        if (authHeader) headers["authorization"] = authHeader;
+
+        // Fire-and-forget: await but don't fail the upload if ingest has issues
+        fetch(ingestUrl.toString(), { method: "POST", headers, body: JSON.stringify({ fields: ["details", "physical_exam_findings", "diagnostic_findings"] }) })
+          .then((res) => {
+            if (!res.ok) return res.text().then((t) => console.warn("Auto-ingest failed:", res.status, t));
+            return res.json().then((j) => console.log("Auto-ingest result:", j));
+          })
+          .catch((e) => console.warn("Auto-ingest error:", e));
+      } catch (e) {
+        console.warn("Failed to trigger auto-ingest:", e);
+      }
+    }
 
     return NextResponse.json({ success: true, data: updatedRow });
   } catch (err) {

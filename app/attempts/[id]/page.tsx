@@ -91,6 +91,39 @@ export default function ViewAttemptPage() {
     loadAttempt();
   }, [attemptId, router]);
 
+  // When user opens the Feedback tab, mark feedback as read for this student
+  useEffect(() => {
+    if (activeTab !== "feedback") return;
+    if (!attempt) return;
+    const unread = feedback.filter((f) => {
+      if (!attempt.feedbackReadAt) return true;
+      try {
+        return new Date(f.createdAt) > new Date(attempt.feedbackReadAt!);
+      } catch {
+        return true;
+      }
+    }).length;
+
+    if (unread === 0) return;
+
+    // mark as read (best-effort)
+    (async () => {
+      try {
+        const res = await fetch(`/api/attempts/${attempt.id}/feedback/mark-read`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+        if (res.ok) {
+          // locally reflect change to avoid extra fetch
+          setAttempt({ ...attempt, feedbackReadAt: new Date().toISOString() });
+        }
+      } catch (err) {
+        // ignore failures — non-blocking
+        console.error("Failed to mark feedback read:", err);
+      }
+    })();
+  }, [activeTab, attempt, feedback]);
+
   const [caseItem, setCaseItem] = useState<Case | null>(null);
   const searchParams = useSearchParams();
   const chatMode = Boolean(
@@ -218,7 +251,7 @@ export default function ViewAttemptPage() {
       <div className="w-full">
         {/* Tab buttons and delete button */}
         <div className="flex justify-between items-center mb-6">
-          <div className="flex space-x-2">
+          <div className="flex space-x-2 items-center">
             <button
               className={`px-4 py-2 rounded-md ${
                 activeTab === "conversation"
@@ -237,7 +270,23 @@ export default function ViewAttemptPage() {
               }`}
               onClick={() => setActiveTab("feedback")}
             >
-              Feedback
+              <div className="flex items-center gap-2">
+                <span>Feedback</span>
+                {(() => {
+                  const unreadCount = feedback.filter((f) => {
+                    if (!attempt?.feedbackReadAt) return true;
+                    try {
+                      return new Date(f.createdAt) > new Date(attempt.feedbackReadAt!);
+                    } catch {
+                      return true;
+                    }
+                  }).length;
+
+                  return unreadCount > 0 ? (
+                    <Badge className="text-xs py-0.5 px-2">{unreadCount}</Badge>
+                  ) : null;
+                })()}
+              </div>
             </button>
           </div>
 

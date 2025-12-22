@@ -19,6 +19,7 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
   const [caption, setCaption] = useState<string>("");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const inputRef = React.useRef<HTMLInputElement | null>(null);
 
   const handleUpload = async () => {
     if (!file) return setError("Select a file first");
@@ -60,6 +61,7 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
       <div className="flex items-center gap-2">
         <Label>Upload Reference Paper (PDF/DOCX)</Label>
         <input
+          ref={inputRef}
           type="file"
           accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           onChange={(e) => setFile(e.target.files ? e.target.files[0] : null)}
@@ -72,8 +74,18 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
       </div>
       {error && <div className="text-sm text-red-600">{error}</div>}
       <div className="flex items-center gap-2">
-        <Button onClick={handleUpload} disabled={uploading || !file}>
-          {uploading ? "Uploading..." : "Upload Paper"}
+        <Button
+          onClick={() => {
+            if (!file) {
+              // open file picker when no file selected
+              inputRef.current?.click();
+              return;
+            }
+            void handleUpload();
+          }}
+          disabled={uploading}
+        >
+          {uploading ? "Uploading..." : file ? "Upload Paper" : "Select a file"}
         </Button>
       </div>
     </div>

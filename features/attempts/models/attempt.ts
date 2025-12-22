@@ -8,6 +8,8 @@ export interface Attempt {
     completionStatus: 'in_progress' | 'completed' | 'abandoned';
     overallFeedback?: string;
     professorFeedback?: string;
+  // Timestamp when the student last read professor feedback (nullable)
+  feedbackReadAt?: string;
     lastStageIndex: number;
     timeSpentSeconds: number;
   }

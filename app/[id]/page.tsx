@@ -262,9 +262,7 @@ export default function CaseChatPage() {
 
   return (
     <div className="flex h-[calc(100vh-1rem)] overflow-hidden rounded-lg border shadow-sm relative">
-      <div className="absolute top-16 right-4 z-50">
-        <GuidedTour steps={tourSteps} tourId="chat-interface" />
-      </div>
+      {/* Guided tour is provided inside the chat interface; avoid duplicate button here */}
       {isMobile && (
         <button
           onClick={() => setShowSidebar(!showSidebar)}

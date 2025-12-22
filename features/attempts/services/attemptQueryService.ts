@@ -50,6 +50,7 @@ export function transformAttempt(data: DbAttempt): Attempt {
     })(),
     overallFeedback: data.overall_feedback ?? undefined,
     professorFeedback: data.professor_feedback ?? undefined,
+    feedbackReadAt: (data as any).feedback_read_at ?? undefined,
     lastStageIndex: Number(data.last_stage_index ?? 0),
     timeSpentSeconds: Number(data.time_spent_seconds ?? 0),
   };
