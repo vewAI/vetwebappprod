@@ -13,6 +13,7 @@ import {
 import { isCaseFieldAutomatable } from "@/features/prompts/services/casePromptAutomation";
 import { useAuth } from "@/features/auth/services/authService";
 import { CaseMediaEditor } from "@/features/cases/components/case-media-editor";
+import CasePapersUploader from "@/features/cases/components/case-papers-uploader";
 import { AvatarSelector } from "@/features/cases/components/avatar-selector";
 import {
   normalizeCaseMedia,
@@ -777,6 +778,33 @@ export default function CaseViewerPage() {
             value={mediaDraft}
             onChange={handleMediaChange}
             readOnly={!editable}
+          />
+        </div>
+      )}
+      {formState && caseIdValue && editable && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between">
+            <div className="text-lg font-medium">Reference Papers</div>
+          </div>
+          <CasePapersUploader
+            caseId={caseIdValue}
+            onUploaded={async (media) => {
+              try {
+                // update UI media list
+                setMediaDraft((prev) => [...prev, media]);
+                // trigger server-side ingestion to append generated content from papers
+                const headers = authHeaders ?? {};
+                await fetch(`/api/cases/${encodeURIComponent(caseIdValue)}/papers/ingest`, {
+                  method: "POST",
+                  headers: { ...(headers as Record<string,string>), "Content-Type": "application/json" },
+                  body: JSON.stringify({ fields: ["details", "physical_exam_findings", "diagnostic_findings"] }),
+                });
+                // refresh page to show appended data
+                window.location.reload();
+              } catch (e) {
+                console.error("Paper upload hook failed", e);
+              }
+            }}
           />
         </div>
       )}

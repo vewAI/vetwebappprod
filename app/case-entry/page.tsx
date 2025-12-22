@@ -38,6 +38,7 @@ export default function CaseEntryForm() {
   const [showPaperUploader, setShowPaperUploader] = useState(false);
   const [uploaderFiles, setUploaderFiles] = useState<FileList | null>(null);
   const [uploaderUploading, setUploaderUploading] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const caseIdForMedia = useMemo(() => {
     const raw = form.id?.trim();
@@ -321,6 +322,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
             <div className="flex items-center gap-2">
               <label className="font-medium">Upload reference papers (PDF/DOCX)</label>
               <input
+                ref={fileInputRef}
                 type="file"
                 accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 multiple
@@ -329,7 +331,16 @@ Remain collaborative, use everyday language, and avoid offering your own medical
               />
             </div>
             <div className="flex items-center gap-2">
-              <Button onClick={handleUploadReferences} disabled={uploaderUploading || !uploaderFiles}>
+              <Button
+                onClick={() => {
+                  if (!uploaderFiles || uploaderFiles.length === 0) {
+                    fileInputRef.current?.click();
+                    return;
+                  }
+                  void handleUploadReferences();
+                }}
+                disabled={uploaderUploading}
+              >
                 {uploaderUploading ? "Uploading..." : "Upload & Use References"}
               </Button>
               <Button variant="ghost" onClick={() => setShowPaperUploader(false)}>
