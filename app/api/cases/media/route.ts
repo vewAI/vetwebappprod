@@ -45,21 +45,22 @@ export async function POST(req: Request) {
 
     if (shouldAutoIngest) {
       try {
-        const ingestUrl = new URL(`/api/cases/${caseId}/papers/ingest`, (req as Request).url);
-        // forward authorization header if present so requireUser in ingest route succeeds
-        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        // Enqueue a background job to run the ingest (non-blocking for upload)
+        const enqueueUrl = new URL(`/api/jobs/queue`, (req as Request).url);
         const authHeader = (req as Request).headers.get("authorization");
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
         if (authHeader) headers["authorization"] = authHeader;
 
-        // Fire-and-forget: await but don't fail the upload if ingest has issues
-        fetch(ingestUrl.toString(), { method: "POST", headers, body: JSON.stringify({ fields: ["details", "physical_exam_findings", "diagnostic_findings"] }) })
+        const payload = { caseId, fields: ["details", "physical_exam_findings", "diagnostic_findings" ] };
+
+        fetch(enqueueUrl.toString(), { method: "POST", headers, body: JSON.stringify({ queueName: "paper-ingest", payload }) })
           .then((res) => {
-            if (!res.ok) return res.text().then((t) => console.warn("Auto-ingest failed:", res.status, t));
-            return res.json().then((j) => console.log("Auto-ingest result:", j));
+            if (!res.ok) return res.text().then((t) => console.warn("Enqueue job failed:", res.status, t));
+            return res.json().then(() => console.log("Enqueued paper ingest job for case", caseId));
           })
-          .catch((e) => console.warn("Auto-ingest error:", e));
+          .catch((e) => console.warn("Enqueue error:", e));
       } catch (e) {
-        console.warn("Failed to trigger auto-ingest:", e);
+        console.warn("Failed to enqueue auto-ingest:", e);
       }
     }
 

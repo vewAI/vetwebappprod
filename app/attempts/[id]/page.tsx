@@ -68,24 +68,28 @@ export default function ViewAttemptPage() {
     const loadAttempt = async () => {
       setIsLoading(true);
 
-      const { attempt, messages, feedback } = await getAttemptById(attemptId);
+      try {
+        const res = await fetch(`/api/attempts/${attemptId}/view`);
+        const payload = await res.json();
+        if (!res.ok || !payload.attempt) {
+          router.push("/attempts");
+          return;
+        }
 
-      if (!attempt) {
-        router.push("/attempts");
+        const { attempt: serverAttempt, messages: serverMessages, feedback: serverFeedback } = payload;
+        setAttempt(serverAttempt);
+        setMessages(serverMessages || []);
+        setFeedback(serverFeedback || []);
+
+        const caseStages = getStagesForCase(serverAttempt.caseId);
+        setStages(caseStages);
+      } catch (e) {
+        console.error('Failed to load attempt view', e);
+        router.push('/attempts');
         return;
+      } finally {
+        setIsLoading(false);
       }
-
-      setAttempt(attempt);
-
-      // Set messages directly since they already match the Message interface
-      setMessages(messages);
-      setFeedback(feedback);
-
-      // Load stages for this case
-      const caseStages = getStagesForCase(attempt.caseId);
-      setStages(caseStages);
-
-      setIsLoading(false);
     };
 
     loadAttempt();
