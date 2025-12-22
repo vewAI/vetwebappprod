@@ -349,7 +349,7 @@ export function ChatInterface({
         const assistantMsg: Message = {
           id: `paper-sum-${Date.now()}`,
           role: "assistant",
-          content: best.summary ? `Reference summary: ${best.summary}` : `Found ${respData.results.length} paper(s). See: ${best.url}`,
+          content: best.summary ? `Reference summary: ${best.summary}` : `Found ${respData.results.length} paper(s).`,
           timestamp: new Date().toISOString(),
           stageIndex: currentStageIndex,
           displayRole: "Reference",
@@ -2574,8 +2574,8 @@ export function ChatInterface({
           {fallbackNotice}
         </div>
       )}
-      {/* Reference papers attached to this case (documents) */}
-      {caseMedia && caseMedia.length > 0 && (
+      {/* Reference papers attached to this case (documents) - only visible to professors/admins */}
+      {role && (role === "professor" || role === "admin") && caseMedia && caseMedia.length > 0 && (
         (() => {
           const docs = caseMedia.filter((m) => m.type === "document");
           if (docs.length === 0) return null;
@@ -2588,9 +2588,9 @@ export function ChatInterface({
               <div className="mt-2 space-y-1">
                 {docs.map((d) => (
                   <div key={d.id} className="flex items-center justify-between">
-                    <a href={d.url} target="_blank" rel="noreferrer" className="text-sm text-sky-600 hover:underline">
+                    <span className="text-sm text-sky-600">
                       {d.caption ?? d.url.split('/').pop()}
-                    </a>
+                    </span>
                     <div className="text-xs text-gray-400">{d.mimeType ?? ''}</div>
                   </div>
                 ))}
@@ -2854,18 +2854,20 @@ export function ChatInterface({
                 )}
               </Tooltip>
             </TooltipProvider>
-            <Button
-              type="button"
-              size="icon"
-              title="Search attached reference papers"
-              className="absolute bottom-2 right-14 bg-white text-gray-700 border"
-              onClick={() => {
-                const q = input.trim() || (messages.length > 0 ? messages[messages.length - 1].content : "");
-                void runPaperSearch(q);
-              }}
-            >
-              🔎
-            </Button>
+            {role && (role === "professor" || role === "admin") && (
+              <Button
+                type="button"
+                size="icon"
+                title="Search attached reference papers"
+                className="absolute bottom-2 right-14 bg-white text-gray-700 border"
+                onClick={() => {
+                  const q = input.trim() || (messages.length > 0 ? messages[messages.length - 1].content : "");
+                  void runPaperSearch(q);
+                }}
+              >
+                🔎
+              </Button>
+            )}
           </form>
 
           <div className="mt-2 flex justify-between text-xs text-muted-foreground">
