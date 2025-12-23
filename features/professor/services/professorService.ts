@@ -153,6 +153,22 @@ export const professorService = {
       throw new Error('Assignment failed: no row returned from database');
     }
 
+    // Try to set owner_id on the case (server-side) so RLS policies that
+    // depend on owner_id work correctly. This calls a server route that
+    // updates the case using the service role key.
+    try {
+      const token = await getAccessToken();
+      const headers = await buildAuthHeaders({ 'Content-Type': 'application/json' }, token);
+      // best-effort: don't fail the assignment if this call fails
+      void fetch('/api/professor/set-case-owner', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ caseId, ownerId: professorId }),
+      }).catch((e) => console.warn('set-case-owner call failed', e));
+    } catch (e) {
+      console.warn('Unable to call set-case-owner route:', e);
+    }
+
     return data;
   },
 

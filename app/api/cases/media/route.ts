@@ -37,6 +37,10 @@ export async function POST(req: Request) {
     const { data: updatedRow, error: updateErr } = await db.from("cases").update({ media: updated }).eq("id", caseId).select().maybeSingle();
     if (updateErr) {
       console.error("Failed to update case media", updateErr);
+      const msg = String(updateErr.message ?? updateErr.details ?? "");
+      if (msg.toLowerCase().includes("row-level security") || msg.toLowerCase().includes("violates row-level security")) {
+        return NextResponse.json({ error: "rls_violation", message: "Row-level security prevented updating the case. Ensure the server has SUPABASE_SERVICE_ROLE_KEY set or adjust your RLS policies to allow this operation." }, { status: 403 });
+      }
       return NextResponse.json({ error: "db_update_failed" }, { status: 500 });
     }
     // Optionally trigger automatic ingest of uploaded papers to populate case fields.
