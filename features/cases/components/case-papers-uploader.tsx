@@ -54,8 +54,9 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
             formData.append("case_id", caseId);
 
             // Using axios for consistency
+            const ingestHeaders = await buildAuthHeaders({ "Content-Type": "multipart/form-data" });
             await axios.post("/api/cases/ingest", formData, {
-              headers: { "Content-Type": "multipart/form-data" }, // Axios sets boundary auto
+              headers: ingestHeaders,
             });
             console.log("Ingestion complete");
           } catch (ingestErr) {

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { Loader2, Trash2, FileText, RefreshCw, AlertTriangle, ChevronDown, ChevronRight, Database, FileDigit } from "lucide-react";
+import { buildAuthHeaders } from "@/lib/auth-headers";
 
 interface CaseKnowledgeItem {
     id: string;
@@ -26,8 +27,12 @@ export function CaseRagManager({ caseId }: Props) {
         setLoading(true);
         setError(null);
         try {
-            const res = await fetch(`/api/cases/${caseId}/knowledge`);
-            if (!res.ok) throw new Error("Failed to fetch knowledge");
+            const headers = await buildAuthHeaders();
+            const res = await fetch(`/api/cases/${caseId}/knowledge`, { headers });
+            if (!res.ok) {
+                if (res.status === 401 || res.status === 403) throw new Error("Unauthorized to access knowledge audit.");
+                throw new Error("Failed to fetch knowledge");
+            }
             const json = await res.json();
             setItems(json.data || []);
             setSelectedIds(new Set());
@@ -48,9 +53,10 @@ export function CaseRagManager({ caseId }: Props) {
 
         setDeleting(true);
         try {
+            const headers = await buildAuthHeaders({ "Content-Type": "application/json" });
             const res = await fetch(`/api/cases/${caseId}/knowledge`, {
                 method: "DELETE",
-                headers: { "Content-Type": "application/json" },
+                headers,
                 body: JSON.stringify({ ids: Array.from(selectedIds) }),
             });
             if (!res.ok) throw new Error("Failed to delete chunks");
@@ -67,9 +73,10 @@ export function CaseRagManager({ caseId }: Props) {
 
         setDeleting(true);
         try {
+            const headers = await buildAuthHeaders({ "Content-Type": "application/json" });
             const res = await fetch(`/api/cases/${caseId}/knowledge`, {
                 method: "DELETE",
-                headers: { "Content-Type": "application/json" },
+                headers,
                 body: JSON.stringify({ source }),
             });
             if (!res.ok) throw new Error("Failed to exclude source");
@@ -115,8 +122,9 @@ export function CaseRagManager({ caseId }: Props) {
 
     if (loading && items.length === 0) {
         return (
-            <div className="p-4 flex justify-center text-slate-500">
-                <Loader2 className="w-6 h-6 animate-spin" />
+            <div className="p-10 flex flex-col items-center justify-center text-slate-500 gap-4">
+                <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+                <p className="text-sm font-medium">Fetching RAG Knowledge Base...</p>
             </div>
         );
     }
@@ -197,9 +205,9 @@ export function CaseRagManager({ caseId }: Props) {
             </div>
 
             {error && (
-                <div className="p-3 bg-red-50 text-red-700 text-sm rounded-lg flex items-center gap-2 mx-1">
+                <div className="p-3 bg-red-50 text-red-700 text-sm rounded-lg flex items-center gap-2 mx-1 border border-red-200 animate-pulse">
                     <AlertTriangle className="w-4 h-4" />
-                    {error}
+                    <span className="font-medium">{error}</span>
                 </div>
             )}
 
@@ -295,5 +303,3 @@ export function CaseRagManager({ caseId }: Props) {
         </div>
     );
 }
-
-
