@@ -48,7 +48,7 @@ export async function ingestCaseMaterial(
     const embeddings = await Promise.all(
         chunks.map(async (chunk, index) => {
             const response = await openai.embeddings.create({
-                model: "text-embedding-ada-002", // or text-embedding-3-small
+                model: "text-embedding-3-small",
                 input: chunk,
             });
             return {
