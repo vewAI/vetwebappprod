@@ -10,7 +10,7 @@ export async function GET(
     if ("error" in auth) {
         return auth.error;
     }
-    const { supabase, user } = auth;
+    const { supabase, user, role } = auth;
     const caseId = params.caseId;
 
     if (!caseId) {
@@ -18,8 +18,7 @@ export async function GET(
     }
 
     // Verify permission (professor/admin)
-    // Ideally this logic is in a service or middleware, but checking role here is safe
-    if (user.role !== "professor" && user.role !== "admin") {
+    if (role !== "professor" && role !== "admin") {
         return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
@@ -52,10 +51,10 @@ export async function DELETE(
     if ("error" in auth) {
         return auth.error;
     }
-    const { supabase, user } = auth;
+    const { supabase, user, role } = auth;
     const caseId = params.caseId;
 
-    if (user.role !== "professor" && user.role !== "admin") {
+    if (role !== "professor" && role !== "admin") {
         return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 

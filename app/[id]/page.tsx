@@ -297,7 +297,7 @@ export default function CaseChatPage() {
           <div className="p-3 border-b bg-gray-50 dark:bg-gray-900 flex justify-end">
             <Dialog>
               <DialogTrigger asChild>
-                <Button variant="outline" size="sm" className="dark:text-white dark:border-gray-700 dark:hover:bg-gray-800">
+                <Button variant="outline" size="sm" className="dark:text-white dark:border-white/50 dark:hover:bg-white/10 dark:bg-slate-800">
                   📄 View RAG Report / Manage Knowledge
                 </Button>
               </DialogTrigger>
