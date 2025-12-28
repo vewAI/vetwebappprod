@@ -69,7 +69,7 @@ export default function CaseChatPage() {
   const [isRestoring, setIsRestoring] = useState(true);
 
   const { saveProgress } = useSaveAttempt(attemptId);
-  const { user, session } = useAuth();
+  const { user, session, role } = useAuth();
 
   useEffect(() => {
     async function loadCase() {
