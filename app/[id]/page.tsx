@@ -6,6 +6,15 @@ import type { Case } from "@/features/case-selection/models/case";
 import { fetchCaseById } from "@/features/case-selection/services/caseService";
 // Removed unused imports (Link, Button, ChevronLeft) to satisfy lint rules.
 import { useParams } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 import { ChatInterface } from "@/features/chat/components/chat-interface";
 import { ProgressSidebar } from "@/features/chat/components/progress-sidebar";
@@ -28,6 +37,7 @@ import { createFollowup } from "@/features/attempts/services/attemptMutationServ
 import { useCaseTimepoints } from "@/features/cases/hooks/useCaseTimepoints";
 import { GuidedTour } from "@/components/ui/guided-tour";
 import CasePapersUploader from "@/features/cases/components/case-papers-uploader";
+import { CaseRagManager } from "@/features/cases/components/case-rag-manager";
 
 export default function CaseChatPage() {
   const params = useParams();
@@ -83,13 +93,13 @@ export default function CaseChatPage() {
 
     if (existingAttemptId) {
       setAttemptId(existingAttemptId);
-      
+
       // Restore attempt state
       getAttemptById(existingAttemptId).then(({ attempt, messages }) => {
         if (attempt) {
           const lastIndex = attempt.lastStageIndex || 0;
           setCurrentStageIndex(lastIndex);
-          
+
           // Mark previous stages as completed
           let updatedStages = [...stages];
           for (let i = 0; i < lastIndex; i++) {
@@ -97,7 +107,7 @@ export default function CaseChatPage() {
           }
           setStages(updatedStages);
         }
-        
+
         if (messages) {
           const mappedMessages: Message[] = messages.map((m) => ({
             id: m.id,
@@ -115,7 +125,7 @@ export default function CaseChatPage() {
       }).finally(() => {
         setIsRestoring(false);
       });
-      
+
       return;
     }
 
@@ -281,22 +291,45 @@ export default function CaseChatPage() {
         />
       </div>
 
-      <div id="chat-interface" className="flex-1">
+      <div id="chat-interface" className="flex-1 flex flex-col overflow-hidden">
         {/* Professor uploader + Papers list */}
-        {user && (user.role === "professor" || user.role === "admin") && caseItem?.id && (
-          <div className="p-3">
-            <CasePapersUploader
-              caseId={caseItem.id}
-              onUploaded={async () => {
-                // refresh case metadata after upload
-                try {
-                  const refreshed = await fetchCaseById(caseItem.id);
-                  setCaseItem(refreshed);
-                } catch (err) {
-                  console.error("Failed to refresh case after paper upload", err);
-                }
-              }}
-            />
+        {user && (role === "professor" || role === "admin") && caseItem?.id && (
+          <div className="p-3 border-b bg-gray-50 flex justify-end">
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  📄 View RAG Report / Manage Knowledge
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Case Knowledge Base (RAG)</DialogTitle>
+                  <DialogDescription>
+                    Upload PDF references and view the extracted knowledge chunks that the AI uses to answer questions.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-6 py-4">
+                  <div className="border rounded p-4">
+                    <h3 className="font-semibold mb-2">1. Upload Reference Papers</h3>
+                    <CasePapersUploader
+                      caseId={caseItem.id}
+                      onUploaded={async () => {
+                        try {
+                          const refreshed = await fetchCaseById(caseItem.id);
+                          setCaseItem(refreshed);
+                        } catch (err) {
+                          console.error("Failed to refresh case after paper upload", err);
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="border rounded p-4">
+                    <h3 className="font-semibold mb-2">2. Inspect Knowledge Chunks</h3>
+                    <CaseRagManager caseId={caseItem.id} />
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
         )}
         {/* Follow-up Day selector (only show when case has timepoints/time progression enabled) */}

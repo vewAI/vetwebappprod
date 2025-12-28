@@ -16,6 +16,14 @@ let starting = false;
 let restartAttempts = 0;
 const MAX_RESTARTS = 6; // after this many rapid restarts, stop and surface a warning
 
+// Global error handler type
+type ErrorHandler = (error: string) => void;
+let globalOnError: ErrorHandler | null = null;
+
+export function registerOnError(handler: ErrorHandler) {
+  globalOnError = handler;
+}
+
 /**
  * Start speech recognition
  * @param callback Function to call with speech recognition results
@@ -128,6 +136,13 @@ function postProcessTranscript(text: string): string {
   return processed;
 }
 
+export const isSpeechRecognitionSupported = (): boolean => {
+  if (typeof window === "undefined") return false;
+  return !!(
+    (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+  );
+};
+
 export async function startListening(
   callback: (text: string, isFinal: boolean) => void,
   options?: StartListeningOptions
@@ -137,13 +152,15 @@ export async function startListening(
   stopListening();
 
   // Check browser support
+  if (!isSpeechRecognitionSupported()) {
+    console.warn("Speech recognition not supported in this browser");
+    debugEventBus.emitEvent('warning', 'STT', 'Speech recognition not supported');
+    return false;
+  }
+
   const SpeechRecognition =
     (window as any).SpeechRecognition ||
     (window as any).webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    console.error("Speech recognition not supported");
-    return false;
-  }
 
   // Create and configure recognition
   recognition = new (SpeechRecognition as any)();
@@ -192,10 +209,16 @@ export async function startListening(
 
     recognition.onerror = (event: any) => {
       debugEventBus.emitEvent('error', 'STT', `Speech recognition error: ${event?.error}`, { error: event?.error });
+      const errCode = String(event?.error || "").toLowerCase();
+
+      // Notify the hook about the specific error
+      if (globalOnError) {
+        globalOnError(errCode);
+      }
+
       // For some errors we should not attempt to automatically restart
-      const fatalErrors = ["not-allowed", "service-not-allowed", "security", "microphone-disabled"];
+      const fatalErrors = ["not-allowed", "service-not-allowed", "security", "microphone-disabled", "network"];
       try {
-        const errCode = String(event?.error || "").toLowerCase();
         if (fatalErrors.some((e) => errCode.includes(e))) {
           shouldRestart = false;
           debugEventBus.emitEvent('warning', 'STT', `Speech recognition fatal error, will not auto-restart: ${errCode}`);

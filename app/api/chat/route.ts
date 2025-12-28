@@ -82,88 +82,132 @@ export async function POST(request: NextRequest) {
       .find((msg) => msg.role === "user");
     const enhancedMessages = [...messages];
 
-    // If we have a valid caseId, fetch owner_background and roleInfo and prepend them
-    // so the LLM is influenced by the owner's personality plus any stage-specific role info.
-    let ownerBackground: string | null = null;
-    let roleInfoPromptContent: string | null = null;
-    let timepointPrompt: string | null = null;
-    let caseRecord: Record<string, unknown> | null = null;
-    let caseMedia: CaseMediaItem[] = [];
-    if (caseId) {
-      try {
-        const dbStart = Date.now();
-        // debugEventBus.emitEvent('info', 'DB', `Fetching case data for ${caseId}`);
-        const { data: caseRow, error: caseErr } = await supabase
-          .from("cases")
-          // fetch the complete row so we can derive persona identities and prompts
-          .select("*")
-          .eq("id", caseId)
-          .maybeSingle();
-        
-        if (caseRow) {
-             // debugEventBus.emitEvent('success', 'DB', `Case data fetched in ${Date.now() - dbStart}ms`);
-        }
+    // Parallel Fetching: Start both RAG and DB lookups immediately
+    const ragPromise = (async () => {
+      let ragContext = "";
+      if (caseId && lastUserMessage) {
+        try {
+          // Generate embedding
+          const embeddingResp = await openai.embeddings.create({
+            model: "text-embedding-3-small",
+            input: lastUserMessage.content.replace(/\n/g, " "),
+          });
+          const embedding = embeddingResp.data[0].embedding;
 
-        if (caseErr) {
-          // debugEventBus.emitEvent('error', 'DB', `Failed to fetch case: ${caseErr.message}`);
-          console.warn(
-            "Could not fetch case owner_background:",
-            caseErr.message ?? caseErr
-          );
-        } else if (caseRow) {
-          caseRecord = caseRow as Record<string, unknown>;
-           const rawMedia = (caseRow as { media?: unknown }).media;
-           caseMedia = normalizeCaseMedia(rawMedia);
-          if (caseRow.owner_background) {
-            ownerBackground = String(caseRow.owner_background);
-            // Replace common placeholder markers the prompts may contain so the
-            // LLM doesn't echo things like "[Your Name]" literally.
-            // We use a generic "the owner" replacement to avoid hallucinating the horse's name
-            // as the owner's name (which happened when using titleFromRow).
-            const replacement = "the owner";
-            ownerBackground = ownerBackground.replace(
-              /\[Your Name\]/g,
-              replacement
-            );
-            ownerBackground = ownerBackground.replace(
-              /\{owner_name\}/g,
-              replacement
-            );
+          // Search knowledge
+          const { data: knowledgeChunks, error: ragError } = await supabase.rpc("match_case_knowledge", {
+            query_embedding: embedding,
+            match_threshold: 0.75,
+            match_count: 3,
+            filter_case_id: caseId,
+          });
+
+          if (ragError) {
+            console.warn("RAG RPC failed:", ragError);
+          } else if (knowledgeChunks && knowledgeChunks.length > 0) {
+            const knowledgeList = knowledgeChunks
+              .map((k: any) => `[Source: ${k.metadata?.source ?? "Unknown"}]\n${k.content}`)
+              .join("\n\n");
+
+            ragContext = `SCIENTIFIC REFERENCE (RAG): The following materials have been uploaded specifically for this case. 
+- Use this as your primary source for "Deep Science", research protocols, and specific medical reference values.
+- For basic patient facts (Age, Sex, Species) and current clinical state, prioritize the Case Data provided below.
+- CRITICAL: Do not reveal a definitive diagnosis or advanced findings if the context suggests the student is in an early diagnostic phase.
+
+${knowledgeList}`;
+
+            // Debug event
+            try {
+              debugEventBus.emitEvent('info', 'RAG', 'Knowledge retrieved', {
+                count: knowledgeChunks.length,
+                sources: knowledgeChunks.map((k: any) => k.metadata?.source)
+              });
+            } catch { }
           }
+        } catch (err) {
+          console.warn("RAG logic error:", err);
         }
+      }
+      return ragContext;
+    })();
 
-        // Fetch timepoint-specific prompt
-        if (typeof stageIndex === "number") {
-          const { data: timepoint } = await supabase
-            .from("case_timepoints")
-            .select("stage_prompt, label")
-            .eq("case_id", caseId)
-            .eq("sequence_index", stageIndex)
+    const dbPromise = (async () => {
+      let ownerInfo: string | null = null;
+      let timepointInfo: string | null = null;
+      let dbRecord: Record<string, unknown> | null = null;
+      let mediaItems: CaseMediaItem[] = [];
+
+      if (caseId) {
+        try {
+          const { data: caseRow, error: caseErr } = await supabase
+            .from("cases")
+            .select("*")
+            .eq("id", caseId)
             .maybeSingle();
-          
-          if (timepoint?.stage_prompt) {
-            timepointPrompt = `CURRENT TIME: ${timepoint.label}\nCONTEXT UPDATE: ${timepoint.stage_prompt}`;
+
+          if (caseErr) {
+            console.warn("Could not fetch case:", caseErr.message);
+          } else if (caseRow) {
+            dbRecord = caseRow as Record<string, unknown>;
+            const rawMedia = (caseRow as { media?: unknown }).media;
+            mediaItems = normalizeCaseMedia(rawMedia);
+
+            if (caseRow.owner_background) {
+              ownerInfo = String(caseRow.owner_background);
+              const replacement = "the owner";
+              ownerInfo = ownerInfo.replace(/\[Your Name\]/g, replacement);
+              ownerInfo = ownerInfo.replace(/\{owner_name\}/g, replacement);
+            }
           }
+
+          if (typeof stageIndex === "number") {
+            const { data: timepoint } = await supabase
+              .from("case_timepoints")
+              .select("stage_prompt, label")
+              .eq("case_id", caseId)
+              .eq("sequence_index", stageIndex)
+              .maybeSingle();
+
+            if (timepoint?.stage_prompt) {
+              timepointInfo = `CURRENT TIME: ${timepoint.label}\nCONTEXT UPDATE: ${timepoint.stage_prompt}`;
+            }
+          }
+        } catch (e) {
+          console.warn("Error fetching DB data for caseId", caseId, e);
         }
-      } catch (e) {
-        console.warn("Error fetching owner_background for caseId", caseId, e);
       }
+      return { ownerInfo, timepointInfo, dbRecord, mediaItems };
+    })();
 
-      // Stage-specific role info
-      if (stageIndex !== undefined && lastUserMessage) {
-        const roleInfoPrompt = await getRoleInfoPrompt(
-          caseId,
-          stageIndex,
-          lastUserMessage.content
-        );
+    // Await both independent chains
+    const [ragContext, dbResult] = await Promise.all([ragPromise, dbPromise]);
 
-        if (roleInfoPrompt) {
-          roleInfoPromptContent = roleInfoPrompt;
-        }
+    // Deconstruct DB results.
+    let { ownerInfo: ownerBackground, timepointInfo: timepointPrompt, dbRecord: caseRecord, mediaItems: caseMedia } = dbResult;
+
+    if (!caseId) {
+      console.warn("No caseId provided");
+    }
+
+    if (ragContext) {
+      enhancedMessages.unshift({
+        role: "system",
+        content: ragContext
+      });
+    }
+
+    // Role Info Prompt logic (restored and correctly scoped)
+    let roleInfoPromptContent: string | null = null;
+    if (caseId && stageIndex !== undefined && lastUserMessage) {
+      const roleInfoPrompt = await getRoleInfoPrompt(
+        caseId,
+        stageIndex,
+        lastUserMessage.content
+      );
+
+      if (roleInfoPrompt) {
+        roleInfoPromptContent = roleInfoPrompt;
       }
-
-      // We will unshift ownerBackground and roleInfoPrompt later to control the order
-      // relative to media prompts.
     }
 
     let displayRole: string | undefined = undefined;
@@ -267,8 +311,7 @@ export async function POST(request: NextRequest) {
       const mediaList = relevantMedia
         .map(
           (m) =>
-            `- [MEDIA:${m.id}] ${m.type.toUpperCase()} [${
-              m.trigger === "auto" ? "AUTO-SHOW" : "ON-DEMAND"
+            `- [MEDIA:${m.id}] ${m.type.toUpperCase()} [${m.trigger === "auto" ? "AUTO-SHOW" : "ON-DEMAND"
             }]: ${m.caption || "No description"}`
         )
         .join("\n");
@@ -466,8 +509,8 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       if (typeof direct === "string" && direct.trim()) return direct;
       const identityVoice =
         metadata["identity"] &&
-        typeof metadata["identity"] === "object" &&
-        metadata["identity"] !== null
+          typeof metadata["identity"] === "object" &&
+          metadata["identity"] !== null
           ? (metadata["identity"] as { voiceId?: unknown }).voiceId
           : undefined;
       if (typeof identityVoice === "string" && identityVoice.trim()) {
@@ -485,8 +528,8 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       }
       const identitySex =
         metadata["identity"] &&
-        typeof metadata["identity"] === "object" &&
-        metadata["identity"] !== null
+          typeof metadata["identity"] === "object" &&
+          metadata["identity"] !== null
           ? (metadata["identity"] as { sex?: unknown }).sex
           : undefined;
       if (identitySex === "male" || identitySex === "female") {
@@ -658,85 +701,17 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
 
     enhancedMessages.unshift({ role: "system", content: systemGuideline });
 
-    // Define tools
-    const tools: OpenAi.Chat.Completions.ChatCompletionTool[] = [
-      {
-        type: "function",
-        function: {
-          name: "search_merck_manual",
-          description: "Search the Merck Veterinary Manual for information about pathologies, treatments, or species when internal case data is insufficient.",
-          parameters: {
-            type: "object",
-            properties: {
-              query: {
-                type: "string",
-                description: "The search query (e.g., 'canine parvovirus treatment', 'feline hyperthyroidism symptoms').",
-              },
-            },
-            required: ["query"],
-          },
-        },
-      },
-    ];
-
     let response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: enhancedMessages as any[],
       temperature: 0.7,
       max_tokens: 1000,
-      tools: tools,
-      tool_choice: "auto",
     });
 
     let message = response.choices[0].message;
 
-    // Handle tool calls
-    if (message.tool_calls) {
-      enhancedMessages.push(message); // Add the assistant's tool call message
-
-      for (const toolCall of message.tool_calls as any[]) {
-        if (toolCall.function.name === "search_merck_manual") {
-          const args = JSON.parse(toolCall.function.arguments);
-          // Emit an event so admins can see when the assistant requests a Merck Manual lookup during a conversation
-          try {
-            debugEventBus.emitEvent('info', 'MerckConsult', 'Assistant requested Merck Manual lookup', {
-              query: args.query,
-              toolCallId: toolCall.id,
-            });
-          } catch {}
-
-          const searchResult = await searchMerckManual(args.query);
-
-          // Also emit that the tool returned (merckService emits a consult event with details too)
-          try {
-            debugEventBus.emitEvent('info', 'MerckConsult', 'Merck lookup returned for assistant', {
-              query: args.query,
-              toolCallId: toolCall.id,
-              preview: typeof searchResult === 'string' ? searchResult.slice(0, 200) : null,
-            });
-          } catch {}
-
-          enhancedMessages.push({
-            tool_call_id: toolCall.id,
-            role: "tool",
-            content: searchResult,
-          });
-        }
-      }
-
-      // Second call to OpenAI to get the final answer
-      response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: enhancedMessages as any[],
-        temperature: 0.7,
-        max_tokens: 1000,
-      });
-      
-      message = response.choices[0].message;
-    }
-
     const assistantRawContent = message.content ?? "";
-    
+
     // Parse on-demand media tags
     let content = assistantRawContent;
     const mediaIds: string[] = [];

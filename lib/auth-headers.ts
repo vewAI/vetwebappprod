@@ -4,7 +4,14 @@ export async function getAccessToken(): Promise<string | null> {
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  return session?.access_token ?? null;
+
+  if (session?.access_token) {
+    return session.access_token;
+  }
+
+  // Backup: try refreshing if no session found 
+  const { data: refreshData } = await supabase.auth.refreshSession();
+  return refreshData?.session?.access_token ?? null;
 }
 
 export async function buildAuthHeaders(

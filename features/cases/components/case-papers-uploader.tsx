@@ -18,6 +18,8 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [caption, setCaption] = useState<string>("");
   const [uploading, setUploading] = useState(false);
+  const [ingesting, setIngesting] = useState(false);
+  const [processForAi, setProcessForAi] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const inputRef = React.useRef<HTMLInputElement | null>(null);
 
@@ -42,6 +44,29 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
       const headers = await buildAuthHeaders({ "Content-Type": "application/json" });
       const resp = await axios.post(`/api/cases/media`, { caseId, media: mediaItem }, { headers });
       if (resp.status === 200) {
+
+        // Trigger Ingestion if requested
+        if (processForAi) {
+          setIngesting(true);
+          try {
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("case_id", caseId);
+
+            // Using axios for consistency
+            await axios.post("/api/cases/ingest", formData, {
+              headers: { "Content-Type": "multipart/form-data" }, // Axios sets boundary auto
+            });
+            console.log("Ingestion complete");
+          } catch (ingestErr) {
+            console.error("Ingestion failed", ingestErr);
+            // We don't block the UI success for media upload, but maybe warn?
+            // setError("File uploaded but AI processing failed.");
+          } finally {
+            setIngesting(false);
+          }
+        }
+
         setFile(null);
         setCaption("");
         if (onUploaded) onUploaded(mediaItem);
@@ -72,6 +97,19 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
         <Label>Caption (optional)</Label>
         <Input value={caption} onChange={(e) => setCaption(e.target.value)} />
       </div>
+
+      <div className="flex items-center space-x-2 py-2">
+        <input
+          type="checkbox"
+          id="processAi"
+          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+          checked={processForAi}
+          onChange={(e) => setProcessForAi(e.target.checked)}
+        />
+        <Label htmlFor="processAi" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+          Process for AI Knowledge Base (RAG)
+        </Label>
+      </div>
       {error && <div className="text-sm text-red-600">{error}</div>}
       <div className="flex items-center gap-2">
         <Button
@@ -85,7 +123,7 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
           }}
           disabled={uploading}
         >
-          {uploading ? "Uploading..." : file ? "Upload Paper" : "Select a file"}
+          {uploading ? (ingesting ? "Ingesting Knowledge..." : "Uploading...") : file ? "Upload Paper" : "Select a file"}
         </Button>
       </div>
     </div>

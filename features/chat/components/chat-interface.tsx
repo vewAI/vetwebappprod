@@ -28,6 +28,7 @@ import {
   speakRemoteStream,
   stopActiveTtsPlayback,
 } from "@/features/speech/services/ttsService";
+import { isSpeechRecognitionSupported } from "@/features/speech/services/sttService";
 import { ChatMessage } from "@/features/chat/components/chat-message";
 import { Notepad } from "@/features/chat/components/notepad";
 import { useSaveAttempt } from "@/features/attempts/hooks/useSaveAttempt";
@@ -214,6 +215,12 @@ export function ChatInterface({
   // Control visibility to allow animate-out before removing the toast
   const [toastVisible, setToastVisible] = useState(false);
 
+  // Check browser speech support
+  const [speechSupported, setSpeechSupported] = useState(false);
+  useEffect(() => {
+    setSpeechSupported(isSpeechRecognitionSupported());
+  }, []);
+
   useEffect(() => {
     if (timepointToast) {
       // show immediately when toast is set
@@ -247,7 +254,7 @@ export function ChatInterface({
   );
   // Voice Mode (mic) should default ON when an attempt is open; otherwise off.
   const [voiceMode, setVoiceMode] = useState<boolean>(() => Boolean(attemptId));
-  
+
   // Auto-save (throttled) — keeps the existing delete+insert server behavior
   const { saveProgress } = useSaveAttempt(attemptId);
   const lastSavedAtRef = useRef<number>(0);
@@ -638,95 +645,115 @@ export function ChatInterface({
     return s;
   };
 
-  const { isListening, transcript, interimTranscript, start, stop, abort, reset } =
+  const { isListening, transcript, interimTranscript, start, stop, abort, reset, error: sttError } =
     useSTT(
       (finalText: string) => {
-      console.debug(
-        "STT onFinal fired, voiceMode=",
-        voiceMode,
-        "finalText=",
-        finalText
-      );
-      if (voiceMode && finalText && finalText.trim()) {
-        // Trim and attempt to de-duplicate obvious repeats from STT finals
-        const trimmed = collapseImmediateRepeat(finalText.trim());
-        const now = Date.now();
+        console.debug(
+          "STT onFinal fired, voiceMode=",
+          voiceMode,
+          "finalText=",
+          finalText
+        );
+        if (voiceMode && finalText && finalText.trim()) {
+          // Trim and attempt to de-duplicate obvious repeats from STT finals
+          const trimmed = collapseImmediateRepeat(finalText.trim());
+          const now = Date.now();
 
-        // Avoid duplicating identical final chunks that may be emitted
-        // multiple times by the STT engine or overlap with recently
-        // displayed interim text. If we've appended the same chunk within
-        // the last 3s, skip it.
-        if (
-          lastAppendedTextRef.current === trimmed &&
-          now - (lastAppendTimeRef.current || 0) < 3000
-        ) {
-          // Mark handled so transcript effect doesn't re-append
-          lastFinalHandledRef.current = trimmed;
-          return;
-        }
-        // Clear any previously scheduled short-timeout auto-send (non-final)
-        if (autoSendTimerRef.current) {
-          window.clearTimeout(autoSendTimerRef.current);
-          autoSendTimerRef.current = null;
-        }
-        // Clear any existing final timer before scheduling a fresh one
-        if (autoSendFinalTimerRef.current) {
-          window.clearTimeout(autoSendFinalTimerRef.current);
-          autoSendFinalTimerRef.current = null;
-        }
-
-        // Append the final trimmed text to the committed base input so
-        // pauses do not erase earlier content. Maintain spacing. Also
-        // guard against the base already ending with the same text.
-        if (
-          baseInputRef.current &&
-          baseInputRef.current.trim().length > 0 &&
-          !baseInputRef.current.trim().endsWith(trimmed)
-        ) {
-          baseInputRef.current = `${baseInputRef.current.trim()} ${trimmed}`;
-        } else if (
-          !baseInputRef.current ||
-          baseInputRef.current.trim().length === 0
-        ) {
-          baseInputRef.current = trimmed;
-        }
-        // Reflect in the visible textarea immediately
-        setInput(baseInputRef.current);
-
-        // Store pending final text and schedule an auto-send after a short
-        // silence tolerance window. This lets brief pauses in user speech
-        // (e.g., thinking pauses) not immediately trigger a send.
-        autoSendPendingTextRef.current = trimmed;
-        // Remember we've handled this final so the transcript effect can
-        // ignore it and avoid double-appending.
-        lastFinalHandledRef.current = trimmed;
-        // Remember last appended chunk and time
-        lastAppendedTextRef.current = trimmed;
-        lastAppendTimeRef.current = now;
-        // Schedule a final-only timer which should not be cancelled by
-        // subsequent interim updates. This ensures that after a true
-        // final transcript the text is always sent even if interims arrive
-        // briefly after. Use a short delay to allow any minor buffering.
-        autoSendFinalTimerRef.current = window.setTimeout(() => {
-          autoSendFinalTimerRef.current = null;
-          autoSendPendingTextRef.current = null;
-          try {
-            console.debug(
-              "Auto-send (final) firing with text:",
-              baseInputRef.current
-            );
-            void triggerAutoSend(baseInputRef.current);
-          } catch (e) {
-            console.error("Failed to auto-send final transcript:", e);
+          // Avoid duplicating identical final chunks that may be emitted
+          // multiple times by the STT engine or overlap with recently
+          // displayed interim text. If we've appended the same chunk within
+          // the last 3s, skip it.
+          if (
+            lastAppendedTextRef.current === trimmed &&
+            now - (lastAppendTimeRef.current || 0) < 3000
+          ) {
+            // Mark handled so transcript effect doesn't re-append
+            lastFinalHandledRef.current = trimmed;
+            return;
           }
-        }, 500);
-      }
+          // Clear any previously scheduled short-timeout auto-send (non-final)
+          if (autoSendTimerRef.current) {
+            window.clearTimeout(autoSendTimerRef.current);
+            autoSendTimerRef.current = null;
+          }
+          // Clear any existing final timer before scheduling a fresh one
+          if (autoSendFinalTimerRef.current) {
+            window.clearTimeout(autoSendFinalTimerRef.current);
+            autoSendFinalTimerRef.current = null;
+          }
+
+          // Append the final trimmed text to the committed base input so
+          // pauses do not erase earlier content. Maintain spacing. Also
+          // guard against the base already ending with the same text.
+          if (
+            baseInputRef.current &&
+            baseInputRef.current.trim().length > 0 &&
+            !baseInputRef.current.trim().endsWith(trimmed)
+          ) {
+            baseInputRef.current = `${baseInputRef.current.trim()} ${trimmed}`;
+          } else if (
+            !baseInputRef.current ||
+            baseInputRef.current.trim().length === 0
+          ) {
+            baseInputRef.current = trimmed;
+          }
+          // Reflect in the visible textarea immediately
+          setInput(baseInputRef.current);
+
+          // Store pending final text and schedule an auto-send after a short
+          // silence tolerance window. This lets brief pauses in user speech
+          // (e.g., thinking pauses) not immediately trigger a send.
+          autoSendPendingTextRef.current = trimmed;
+          // Remember we've handled this final so the transcript effect can
+          // ignore it and avoid double-appending.
+          lastFinalHandledRef.current = trimmed;
+          // Remember last appended chunk and time
+          lastAppendedTextRef.current = trimmed;
+          lastAppendTimeRef.current = now;
+          // Schedule a final-only timer which should not be cancelled by
+          // subsequent interim updates. This ensures that after a true
+          // final transcript the text is always sent even if interims arrive
+          // briefly after. Use a short delay to allow any minor buffering.
+          autoSendFinalTimerRef.current = window.setTimeout(() => {
+            autoSendFinalTimerRef.current = null;
+            autoSendPendingTextRef.current = null;
+            try {
+              console.debug(
+                "Auto-send (final) firing with text:",
+                baseInputRef.current
+              );
+              void triggerAutoSend(baseInputRef.current);
+            } catch (e) {
+              console.error("Failed to auto-send final transcript:", e);
+            }
+          }, 500);
+        }
       },
       700,
       {
         inputDeviceId: selectedInputId,
       }
     );
+
+  // Handle STT Errors (e.g. network error on Chromium)
+  useEffect(() => {
+    if (sttError) {
+      console.warn("ChatInterface received STT error:", sttError);
+      let title = "Speech Recognition Error";
+      let body = "An error occurred with the speech service.";
+
+      if (sttError.includes("network")) {
+        title = "Speech Service Unavailable";
+        body = "Chromium browsers often lack Google Speech keys. Please use Google Chrome.";
+      } else if (sttError.includes("not-allowed")) {
+        title = "Microphone Blocked";
+        body = "Please allow microphone access in your browser settings.";
+      }
+
+      setTimepointToast({ title, body });
+      setVoiceMode(false); // Disable voice mode to prevent loops
+    }
+  }, [sttError]);
 
   // clear timers on unmount
   useEffect(() => {
@@ -779,10 +806,10 @@ export function ChatInterface({
           const identity =
             metadata && typeof metadata.identity === "object"
               ? (metadata.identity as {
-                  fullName?: string;
-                  voiceId?: string;
-                  sex?: string;
-                })
+                fullName?: string;
+                voiceId?: string;
+                sex?: string;
+              })
               : undefined;
           next[normalizedKey] = {
             displayName:
@@ -801,10 +828,10 @@ export function ChatInterface({
               typeof row?.sex === "string"
                 ? row.sex
                 : typeof metadata?.sex === "string"
-                ? (metadata.sex as string)
-                : typeof identity?.sex === "string"
-                  ? identity.sex
-                  : undefined,
+                  ? (metadata.sex as string)
+                  : typeof identity?.sex === "string"
+                    ? identity.sex
+                    : undefined,
           };
         }
 
@@ -820,7 +847,7 @@ export function ChatInterface({
           const globalPersonas = Array.isArray(globalPayload?.personas)
             ? globalPayload.personas
             : [];
-
+  
           for (const row of globalPersonas) {
             const rawKey = typeof row?.role_key === "string" ? row.role_key : "";
             const normalizedKey = isAllowedChatPersonaKey(rawKey)
@@ -982,7 +1009,7 @@ export function ChatInterface({
         // If voice mode is on, we want to ensure we resume listening after playback,
         // even if we are currently stopped (e.g. due to pulseVoiceModeControls).
         resumeListeningRef.current = true;
-        
+
         // Always attempt to stop if voice mode is on, to ensure mic is off during playback.
         // Use abort() to immediately discard any pending audio buffer to prevent
         // self-recording of the TTS start.
@@ -996,7 +1023,7 @@ export function ChatInterface({
         } catch (e) {
           // ignore
         }
-        
+
         // Give a moment for the mic to fully release. Increased to 500ms to prevent
         // self-recording of the TTS start.
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -1066,8 +1093,8 @@ export function ChatInterface({
 
       let voiceSex: "male" | "female" | "neutral" =
         personaMeta?.sex === "male" ||
-        personaMeta?.sex === "female" ||
-        personaMeta?.sex === "neutral"
+          personaMeta?.sex === "female" ||
+          personaMeta?.sex === "neutral"
           ? (personaMeta.sex as "male" | "female" | "neutral")
           : "neutral";
 
@@ -1359,8 +1386,8 @@ export function ChatInterface({
       const serverVoiceId = normalizeVoiceId(response.voiceId);
       let responseVoiceSex: "male" | "female" | "neutral" =
         response.personaSex === "male" ||
-        response.personaSex === "female" ||
-        response.personaSex === "neutral"
+          response.personaSex === "female" ||
+          response.personaSex === "neutral"
           ? response.personaSex
           : "neutral";
 
@@ -1458,10 +1485,10 @@ export function ChatInterface({
                 prev.map((m) =>
                   m.id === placeholderMessage.id
                     ? {
-                        ...m,
-                        content: finalAssistantContent,
-                        media: aiMessage.media,
-                      }
+                      ...m,
+                      content: finalAssistantContent,
+                      media: aiMessage.media,
+                    }
                     : m
                 )
               );
@@ -1785,8 +1812,8 @@ export function ChatInterface({
         const serverVoiceId = normalizeVoiceId(response.voiceId);
         let responseVoiceSex: "male" | "female" | "neutral" =
           response.personaSex === "male" ||
-          response.personaSex === "female" ||
-          response.personaSex === "neutral"
+            response.personaSex === "female" ||
+            response.personaSex === "neutral"
             ? response.personaSex
             : "neutral";
 
@@ -1920,7 +1947,7 @@ export function ChatInterface({
       // Ensure voice mode and TTS are enabled when resuming
       setVoiceModeEnabled(true);
       setTtsEnabledState(true);
-      
+
       // If voice mode was already on (so setVoiceModeEnabled didn't trigger start),
       // we need to manually restart listening now that we are unpaused.
       if (voiceModeRef.current && !isListening) {
@@ -1936,7 +1963,7 @@ export function ChatInterface({
       } catch {
         // fallback: ensure listeners and TTS are stopped
         if (isListening) {
-          try { stop(); } catch {};
+          try { stop(); } catch { };
         }
       }
       stopActiveTtsPlayback();
@@ -2113,7 +2140,7 @@ export function ChatInterface({
   useEffect(() => {
     if (!attemptId) return;
     if (userToggledOffRef.current) return;
-    if (voiceMode && !isListening && !startedListeningRef.current && !isPlayingAudioRef.current) {
+    if (speechSupported && voiceMode && !isListening && !startedListeningRef.current && !isPlayingAudioRef.current) {
       try {
         // Auto-start listening for the attempt. We clear the input and the
         // committed base buffer so dictation starts fresh.
@@ -2129,7 +2156,7 @@ export function ChatInterface({
   }, [attemptId, voiceMode, isListening, reset, start]);
 
   useEffect(() => {
-    if (!voiceMode) return;
+    if (!voiceMode || !speechSupported) return;
     if (userToggledOffRef.current) return;
     if (isListening || startedListeningRef.current || isPlayingAudioRef.current) return;
     try {
@@ -2307,7 +2334,7 @@ export function ChatInterface({
     const stage = stages[currentStageIndex];
     const stageTitle = stage?.title ?? `Stage ${currentStageIndex + 1}`;
     const tip = getStageTip(caseId, currentStageIndex);
-    
+
     if (tip) {
       setStageIndicator({
         title: stageTitle,
@@ -2429,8 +2456,8 @@ export function ChatInterface({
     // a consistent portrait and voice.
     let voiceSex: "male" | "female" | "neutral" =
       personaMeta?.sex === "male" ||
-      personaMeta?.sex === "female" ||
-      personaMeta?.sex === "neutral"
+        personaMeta?.sex === "female" ||
+        personaMeta?.sex === "neutral"
         ? personaMeta.sex
         : "neutral";
 
@@ -2574,39 +2601,14 @@ export function ChatInterface({
           {fallbackNotice}
         </div>
       )}
-      {/* Reference papers attached to this case (documents) - only visible to professors/admins */}
-      {role && (role === "professor" || role === "admin") && caseMedia && caseMedia.length > 0 && (
-        (() => {
-          const docs = caseMedia.filter((m) => m.type === "document");
-          if (docs.length === 0) return null;
-          return (
-            <div className="w-full bg-white px-4 py-2 text-sm z-30 border-b">
-              <div className="flex items-center justify-between">
-                <div className="font-medium">Reference Papers</div>
-                <div className="text-xs text-gray-500">{docs.length} available</div>
-              </div>
-              <div className="mt-2 space-y-1">
-                {docs.map((d) => (
-                  <div key={d.id} className="flex items-center justify-between">
-                    <span className="text-sm text-sky-600">
-                      {d.caption ?? d.url.split('/').pop()}
-                    </span>
-                    <div className="text-xs text-gray-400">{d.mimeType ?? ''}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })()
-      )}
+
       {/* Intro toast (central, non-blocking) */}
       {introMounted && (
         <div className="fixed inset-0 flex items-start justify-center pt-24 pointer-events-none z-50">
           <div
             // Allow clicks inside the card so the user can dismiss it early.
-            className={`max-w-xl w-full mx-4 transition-opacity duration-700 ${
-              showIntroToast ? "opacity-100" : "opacity-0"
-            }`}
+            className={`max-w-xl w-full mx-4 transition-opacity duration-700 ${showIntroToast ? "opacity-100" : "opacity-0"
+              }`}
           >
             <div
               role="status"
@@ -2653,7 +2655,7 @@ export function ChatInterface({
           <div className="bg-muted/90 backdrop-blur-sm border border-border text-foreground px-4 py-3 rounded-lg shadow-lg max-w-md text-center pointer-events-auto animate-in fade-in slide-in-from-top-4 duration-300">
             <div className="font-semibold text-sm mb-1">{stageIndicator.title}</div>
             <div className="text-sm">{stageIndicator.body}</div>
-            <button 
+            <button
               onClick={() => setStageIndicator(null)}
               className="absolute top-1 right-2 text-muted-foreground hover:text-foreground"
             >
@@ -2690,11 +2692,10 @@ export function ChatInterface({
             <Button
               onClick={handleProceed}
               disabled={false}
-              className={`w-full sm:flex-1 ${
-                isLastStage
-                  ? "bg-gradient-to-l from-green-500 to-teal-500 hover:from-green-600 hover:to-teal-600"
-                  : "bg-gradient-to-l from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600"
-              } 
+              className={`w-full sm:flex-1 ${isLastStage
+                ? "bg-gradient-to-l from-green-500 to-teal-500 hover:from-green-600 hover:to-teal-600"
+                : "bg-gradient-to-l from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600"
+                } 
                 text-white border-none transition-all duration-300`}
               variant="outline"
             >
@@ -2722,10 +2723,13 @@ export function ChatInterface({
                 variant={voiceMode ? "destructive" : "secondary"}
                 className="flex items-center gap-2 px-4"
                 onClick={toggleVoiceMode}
+                disabled={!speechSupported}
                 title={
-                  voiceMode
-                    ? "Disable voice mode"
-                    : "Enable voice mode (toggle)"
+                  !speechSupported
+                    ? "Speech recognition is not supported in this browser (try Chrome/Edge)"
+                    : voiceMode
+                      ? "Disable voice mode"
+                      : "Enable voice mode (toggle)"
                 }
               >
                 <Mic className="h-4 w-4" />
@@ -2794,27 +2798,29 @@ export function ChatInterface({
               type="button"
               size="icon"
               onClick={() => {
-                if (voiceMode) {
+                if (speechSupported && voiceMode) {
                   toggleVoiceMode();
                 }
               }}
-              onMouseDown={!voiceMode ? handleStart : undefined}
-              onMouseUp={!voiceMode ? handleStop : undefined}
-              onMouseLeave={!voiceMode ? handleCancel : undefined}
+              disabled={!speechSupported}
+              onMouseDown={speechSupported && !voiceMode ? handleStart : undefined}
+              onMouseUp={speechSupported && !voiceMode ? handleStop : undefined}
+              onMouseLeave={speechSupported && !voiceMode ? handleCancel : undefined}
               // Touch support for mobile devices when not in toggle mode
-              onTouchStart={!voiceMode ? handleStart : undefined}
-              onTouchEnd={!voiceMode ? handleStop : undefined}
-              className={`absolute bottom-2 right-12 ${
-                isListening
-                  ? "bg-red-500 hover:bg-red-600 text-white"
-                  : "bg-blue-400 hover:bg-blue-500 text-white"
-              }`}
+              onTouchStart={speechSupported && !voiceMode ? handleStart : undefined}
+              onTouchEnd={speechSupported && !voiceMode ? handleStop : undefined}
+              className={`absolute bottom-2 right-12 ${isListening
+                ? "bg-red-500 hover:bg-red-600 text-white"
+                : "bg-blue-400 hover:bg-blue-500 text-white"
+                } ${!speechSupported ? "opacity-50 cursor-not-allowed" : ""}`}
               title={
-                voiceMode
-                  ? isListening
-                    ? "Stop listening"
-                    : "Start listening"
-                  : "Hold to record, release to send"
+                !speechSupported
+                  ? "Speech recognition is not supported in this browser"
+                  : voiceMode
+                    ? isListening
+                      ? "Stop listening"
+                      : "Start listening"
+                    : "Hold to record, release to send"
               }
             >
               {isListening ? (
@@ -2833,15 +2839,13 @@ export function ChatInterface({
                       id="send-button"
                       size="icon"
                       disabled={isLoading || !input.trim() || input.trim().length < 2}
-                      className={`absolute bottom-2 right-2 ${
-                        input.trim() && input.trim().length >= 2
-                          ? "bg-gradient-to-l from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600 border-none"
-                          : ""
-                      } ${
-                        autoSendFlash
+                      className={`absolute bottom-2 right-2 ${input.trim() && input.trim().length >= 2
+                        ? "bg-gradient-to-l from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600 border-none"
+                        : ""
+                        } ${autoSendFlash
                           ? "animate-pulse ring-2 ring-offset-1 ring-blue-300"
                           : ""
-                      }`}
+                        }`}
                     >
                       <SendIcon className="h-5 w-5" />
                     </Button>
@@ -2905,14 +2909,13 @@ export function ChatInterface({
       {/* Timepoint Toast */}
       {timepointToast && (
         <div className="fixed top-24 left-0 right-0 flex justify-center pointer-events-none z-50">
-          <div className={`bg-primary text-primary-foreground px-6 py-4 rounded-lg shadow-lg max-w-md text-center pointer-events-auto ${
-            toastVisible
-              ? 'animate-in fade-in slide-in-from-top-4 duration-300'
-              : 'animate-out fade-out slide-out-to-top-4 duration-300'
-          }`}>
+          <div className={`bg-primary text-primary-foreground px-6 py-4 rounded-lg shadow-lg max-w-md text-center pointer-events-auto ${toastVisible
+            ? 'animate-in fade-in slide-in-from-top-4 duration-300'
+            : 'animate-out fade-out slide-out-to-top-4 duration-300'
+            }`}>
             <div className="font-bold text-lg mb-1">{timepointToast.title}</div>
             <div className="text-sm">{timepointToast.body}</div>
-            <button 
+            <button
               onClick={() => hideTimepointToastWithFade()}
               className="absolute top-1 right-2 text-primary-foreground/80 hover:text-primary-foreground"
             >

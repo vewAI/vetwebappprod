@@ -1,95 +1,169 @@
-# Copilot Instructions for AI Coding Agents
 
-## Project Overview
+This is a refined version of instructions adapted for a Lightweight Spec-Driven Development (SDD) approach.
 
-- **Framework:** Next.js 13+ (App Router), TypeScript, Tailwind CSS.
-- **Backend:** Supabase (Auth, DB, Storage), OpenAI API.
-- **Architecture:** Feature-based modular architecture (`features/`).
-- **State Management:** React Hooks, Context (where needed).
+The core shift here is moving from "Just start coding" to "Define the interface/behavior first, then implement." This reduces hallucinations and ensures the AI understands the full context before writing implementation code.
 
-## Key Architectural Patterns
+Copilot Instructions: Lightweight Spec-Driven Development
+0. The Prime Directive: Spec First
 
-- **Feature Modules (`features/*`):**
-  - **Self-contained:** Each feature (e.g., `chat`, `auth`, `cases`) owns its domain.
-  - **Structure:**
-    - `components/`: UI components specific to the feature.
-    - `models/`: TypeScript interfaces/types.
-    - `services/`: Business logic and API calls (client-side).
-    - `hooks/`: Custom React hooks.
-    - `utils/`: Helper functions and unit tests (`*.test.ts`).
-    - `prompts/`: AI prompts and configurations.
-- **App Routing (`app/*`):**
-  - **Pages:** `app/[route]/page.tsx`.
-  - **API Routes:** `app/api/[route]/route.ts`.
-  - **Auth Middleware:** Use `requireUser` from `@/app/api/_lib/auth` in API routes.
-- **Service Layer:**
-  - **Client-side:** Services in `features/*/services/` use `axios` and `buildAuthHeaders` (from `@/lib/auth-headers`) to communicate with API routes.
-  - **Server-side:** API routes orchestrate logic using feature-specific services and utilities.
+Never implement code without a defined Spec.
+Before writing functional code for a new feature or complex change, generate a Micro-Spec in Markdown.
 
-## Developer Workflows
+Draft: Create/Update the spec.md file in the feature directory.
 
-- **Development:** `npm run dev` (Turbopack enabled).
-- **Testing:** `npm run test` (uses `tsx --test` for unit tests).
-  - **Location:** Tests are co-located in `utils/` or `__tests__/` within features.
-- **Data Seeding:**
-  - `npm run seed:cases`: Populate/refresh case data.
-  - `npm run generate:portraits`: Generate persona images.
-- **Linting:** `npm run lint`.
+Verify: Ask the user to confirm the logic/data model.
 
-## Project-Specific Conventions
+Implement: Write code that strictly adheres to the Spec.
 
-- **TypeScript:** Strict typing. Prefer interfaces over types for object definitions.
-- **File Naming:** Kebab-case for files (`chat-service.ts`), PascalCase for components (`ChatWindow.tsx`).
-- **Imports:** Use `@/` alias for root imports.
-- **API Communication:**
-  - **Client:** Use `axios` with `buildAuthHeaders`. Handle network errors (check `navigator.onLine`).
-  - **Server:** Use `NextResponse`.
-- **Styling:** Tailwind CSS with `cn` utility (clsx + tailwind-merge) for class composition.
+1. Project Overview & Stack
 
-## Domain Logic & Business Rules
+Framework: Next.js 13+ (App Router), TypeScript, Tailwind CSS.
 
-- **Speech-to-Text (STT):**
-  - Located in `features/speech/services/sttService.ts`.
-  - **Rule:** Always check context for homophones and prefer veterinary terminology (e.g., "udder" over "other", "creatinine" over "creating").
-  - Use `postProcessTranscript` and `SpeechGrammarList` to enforce this.
-- **Time Progression:**
-  - Cases evolve through `CaseTimepoint` records.
-  - **Rule:** When time progresses, the AI context must be explicitly updated (via `stage_prompt` or system messages) to reflect the new time and patient status.
+Backend: Supabase (Auth, DB, Storage), OpenAI API.
 
-## Integration Points
+Architecture: Feature-based modularity with Co-located Specs.
 
-- **Supabase:**
-  - Client: `lib/supabase.ts`.
-  - Auth: `lib/auth-headers.ts` (client), `app/api/_lib/auth.ts` (server).
-- **OpenAI:**
-  - Configured in API routes using `process.env.OPENAI_API_KEY`.
-- **External Resources:**
-  - Merck Manual integration in `features/external-resources`.
+State: React Hooks, Context (minimal global state).
 
-## Examples
+2. The "Micro-Spec" Protocol
 
-- **Adding a Feature:** Create `features/new-feature/` with `components`, `models`, `services`.
-- **API Route:**
-  ```typescript
-  import { requireUser } from "@/app/api/_lib/auth";
-  import { NextResponse } from "next/server";
+Every feature folder (e.g., features/chat/) must contain a README.spec.md.
+Format for Specs:
 
-  export async function POST(req: Request) {
-    const user = await requireUser();
-    // ... logic
-    return NextResponse.json({ success: true });
+User Story: 1-2 sentences on what this feature achieves.
+
+Data Model: TypeScript interface definitions (The "Source of Truth").
+
+API Contract: Input parameters and Response shapes for API routes.
+
+Component Tree: Bullet points of UI components and their props.
+
+Critical Rules: Domain-specific constraints (e.g., "Must sanitize STT input").
+
+Example Spec Prompt: "Create a spec for the Vitals Log feature including the data model for Heart Rate and Respiratory Rate."
+
+3. Architecture & File Structure
+Feature Modules (features/*)
+
+Each feature is a self-contained silo.
+
+[feature-name]/
+
+README.spec.md: (The Blueprint) Contains the logic and models.
+
+models/: TypeScript interfaces (exported from Spec).
+
+components/: UI components.
+
+services/: Client-side business logic & API calls.
+
+hooks/: React hooks.
+
+prompts/: AI system prompts.
+
+__tests__/: Unit tests (validating the Spec).
+
+App Routing (app/*)
+
+Pages: app/[route]/page.tsx (Thin wrappers importing Feature Components).
+
+API: app/api/[route]/route.ts (Orchestrators, not business logic holders).
+
+Middleware: Use requireUser from @/app/api/_lib/auth.
+
+4. Implementation Guidelines
+Phase A: Modeling (The Spec)
+
+Define types strictly in models/.
+
+Prefer interface over type.
+
+If a Zod schema is needed for validation, define it alongside the interface.
+
+Phase B: Logic (The Service)
+
+Client Services: Locate in features/*/services/.
+
+Must use buildAuthHeaders and axios.
+
+Must handle navigator.onLine checks.
+
+Server Logic: Keep API routes thin. Delegate complex logic to utility functions or shared server-side services.
+
+Phase C: UI (The Component)
+
+Use Tailwind CSS with cn (clsx + tailwind-merge).
+
+Components should be "dumb" where possible, receiving data via Props defined in the Spec.
+
+5. Domain Logic & Rules (Invariant)
+Speech-to-Text (STT)
+
+Spec Rule: STT outputs must be post-processed for veterinary context.
+
+Implementation: Use features/speech/services/sttService.ts.
+
+Enforcement: "Udder" > "Other"; "Creatinine" > "Creating".
+
+Time Progression
+
+Spec Rule: Time is not linear; it is event-based (CaseTimepoint).
+
+Enforcement: Updating time requires explicitly updating the AI context (System Prompt) to match the new CaseTimepoint.
+
+6. Workflows & Commands
+
+1. Spec Generation: User prompts -> AI generates features/xyz/README.spec.md.
+
+2. Development: npm run dev (Turbopack).
+
+3. Validation:
+
+npm run lint: Static analysis.
+
+npm run test: Run unit tests co-located in features.
+
+4. Data Management:
+
+npm run seed:cases: Reset DB state.
+
+7. Code Examples
+
+Spec File (features/auth/README.spec.md):
+
+code
+Markdown
+download
+content_copy
+expand_less
+# Auth Spec
+## Model
+interface UserProfile {
+  id: string;
+  role: 'vet' | 'student';
+  last_login: Date;
+}
+## API
+POST /api/auth/login
+- Input: { email, password }
+- Output: { token: string, user: UserProfile }
+
+Service Implementation:
+
+code
+TypeScript
+download
+content_copy
+expand_less
+import { buildAuthHeaders } from "@/lib/auth-headers";
+import { UserProfile } from "../models"; // Imported from Spec definitions
+import axios from "axios";
+
+export const authService = {
+  login: async (creds: LoginCredentials): Promise<UserProfile> => {
+    // Implementation matching Spec API definition
+    const headers = await buildAuthHeaders({});
+    const res = await axios.post("/api/auth/login", creds, { headers });
+    return res.data.user;
   }
-  ```
-- **Client Service:**
-  ```typescript
-  import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
-  import axios from "axios";
-
-  export const myService = {
-    doSomething: async () => {
-      const token = await getAccessToken();
-      const headers = await buildAuthHeaders({}, token);
-      return axios.post("/api/my-route", {}, { headers });
-    }
-  };
-  ```
+};

@@ -158,6 +158,20 @@ export function useSTT(
     };
   }, []);
 
+  // Listen for global STT errors
+  const [error, setError] = useState<string | null>(null);
+
+  // Register the global error handler once on mount
+  useEffect(() => {
+    // Dynamically import to avoid cycle if needed, or just import
+    const { registerOnError } = require("../services/sttService");
+    registerOnError((errCode: string) => {
+      console.warn("STT Error received in hook:", errCode);
+      setError(errCode);
+      setIsListening(false);
+    });
+  }, []);
+
   return {
     start,
     stop,
@@ -166,5 +180,6 @@ export function useSTT(
     transcript,
     interimTranscript,
     isListening,
+    error // Exposed to UI
   };
 }

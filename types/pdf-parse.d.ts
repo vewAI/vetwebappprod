@@ -1,15 +1,11 @@
-declare module "pdf-parse" {
-  interface PDFParseOptions {}
-  interface PDFParseResult {
-    text?: string;
-    info?: any;
-    metadata?: any;
-    numpages?: number;
-    numrender?: number;
-    version?: string;
-    text_as_html?: string;
-  }
-
-  function pdfParse(dataBuffer: Buffer | Uint8Array | ArrayBuffer, options?: PDFParseOptions): Promise<PDFParseResult>;
-  export = pdfParse;
+declare module 'pdf-parse' {
+  function pdf(dataBuffer: Buffer | ArrayBuffer | Uint8Array, options?: any): Promise<{
+    numpages: number;
+    numrender: number;
+    info: any;
+    metadata: any;
+    text: string;
+    version: string;
+  }>;
+  export = pdf;
 }

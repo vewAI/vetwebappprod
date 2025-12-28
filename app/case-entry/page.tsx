@@ -171,13 +171,13 @@ export default function CaseEntryForm() {
       };
 
       // Basic case-specific defaults based on id/title
-  const patientLabel = String(
-    payload["title"] ?? payload["id"] ?? "the patient"
-  );
+      const patientLabel = String(
+        payload["title"] ?? payload["id"] ?? "the patient"
+      );
 
-  const diagnostic_findings_template = `List the diagnostic data that is already available for this case. Present each value on its own line with units where appropriate. When responding to the student, release only the specific result they request. If a test has not been performed, state that it is pending or unavailable.`;
+      const diagnostic_findings_template = `List the diagnostic data that is already available for this case. Present each value on its own line with units where appropriate. When responding to the student, release only the specific result they request. If a test has not been performed, state that it is pending or unavailable.`;
 
-  const owner_background_template = `Role: Animal owner or primary caretaker.
+      const owner_background_template = `Role: Animal owner or primary caretaker.
 Patient: ${patientLabel}
 
 Guidance for conversation setup:
@@ -187,7 +187,7 @@ Guidance for conversation setup:
 - Begin slightly worried but become cooperative once a plan is explained.
 - If a question falls outside the information you know, state that you are unsure rather than improvising.`;
 
-  const history_feedback_template = `You are an experienced veterinary educator providing feedback on a student's history-taking performance.
+      const history_feedback_template = `You are an experienced veterinary educator providing feedback on a student's history-taking performance.
 
 Assessment checklist:
 1. Presenting complaint details (onset, duration, severity, progression).
@@ -203,7 +203,7 @@ Feedback instructions:
 - Comment briefly on organisation and rapport-building.
 - Keep the tone constructive and educational.`;
 
-  const owner_follow_up_template = `Role: Animal owner or caretaker seeking clarity on next steps.
+      const owner_follow_up_template = `Role: Animal owner or caretaker seeking clarity on next steps.
 Patient: ${patientLabel}
 
 Conversation goals:
@@ -213,14 +213,14 @@ Conversation goals:
 - Become more cooperative once the clinician explains the rationale clearly.
 - Avoid repeating the same concern once it has been addressed.`;
 
-  const owner_follow_up_feedback_template = `When reviewing this stage, comment on whether the student:
+      const owner_follow_up_feedback_template = `When reviewing this stage, comment on whether the student:
 - Prioritised diagnostics that align with the likely differentials.
 - Explained the purpose and value of each recommendation in plain language.
 - Discussed cost considerations or resource constraints when prompted.
 - Addressed biosecurity, safety, or home-care logistics if relevant.
 - Invited and handled owner questions respectfully.`;
 
-  const owner_diagnosis_template = `Role: Animal owner receiving diagnostic results and management plan.
+      const owner_diagnosis_template = `Role: Animal owner receiving diagnostic results and management plan.
 Patient: ${patientLabel}
 
 Guidance:
@@ -228,8 +228,8 @@ Guidance:
 - Ask about timelines for recovery, potential complications, and how to protect other animals or people if relevant.
 - Acknowledge clear explanations and request clarification when something is unclear.`;
 
-  // Prompts for interactive roles
-  const get_owner_prompt_template = `You are roleplaying as the patient's owner or caretaker. Stay in character using the background information below and provide only the details that are explicitly requested.
+      // Prompts for interactive roles
+      const get_owner_prompt_template = `You are roleplaying as the patient's owner or caretaker. Stay in character using the background information below and provide only the details that are explicitly requested.
 
 {ownerBackground}
 
@@ -237,22 +237,22 @@ Student's question: {studentQuestion}
 
 Remain collaborative, use everyday language, and avoid offering your own medical diagnoses.`;
 
-  const get_history_feedback_prompt_template = `IMPORTANT - FIRST CHECK FOR MINIMAL INTERACTION:
+      const get_history_feedback_prompt_template = `IMPORTANT - FIRST CHECK FOR MINIMAL INTERACTION:
 1. Determine if the student has supplied fewer than three substantive messages in the conversation context below.
 2. If interaction is minimal, provide guidance encouraging them to gather more information before requesting feedback.
 3. If interaction is sufficient, deliver detailed feedback using the rubric provided in this prompt.`;
 
-  const get_physical_exam_prompt_template = `You are a veterinary assistant supporting the examination of ${patientLabel}. Share only the specific vital sign or system finding that the student asks about. If their request is vague, prompt them to be more specific.`;
+      const get_physical_exam_prompt_template = `You are a veterinary assistant supporting the examination of ${patientLabel}. Share only the specific vital sign or system finding that the student asks about. If their request is vague, prompt them to be more specific.`;
 
-  const get_diagnostic_prompt_template = `You are a laboratory technician answering questions about diagnostic results for ${patientLabel}. Release one requested result at a time, note if a test is pending or unperformed, and avoid interpretation beyond the raw data.`;
+      const get_diagnostic_prompt_template = `You are a laboratory technician answering questions about diagnostic results for ${patientLabel}. Release one requested result at a time, note if a test is pending or unperformed, and avoid interpretation beyond the raw data.`;
 
-  const get_owner_follow_up_prompt_template = `You are roleplaying as the owner or caretaker during the diagnostic planning conversation. Ask for clear explanations, raise practical concerns, and acknowledge when the student addresses them effectively.`;
+      const get_owner_follow_up_prompt_template = `You are roleplaying as the owner or caretaker during the diagnostic planning conversation. Ask for clear explanations, raise practical concerns, and acknowledge when the student addresses them effectively.`;
 
-  const get_owner_follow_up_feedback_prompt_template = `Provide structured feedback on the student's diagnostic planning discussion. Highlight strengths, note missing explanations, and recommend actionable improvements.`;
+      const get_owner_follow_up_feedback_prompt_template = `Provide structured feedback on the student's diagnostic planning discussion. Highlight strengths, note missing explanations, and recommend actionable improvements.`;
 
-  const get_owner_diagnosis_prompt_template = `You are the owner or caretaker receiving the results discussion. Respond with practical questions about management, monitoring, and communication while staying consistent with the owner's persona.`;
+      const get_owner_diagnosis_prompt_template = `You are the owner or caretaker receiving the results discussion. Respond with practical questions about management, monitoring, and communication while staying consistent with the owner's persona.`;
 
-  const get_overall_feedback_prompt_template = `Provide a comprehensive teaching summary covering communication, clinical reasoning, diagnostic planning, and professionalism observed across the entire case.`;
+      const get_overall_feedback_prompt_template = `Provide a comprehensive teaching summary covering communication, clinical reasoning, diagnostic planning, and professionalism observed across the entire case.`;
 
       // Inject defaults when empty
       ensure("diagnostic_findings", diagnostic_findings_template);
@@ -306,7 +306,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
         <h1 className="text-2xl font-bold">Add New Case</h1>
         <div className="text-right">
           <Button type="button" variant="outline" onClick={handleRandomCase} disabled={loading}>
-            {loading ? "Generating..." : "Create Random Case"}
+            {loading ? "Generating..." : "Upload PDF"}
           </Button>
           <p className="text-xs text-muted-foreground mt-2 max-w-xs">
             Generates a realistic, commonly encountered veterinary case using
