@@ -30,8 +30,9 @@ export function CaseRagManager({ caseId }: Props) {
             const headers = await buildAuthHeaders();
             const res = await fetch(`/api/cases/${caseId}/knowledge`, { headers });
             if (!res.ok) {
-                if (res.status === 401 || res.status === 403) throw new Error("Unauthorized to access knowledge audit.");
-                throw new Error("Failed to fetch knowledge");
+                const json = await res.json().catch(() => ({}));
+                const msg = json.error || (res.status === 401 || res.status === 403 ? "Unauthorized to access knowledge audit." : "Failed to fetch knowledge");
+                throw new Error(msg);
             }
             const json = await res.json();
             setItems(json.data || []);

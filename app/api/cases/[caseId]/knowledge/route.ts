@@ -18,14 +18,18 @@ export async function GET(
     }
 
     // Verify permission (professor/admin)
-    if (role !== "professor" && role !== "admin") {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+    const normalizedRole = role?.toLowerCase();
+    console.log(`[Knowledge API] GET caseId=${caseId} user=${user.id} role=${role}`);
+
+    if (normalizedRole !== "professor" && normalizedRole !== "admin") {
+        console.warn(`[Knowledge API] Forbidden: user ${user.id} has role ${role}`);
+        return NextResponse.json({ error: `Unauthorized. Role: ${role}` }, { status: 403 });
     }
 
     try {
         const { data, error } = await supabase
             .from("case_knowledge")
-            .select("id, content, metadata, created_at, embedding_model, file_path")
+            .select("id, content, metadata, created_at")
             .eq("case_id", caseId)
             .order("created_at", { ascending: false });
 
