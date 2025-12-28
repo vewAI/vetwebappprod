@@ -294,10 +294,10 @@ export default function CaseChatPage() {
       <div id="chat-interface" className="flex-1 flex flex-col overflow-hidden">
         {/* Professor uploader + Papers list */}
         {user && (role === "professor" || role === "admin") && caseItem?.id && (
-          <div className="p-3 border-b bg-gray-50 flex justify-end">
+          <div className="p-3 border-b bg-gray-50 dark:bg-gray-900 flex justify-end">
             <Dialog>
               <DialogTrigger asChild>
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" className="dark:text-white dark:border-gray-700 dark:hover:bg-gray-800">
                   📄 View RAG Report / Manage Knowledge
                 </Button>
               </DialogTrigger>
