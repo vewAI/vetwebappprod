@@ -10,7 +10,8 @@ export async function GET(
     if ("error" in auth) {
         return auth.error;
     }
-    const { supabase, user, role } = auth;
+    const { adminSupabase, supabase, user, role } = auth;
+    const db = adminSupabase ?? supabase;
     const caseId = params.caseId;
 
     if (!caseId) {
@@ -27,7 +28,7 @@ export async function GET(
     }
 
     try {
-        const { data, error } = await supabase
+        const { data, error } = await db
             .from("case_knowledge")
             .select("id, content, metadata, created_at")
             .eq("case_id", caseId)
@@ -55,7 +56,8 @@ export async function DELETE(
     if ("error" in auth) {
         return auth.error;
     }
-    const { supabase, user, role } = auth;
+    const { adminSupabase, supabase, user, role } = auth;
+    const db = adminSupabase ?? supabase;
     const caseId = params.caseId;
 
     if (role !== "professor" && role !== "admin") {
@@ -68,7 +70,7 @@ export async function DELETE(
 
         if (source) {
             // Delete all chunks from a specific source
-            const { error } = await supabase
+            const { error } = await db
                 .from("case_knowledge")
                 .delete()
                 .eq("case_id", caseId)
@@ -82,7 +84,7 @@ export async function DELETE(
             return NextResponse.json({ error: "No IDs or source provided" }, { status: 400 });
         }
 
-        const { error } = await supabase
+        const { error } = await db
             .from("case_knowledge")
             .delete()
             .eq("case_id", caseId)
