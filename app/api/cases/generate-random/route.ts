@@ -75,12 +75,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const hasReferences = Array.isArray(references) && references.length > 0;
+    const effectiveTopic = hasReferences ? "the provided clinical references" : `"${topic}"`;
+
+    const instructions = hasReferences
+      ? `Create a realistic clinical case based STRICTORLY on the patholology and findings in the provided references. Do NOT invent a different pathology if one is clearly described in the papers.`
+      : `Create a realistic clinical case regarding ${effectiveTopic}. Use your extensive internal veterinary knowledge to construct this case.`;
+
     const systemPrompt = `You are an expert veterinary educator. 
-    Create a realistic clinical case regarding "${topic}".
+    ${instructions}
+
     The output must be a JSON object matching the CaseTemplate structure.
     
-    Information:
-    Use your extensive internal veterinary knowledge to construct this case.
     ${referencesText}
     
     Structure required (JSON):
@@ -148,12 +154,13 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Failed to parse model output" }, { status: 502 });
       }
 
-      debugEventBus.emitEvent("success", "api/cases/generate-random", "Case generated from Merck content", { title: caseData?.title ?? null });
+      const sourceMsg = hasReferences ? "uploaded references" : "expert knowledge";
+      debugEventBus.emitEvent("success", "api/cases/generate-random", `Case generated from ${sourceMsg}`, { title: caseData?.title ?? null });
       return NextResponse.json(caseData);
     } catch (openaiErr) {
       console.error("OpenAI generation failed for Merck-sourced case", openaiErr);
       debugEventBus.emitEvent("error", "api/cases/generate-random", "OpenAI generation failed", { error: String(openaiErr), stack: (openaiErr as any)?.stack ?? null });
-      return NextResponse.json({ error: "Failed to generate case from Merck Manual" }, { status: 502 });
+      return NextResponse.json({ error: "Failed to generate case from expert knowledge" }, { status: 502 });
     }
 
   } catch (error) {

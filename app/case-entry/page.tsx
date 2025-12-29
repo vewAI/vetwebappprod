@@ -20,7 +20,7 @@ import { CaseMediaEditor, uploadFile } from "@/features/cases/components/case-me
 import { TimeProgressionEditor } from "@/features/cases/components/case-time-progression-editor";
 import { AvatarSelector } from "@/features/cases/components/avatar-selector";
 import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
-// Random case generation must be sourced from Merck Manual via server
+// Random case generation must be sourced from clinical references or server
 // API. Local fallback generation removed to ensure all cases are
 // traceable to a validated source.
 
@@ -72,12 +72,14 @@ export default function CaseEntryForm() {
       const data = response.data as any;
       if (data && !data.error) {
         setForm((prev) => ({ ...prev, ...(data as any) }));
-        setSuccess("Random case generated from Merck Manual data!");
+        const msg = body.references ? "Case successfully generated from uploaded papers!" : "Random case generated from expert knowledge!";
+        setSuccess(msg);
+        const sourceForDebug = body.references ? "uploaded references" : "expert knowledge";
         try {
           debugEventBus.emitEvent(
             "info",
             "cases/generate-random",
-            "Merck-sourced random case generated",
+            `Case generated from ${sourceForDebug}`,
             { title: data.title ?? null }
           );
         } catch (e) {
@@ -87,19 +89,19 @@ export default function CaseEntryForm() {
         throw new Error(data?.error || "No data returned");
       }
     } catch (err) {
-      console.error("Remote Merck-sourced generation failed", err);
+      console.error("Remote generation failed", err);
       try {
         debugEventBus.emitEvent(
           "error",
           "cases/generate-random",
-          "Merck-sourced generation failed",
+          "Case generation failed",
           { error: String((err as any)?.message ?? err) }
         );
       } catch (e) {
         // ignore
       }
       setError(
-        "Unable to generate case from Merck Veterinary Manual. Please try again later. No local fallback is used."
+        "Unable to generate case from expert knowledge. Please try again later. No local fallback is used."
       );
     } finally {
       setLoading(false);
@@ -279,8 +281,9 @@ Remain collaborative, use everyday language, and avoid offering your own medical
         get_overall_feedback_prompt_template
       );
 
-      // Post to API
-      await axios.post("/api/cases", payload);
+      // Post to API with auth headers
+      const headers = await buildAuthHeaders();
+      await axios.post("/api/cases", payload, { headers });
       setSuccess("Case added successfully!");
       setForm(createEmptyCaseFormState());
       setMediaItems([]);
@@ -306,13 +309,11 @@ Remain collaborative, use everyday language, and avoid offering your own medical
         <h1 className="text-2xl font-bold">Add New Case</h1>
         <div className="text-right">
           <Button type="button" variant="outline" onClick={handleRandomCase} disabled={loading}>
-            {loading ? "Generating..." : "Upload PDF"}
+            {loading ? "Processing..." : mediaItems.length > 0 ? "Regenerate from PDF" : "Random Case"}
           </Button>
           <p className="text-xs text-muted-foreground mt-2 max-w-xs">
-            Generates a realistic, commonly encountered veterinary case using
-            the Merck Veterinary Manual as the authoritative source. Cases are
-            produced from Merck content and formatted by AI — no local
-            fallbacks or invented content are used.
+            Generates a realistic veterinary case. If papers are uploaded below, they will be used as the primary source.
+            Otherwise, a case is generated from curated expert veterinary knowledge.
           </p>
         </div>
       </div>
