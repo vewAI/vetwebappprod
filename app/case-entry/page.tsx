@@ -333,6 +333,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
             </div>
             <div className="flex items-center gap-2">
               <Button
+                type="button"
                 onClick={() => {
                   if (!uploaderFiles || uploaderFiles.length === 0) {
                     fileInputRef.current?.click();
@@ -344,7 +345,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
               >
                 {uploaderUploading ? "Uploading..." : "Upload & Use References"}
               </Button>
-              <Button variant="ghost" onClick={() => setShowPaperUploader(false)}>
+              <Button type="button" variant="ghost" onClick={() => setShowPaperUploader(false)}>
                 Cancel
               </Button>
             </div>
