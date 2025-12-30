@@ -262,12 +262,20 @@ export function CaseRagManager({ caseId }: Props) {
                                 <tr>
                                     <td colSpan={4} className="p-16 text-center">
                                         <div className="flex flex-col items-center gap-3 text-slate-400">
-                                            <AlertTriangle className="w-10 h-10 opacity-20" />
-                                            <div className="text-sm font-medium">No chunks found for this case.</div>
-                                            <p className="text-xs max-w-xs mx-auto opacity-70">
-                                                If you just uploaded a paper, wait a few seconds and click the <RefreshCw className="inline w-3 h-3" /> refresh icon.
-                                                Also verify that the paper had "Process for RAG" checked.
+                                            <div className="bg-slate-50 p-4 rounded-full mb-2">
+                                                <AlertTriangle className="w-12 h-12 opacity-30" />
+                                            </div>
+                                            <div className="text-base font-semibold text-slate-600">No knowledge chunks found</div>
+                                            <p className="text-sm max-w-sm mx-auto opacity-70 leading-relaxed">
+                                                If you recently uploaded a document, it may still be processing.
+                                                Try clicking the <RefreshCw className="inline w-3 h-3 mx-1" /> **Refresh** icon above to sync.
                                             </p>
+                                            <div className="text-[10px] mt-4 p-2 bg-slate-50 rounded border border-slate-100 flex flex-col gap-1 text-left min-w-[200px]">
+                                                <span className="font-bold text-slate-500 uppercase">Troubleshooting:</span>
+                                                <span>• Check "Process for RAG" during upload</span>
+                                                <span>• Verify the Target ID matches the Case ID</span>
+                                                <span>• Check server logs for [Ingestion] errors</span>
+                                            </div>
                                         </div>
                                     </td>
                                 </tr>
