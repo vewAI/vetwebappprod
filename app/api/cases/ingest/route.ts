@@ -25,9 +25,6 @@ export async function POST(req: Request) {
         const buffer = Buffer.from(arrayBuffer);
 
         // Call ingestion service
-        // We pass adminSupabase which allows skipping RLS or standard write access 
-        // depending on how requireUser configures it. 
-        // Since we manually checked role above, this is safe.
         const result = await ingestCaseMaterial(
             adminSupabase ?? auth.supabase,
             caseId,
@@ -36,10 +33,30 @@ export async function POST(req: Request) {
             file.type
         );
 
+        // Check if the service returned an error
+        if (!result.success && "code" in result) {
+            console.error(`[Ingestion API] Service returned error: ${result.code} - ${result.error}`);
+
+            // Map error codes to appropriate HTTP status codes
+            const statusCode = result.code === "CONFIG_ERROR" ? 503 :
+                result.code === "UNSUPPORTED_TYPE" ? 415 :
+                    result.code === "EMPTY_TEXT" ? 422 : 500;
+
+            return NextResponse.json({
+                error: result.error,
+                code: result.code,
+                success: false
+            }, { status: statusCode });
+        }
+
         return NextResponse.json(result);
     } catch (err: unknown) {
         console.error("Ingestion error:", err);
         const msg = err instanceof Error ? err.message : String(err);
-        return NextResponse.json({ error: msg || "Unknown error" }, { status: 500 });
+        return NextResponse.json({
+            error: msg || "Unknown error",
+            code: "UNKNOWN_ERROR",
+            success: false
+        }, { status: 500 });
     }
 }

@@ -61,8 +61,15 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
             console.log("Ingestion complete");
           } catch (ingestErr) {
             console.error("Ingestion failed", ingestErr);
-            // We don't block the UI success for media upload, but maybe warn?
-            // setError("File uploaded but AI processing failed.");
+            // Extract and display specific error message if available
+            if (ingestErr instanceof Error || (typeof ingestErr === 'object' && ingestErr !== null)) {
+              const errorObj = ingestErr as any;
+              const errorMsg = errorObj?.response?.data?.error || errorObj?.message || "AI processing failed";
+              const errorCode = errorObj?.response?.data?.code;
+              setError(`Ingestion error${errorCode ? ` (${errorCode})` : ""}: ${errorMsg}`);
+            } else {
+              setError("File uploaded but AI processing failed.");
+            }
           } finally {
             setIngesting(false);
           }
