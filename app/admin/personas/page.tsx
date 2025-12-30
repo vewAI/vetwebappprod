@@ -1016,7 +1016,7 @@ export default function PersonasAdminPage() {
         key={`${scope}-${row.persona.role_key}`}
         className="rounded-lg border bg-card p-6 shadow-sm"
       >
-        <header className="flex flex-wrap items-center justify-between gap-4">
+        <header className="sticky top-20 z-30 bg-card flex flex-wrap items-center justify-between gap-4 p-3 -mx-6">
           <div className="flex items-center gap-4">
             {row.draftImageUrl && (
               /* eslint-disable-next-line @next/next/no-img-element */

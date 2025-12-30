@@ -751,7 +751,13 @@ export function ChatInterface({
       }
 
       setTimepointToast({ title, body });
-      setVoiceMode(false); // Disable voice mode to prevent loops
+      // Use setVoiceModeEnabled so we run the proper cleanup (stop STT/TTS)
+      try {
+        setVoiceModeEnabled(false);
+      } catch (e) {
+        // fallback to setting state directly if handler not available
+        setVoiceMode(false);
+      }
     }
   }, [sttError]);
 
@@ -2636,17 +2642,30 @@ export function ChatInterface({
       )}
       {showStartSpeakingPrompt && (
         <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center">
-          <Button
-            type="button"
-            size="lg"
-            className="pointer-events-auto px-8 py-6 text-lg font-semibold text-white shadow-2xl bg-gradient-to-r from-rose-500 via-orange-500 to-amber-500 hover:from-rose-600 hover:to-amber-600"
-            onClick={handleStartSpeakingPrompt}
-            disabled={startSequenceActive}
-          >
-            {startSequenceActive
-              ? "Starting voice..."
-              : "Click Here to START Speaking"}
-          </Button>
+          <div className="relative pointer-events-auto">
+            <Button
+              type="button"
+              size="lg"
+              className="px-8 py-6 text-lg font-semibold text-white shadow-2xl bg-gradient-to-r from-rose-500 via-orange-500 to-amber-500 hover:from-rose-600 hover:to-amber-600"
+              onClick={handleStartSpeakingPrompt}
+              disabled={startSequenceActive}
+            >
+              {startSequenceActive ? "Starting voice..." : "Click Here to START Speaking"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="absolute -top-3 -right-3 bg-muted/90 text-foreground"
+              onClick={() => {
+                setShowStartSpeakingPrompt(false);
+                try { setVoiceModeEnabled(false); } catch (e) { /* ignore */ }
+              }}
+              title="Close"
+            >
+              ×
+            </Button>
+          </div>
         </div>
       )}
       {/* Stage Tip Toast (central, non-blocking) */}
@@ -2781,8 +2800,19 @@ export function ChatInterface({
               ref={textareaRef}
               value={input}
               onChange={(e) => {
-                baseInputRef.current = e.target.value;
-                setInput(e.target.value);
+                const val = e.target.value;
+                baseInputRef.current = val;
+                setInput(val);
+                // If the user starts typing, hide the start-speaking prompt
+                // and ensure voice mode is deactivated to avoid unexpected listening.
+                if (showStartSpeakingPrompt) {
+                  setShowStartSpeakingPrompt(false);
+                  try {
+                    setVoiceModeEnabled(false);
+                  } catch (err) {
+                    // ignore if not ready
+                  }
+                }
               }}
               onKeyDown={handleKeyDown}
               placeholder={

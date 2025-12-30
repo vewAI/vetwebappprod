@@ -573,7 +573,7 @@ export default function CaseViewerPage() {
           </div>
         </div>
       )}
-      <div className="mb-4 flex justify-between items-center">
+      <div className="sticky top-20 z-30 -mx-8 mb-4 bg-background/90 backdrop-blur-sm p-4 flex justify-between items-center">
         <div className="flex items-center gap-3">
           <Button
             onClick={handlePrev}
