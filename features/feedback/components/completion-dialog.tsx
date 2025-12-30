@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Loader2, Award, X, Home, RefreshCw } from "lucide-react"
+import { Loader2, Award, X, Home, RefreshCw, Download, FileText } from "lucide-react"
 import { useRouter } from "next/navigation"
 
 interface CompletionDialogProps {
@@ -14,27 +14,27 @@ interface CompletionDialogProps {
   messages?: Array<any>
 }
 
-export function CompletionDialog({ 
-  isOpen, 
-  onClose, 
-  feedback, 
-  isLoading, 
-  caseId 
+export function CompletionDialog({
+  isOpen,
+  onClose,
+  feedback,
+  isLoading,
+  caseId
   , messages = []
 }: CompletionDialogProps) {
   const router = useRouter()
   const [isDownloading, setIsDownloading] = useState(false)
-  
+
   const handleReturnHome = () => {
     router.push('/')
   }
-  
+
   const handleRestartCase = () => {
     router.push(`/case-${caseId}?reset=true`)
   }
-  
+
   if (!isOpen) return null
-  
+
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -49,9 +49,9 @@ export function CompletionDialog({
                 </p>
               </div>
             </div>
-            <Button 
-              variant="ghost" 
-              size="sm" 
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={onClose}
               className="h-8 w-8 p-0"
             >
@@ -59,7 +59,7 @@ export function CompletionDialog({
               <span className="sr-only">Close</span>
             </Button>
           </div>
-          
+
           {isLoading ? (
             <div className="flex flex-col justify-center items-center py-12">
               <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
@@ -73,7 +73,7 @@ export function CompletionDialog({
               <div dangerouslySetInnerHTML={{ __html: feedback }} />
             </div>
           )}
-          
+
           <div className="flex flex-col sm:flex-row justify-end gap-2 mt-6 pt-4 border-t">
             <Button
               onClick={handleReturnHome}
@@ -115,7 +115,7 @@ export function CompletionDialog({
                 }}
                 className="flex items-center gap-2 bg-gray-100 dark:bg-gray-700"
               >
-                {isDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Home className="h-4 w-4" />}
+                {isDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                 Download Feedback
               </Button>
               <Button
