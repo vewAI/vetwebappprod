@@ -28,19 +28,52 @@ export async function GET(
     }
 
     try {
-        console.log(`[Knowledge API] Querying case_knowledge for case_id=${caseId}`);
-        const { data, error } = await db
+        console.log(`[Knowledge API] Querying knowledge for caseIdentifier="${caseId}"`);
+
+        // 1. Resolve canonical ID (handles slugs vs UUIDs)
+        const { data: caseInfo, error: caseErr } = await db
+            .from("cases")
+            .select("id, slug, title")
+            .or(`id.eq.${caseId},slug.eq.${caseId}`)
+            .maybeSingle();
+
+        if (caseErr) {
+            console.error(`[Knowledge API] Error resolving case:`, caseErr);
+        }
+
+        const canonicalId = caseInfo?.id || caseId;
+        const slug = caseInfo?.slug;
+        const title = caseInfo?.title || "Unknown Case";
+
+        // Check both canonical ID and the identifier provided (in case they differ)
+        const idsToQuery = Array.from(new Set([canonicalId, caseId]));
+        if (slug) idsToQuery.push(slug);
+
+        console.log(`[Knowledge API] Case resolved: "${title}". Searching chunks for IDs: ${idsToQuery.join(', ')}`);
+
+        // 2. Query chunks
+        const { data, count, error } = await db
             .from("case_knowledge")
-            .select("id, content, metadata, created_at")
-            .eq("case_id", caseId)
+            .select("id, content, metadata, created_at", { count: "exact" })
+            .in("case_id", idsToQuery)
             .order("created_at", { ascending: false });
 
         if (error) {
+            console.error(`[Knowledge API] DB Error fetching chunks:`, error);
             throw error;
         }
 
-        return NextResponse.json({ data });
+        console.log(`[Knowledge API] Found ${data?.length || 0} chunks for caseIdentifier="${caseId}" (Resolved ID: ${canonicalId})`);
+
+        return NextResponse.json({
+            success: true,
+            data: data || [],
+            total: count || 0,
+            resolvedId: canonicalId,
+            caseTitle: title
+        });
     } catch (err: any) {
+        console.error(`[Knowledge API] Unexpected Error:`, err);
         return NextResponse.json(
             { error: err.message || "Failed to fetch knowledge" },
             { status: 500 }
