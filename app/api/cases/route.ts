@@ -24,7 +24,7 @@ function normalizeIncomingMedia(raw: unknown): CaseMediaItem[] {
     const hasId = typeof item.id === "string" && item.id.trim().length > 0;
     const generatedId =
       typeof (crypto as unknown as { randomUUID?: () => string }).randomUUID ===
-      "function"
+        "function"
         ? (crypto as unknown as { randomUUID: () => string }).randomUUID()
         : `${Date.now()}-${Math.random()}`;
     return {
@@ -97,6 +97,8 @@ function normalizeCaseBody(body: Record<string, unknown>): Record<string, unknow
   if (next["version"] !== undefined && next["version"] !== "") {
     const v = Number(next["version"]);
     next["version"] = isNaN(v) ? 1 : Math.floor(v);
+  } else {
+    next["version"] = 1;
   }
 
   return next;

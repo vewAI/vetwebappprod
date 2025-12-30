@@ -3,6 +3,8 @@ import OpenAi from "openai";
 import { searchMerckManual } from "@/features/external-resources/services/merckService";
 import { requireUser } from "@/app/api/_lib/auth";
 import { debugEventBus } from "@/lib/debug-events-fixed";
+import pdf from "pdf-parse";
+import mammoth from "mammoth";
 
 const openai = new OpenAi({
   apiKey: process.env.OPENAI_API_KEY,
@@ -39,47 +41,68 @@ export async function POST(request: NextRequest) {
       references = undefined;
     }
 
-    // 1. Pick a random topic
-    const topic = TOPICS[Math.floor(Math.random() * TOPICS.length)];
+    const hasReferences = Array.isArray(references) && references.length > 0;
 
-    // 2. Mock Merck Search (Bypass) - rely on high quality LLM knowledge
-    debugEventBus.emitEvent(
-      "info",
-      "api/cases/generate-random",
-      "Generating case from internal knowledge",
-      { topic }
-    );
+    // 1. Pick a random topic ONLY if no references provided
+    const topic = hasReferences ? null : TOPICS[Math.floor(Math.random() * TOPICS.length)];
+
+    if (!hasReferences) {
+      debugEventBus.emitEvent(
+        "info",
+        "api/cases/generate-random",
+        "Generating case from internal knowledge",
+        { topic }
+      );
+    }
 
     // 3. Generate Case using OpenAI
-    // If references were provided, attempt to fetch their text (best-effort)
+    // If references were provided, attempt to fetch their text
     let referencesText = "";
-    if (Array.isArray(references) && references.length > 0) {
+    if (hasReferences) {
       const pieces: string[] = [];
-      for (const ref of references) {
+      for (const ref of references!) {
         if (!ref.url) continue;
         try {
-          const r = await fetch(ref.url, { method: "GET" });
-          const ct = r.headers.get("content-type") ?? "";
-          if (ct.includes("text") || ct.includes("html")) {
-            const txt = await r.text();
-            pieces.push(`Reference (${ref.caption ?? ref.url}):\n${txt.substring(0, 3000)}`);
+          const r = await fetch(ref.url);
+          if (!r.ok) throw new Error(`Fetch failed: ${r.status} ${r.statusText}`);
+          const arrayBuffer = await r.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          const ct = (r.headers.get("content-type") || "").toLowerCase();
+
+          let extractedText = "";
+          if (ct.includes("pdf") || ref.url.toLowerCase().split('?')[0].endsWith(".pdf")) {
+            const data = await pdf(buffer);
+            extractedText = data.text || "";
+          } else if (ct.includes("word") || ref.url.toLowerCase().split('?')[0].endsWith(".docx")) {
+            const result = await mammoth.extractRawText({ buffer });
+            extractedText = result.value;
           } else {
-            pieces.push(`Reference (${ref.caption ?? ref.url}): ${ref.url}`);
+            // Fallback for generic types
+            extractedText = buffer.toString("utf-8");
+          }
+
+          if (extractedText.trim()) {
+            console.log(`Successfully extracted ${extractedText.length} characters from ${ref.url}`);
+            pieces.push(`--- Reference Content From: ${ref.caption || ref.url} ---\n${extractedText.substring(0, 15000)}`);
+          } else {
+            console.warn(`Extraction resulted in empty text for ${ref.url}`);
           }
         } catch (e) {
-          pieces.push(`Reference (${ref.caption ?? ref.url}): ${ref.url}`);
+          console.error(`Failed to extract text from ${ref.url}:`, e);
+          pieces.push(`Reference (Link only, extraction failed): ${ref.url}`);
         }
       }
       if (pieces.length > 0) {
-        referencesText = `\n\nUser-provided references (included verbatim or by URL):\n${pieces.join("\n\n")}`;
+        referencesText = `\n\n### USER-PROVIDED REFERENCE CONTENT (MANDATORY SOURCE):\n${pieces.join("\n\n")}`;
+      } else {
+        console.warn("No text could be extracted from any provided references.");
       }
     }
 
-    const hasReferences = Array.isArray(references) && references.length > 0;
-    const effectiveTopic = hasReferences ? "the provided clinical references" : `"${topic}"`;
+    const effectiveTopic = hasReferences ? "the uploaded clinical documents" : `"${topic}"`;
 
     const instructions = hasReferences
-      ? `Create a realistic clinical case based STRICTORLY on the patholology and findings in the provided references. Do NOT invent a different pathology if one is clearly described in the papers.`
+      ? `Create a realistic clinical case derived STRICTORLY AND ONLY from the pathology and findings described in the USER-PROVIDED REFERENCE CONTENT above. DO NOT use generic topics. If the references describe a specific patient, use those details. If they describe a pathology, use it precisely.`
       : `Create a realistic clinical case regarding ${effectiveTopic}. Use your extensive internal veterinary knowledge to construct this case.`;
 
     const systemPrompt = `You are an expert veterinary educator. 

@@ -68,6 +68,7 @@ export default function CaseEntryForm() {
       if (mediaItems.length > 0) {
         body.references = mediaItems.map((m) => ({ url: m.url, caption: m.caption ?? null }));
       }
+      console.log("API Request Body (generate-random):", body);
       const response = await axios.post("/api/cases/generate-random", body, { headers });
       const data = response.data as any;
       if (data && !data.error) {
@@ -325,11 +326,13 @@ Remain collaborative, use everyday language, and avoid offering your own medical
                 1. Select your reference papers (PDF/DOCX)
               </label>
               <input
-                ref={fileInputRef}
                 type="file"
-                accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                accept=".pdf,.docx,.doc"
                 multiple
-                onChange={(e) => setUploaderFiles(e.target.files)}
+                onChange={(e) => {
+                  console.log("Files selected:", e.target.files);
+                  setUploaderFiles(e.target.files);
+                }}
                 className="block w-full text-sm text-slate-500
                   file:mr-4 file:py-2 file:px-4
                   file:rounded-full file:border-0
