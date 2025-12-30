@@ -4,6 +4,7 @@ import { CheckCircle, Circle, ChevronLeft } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
+import { FontSizeToggle } from "@/features/navigation/components/font-size-toggle"
 import type { Case } from "@/features/case-selection/models/case"
 import type { Stage } from "@/features/stages/types"
 
@@ -18,16 +19,21 @@ export function ProgressSidebar({ caseItem, stages, currentStageIndex, onStageSe
 
   return (
     <div className="flex h-full flex-col border-r bg-muted/20">
-      <div className="border-b p-4">
-        <Link href="/">
-          <Button variant="outline" size="sm" className="w-full">
-            <ChevronLeft className="mr-2 h-4 w-4" />
-            Back to Cases
-          </Button>
-        </Link>
-        <h2 className="mt-4 text-lg font-semibold">{caseItem.title}</h2>
-        <div className="mt-1 text-sm text-muted-foreground">
-          {caseItem.species} - {caseItem.category}
+      <div className="border-b p-4 space-y-4">
+        <div className="flex items-center gap-2">
+          <Link href="/" className="flex-1">
+            <Button variant="outline" size="sm" className="w-full">
+              <ChevronLeft className="mr-2 h-4 w-4" />
+              Back to Cases
+            </Button>
+          </Link>
+          <FontSizeToggle className="border rounded-md px-1" />
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold leading-tight">{caseItem.title}</h2>
+          <div className="mt-1 text-sm text-muted-foreground">
+            {caseItem.species} - {caseItem.category}
+          </div>
         </div>
       </div>
 

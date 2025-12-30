@@ -8,6 +8,7 @@ import { useAuth } from "@/features/auth/services/authService";
 import { Button } from "@/components/ui/button";
 import { Menu, X, Home, LayoutDashboard, LogOut, History, GraduationCap } from "lucide-react";
 import { ThemeToggle } from "@/features/navigation/components/theme-toggle";
+import { FontSizeToggle } from "@/features/navigation/components/font-size-toggle";
 
 export function Navbar() {
   const { user, signOut, isAdmin, role, profileLoading } = useAuth();
@@ -86,6 +87,7 @@ export function Navbar() {
           </div>
 
           <div className="hidden md:flex md:items-center gap-3">
+            <FontSizeToggle />
             <ThemeToggle />
             {user && (
               <div className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-foreground">
@@ -98,8 +100,8 @@ export function Navbar() {
                     {profileLoading
                       ? "(loading role...)"
                       : role
-                      ? `(${role})`
-                      : "(no role)"}
+                        ? `(${role})`
+                        : "(no role)"}
                   </span>
                 </div>
               </div>
@@ -164,6 +166,8 @@ export function Navbar() {
               </Link>
             )}
             <div className="flex items-center gap-2 rounded-md px-3 py-2">
+              <FontSizeToggle />
+              <span className="text-sm text-muted-foreground mr-4">Font Size</span>
               <ThemeToggle size="sm" className="h-8 w-8" />
               <span className="text-sm text-muted-foreground">Theme</span>
             </div>

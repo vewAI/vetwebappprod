@@ -67,6 +67,7 @@ import type { CaseTimepoint } from "@/features/cases/models/caseTimepoint";
 import { useAuth } from "@/features/auth/services/authService";
 import { HelpTip } from "@/components/ui/help-tip";
 import { GuidedTour } from "@/components/ui/guided-tour";
+import { FontSizeToggle } from "@/features/navigation/components/font-size-toggle";
 
 const STAGE_KEYWORD_SYNONYMS: Record<string, string[]> = {
   examination: ["exam"],
@@ -2915,6 +2916,9 @@ export function ChatInterface({
                 <PenLine className="h-3.5 w-3.5" />
                 {showNotepad ? "Hide Notepad" : "Show Notepad"}
               </Button>
+              <div className="flex items-center gap-1 border rounded-md px-1 bg-background/50">
+                <FontSizeToggle />
+              </div>
               {/* Developer Skip Button - Hidden by default unless needed, or we can just show it */}
               <Button
                 variant="ghost"
