@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Loader2, Trash2, FileText, RefreshCw, AlertTriangle, ChevronDown, ChevronRight, Database, FileDigit } from "lucide-react";
+import { Loader2, Trash2, FileText, RefreshCw, AlertTriangle, ChevronDown, ChevronRight, Database, FileDigit, Download } from "lucide-react";
 import { buildAuthHeaders } from "@/lib/auth-headers";
 
 interface CaseKnowledgeItem {
@@ -143,7 +143,8 @@ export function CaseRagManager({ caseId }: Props) {
                         <h3 className="font-semibold text-slate-900">RAG Audit Report</h3>
                         <p className="text-xs text-slate-500">Source breakdown & knowledge verification</p>
                         <div className="flex items-center gap-2 mt-1">
-                            <span className="text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-mono">ID: {caseId}</span>
+                            <span className="text-[10px] bg-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded shadow-sm">Target ID: {caseId}</span>
+                            {loading && <span className="text-[10px] text-indigo-400 animate-pulse">Syncing...</span>}
                         </div>
                     </div>
                 </div>
@@ -156,6 +157,24 @@ export function CaseRagManager({ caseId }: Props) {
                     >
                         <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                     </button>
+                    {items.length > 0 && (
+                        <button
+                            onClick={() => {
+                                const text = items.map(i => `[SOURCE: ${i.metadata?.source || 'Internal'}] [CREATED: ${i.created_at}]\n${i.content}\n\n---`).join('\n');
+                                const blob = new Blob([text], { type: 'text/plain' });
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = `rag-audit-${caseId}.txt`;
+                                a.click();
+                                URL.revokeObjectURL(url);
+                            }}
+                            className="p-2 text-slate-500 hover:bg-slate-200 rounded-lg transition-colors border bg-white"
+                            title="Download Knowledge Dump (.txt)"
+                        >
+                            <Download className="w-4 h-4" />
+                        </button>
+                    )}
                     {selectedIds.size > 0 && (
                         <button
                             onClick={handleDeleteSelected}
@@ -241,8 +260,15 @@ export function CaseRagManager({ caseId }: Props) {
                         <tbody className="divide-y divide-slate-100">
                             {filteredItems.length === 0 ? (
                                 <tr>
-                                    <td colSpan={4} className="p-10 text-center text-slate-400 italic">
-                                        No items matching the selected source filter.
+                                    <td colSpan={4} className="p-16 text-center">
+                                        <div className="flex flex-col items-center gap-3 text-slate-400">
+                                            <AlertTriangle className="w-10 h-10 opacity-20" />
+                                            <div className="text-sm font-medium">No chunks found for this case.</div>
+                                            <p className="text-xs max-w-xs mx-auto opacity-70">
+                                                If you just uploaded a paper, wait a few seconds and click the <RefreshCw className="inline w-3 h-3" /> refresh icon.
+                                                Also verify that the paper had "Process for RAG" checked.
+                                            </p>
+                                        </div>
                                     </td>
                                 </tr>
                             ) : (
