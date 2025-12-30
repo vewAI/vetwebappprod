@@ -28,6 +28,7 @@ export async function GET(
     }
 
     try {
+        console.log(`[Knowledge API] Querying case_knowledge for case_id=${caseId}`);
         const { data, error } = await db
             .from("case_knowledge")
             .select("id, content, metadata, created_at")

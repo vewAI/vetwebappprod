@@ -22,6 +22,7 @@ export function CaseRagManager({ caseId }: Props) {
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
     const [error, setError] = useState<string | null>(null);
     const [filterSource, setFilterSource] = useState<string>("all");
+    const [showDebug, setShowDebug] = useState(false);
 
     const fetchKnowledge = async () => {
         setLoading(true);
@@ -141,6 +142,9 @@ export function CaseRagManager({ caseId }: Props) {
                     <div>
                         <h3 className="font-semibold text-slate-900">RAG Audit Report</h3>
                         <p className="text-xs text-slate-500">Source breakdown & knowledge verification</p>
+                        <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-mono">ID: {caseId}</span>
+                        </div>
                     </div>
                 </div>
                 <div className="flex gap-2">
