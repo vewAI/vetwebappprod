@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import PDFDocument from "pdfkit";
 
-export async function POST(req: NextRequest) {
+export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const { caseId, feedbackHtml, messages } = await req.json();
 
@@ -11,17 +11,12 @@ export async function POST(req: NextRequest) {
 
     doc.on("data", (chunk: Uint8Array) => chunks.push(chunk));
 
-    return new Promise((resolve) => {
+    const result = await new Promise<Buffer>((resolve, reject) => {
       doc.on("end", () => {
-        const result = Buffer.concat(chunks);
-        resolve(
-          new NextResponse(result, {
-            headers: {
-              "Content-Type": "application/pdf",
-              "Content-Disposition": `attachment; filename="feedback-${caseId}.pdf"`,
-            },
-          })
-        );
+        resolve(Buffer.concat(chunks));
+      });
+      doc.on("error", (err: Error) => {
+        reject(err);
       });
 
       // --- PDF Content Generation ---
@@ -32,8 +27,7 @@ export async function POST(req: NextRequest) {
       doc.moveDown(2);
 
       // Simple HTML stripping and formatting for basic PDF layout
-      // We handle headers, lists, and basic spacing
-      let cleanText = feedbackHtml
+      let cleanText = (feedbackHtml || "")
         .replace(/<h1[^>]*>/gi, "\n\n# ")
         .replace(/<h2[^>]*>/gi, "\n\n## ")
         .replace(/<h3[^>]*>/gi, "\n\n### ")
@@ -57,8 +51,6 @@ export async function POST(req: NextRequest) {
         .replace(/\n\s*\n\s*\n/g, "\n\n") // Collapse triple newlines
         .trim();
 
-      // Split by header markers to apply some basic styling if we wanted, 
-      // but for now, simple text block is safer with pdfkit.
       doc.fontSize(11).lineGap(2).text(cleanText, {
         align: "left",
         paragraphGap: 10,
@@ -79,6 +71,13 @@ export async function POST(req: NextRequest) {
       }
 
       doc.end();
+    });
+
+    return new NextResponse(result as any, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="feedback-${caseId}.pdf"`,
+      },
     });
   } catch (error) {
     console.error("PDF Export error:", error);

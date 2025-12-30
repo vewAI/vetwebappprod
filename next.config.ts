@@ -28,6 +28,7 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns,
   },
+  serverExternalPackages: ["pdfkit", "fontkit", "restructure"],
 };
 
 export default nextConfig;
