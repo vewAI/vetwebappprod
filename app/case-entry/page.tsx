@@ -319,36 +319,50 @@ Remain collaborative, use everyday language, and avoid offering your own medical
       </div>
       <form onSubmit={handleSubmit} className="space-y-4">
         {showPaperUploader && (
-          <div className="space-y-2 border p-3 rounded">
-            <div className="flex items-center gap-2">
-              <label className="font-medium">Upload reference papers (PDF/DOCX)</label>
+          <div className="space-y-4 border p-4 rounded-lg bg-muted/10 relative">
+            <div className="space-y-2">
+              <label className="text-sm font-semibold flex items-center gap-2">
+                1. Select your reference papers (PDF/DOCX)
+              </label>
               <input
                 ref={fileInputRef}
                 type="file"
                 accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 multiple
                 onChange={(e) => setUploaderFiles(e.target.files)}
-                className="ml-2"
+                className="block w-full text-sm text-slate-500
+                  file:mr-4 file:py-2 file:px-4
+                  file:rounded-full file:border-0
+                  file:text-sm file:font-semibold
+                  file:bg-violet-50 file:text-violet-700
+                  hover:file:bg-violet-100 cursor-pointer"
               />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <Button
                 type="button"
-                onClick={() => {
-                  if (!uploaderFiles || uploaderFiles.length === 0) {
-                    fileInputRef.current?.click();
-                    return;
-                  }
-                  void handleUploadReferences();
-                }}
-                disabled={uploaderUploading}
+                className="bg-violet-600 hover:bg-violet-700 text-white"
+                onClick={handleUploadReferences}
+                disabled={uploaderUploading || !uploaderFiles || uploaderFiles.length === 0}
               >
-                {uploaderUploading ? "Uploading..." : "Upload & Use References"}
+                {uploaderUploading ? "Uploading & Processing..." : "2. Upload & Use References"}
               </Button>
-              <Button type="button" variant="ghost" onClick={() => setShowPaperUploader(false)}>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setShowPaperUploader(false);
+                  setUploaderFiles(null);
+                }}
+              >
                 Cancel
               </Button>
             </div>
+            {!uploaderFiles?.length && !uploaderUploading && (
+              <p className="text-xs text-muted-foreground italic">
+                Tip: Select a file above first, then click the upload button to generate your case.
+              </p>
+            )}
           </div>
         )}
         {orderedCaseFieldKeys.map((key) => {
