@@ -83,14 +83,14 @@ export default function CaseSelectionPage() {
       <header className="mb-8 text-center">
         <div className="flex items-center justify-center gap-2">
           <h1 id="main-title" className="text-3xl font-bold tracking-tight text-primary md:text-4xl lg:text-5xl">
-            Veterinary OSCE Simulator
+            Clinical Training
           </h1>
           <HelpTip content="This is the main dashboard where you can select clinical cases to practice." />
         </div>
         <p className="mt-4 text-xl text-muted-foreground">
           Select a case to begin your clinical examination
         </p>
-        
+
         <div className="mt-6 flex justify-center items-center gap-2">
           <div id="discipline-filter" className="w-full max-w-xs">
             <select
