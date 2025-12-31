@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/features/auth/services/authService";
-import { getAttemptsByCase } from "@/features/attempts/services/attemptService";
+import { getAttemptsByCase, deleteAttempt } from "@/features/attempts/services/attemptService";
 import { Button } from "@/components/ui/button";
 import { Loader2, ArrowLeft, Clock, Play } from "lucide-react";
 import { fetchCaseById } from "@/features/case-selection/services/caseService";
@@ -93,6 +93,43 @@ export default function CaseInstructionsPage() {
     // Navigate directly to the case page
     // The case page will create a new attempt if needed
     router.push(`/${id}`);
+  };
+
+  const [isStartingOver, setIsStartingOver] = useState(false);
+
+  const handleStartOver = async () => {
+    // find in-progress attempts for this case
+    const inProgress = attempts.filter((a) => a.completionStatus === "in_progress");
+    if (inProgress.length === 0) {
+      // nothing to clear; just navigate to start
+      router.push(`/${id}`);
+      return;
+    }
+
+    const ok = window.confirm(
+      `Found ${inProgress.length} in-progress attempt(s). Start over will erase them and begin a fresh attempt. Continue?`
+    );
+    if (!ok) return;
+
+    setIsStartingOver(true);
+    try {
+      for (const att of inProgress) {
+        try {
+          await deleteAttempt(att.id);
+        } catch (err) {
+          console.warn("Failed to delete attempt", att.id, err);
+        }
+        try {
+          localStorage.removeItem(`advanceGuard-${att.id}`);
+        } catch (e) {
+          // ignore
+        }
+      }
+      // Navigate to case page to initialize a fresh attempt
+      router.push(`/${id}`);
+    } finally {
+      setIsStartingOver(false);
+    }
   };
 
   if (!caseData) {
@@ -190,6 +227,20 @@ export default function CaseInstructionsPage() {
                 )}
               </Button>
               <HelpTip content="Clicking this will launch the simulation environment." />
+              {attempts.some((a) => a.completionStatus === "in_progress") && (
+                <Button
+                  variant="ghost"
+                  onClick={handleStartOver}
+                  disabled={isStartingOver}
+                  size="sm"
+                  className="ml-3"
+                >
+                  {isStartingOver ? "Starting over..." : "Start Over"}
+                </Button>
+              )}
+              {attempts.some((a) => a.completionStatus === "in_progress") && (
+                <HelpTip content="Deletes in-progress attempt(s) for this case — removes messages, saved progress, and follow-up records. This cannot be undone." />
+              )}
             </div>
           </div>
         </div>

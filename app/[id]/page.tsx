@@ -23,6 +23,7 @@ import {
   createAttempt,
   completeAttempt,
   getAttemptById,
+  deleteAttempt,
 } from "@/features/attempts/services/attemptService";
 import { useSaveAttempt } from "@/features/attempts/hooks/useSaveAttempt";
 import { useAuth } from "@/features/auth/services/authService";
@@ -67,6 +68,7 @@ export default function CaseChatPage() {
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
   const [initialMessages, setInitialMessages] = useState<Message[]>([]);
   const [isRestoring, setIsRestoring] = useState(true);
+  const [resetCounter, setResetCounter] = useState(0);
 
   const { saveProgress } = useSaveAttempt(attemptId);
   const { user, session, role } = useAuth();
@@ -150,6 +152,48 @@ export default function CaseChatPage() {
 
     initializeAttempt();
   }, [user, id, isCreatingAttempt, attemptId]);
+
+  // Start Over: delete current attempt and create a fresh one
+  const handleStartOver = async () => {
+    if (!attemptId) return;
+    const ok = window.confirm(
+      "Start over? This will erase your current in-progress attempt and start a new one."
+    );
+    if (!ok) return;
+
+    try {
+      // delete on server
+      const deleted = await deleteAttempt(attemptId);
+      // remove client-side caches related to the attempt
+      try {
+        localStorage.removeItem(`advanceGuard-${attemptId}`);
+      } catch (e) {
+        // ignore
+      }
+
+      // Reset local UI state
+      setAttemptId(null);
+      setInitialMessages([]);
+      setStages(initializeStages(getStagesForCase(id)));
+      setCurrentStageIndex(0);
+      // bump resetCounter to force ChatInterface remount and stop any active STT/TTS
+      setResetCounter((c) => c + 1);
+
+      // create a fresh attempt
+      const newAttempt = await createAttempt(id);
+      if (newAttempt) {
+        setAttemptId(newAttempt.id);
+        const url = new URL(window.location.href);
+        url.searchParams.set("attempt", newAttempt.id);
+        window.history.replaceState({}, "", url);
+        // ensure remount for the new id
+        setResetCounter((c) => c + 1);
+      }
+    } catch (err) {
+      console.error("Start over failed:", err);
+      // best-effort: leave UI in a sensible state
+    }
+  };
 
   useEffect(() => {
     const checkMobile = () => {
@@ -357,10 +401,21 @@ export default function CaseChatPage() {
               <option value="3">Day 3</option>
             </select>
             <span className="text-sm text-gray-400">{timepoints.length} timepoints</span>
+            {attemptId && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleStartOver}
+                className="ml-auto"
+              >
+                Start Over
+              </Button>
+            )}
           </div>
         )}
 
         <ChatInterface
+          key={`${attemptId ?? 'noattempt'}-${resetCounter}`}
           caseId={caseItem.id}
           attemptId={attemptId || undefined}
           initialMessages={initialMessages}
