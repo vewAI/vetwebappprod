@@ -235,7 +235,7 @@ export async function ingestCaseDataToRAG(
             const chunk = chunks[i];
             try {
                 const response = await openai.embeddings.create({
-                    model: "text-embedding-ada-002",
+                    model: "text-embedding-3-small",
                     input: chunk.content,
                 });
                 embeddings.push({

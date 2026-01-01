@@ -99,7 +99,7 @@ export async function ingestCaseMaterial(
         for (let i = 0; i < chunks.length; i++) {
             const chunk = chunks[i];
             const response = await openai.embeddings.create({
-                model: "text-embedding-ada-002",
+                model: "text-embedding-3-small",
                 input: chunk,
             });
             embeddings.push({
