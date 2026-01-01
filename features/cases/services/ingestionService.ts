@@ -1,5 +1,6 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import OpenAI from "openai";
+import llm from "@/lib/llm";
 import pdf from "pdf-parse";
 import mammoth from "mammoth";
 import { RecursiveCharacterTextSplitter } from "@/lib/text-splitter";
@@ -116,47 +117,35 @@ export async function ingestCaseMaterial(
         // error aborts the whole operation.
         for (let i = 0; i < chunks.length; i++) {
             const chunk = chunks[i];
-            let response: any = null;
-            let usedModel: string | null = null;
-
-            for (const model of modelsToTry) {
-                try {
-                    response = await openai.embeddings.create({ model, input: chunk });
-                    usedModel = model;
-                    break; // success
-                } catch (err) {
-                    if (isModelAccessError(err)) {
-                        console.warn(`[Ingestion] Model access denied for ${model}, will try next model if available.`);
-                        // try next model
-                        continue;
-                    }
-                    // Non-model-access error -> rethrow and fail ingestion
-                    console.error(`[Ingestion] Error generating embedding with model ${model}:`, err);
-                    throw err;
+            try {
+                // Ask the adapter for embeddings. Adapter will consult tmp config or env
+                // to decide provider (OpenAI or Gemini) so this enables the pilot.
+                const out = await llm.embeddings([chunk], { model: modelsToTry[0] as any });
+                const vec = out[0];
+                embeddings.push({
+                    content: chunk,
+                    embedding: vec.embedding,
+                    metadata: {
+                        source: fileName,
+                        chunk_index: i,
+                        total_chunks: chunks.length,
+                        embedding_model: vec.model,
+                    },
+                });
+            } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                const isModelAccess = /does not have access to model/i.test(msg) || /not configured|Gemini API key not configured/i.test(msg) || (err && typeof (err as any).status === 'number' && (err as any).status === 403);
+                if (isModelAccess) {
+                    console.error(`[Ingestion] Embedding model access error for model ${modelsToTry[0]}:`, err);
+                    return {
+                        success: false,
+                        error: `AI processing failed: ${msg}`,
+                        code: "EMBEDDING_MODEL_ACCESS",
+                        model: modelsToTry[0],
+                    };
                 }
+                throw err;
             }
-
-            if (!response || !usedModel) {
-                const attempted = modelsToTry.join(",");
-                console.error(`[Ingestion] No available embedding model succeeded. Attempted: ${attempted}`);
-                return {
-                    success: false,
-                    error: `AI processing failed: No accessible embedding model. Attempted: ${attempted}`,
-                    code: "EMBEDDING_MODEL_ACCESS",
-                    attemptedModels: modelsToTry,
-                };
-            }
-
-            embeddings.push({
-                content: chunk,
-                embedding: response.data[0].embedding,
-                metadata: {
-                    source: fileName,
-                    chunk_index: i,
-                    total_chunks: chunks.length,
-                    embedding_model: usedModel,
-                },
-            });
         }
     } catch (err) {
         console.error(`[Ingestion] OpenAI Embedding generation failed:`, err);
