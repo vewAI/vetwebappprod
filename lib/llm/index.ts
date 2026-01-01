@@ -2,6 +2,7 @@ import * as fs from "fs";
 import path from "path";
 import * as openaiProv from "./providers/openai";
 import * as geminiProv from "./providers/gemini";
+import * as aistudioProv from "./providers/aistudio";
 
 export type LlmProviderName = "openai" | "gemini";
 
@@ -36,6 +37,9 @@ export async function embeddings(inputs: string[], opts?: { provider?: LlmProvid
   const provider = opts?.provider ?? (await resolveProviderForFeature("embeddings"));
   if (provider === "gemini") {
     return await geminiProv.createEmbeddingsGemini(inputs, opts?.model);
+  }
+  if (provider === "aistudio") {
+    return await aistudioProv.createEmbeddingsAIStudio(inputs, opts?.model);
   }
   return await openaiProv.createEmbeddingsOpenAI(inputs, opts?.model);
 }

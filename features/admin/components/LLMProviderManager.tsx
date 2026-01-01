@@ -15,6 +15,8 @@ export default function LLMProviderManager({ open, onOpenChange }: { open: boole
   const [config, setConfig] = useState<Config>({ defaultProvider: "openai", featureOverrides: { embeddings: null } });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !isAdmin) return;
@@ -58,11 +60,29 @@ export default function LLMProviderManager({ open, onOpenChange }: { open: boole
           </div>
           <div>
             <label className="block text-sm font-medium">Embeddings Provider Override</label>
-            <select className="mt-1 block w-full" value={config.featureOverrides?.embeddings ?? ""} onChange={(e) => setConfig((c) => ({ ...c, featureOverrides: { ...(c.featureOverrides || {}), embeddings: e.target.value || null } }))}>
-              <option value="">(use default)</option>
-              <option value="openai">OpenAI</option>
-              <option value="gemini">Google Gemini</option>
-            </select>
+            <div className="flex gap-2">
+              <select className="mt-1 block w-full" value={config.featureOverrides?.embeddings ?? ""} onChange={(e) => setConfig((c) => ({ ...c, featureOverrides: { ...(c.featureOverrides || {}), embeddings: e.target.value || null } }))}>
+                <option value="">(use default)</option>
+                <option value="openai">OpenAI</option>
+                <option value="gemini">Google Gemini</option>
+                <option value="aistudio">AI Studio</option>
+              </select>
+              <Button size="sm" onClick={async () => {
+                setTesting(true);
+                setTestResult(null);
+                try {
+                  const resp = await fetch('/api/admin/llm-provider/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ feature: 'embeddings' }) });
+                  const data = await resp.json();
+                  if (!resp.ok) throw new Error(data?.error || 'Test failed');
+                  setTestResult(`OK — provider=${data.provider} model=${data.model ?? 'n/a'} latency=${data.latencyMs ?? 'n/a'}ms`);
+                } catch (e: any) {
+                  setTestResult(String(e?.message ?? e));
+                } finally {
+                  setTesting(false);
+                }
+              }}>{testing ? 'Testing…' : 'Test'}</Button>
+            </div>
+            {testResult ? <div className="text-xs mt-2">{testResult}</div> : null}
           </div>
           {err ? <div className="text-sm text-red-600">{err}</div> : null}
         </div>
