@@ -97,30 +97,54 @@ export async function ingestCaseMaterial(
     try {
         // Model selection: allow override via env var for deployments
         const preferredModel = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
+        const fallbackModelsEnv = process.env.OPENAI_EMBEDDING_FALLBACKS || "";
+        const fallbackModels = fallbackModelsEnv
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
 
-        // We do them in batch or one by one. One by one is easier to debug for now.
+        const modelsToTry = [preferredModel, ...fallbackModels];
+
+        // Helper to determine if an error looks like a model-access problem
+        const isModelAccessError = (err: unknown) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            return /does not have access to model/i.test(msg) || /Model "[\w-]+" not found/i.test(msg) || (err && typeof (err as any).status === 'number' && (err as any).status === 403);
+        };
+
+        // Try each chunk, using the first model that works. If a model returns
+        // a model-access error, try the next model in the list. Any other
+        // error aborts the whole operation.
         for (let i = 0; i < chunks.length; i++) {
             const chunk = chunks[i];
-            let response;
-            try {
-                response = await openai.embeddings.create({
-                    model: preferredModel,
-                    input: chunk,
-                });
-            } catch (err) {
-                // If the error is an OpenAI 403 about model access, return a clearer code so frontend can surface guidance.
-                const msg = err instanceof Error ? err.message : String(err);
-                const isModelAccess = /does not have access to model/i.test(msg) || /Model "[\w-]+" not found/i.test(msg) || (err && typeof (err as any).status === 'number' && (err as any).status === 403);
-                if (isModelAccess) {
-                    console.error(`[Ingestion] Embedding model access error for model ${preferredModel}:`, err);
-                    return {
-                        success: false,
-                        error: `AI processing failed: ${msg}`,
-                        code: "EMBEDDING_MODEL_ACCESS",
-                        model: preferredModel,
-                    };
+            let response: any = null;
+            let usedModel: string | null = null;
+
+            for (const model of modelsToTry) {
+                try {
+                    response = await openai.embeddings.create({ model, input: chunk });
+                    usedModel = model;
+                    break; // success
+                } catch (err) {
+                    if (isModelAccessError(err)) {
+                        console.warn(`[Ingestion] Model access denied for ${model}, will try next model if available.`);
+                        // try next model
+                        continue;
+                    }
+                    // Non-model-access error -> rethrow and fail ingestion
+                    console.error(`[Ingestion] Error generating embedding with model ${model}:`, err);
+                    throw err;
                 }
-                throw err; // rethrow other errors to be handled by outer catch
+            }
+
+            if (!response || !usedModel) {
+                const attempted = modelsToTry.join(",");
+                console.error(`[Ingestion] No available embedding model succeeded. Attempted: ${attempted}`);
+                return {
+                    success: false,
+                    error: `AI processing failed: No accessible embedding model. Attempted: ${attempted}`,
+                    code: "EMBEDDING_MODEL_ACCESS",
+                    attemptedModels: modelsToTry,
+                };
             }
 
             embeddings.push({
@@ -130,6 +154,7 @@ export async function ingestCaseMaterial(
                     source: fileName,
                     chunk_index: i,
                     total_chunks: chunks.length,
+                    embedding_model: usedModel,
                 },
             });
         }
@@ -138,7 +163,7 @@ export async function ingestCaseMaterial(
         return {
             success: false,
             error: `AI processing failed: ${err instanceof Error ? err.message : String(err)}`,
-            code: "OPENAI_ERROR"
+            code: "OPENAI_ERROR",
         };
     }
 
