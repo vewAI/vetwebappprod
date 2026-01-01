@@ -8,6 +8,15 @@ import { uploadFile } from "@/features/cases/components/case-media-editor";
 import { buildAuthHeaders } from "@/lib/auth-headers";
 import axios from "axios";
 import { isCaseMediaItem } from "@/features/cases/models/caseMedia";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog";
 
 type Props = {
   caseId: string;
@@ -21,6 +30,11 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
   const [ingesting, setIngesting] = useState(false);
   const [processForAi, setProcessForAi] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [modelAccessInfo, setModelAccessInfo] = useState<{
+    model?: string | null;
+    attemptedModels?: string[] | null;
+    message?: string | null;
+  } | null>(null);
   const inputRef = React.useRef<HTMLInputElement | null>(null);
 
   const handleUpload = async () => {
@@ -70,7 +84,17 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
                 const errorObj = ingestErr as any;
                 const errorMsg = errorObj?.response?.data?.error || errorObj?.message || "AI processing failed";
                 const errorCode = errorObj?.response?.data?.code;
-                setError(`Ingestion error${errorCode ? ` (${errorCode})` : ""}: ${errorMsg}`);
+                // If this is an embedding model access error, surface a modal with guidance
+                if (errorCode === "EMBEDDING_MODEL_ACCESS") {
+                  setModelAccessInfo({
+                    model: errorObj?.response?.data?.model ?? null,
+                    attemptedModels: errorObj?.response?.data?.attemptedModels ?? null,
+                    message: errorMsg,
+                  });
+                  setError(`Ingestion error (EMBEDDING_MODEL_ACCESS): ${errorMsg}`);
+                } else {
+                  setError(`Ingestion error${errorCode ? ` (${errorCode})` : ""}: ${errorMsg}`);
+                }
               } else {
                 setError("File uploaded but AI processing failed.");
               }
@@ -106,6 +130,39 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
           className="ml-2"
         />
       </div>
+      {/* Model access modal */}
+      <Dialog open={Boolean(modelAccessInfo)} onOpenChange={() => setModelAccessInfo(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Embedding Model Access Error</DialogTitle>
+            <DialogDescription>
+              The AI ingestion service couldn't access the preferred embedding model.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-2 text-sm space-y-2">
+            {modelAccessInfo?.message ? <div className="text-sm">{modelAccessInfo.message}</div> : null}
+            {modelAccessInfo?.model ? (
+              <div className="text-sm">Preferred model: <strong>{modelAccessInfo.model}</strong></div>
+            ) : null}
+            {modelAccessInfo?.attemptedModels ? (
+              <div className="text-sm">Attempted models: <strong>{modelAccessInfo.attemptedModels.join(", ")}</strong></div>
+            ) : null}
+            <div className="text-sm">
+              Actions you can take:
+              <ul className="list-disc ml-5 mt-1">
+                <li>Set `OPENAI_EMBEDDING_MODEL` to a model your OpenAI project can access.</li>
+                <li>Or set `OPENAI_EMBEDDING_FALLBACKS` to a comma-separated list of alternative models.</li>
+                <li>Ask your OpenAI account admin to grant model access to the project key.</li>
+                <li>Uncheck "Process for AI Knowledge Base" to skip ingestion for now.</li>
+              </ul>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setModelAccessInfo(null)}>Close</Button>
+          </DialogFooter>
+          <DialogClose />
+        </DialogContent>
+      </Dialog>
       <div>
         <Label>Caption (optional)</Label>
         <Input value={caption} onChange={(e) => setCaption(e.target.value)} />
