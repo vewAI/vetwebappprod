@@ -98,29 +98,44 @@ export async function POST(request: NextRequest) {
           const { data: knowledgeChunks, error: ragError } = await supabase.rpc("match_case_knowledge", {
             query_embedding: embedding,
             match_threshold: 0.75,
-            match_count: 3,
+            match_count: 5, // Increased to accommodate both case data and papers
             filter_case_id: caseId,
           });
 
           if (ragError) {
             console.warn("RAG RPC failed:", ragError);
           } else if (knowledgeChunks && knowledgeChunks.length > 0) {
-            const knowledgeList = knowledgeChunks
-              .map((k: any) => `[Source: ${k.metadata?.source ?? "Unknown"}]\n${k.content}`)
-              .join("\n\n");
+            // Separate case data from scientific papers
+            const caseDataChunks = knowledgeChunks.filter(
+              (k: any) => k.metadata?.source === "CASE_DATA"
+            );
+            const paperChunks = knowledgeChunks.filter(
+              (k: any) => k.metadata?.source !== "CASE_DATA"
+            );
 
-            ragContext = `SCIENTIFIC REFERENCE (RAG): The following materials have been uploaded specifically for this case. 
-- Use this as your primary source for "Deep Science", research protocols, and specific medical reference values.
-- For basic patient facts (Age, Sex, Species) and current clinical state, prioritize the Case Data provided below.
-- CRITICAL: Do not reveal a definitive diagnosis or advanced findings if the context suggests the student is in an early diagnostic phase.
+            // Build context with clear separation
+            if (caseDataChunks.length > 0) {
+              const caseDataList = caseDataChunks
+                .map((k: any) => k.content)
+                .join("\n\n");
 
-${knowledgeList}`;
+              ragContext += `CASE FACTS (from database):\nThe following information is stored in the case database. Use this as definitive facts about the patient and case:\n\n${caseDataList}\n\n`;
+            }
+
+            if (paperChunks.length > 0) {
+              const paperList = paperChunks
+                .map((k: any) => `[Source: ${k.metadata?.source ?? "Unknown"}]\n${k.content}`)
+                .join("\n\n");
+
+              ragContext += `SCIENTIFIC REFERENCES (uploaded papers):\nThe following materials have been uploaded specifically for this case. Use these for deep scientific knowledge, research protocols, and specific medical reference values:\n\n${paperList}`;
+            }
 
             // Debug event
             try {
               debugEventBus.emitEvent('info', 'RAG', 'Knowledge retrieved', {
-                count: knowledgeChunks.length,
-                sources: knowledgeChunks.map((k: any) => k.metadata?.source)
+                caseDataChunks: caseDataChunks.length,
+                paperChunks: paperChunks.length,
+                total: knowledgeChunks.length,
               });
             } catch { }
           }
