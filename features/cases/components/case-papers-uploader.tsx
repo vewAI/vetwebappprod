@@ -25,68 +25,73 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
 
   const handleUpload = async () => {
     if (!file) return setError("Select a file first");
-    setUploading(true);
+    // Set uploading immediately so the UI can reflect state
     setError(null);
-    try {
-      const { url, path } = await uploadFile(file, "document", caseId);
+    setUploading(true);
 
-      // Build media item
-      const mediaItem = {
-        id: `${Date.now()}-${Math.random()}`,
-        type: "document",
-        url,
-        caption: caption || file.name,
-        mimeType: file.type || undefined,
-        metadata: { sourcePath: path },
-        trigger: "on_demand",
-      };
+    // Defer heavy work to next tick to ensure UI updates (prevents long event handler jank)
+    setTimeout(async () => {
+      try {
+        const { url, path } = await uploadFile(file, "document", caseId);
 
-      const headers = await buildAuthHeaders({ "Content-Type": "application/json" });
-      const resp = await axios.post(`/api/cases/media`, { caseId, media: mediaItem }, { headers });
-      if (resp.status === 200) {
+        // Build media item
+        const mediaItem = {
+          id: `${Date.now()}-${Math.random()}`,
+          type: "document",
+          url,
+          caption: caption || file.name,
+          mimeType: file.type || undefined,
+          metadata: { sourcePath: path },
+          trigger: "on_demand",
+        };
 
-        // Trigger Ingestion if requested
-        if (processForAi) {
-          setIngesting(true);
-          try {
-            const formData = new FormData();
-            formData.append("file", file);
-            formData.append("case_id", caseId);
+        const headers = await buildAuthHeaders({ "Content-Type": "application/json" });
+        const resp = await axios.post(`/api/cases/media`, { caseId, media: mediaItem }, { headers });
+        if (resp.status === 200) {
 
-            // Using axios for consistency
-            const ingestHeaders = await buildAuthHeaders({ "Content-Type": "multipart/form-data" });
-            await axios.post("/api/cases/ingest", formData, {
-              headers: ingestHeaders,
-            });
-            console.log("Ingestion complete");
-          } catch (ingestErr) {
-            console.error("Ingestion failed", ingestErr);
-            // Extract and display specific error message if available
-            if (ingestErr instanceof Error || (typeof ingestErr === 'object' && ingestErr !== null)) {
-              const errorObj = ingestErr as any;
-              const errorMsg = errorObj?.response?.data?.error || errorObj?.message || "AI processing failed";
-              const errorCode = errorObj?.response?.data?.code;
-              setError(`Ingestion error${errorCode ? ` (${errorCode})` : ""}: ${errorMsg}`);
-            } else {
-              setError("File uploaded but AI processing failed.");
+          // Trigger Ingestion if requested
+          if (processForAi) {
+            setIngesting(true);
+            try {
+              const formData = new FormData();
+              formData.append("file", file);
+              formData.append("case_id", caseId);
+
+              // Using axios for consistency
+              const ingestHeaders = await buildAuthHeaders({ "Content-Type": "multipart/form-data" });
+              await axios.post("/api/cases/ingest", formData, {
+                headers: ingestHeaders,
+              });
+              console.log("Ingestion complete");
+            } catch (ingestErr) {
+              console.error("Ingestion failed", ingestErr);
+              // Extract and display specific error message if available
+              if (ingestErr instanceof Error || (typeof ingestErr === 'object' && ingestErr !== null)) {
+                const errorObj = ingestErr as any;
+                const errorMsg = errorObj?.response?.data?.error || errorObj?.message || "AI processing failed";
+                const errorCode = errorObj?.response?.data?.code;
+                setError(`Ingestion error${errorCode ? ` (${errorCode})` : ""}: ${errorMsg}`);
+              } else {
+                setError("File uploaded but AI processing failed.");
+              }
+            } finally {
+              setIngesting(false);
             }
-          } finally {
-            setIngesting(false);
           }
-        }
 
-        setFile(null);
-        setCaption("");
-        if (onUploaded) onUploaded(mediaItem);
-      } else {
-        setError("Failed to attach paper to case");
+          setFile(null);
+          setCaption("");
+          if (onUploaded) onUploaded(mediaItem);
+        } else {
+          setError("Failed to attach paper to case");
+        }
+      } catch (err) {
+        console.error("Upload error", err);
+        setError(String((err as Error).message ?? "Upload failed"));
+      } finally {
+        setUploading(false);
       }
-    } catch (err) {
-      console.error("Upload error", err);
-      setError(String((err as Error).message ?? "Upload failed"));
-    } finally {
-      setUploading(false);
-    }
+    }, 0);
   };
 
   return (
