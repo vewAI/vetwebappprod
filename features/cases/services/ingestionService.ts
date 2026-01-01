@@ -95,13 +95,34 @@ export async function ingestCaseMaterial(
     // 3. Generate Embeddings & Upsert
     const embeddings: any[] = [];
     try {
+        // Model selection: allow override via env var for deployments
+        const preferredModel = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
+
         // We do them in batch or one by one. One by one is easier to debug for now.
         for (let i = 0; i < chunks.length; i++) {
             const chunk = chunks[i];
-            const response = await openai.embeddings.create({
-                model: "text-embedding-3-small",
-                input: chunk,
-            });
+            let response;
+            try {
+                response = await openai.embeddings.create({
+                    model: preferredModel,
+                    input: chunk,
+                });
+            } catch (err) {
+                // If the error is an OpenAI 403 about model access, return a clearer code so frontend can surface guidance.
+                const msg = err instanceof Error ? err.message : String(err);
+                const isModelAccess = /does not have access to model/i.test(msg) || /Model "[\w-]+" not found/i.test(msg) || (err && typeof (err as any).status === 'number' && (err as any).status === 403);
+                if (isModelAccess) {
+                    console.error(`[Ingestion] Embedding model access error for model ${preferredModel}:`, err);
+                    return {
+                        success: false,
+                        error: `AI processing failed: ${msg}`,
+                        code: "EMBEDDING_MODEL_ACCESS",
+                        model: preferredModel,
+                    };
+                }
+                throw err; // rethrow other errors to be handled by outer catch
+            }
+
             embeddings.push({
                 content: chunk,
                 embedding: response.data[0].embedding,
