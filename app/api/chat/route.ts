@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
         try {
           // Generate embedding
           const embeddingResp = await openai.embeddings.create({
-            model: "text-embedding-3-small",
+            model: "text-embedding-ada-002",
             input: lastUserMessage.content.replace(/\n/g, " "),
           });
           const embedding = embeddingResp.data[0].embedding;
