@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireUser } from "@/app/api/_lib/auth";
+import { requireAdmin } from "@/app/api/_lib/auth";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 const SETTINGS_KEY = "llm_provider_config";
 
 export async function GET(req: NextRequest) {
-  const auth = await requireUser(req);
+  const auth = await requireAdmin(req);
   if ("error" in auth) return auth.error;
-  if (!auth.isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const client = getSupabaseAdminClient();
   if (!client) {
@@ -33,9 +32,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireUser(req);
+  const auth = await requireAdmin(req);
   if ("error" in auth) return auth.error;
-  if (!auth.isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await req.json();
   const client = getSupabaseAdminClient();

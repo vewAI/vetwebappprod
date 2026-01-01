@@ -187,7 +187,7 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
                   <Button size="sm" onClick={() => copyToClipboard('curl https://api.openai.com/v1/models -H "Authorization: Bearer $OPENAI_API_KEY"', 'bash')}>{copiedFlag === 'bash' ? 'Copied' : 'Copy curl'}</Button>
                 </div>
                 <div className="flex items-start gap-2">
-                  <pre className="rounded bg-muted p-2 text-xs flex-1 overflow-auto">Invoke-RestMethod -Uri "https://api.openai.com/v1/models" -Headers @{{ Authorization = "Bearer $env:OPENAI_API_KEY" }}</pre>
+                  <pre className="rounded bg-muted p-2 text-xs flex-1 overflow-auto">{`Invoke-RestMethod -Uri "https://api.openai.com/v1/models" -Headers @{{ Authorization = "Bearer $env:OPENAI_API_KEY" }}`}</pre>
                   <Button size="sm" onClick={() => copyToClipboard('Invoke-RestMethod -Uri "https://api.openai.com/v1/models" -Headers @{{ Authorization = "Bearer $env:OPENAI_API_KEY" }}', 'ps')}>{copiedFlag === 'ps' ? 'Copied' : 'Copy PowerShell'}</Button>
                 </div>
               </div>

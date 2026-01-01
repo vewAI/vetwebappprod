@@ -1,23 +1,34 @@
-import * as fs from "fs";
-import path from "path";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import * as openaiProv from "./providers/openai";
 import * as geminiProv from "./providers/gemini";
 import * as aistudioProv from "./providers/aistudio";
 
-export type LlmProviderName = "openai" | "gemini";
+export type LlmProviderName = "openai" | "gemini" | "aistudio";
+
+const SETTINGS_KEY = "llm_provider_config";
+
+async function loadConfigFromDb() {
+  const client = getSupabaseAdminClient();
+  if (!client) return null;
+
+  try {
+    const { data, error } = await client.from("app_settings").select("value").eq("key", SETTINGS_KEY).maybeSingle();
+    if (error) {
+      console.warn("Failed to read llm_provider_config from DB", error);
+      return null;
+    }
+    return data?.value ?? null;
+  } catch (err) {
+    console.warn("Exception reading llm_provider_config from DB", err);
+    return null;
+  }
+}
 
 async function loadConfig() {
-  // Local JSON config for quick pilots (optional)
-  try {
-    const cfgPath = path.join(process.cwd(), "tmp", "llm-provider-config.json");
-    if (fs.existsSync(cfgPath)) {
-      const raw = fs.readFileSync(cfgPath, "utf-8");
-      return JSON.parse(raw) as any;
-    }
-  } catch (e) {
-    // ignore
-  }
-  // Fallback to env variables
+  const dbCfg = await loadConfigFromDb();
+  if (dbCfg) return dbCfg;
+
+  // Fallback to env variables if DB not available
   return {
     defaultProvider: (process.env.LLM_DEFAULT_PROVIDER || "openai") as LlmProviderName,
     featureOverrides: {

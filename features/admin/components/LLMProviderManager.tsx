@@ -8,11 +8,13 @@ import { useAuth } from "@/features/auth/services/authService";
 type Config = {
   defaultProvider: string;
   featureOverrides?: Record<string, string | null>;
+  // Optional per-feature fallback order, comma-separated provider names
+  fallbackLists?: Record<string, string[]>;
 };
 
 export default function LLMProviderManager({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const { isAdmin } = useAuth();
-  const [config, setConfig] = useState<Config>({ defaultProvider: "openai", featureOverrides: { embeddings: null } });
+  const [config, setConfig] = useState<Config>({ defaultProvider: "openai", featureOverrides: { embeddings: null }, fallbackLists: {} });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
@@ -56,6 +58,7 @@ export default function LLMProviderManager({ open, onOpenChange }: { open: boole
             <select className="mt-1 block w-full" value={config.defaultProvider} onChange={(e) => setConfig((c) => ({ ...c, defaultProvider: e.target.value }))}>
               <option value="openai">OpenAI</option>
               <option value="gemini">Google Gemini</option>
+              <option value="aistudio">AI Studio</option>
             </select>
           </div>
           <div>
@@ -83,6 +86,31 @@ export default function LLMProviderManager({ open, onOpenChange }: { open: boole
               }}>{testing ? 'Testing…' : 'Test'}</Button>
             </div>
             {testResult ? <div className="text-xs mt-2">{testResult}</div> : null}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium">Chat Provider Override</label>
+            <select className="mt-1 block w-full" value={config.featureOverrides?.chat ?? ""} onChange={(e) => setConfig((c) => ({ ...c, featureOverrides: { ...(c.featureOverrides || {}), chat: e.target.value || null } }))}>
+              <option value="">(use default)</option>
+              <option value="openai">OpenAI</option>
+              <option value="gemini">Google Gemini</option>
+              <option value="aistudio">AI Studio</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium">TTS Provider Override</label>
+            <select className="mt-1 block w-full" value={config.featureOverrides?.tts ?? ""} onChange={(e) => setConfig((c) => ({ ...c, featureOverrides: { ...(c.featureOverrides || {}), tts: e.target.value || null } }))}>
+              <option value="">(use default)</option>
+              <option value="openai">OpenAI</option>
+              <option value="gemini">Google Gemini</option>
+              <option value="aistudio">AI Studio</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium">Embeddings Fallback Order (comma-separated)</label>
+            <input className="mt-1 block w-full" value={(config.fallbackLists?.embeddings || []).join(",")} onChange={(e) => setConfig((c) => ({ ...c, fallbackLists: { ...(c.fallbackLists || {}), embeddings: e.target.value.split(",").map(s=>s.trim()).filter(Boolean) } }))} />
           </div>
           {err ? <div className="text-sm text-red-600">{err}</div> : null}
         </div>
