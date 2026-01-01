@@ -35,6 +35,28 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
     attemptedModels?: string[] | null;
     message?: string | null;
   } | null>(null);
+  const [copiedFlag, setCopiedFlag] = useState<string | null>(null);
+
+  const copyToClipboard = async (text: string, key: string) => {
+    try {
+      if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Fallback for older browsers
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      setCopiedFlag(key);
+      setTimeout(() => setCopiedFlag(null), 3000);
+    } catch (e) {
+      console.error("Copy failed", e);
+      setCopiedFlag(null);
+    }
+  };
   const inputRef = React.useRef<HTMLInputElement | null>(null);
 
   const handleUpload = async () => {
@@ -155,6 +177,20 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
                 <li>Ask your OpenAI account admin to grant model access to the project key.</li>
                 <li>Uncheck "Process for AI Knowledge Base" to skip ingestion for now.</li>
               </ul>
+            </div>
+
+            <div className="mt-3">
+              <div className="text-sm font-medium">Commands to list models for your key</div>
+              <div className="mt-2 grid grid-cols-1 gap-2">
+                <div className="flex items-start gap-2">
+                  <pre className="rounded bg-muted p-2 text-xs flex-1 overflow-auto">curl https://api.openai.com/v1/models -H "Authorization: Bearer $OPENAI_API_KEY"</pre>
+                  <Button size="sm" onClick={() => copyToClipboard('curl https://api.openai.com/v1/models -H "Authorization: Bearer $OPENAI_API_KEY"', 'bash')}>{copiedFlag === 'bash' ? 'Copied' : 'Copy curl'}</Button>
+                </div>
+                <div className="flex items-start gap-2">
+                  <pre className="rounded bg-muted p-2 text-xs flex-1 overflow-auto">Invoke-RestMethod -Uri "https://api.openai.com/v1/models" -Headers @{{ Authorization = "Bearer $env:OPENAI_API_KEY" }}</pre>
+                  <Button size="sm" onClick={() => copyToClipboard('Invoke-RestMethod -Uri "https://api.openai.com/v1/models" -Headers @{{ Authorization = "Bearer $env:OPENAI_API_KEY" }}', 'ps')}>{copiedFlag === 'ps' ? 'Copied' : 'Copy PowerShell'}</Button>
+                </div>
+              </div>
             </div>
           </div>
           <DialogFooter>
