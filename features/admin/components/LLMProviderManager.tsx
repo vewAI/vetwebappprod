@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useAuth } from "@/features/auth/services/authService";
+import { buildAuthHeaders } from "@/lib/auth-headers";
 
 type Config = {
   defaultProvider: string;
@@ -22,10 +23,28 @@ export default function LLMProviderManager({ open, onOpenChange }: { open: boole
 
   useEffect(() => {
     if (!open || !isAdmin) return;
-    fetch("/api/admin/llm-provider")
-      .then((r) => r.json())
-      .then((data) => setConfig(data))
-      .catch((e) => setErr(String(e)));
+    let mounted = true;
+    (async () => {
+      try {
+        const headers = await buildAuthHeaders({ "Content-Type": "application/json" });
+        const resp = await fetch("/api/admin/llm-provider", { headers });
+        const data = await resp.json();
+        if (!mounted) return;
+        if (!resp.ok) {
+          if (resp.status === 401 || resp.status === 403) {
+            setErr("Unauthorized: sign in as an admin to manage LLM providers.");
+          } else {
+            setErr(data?.error || String(data));
+          }
+          return;
+        }
+        setConfig(data);
+      } catch (e) {
+        if (!mounted) return;
+        setErr(String(e));
+      }
+    })();
+    return () => { mounted = false; };
   }, [open, isAdmin]);
 
   if (!isAdmin) return null;
@@ -34,9 +53,15 @@ export default function LLMProviderManager({ open, onOpenChange }: { open: boole
     setSaving(true);
     setErr(null);
     try {
-      const resp = await fetch("/api/admin/llm-provider", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config) });
+      const headers = await buildAuthHeaders({ "Content-Type": "application/json" });
+      const resp = await fetch("/api/admin/llm-provider", { method: "POST", headers, body: JSON.stringify(config) });
       const data = await resp.json();
-      if (!resp.ok) throw new Error(data?.error || "Save failed");
+      if (!resp.ok) {
+        if (resp.status === 401 || resp.status === 403) {
+          throw new Error("Unauthorized: sign in as an admin to save provider config.");
+        }
+        throw new Error(data?.error || "Save failed");
+      }
       onOpenChange(false);
     } catch (e) {
       setErr(String(e));
@@ -55,7 +80,7 @@ export default function LLMProviderManager({ open, onOpenChange }: { open: boole
         <div className="mt-4 space-y-3">
           <div>
             <label className="block text-sm font-medium">Default Provider</label>
-            <select className="mt-1 block w-full" value={config.defaultProvider} onChange={(e) => setConfig((c) => ({ ...c, defaultProvider: e.target.value }))}>
+            <select className="mt-1 block w-full p-2 border rounded bg-background text-foreground dark:bg-slate-800 dark:text-white" value={config.defaultProvider} onChange={(e) => setConfig((c) => ({ ...c, defaultProvider: e.target.value }))}>
               <option value="openai">OpenAI</option>
               <option value="gemini">Google Gemini</option>
               <option value="aistudio">AI Studio</option>
@@ -64,7 +89,7 @@ export default function LLMProviderManager({ open, onOpenChange }: { open: boole
           <div>
             <label className="block text-sm font-medium">Embeddings Provider Override</label>
             <div className="flex gap-2">
-              <select className="mt-1 block w-full" value={config.featureOverrides?.embeddings ?? ""} onChange={(e) => setConfig((c) => ({ ...c, featureOverrides: { ...(c.featureOverrides || {}), embeddings: e.target.value || null } }))}>
+              <select className="mt-1 block w-full p-2 border rounded bg-background text-foreground dark:bg-slate-800 dark:text-white" value={config.featureOverrides?.embeddings ?? ""} onChange={(e) => setConfig((c) => ({ ...c, featureOverrides: { ...(c.featureOverrides || {}), embeddings: e.target.value || null } }))}>
                 <option value="">(use default)</option>
                 <option value="openai">OpenAI</option>
                 <option value="gemini">Google Gemini</option>
@@ -74,9 +99,13 @@ export default function LLMProviderManager({ open, onOpenChange }: { open: boole
                 setTesting(true);
                 setTestResult(null);
                 try {
-                  const resp = await fetch('/api/admin/llm-provider/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ feature: 'embeddings' }) });
+                  const headers = await buildAuthHeaders({ 'Content-Type': 'application/json' });
+                  const resp = await fetch('/api/admin/llm-provider/test', { method: 'POST', headers, body: JSON.stringify({ feature: 'embeddings' }) });
                   const data = await resp.json();
-                  if (!resp.ok) throw new Error(data?.error || 'Test failed');
+                  if (!resp.ok) {
+                    if (resp.status === 401 || resp.status === 403) throw new Error('Unauthorized: sign in as an admin to run tests.');
+                    throw new Error(data?.error || 'Test failed');
+                  }
                   setTestResult(`OK — provider=${data.provider} model=${data.model ?? 'n/a'} latency=${data.latencyMs ?? 'n/a'}ms`);
                 } catch (e: any) {
                   setTestResult(String(e?.message ?? e));
@@ -90,7 +119,7 @@ export default function LLMProviderManager({ open, onOpenChange }: { open: boole
 
           <div>
             <label className="block text-sm font-medium">Chat Provider Override</label>
-            <select className="mt-1 block w-full" value={config.featureOverrides?.chat ?? ""} onChange={(e) => setConfig((c) => ({ ...c, featureOverrides: { ...(c.featureOverrides || {}), chat: e.target.value || null } }))}>
+            <select className="mt-1 block w-full p-2 border rounded bg-background text-foreground dark:bg-slate-800 dark:text-white" value={config.featureOverrides?.chat ?? ""} onChange={(e) => setConfig((c) => ({ ...c, featureOverrides: { ...(c.featureOverrides || {}), chat: e.target.value || null } }))}>
               <option value="">(use default)</option>
               <option value="openai">OpenAI</option>
               <option value="gemini">Google Gemini</option>
@@ -100,7 +129,7 @@ export default function LLMProviderManager({ open, onOpenChange }: { open: boole
 
           <div>
             <label className="block text-sm font-medium">TTS Provider Override</label>
-            <select className="mt-1 block w-full" value={config.featureOverrides?.tts ?? ""} onChange={(e) => setConfig((c) => ({ ...c, featureOverrides: { ...(c.featureOverrides || {}), tts: e.target.value || null } }))}>
+            <select className="mt-1 block w-full p-2 border rounded bg-background text-foreground dark:bg-slate-800 dark:text-white" value={config.featureOverrides?.tts ?? ""} onChange={(e) => setConfig((c) => ({ ...c, featureOverrides: { ...(c.featureOverrides || {}), tts: e.target.value || null } }))}>
               <option value="">(use default)</option>
               <option value="openai">OpenAI</option>
               <option value="gemini">Google Gemini</option>
@@ -109,8 +138,17 @@ export default function LLMProviderManager({ open, onOpenChange }: { open: boole
           </div>
 
           <div>
-            <label className="block text-sm font-medium">Embeddings Fallback Order (comma-separated)</label>
-            <input className="mt-1 block w-full" value={(config.fallbackLists?.embeddings || []).join(",")} onChange={(e) => setConfig((c) => ({ ...c, fallbackLists: { ...(c.fallbackLists || {}), embeddings: e.target.value.split(",").map(s=>s.trim()).filter(Boolean) } }))} />
+            <label className="block text-sm font-medium">Embeddings Provider (preset)</label>
+            <select
+              className="mt-1 block w-full p-2 border rounded bg-background text-foreground dark:bg-slate-800 dark:text-white"
+              value={(config.fallbackLists?.embeddings || [config.defaultProvider || 'openai'])[0] ?? ''}
+              onChange={(e) => setConfig((c) => ({ ...c, fallbackLists: { ...(c.fallbackLists || {}), embeddings: e.target.value ? [e.target.value] : [] } }))}
+            >
+              <option value="">(use default)</option>
+              <option value="openai">OpenAI</option>
+              <option value="gemini">Google Gemini</option>
+              <option value="aistudio">AI Studio</option>
+            </select>
           </div>
           {err ? <div className="text-sm text-red-600">{err}</div> : null}
         </div>

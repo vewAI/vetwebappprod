@@ -15,6 +15,7 @@ export function Navbar() {
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const isProfessor = role === "professor" || isAdmin;
+  
 
   // do not render on login page
   if (pathname === "/login") {
@@ -75,6 +76,7 @@ export function Navbar() {
                 <span>Admin</span>
               </Link>
             )}
+            
             <Button
               variant="ghost"
               size="sm"

@@ -3,23 +3,39 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import dynamic from "next/dynamic";
 import { AdminTour } from "@/components/admin/AdminTour";
 import { HelpTip } from "@/components/ui/help-tip";
 import { DebugToggle } from "@/components/admin/DebugToggle";
 
 export default function AdminPage() {
   const router = useRouter();
-  const [debug, setDebug] = React.useState<boolean>(
-    typeof window !== "undefined"
-      ? window.localStorage.getItem("debugOverlay") === "true"
-      : false
-  );
+  const [llmOpen, setLlmOpen] = React.useState(false);
+  const LLMProviderManager = dynamic(() => import("@/features/admin/components/LLMProviderManager"), { ssr: false });
+  // Start with a stable value for server rendering to avoid hydration mismatch.
+  // Read/write to localStorage only after mount.
+  const [debug, setDebug] = React.useState<boolean>(false);
 
   React.useEffect(() => {
-    if (typeof window !== "undefined") {
+    // Initialize from localStorage on client only
+    try {
+      const stored = window.localStorage.getItem("debugOverlay");
+      const initial = stored === "true";
+      setDebug(initial);
+      // Dispatch initial toggle so listeners receive correct state
+      window.dispatchEvent(new CustomEvent("debugOverlayToggle", { detail: initial }));
+    } catch (e) {
+      // ignore
+    }
+  }, []);
+
+  React.useEffect(() => {
+    // Persist changes to localStorage on client
+    try {
       window.localStorage.setItem("debugOverlay", debug ? "true" : "false");
-      // Optionally, dispatch a custom event for listeners
       window.dispatchEvent(new CustomEvent("debugOverlayToggle", { detail: debug }));
+    } catch (e) {
+      // ignore
     }
   }, [debug]);
 
@@ -77,6 +93,14 @@ export default function AdminPage() {
             Manage Users
           </Button>
           <HelpTip content="Add or remove users and assign them to institutions." />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button className="w-full justify-start" onClick={() => setLlmOpen(true)}>
+            LLM Provider Manager
+          </Button>
+          <HelpTip content="Open the LLM Provider Manager to set default and per-feature providers." />
+          <LLMProviderManager open={llmOpen} onOpenChange={setLlmOpen} />
         </div>
       </div>
     </div>
