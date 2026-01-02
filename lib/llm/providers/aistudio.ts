@@ -11,6 +11,12 @@ export async function createEmbeddingsAIStudio(inputs: string[], model?: string)
   const usedModel = model || process.env.AISTUDIO_EMBEDDING_MODEL || "aistudio-embed-1";
   const url = process.env.AISTUDIO_EMBEDDING_URL || "https://aistudio.example.com/v1/embeddings";
 
+  // Fail fast if the project still uses the placeholder URL so logs are clearer
+  if (!url || url.includes("example.com") || url.includes("aistudio.example.com")) {
+    const err: any = new Error("AI Studio embedding URL not configured. Set AISTUDIO_EMBEDDING_URL to your provider endpoint.");
+    err.status = 500;
+    throw err;
+  }
   const maxAttempts = 3;
   let attempt = 0;
   while (true) {
