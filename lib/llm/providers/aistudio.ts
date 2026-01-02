@@ -74,31 +74,61 @@ export async function createEmbeddingsAIStudio(inputs: string[], model?: string)
   while (true) {
     attempt++;
     try {
-      // Choose auth method: prefer service account ID token if provided (audience),
-      // otherwise fall back to access token or API key.
+      // Choose auth method: prefer OAuth access token by default (cloud-platform scope),
+      // but allow forcing ID token or access token via env vars:
+      // - AISTUDIO_FORCE_ACCESS_TOKEN=true  -> force access token
+      // - AISTUDIO_FORCE_ID_TOKEN=true      -> force ID token
+      // Default: prefer access token (some AI Studio endpoints expect OAuth access tokens).
       let headers: Record<string, string> = { "Content-Type": "application/json" };
       if (process.env.AISTUDIO_SERVICE_ACCOUNT) {
-        // Derive an audience for ID tokens. Allow override via env.
         const audience = process.env.AISTUDIO_ID_TOKEN_AUDIENCE || (url.includes("generativelanguage.googleapis.com") ? "https://generativelanguage.googleapis.com/" : new URL(url).origin);
-        try {
-          const idToken = await obtainIdTokenFromServiceAccount(audience);
-          headers["Authorization"] = `Bearer ${idToken}`;
-          // Debug: show auth method and masked token preview
+        const forceAccess = process.env.AISTUDIO_FORCE_ACCESS_TOKEN === "true";
+        const forceId = process.env.AISTUDIO_FORCE_ID_TOKEN === "true";
+        const preferAccess = forceAccess || (!forceId);
+
+        if (preferAccess) {
+          // Try access token first, then fallback to ID token
           try {
-            const preview = `${idToken.slice(0,6)}...${idToken.slice(-6)}`;
-            console.log(`[AISTUDIO] auth=ID_TOKEN audience=${audience} token_preview=${preview}`);
-          } catch (e) {
-            console.log(`[AISTUDIO] auth=ID_TOKEN audience=${audience}`);
+            const token = await obtainAccessTokenFromServiceAccount();
+            headers["Authorization"] = `Bearer ${token}`;
+            try {
+              const preview = `${token.slice(0,6)}...${token.slice(-6)}`;
+              console.log(`[AISTUDIO] auth=ACCESS_TOKEN token_preview=${preview}`);
+            } catch (e) {
+              console.log(`[AISTUDIO] auth=ACCESS_TOKEN`);
+            }
+          } catch (accessErr) {
+            // fallback to ID token
+            const idToken = await obtainIdTokenFromServiceAccount(audience);
+            headers["Authorization"] = `Bearer ${idToken}`;
+            try {
+              const preview = `${idToken.slice(0,6)}...${idToken.slice(-6)}`;
+              console.log(`[AISTUDIO] auth=ID_TOKEN audience=${audience} token_preview=${preview}`);
+            } catch (e) {
+              console.log(`[AISTUDIO] auth=ID_TOKEN audience=${audience}`);
+            }
           }
-        } catch (idErr) {
-          // fallback to access token
-          const token = await obtainAccessTokenFromServiceAccount();
-          headers["Authorization"] = `Bearer ${token}`;
+        } else {
+          // Prefer ID token explicitly
           try {
-            const preview = `${token.slice(0,6)}...${token.slice(-6)}`;
-            console.log(`[AISTUDIO] auth=ACCESS_TOKEN token_preview=${preview}`);
-          } catch (e) {
-            console.log(`[AISTUDIO] auth=ACCESS_TOKEN`);
+            const idToken = await obtainIdTokenFromServiceAccount(audience);
+            headers["Authorization"] = `Bearer ${idToken}`;
+            try {
+              const preview = `${idToken.slice(0,6)}...${idToken.slice(-6)}`;
+              console.log(`[AISTUDIO] auth=ID_TOKEN audience=${audience} token_preview=${preview}`);
+            } catch (e) {
+              console.log(`[AISTUDIO] auth=ID_TOKEN audience=${audience}`);
+            }
+          } catch (idErr) {
+            // fallback to access token
+            const token = await obtainAccessTokenFromServiceAccount();
+            headers["Authorization"] = `Bearer ${token}`;
+            try {
+              const preview = `${token.slice(0,6)}...${token.slice(-6)}`;
+              console.log(`[AISTUDIO] auth=ACCESS_TOKEN token_preview=${preview}`);
+            } catch (e) {
+              console.log(`[AISTUDIO] auth=ACCESS_TOKEN`);
+            }
           }
         }
       } else if (apiKey) {
