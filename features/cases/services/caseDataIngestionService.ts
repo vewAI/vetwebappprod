@@ -1,9 +1,5 @@
 import { SupabaseClient } from "@supabase/supabase-js";
-import OpenAI from "openai";
-
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY || "missing-key",
-});
+import llm from "@/lib/llm";
 
 type CaseData = {
     id: string;
@@ -207,12 +203,6 @@ export async function ingestCaseDataToRAG(
 ): Promise<{ success: boolean; chunks?: number; error?: string; code?: string }> {
     console.log(`[CaseDataIngestion] Starting ingestion for case ${caseId}`);
 
-    // Check OpenAI Key
-    if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === "missing-key") {
-        console.error("[CaseDataIngestion] OPENAI_API_KEY is missing or invalid.");
-        return { success: false, error: "AI service configuration missing (OpenAI Key).", code: "CONFIG_ERROR" };
-    }
-
     try {
         // 1. Clear existing case data chunks
         const clearResult = await clearExistingCaseData(supabase, caseId);
@@ -229,33 +219,59 @@ export async function ingestCaseDataToRAG(
             return { success: true, chunks: 0 };
         }
 
-        // 3. Generate embeddings for each chunk
+        // 3. Generate embeddings for each chunk using llm adapter (provider-aware)
         const embeddings: any[] = [];
-        for (let i = 0; i < chunks.length; i++) {
-            const chunk = chunks[i];
-            try {
-                const response = await openai.embeddings.create({
-                    model: "text-embedding-3-small",
-                    input: chunk.content,
-                });
-                embeddings.push({
-                    content: chunk.content,
-                    embedding: response.data[0].embedding,
-                    metadata: {
-                        ...chunk.metadata,
-                        chunk_index: i,
-                        total_chunks: chunks.length,
-                        ingested_at: new Date().toISOString(),
-                    },
-                });
-            } catch (embErr) {
-                console.error(`[CaseDataIngestion] Embedding generation failed for chunk ${i}:`, embErr);
-                return {
-                    success: false,
-                    error: `AI processing failed: ${embErr instanceof Error ? embErr.message : String(embErr)}`,
-                    code: "OPENAI_ERROR",
-                };
+        try {
+            const provider = await llm.resolveProviderForFeature("embeddings");
+            // Pick preferred model from envs per provider
+            let preferredModel = "";
+            if (provider === "aistudio") {
+                preferredModel = process.env.AISTUDIO_EMBEDDING_MODEL || "aistudio-embed-1";
+            } else if (provider === "gemini") {
+                preferredModel = process.env.GEMINI_EMBEDDING_MODEL || "textembedding-gecko-001";
+            } else {
+                preferredModel = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
             }
+
+            console.log(`[CaseDataIngestion] Using embeddings provider=${provider} modelHint=${preferredModel}`);
+
+            for (let i = 0; i < chunks.length; i++) {
+                const chunk = chunks[i];
+                try {
+                    const out = await llm.embeddings([chunk.content], { model: preferredModel as any });
+                    const vec = out[0];
+                    embeddings.push({
+                        content: chunk.content,
+                        embedding: vec.embedding,
+                        metadata: {
+                            ...chunk.metadata,
+                            chunk_index: i,
+                            total_chunks: chunks.length,
+                            ingested_at: new Date().toISOString(),
+                            embedding_model: vec.model,
+                        },
+                    });
+                } catch (embErr: any) {
+                    const msg = embErr instanceof Error ? embErr.message : String(embErr);
+                    const isModelAccess = /does not have access to model/i.test(msg) || (embErr && typeof embErr.status === 'number' && embErr.status === 403);
+                    console.error(`[CaseDataIngestion] Embedding generation failed for chunk ${i}:`, embErr);
+                    if (isModelAccess) {
+                        return {
+                            success: false,
+                            error: `AI processing failed: ${msg} (model=${preferredModel})`,
+                            code: "EMBEDDING_MODEL_ACCESS",
+                        };
+                    }
+                    return {
+                        success: false,
+                        error: `AI processing failed: ${msg}`,
+                        code: "EMBEDDING_ERROR",
+                    };
+                }
+            }
+        } catch (err) {
+            console.error(`[CaseDataIngestion] Failed to generate embeddings:`, err);
+            return { success: false, error: `AI processing failed: ${err instanceof Error ? err.message : String(err)}`, code: "EMBEDDING_ERROR" };
         }
 
         console.log(`[CaseDataIngestion] Generated ${embeddings.length} embeddings`);
