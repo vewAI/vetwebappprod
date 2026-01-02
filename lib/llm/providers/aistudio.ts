@@ -31,6 +31,32 @@ async function obtainAccessTokenFromServiceAccount(): Promise<string> {
   return token;
 }
 
+async function obtainIdTokenFromServiceAccount(audience: string): Promise<string> {
+  const raw = process.env.AISTUDIO_SERVICE_ACCOUNT;
+  if (!raw) throw new Error("AISTUDIO_SERVICE_ACCOUNT not provided");
+  let creds: any = null;
+  try {
+    creds = JSON.parse(raw);
+  } catch (e) {
+    // maybe base64 encoded
+    try {
+      const decoded = Buffer.from(raw, "base64").toString("utf8");
+      creds = JSON.parse(decoded);
+    } catch (e2) {
+      throw new Error("AISTUDIO_SERVICE_ACCOUNT is not valid JSON nor base64-encoded JSON");
+    }
+  }
+
+  const auth = new GoogleAuth({ credentials: creds });
+  // getIdTokenClient will return a client that provides ID tokens for the given audience
+  const client = await auth.getIdTokenClient(audience);
+  const headers = await client.getRequestHeaders();
+  const authHeader = headers?.Authorization ?? headers?.authorization;
+  if (!authHeader) throw new Error("Failed to obtain ID token from service account");
+  // authHeader is like 'Bearer <token>'
+  return authHeader.replace(/^Bearer\s+/i, "");
+}
+
 export async function createEmbeddingsAIStudio(inputs: string[], model?: string) {
   const apiKey = process.env.AISTUDIO_API_KEY;
   const usedModel = model || process.env.AISTUDIO_EMBEDDING_MODEL || "aistudio-embed-1";
@@ -48,11 +74,20 @@ export async function createEmbeddingsAIStudio(inputs: string[], model?: string)
   while (true) {
     attempt++;
     try {
-      // Choose auth method: prefer service account token if provided
+      // Choose auth method: prefer service account ID token if provided (audience),
+      // otherwise fall back to access token or API key.
       let headers: Record<string, string> = { "Content-Type": "application/json" };
       if (process.env.AISTUDIO_SERVICE_ACCOUNT) {
-        const token = await obtainAccessTokenFromServiceAccount();
-        headers["Authorization"] = `Bearer ${token}`;
+        // Derive an audience for ID tokens. Allow override via env.
+        const audience = process.env.AISTUDIO_ID_TOKEN_AUDIENCE || (url.includes("generativelanguage.googleapis.com") ? "https://generativelanguage.googleapis.com/" : new URL(url).origin);
+        try {
+          const idToken = await obtainIdTokenFromServiceAccount(audience);
+          headers["Authorization"] = `Bearer ${idToken}`;
+        } catch (idErr) {
+          // fallback to access token
+          const token = await obtainAccessTokenFromServiceAccount();
+          headers["Authorization"] = `Bearer ${token}`;
+        }
       } else if (apiKey) {
         // Some Google endpoints accept API key as query param
       } else {
