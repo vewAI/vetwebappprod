@@ -21,7 +21,9 @@ async function obtainAccessTokenFromServiceAccount(): Promise<string> {
     }
   }
 
-  const auth = new GoogleAuth({ credentials: creds });
+  // Request an access token scoped for Google Cloud (Vertex AI) operations.
+  // The cloud-platform scope is required for most Vertex/Generative AI endpoints.
+  const auth = new GoogleAuth({ credentials: creds, scopes: ["https://www.googleapis.com/auth/cloud-platform"] });
   const client = await auth.getClient();
   const at: any = await client.getAccessToken();
   const token = typeof at === "string" ? at : at?.token;
