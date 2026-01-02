@@ -83,13 +83,27 @@ export async function createEmbeddingsAIStudio(inputs: string[], model?: string)
         try {
           const idToken = await obtainIdTokenFromServiceAccount(audience);
           headers["Authorization"] = `Bearer ${idToken}`;
+          // Debug: show auth method and masked token preview
+          try {
+            const preview = `${idToken.slice(0,6)}...${idToken.slice(-6)}`;
+            console.log(`[AISTUDIO] auth=ID_TOKEN audience=${audience} token_preview=${preview}`);
+          } catch (e) {
+            console.log(`[AISTUDIO] auth=ID_TOKEN audience=${audience}`);
+          }
         } catch (idErr) {
           // fallback to access token
           const token = await obtainAccessTokenFromServiceAccount();
           headers["Authorization"] = `Bearer ${token}`;
+          try {
+            const preview = `${token.slice(0,6)}...${token.slice(-6)}`;
+            console.log(`[AISTUDIO] auth=ACCESS_TOKEN token_preview=${preview}`);
+          } catch (e) {
+            console.log(`[AISTUDIO] auth=ACCESS_TOKEN`);
+          }
         }
       } else if (apiKey) {
         // Some Google endpoints accept API key as query param
+        console.log(`[AISTUDIO] auth=API_KEY present, using query param auth`);
       } else {
         const err: any = new Error("AI Studio authentication not configured. Provide AISTUDIO_SERVICE_ACCOUNT or AISTUDIO_API_KEY.");
         err.status = 403;
