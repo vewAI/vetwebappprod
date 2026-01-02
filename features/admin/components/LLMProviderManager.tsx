@@ -103,11 +103,14 @@ export default function LLMProviderManager({ open, onOpenChange }: { open: boole
                 setTestResult(null);
                 try {
                   const headers = await buildAuthHeaders({ 'Content-Type': 'application/json' });
-                  const resp = await fetch('/api/admin/llm-provider/test', { method: 'POST', headers, body: JSON.stringify({ feature: 'embeddings' }) });
+                  const providerToTest = config.featureOverrides?.embeddings || config.defaultProvider || 'openai';
+                  const resp = await fetch('/api/admin/llm-provider/test', { method: 'POST', headers, body: JSON.stringify({ feature: 'embeddings', provider: providerToTest }) });
                   const data = await resp.json();
                   if (!resp.ok) {
                     if (resp.status === 401 || resp.status === 403) throw new Error('Unauthorized: sign in as an admin to run tests.');
-                    throw new Error(data?.error || 'Test failed');
+                    // Show richer error detail when available
+                    const errMsg = data?.error || (data?.detail ? JSON.stringify(data.detail) : 'Test failed');
+                    throw new Error(errMsg);
                   }
                   setTestResult(`OK — provider=${data.provider} model=${data.model ?? 'n/a'} latency=${data.latencyMs ?? 'n/a'}ms`);
                 } catch (e: any) {
