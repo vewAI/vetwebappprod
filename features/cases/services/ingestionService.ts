@@ -87,22 +87,27 @@ export async function ingestCaseMaterial(
         return { success: false, error: "Failed to process text into chunks.", code: "CHUNKING_ERROR" };
     }
 
-    // check OpenAI Key explicitly
-    if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === "missing-key") {
-        console.error("[Ingestion] OPENAI_API_KEY is missing or invalid.");
-        return { success: false, error: "AI service configuration missing (OpenAI Key).", code: "CONFIG_ERROR" };
-    }
-
     // 3. Generate Embeddings & Upsert
     const embeddings: any[] = [];
     try {
-        // Model selection: allow override via env var for deployments
-        const preferredModel = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
-        const fallbackModelsEnv = process.env.OPENAI_EMBEDDING_FALLBACKS || "";
-        const fallbackModels = fallbackModelsEnv
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean);
+        // Resolve provider and prefer provider-specific model env vars
+        const provider = await llm.resolveProviderForFeature("embeddings");
+        let preferredModel = "";
+        let fallbackModels: string[] = [];
+
+        if (provider === "aistudio") {
+            preferredModel = process.env.AISTUDIO_EMBEDDING_MODEL || "aistudio-embed-1";
+            const fb = process.env.AISTUDIO_EMBEDDING_FALLBACKS || "";
+            fallbackModels = fb.split(",").map(s => s.trim()).filter(Boolean);
+        } else if (provider === "gemini") {
+            preferredModel = process.env.GEMINI_EMBEDDING_MODEL || "textembedding-gecko-001";
+            const fb = process.env.GEMINI_EMBEDDING_FALLBACKS || "";
+            fallbackModels = fb.split(",").map(s => s.trim()).filter(Boolean);
+        } else {
+            preferredModel = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
+            const fb = process.env.OPENAI_EMBEDDING_FALLBACKS || "";
+            fallbackModels = fb.split(",").map(s => s.trim()).filter(Boolean);
+        }
 
         const modelsToTry = [preferredModel, ...fallbackModels];
 

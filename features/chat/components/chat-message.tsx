@@ -6,7 +6,8 @@ import type { Stage } from "@/features/stages/types";
 import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
 import { Button } from "@/components/ui/button";
 
-const MEDIA_TAG_REGEX = /\[MEDIA:([a-zA-Z0-9-]+)\]/g;
+// Match any [MEDIA:...] token (allow dots, underscores, hyphens, digits, and more)
+const MEDIA_TAG_REGEX = /\[MEDIA:([^\]]+)\]/g;
 
 function stripMediaTags(text: string): string {
   if (!text) return text;
