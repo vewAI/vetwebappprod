@@ -111,6 +111,10 @@ export async function ingestCaseMaterial(
 
         const modelsToTry = [preferredModel, ...fallbackModels];
 
+        console.log(
+            `[Ingestion] Provider for embeddings: ${provider}, modelsToTry=${modelsToTry.join(",")}`
+        );
+
         // Helper to determine if an error looks like a model-access problem
         const isModelAccessError = (err: unknown) => {
             const msg = err instanceof Error ? err.message : String(err);

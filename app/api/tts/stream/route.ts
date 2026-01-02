@@ -3,6 +3,7 @@ import { debugEventBus } from "@/lib/debug-events-fixed";
 
 import { requireUser } from "@/app/api/_lib/auth";
 import { takeAsync, peekAsync } from "../store";
+import llm from "@/lib/llm";
 
 // Streaming TTS proxy endpoint.
 // Accepts GET?text=...&voice=... and forwards the streaming audio response
@@ -45,6 +46,15 @@ export async function GET(req: Request) {
 
     const OPENAI_KEY = process.env.OPENAI_API_KEY;
     const ELEVENLABS_KEY = process.env.ELEVENLABS_API_KEY;
+
+    // Resolve which provider is configured for TTS (helps debugging when admin overrides are in play)
+    let selectedProvider = "openai";
+    try {
+      selectedProvider = await llm.resolveProviderForFeature("tts");
+    } catch (err) {
+      console.warn("Failed to resolve TTS provider from config", err);
+    }
+    debugEventBus.emitEvent("info", "api/tts/stream", `Selected TTS provider: ${selectedProvider}`, { voice });
 
     // Check if it's an ElevenLabs voice
     const elevenLabsVoices: Record<string, string> = {
@@ -98,17 +108,13 @@ export async function GET(req: Request) {
       }
     }
 
-    if (!OPENAI_KEY) {
-      return NextResponse.json(
-        { error: "OPENAI_API_KEY not configured" },
-        { status: 500 }
-      );
-    }
+    // Prepare provider-specific routing. Try AI Studio or Gemini when selected,
+    // otherwise fall back to OpenAI as before.
+    const AISTUDIO_KEY = process.env.AISTUDIO_API_KEY;
+    const AISTUDIO_TTS_URL = process.env.AISTUDIO_TTS_URL;
+    const GEMINI_KEY = process.env.GEMINI_API_KEY;
+    const GEMINI_TTS_URL = process.env.GEMINI_TTS_URL;
 
-    // Make a server-side POST to OpenAI using only gpt-4o-mini-tts and forward the body.
-    // If the upstream call fails, return a structured response indicating the
-    // client should fallback to browser voices and include a suggested gender
-    // for voice selection based on the requested voice.
     const suggestGenderFromVoice = (v: string) => {
       const female = ["alice", "charlotte", "lily", "matilda"];
       const male = ["charlie", "george", "harry"];
@@ -117,7 +123,69 @@ export async function GET(req: Request) {
       return "neutral";
     };
 
-    const providerRes = await fetch("https://api.openai.com/v1/audio/speech", {
+    // Try provider-specific TTS endpoints when configured
+    let providerRes: Response | null = null;
+    try {
+      if (selectedProvider === "aistudio" && AISTUDIO_KEY && AISTUDIO_TTS_URL) {
+        debugEventBus.emitEvent("info", "api/tts/stream", "Routing TTS to AI Studio", { voice, url: AISTUDIO_TTS_URL });
+        providerRes = await fetch(AISTUDIO_TTS_URL, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${AISTUDIO_KEY}`,
+            "Content-Type": "application/json",
+            Accept: "audio/mpeg",
+          },
+          body: JSON.stringify({ text, voice }),
+        });
+      } else if (selectedProvider === "gemini" && GEMINI_KEY && GEMINI_TTS_URL) {
+        debugEventBus.emitEvent("info", "api/tts/stream", "Routing TTS to Gemini", { voice, url: GEMINI_TTS_URL });
+        providerRes = await fetch(GEMINI_TTS_URL, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${GEMINI_KEY}`,
+            "Content-Type": "application/json",
+            Accept: "audio/mpeg",
+          },
+          body: JSON.stringify({ text, voice }),
+        });
+      }
+    } catch (err: any) {
+      console.error("TTS provider request failed:", err?.message ?? err);
+      providerRes = null;
+    }
+
+    // If provider-specific request returned an OK response, forward it.
+    if (providerRes && providerRes.ok) {
+      const contentType = providerRes.headers.get("content-type") ?? "audio/mpeg";
+      if (id) void takeAsync(id);
+      return new Response(providerRes.body, {
+        status: 200,
+        headers: {
+          "Content-Type": contentType,
+          "Cache-Control": "no-store",
+        },
+      });
+    }
+
+    // If we attempted to route to a provider but it failed, log and fall back to OpenAI below.
+    if (selectedProvider !== "openai") {
+      debugEventBus.emitEvent("warning", "api/tts/stream", `Provider ${selectedProvider} failed or not configured, falling back to OpenAI`, { voice });
+    }
+
+    if (!OPENAI_KEY) {
+      return NextResponse.json(
+        { error: "OPENAI_API_KEY not configured" },
+        { status: 500 }
+      );
+    }
+
+    // Make a server-side POST to OpenAI using gpt-4o-mini-tts and forward the body.
+    // If the upstream call fails, return a structured response indicating the
+    // client should fallback to browser voices and include a suggested gender
+    // for voice selection based on the requested voice.
+
+    // Reuse the earlier suggestGenderFromVoice definition above.
+    providerRes = await fetch("https://api.openai.com/v1/audio/speech", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${OPENAI_KEY}`,
@@ -127,16 +195,22 @@ export async function GET(req: Request) {
       body: JSON.stringify({ model: "gpt-4o-mini-tts", voice, input: text }),
     });
 
-    if (!providerRes.ok) {
-      const detail = await providerRes.text().catch(() => "");
+    if (!providerRes || !providerRes.ok) {
+      const detail = providerRes ? await providerRes.text().catch(() => "") : "no response";
       console.error(`[tts stream] gpt-4o-mini-tts error: ${detail}`);
-      debugEventBus.emitEvent("error", "api/tts/stream", "gpt-4o-mini-tts unavailable", { voice, detail });
+      debugEventBus.emitEvent("error", "api/tts/stream", `gpt-4o-mini-tts unavailable (provider=${selectedProvider})`, { voice, detail });
       return NextResponse.json(
         {
           error: "TTS provider unavailable",
           fallback: "browser",
           voiceRequested: voice,
-          suggestedFallbackVoiceGender: suggestGenderFromVoice(voice),
+          suggestedFallbackVoiceGender: ((): string => {
+            const female = ["alice", "charlotte", "lily", "matilda"];
+            const male = ["charlie", "george", "harry"];
+            if (female.includes(voice)) return "female";
+            if (male.includes(voice)) return "male";
+            return "neutral";
+          })(),
           detail,
         },
         { status: 502 }

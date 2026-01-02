@@ -20,6 +20,9 @@ export default function LLMProviderManager({ open, onOpenChange }: { open: boole
   const [err, setErr] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
+  const [activeLoading, setActiveLoading] = useState(false);
+  const [activeInfo, setActiveInfo] = useState<any>(null);
+  const [activeErr, setActiveErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !isAdmin) return;
@@ -115,6 +118,33 @@ export default function LLMProviderManager({ open, onOpenChange }: { open: boole
               }}>{testing ? 'Testing…' : 'Test'}</Button>
             </div>
             {testResult ? <div className="text-xs mt-2">{testResult}</div> : null}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium">Active Provider Debug</label>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={async () => {
+                setActiveLoading(true);
+                setActiveErr(null);
+                setActiveInfo(null);
+                try {
+                  const headers = await buildAuthHeaders({ 'Content-Type': 'application/json' });
+                  const resp = await fetch('/api/admin/llm-provider/active', { headers });
+                  const data = await resp.json();
+                  if (!resp.ok) {
+                    if (resp.status === 401 || resp.status === 403) throw new Error('Unauthorized: sign in as an admin.');
+                    throw new Error(data?.error || 'Failed to fetch active config');
+                  }
+                  setActiveInfo(data);
+                } catch (e: any) {
+                  setActiveErr(String(e?.message ?? e));
+                } finally {
+                  setActiveLoading(false);
+                }
+              }}>{activeLoading ? 'Loading…' : 'Fetch Active Config'}</Button>
+            </div>
+            {activeErr ? <div className="text-xs mt-2 text-red-600">{activeErr}</div> : null}
+            {activeInfo ? <pre className="text-xs mt-2 p-2 bg-slate-100 dark:bg-slate-800 rounded overflow-auto">{JSON.stringify(activeInfo, null, 2)}</pre> : null}
           </div>
 
           <div>
