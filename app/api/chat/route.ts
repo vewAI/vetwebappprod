@@ -788,7 +788,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
         if (normQueryTokens.length > 0) {
           const fuzzyMatches = lines.filter(l => {
             const ll = l.toLowerCase();
-            return normQueryTokens.every(t => ll.includes(t));
+            return normQueryTokens.every((t: string) => ll.includes(t));
           });
           if (fuzzyMatches.length > 0) {
             return NextResponse.json({ content: fuzzyMatches.join('\n'), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
