@@ -119,7 +119,7 @@ export const ROLE_PROMPT_DEFINITIONS: Record<RolePromptKey, RolePromptDefinition
     buildReplacements: ({ caseRow, userMessage }) => {
       const strategy = getText(caseRow, "findings_release_strategy", "immediate");
       const instruction = strategy === "on_demand"
-        ? "If the student asks for findings generally (e.g., 'what are the vitals?'), ask them to be specific. Do NOT provide all findings at once. Only release specific values or systems when explicitly requested."
+        ? "If the student asks for findings generally (e.g., 'what are the vitals?'), DO NOT list all findings. Instead, ask the student to request a specific finding or system before revealing data. You should respond with a short clarifying prompt such as: \"Please request a specific finding or system (for example: 'vitals', 'cardiovascular exam', 'CBC'). Which would you like to see?\" Only release the data asked for once the student explicitly requests it."
         : "If the student asks for findings generally, provide the complete list of available findings immediately.";
       
       return {
@@ -143,7 +143,7 @@ export const ROLE_PROMPT_DEFINITIONS: Record<RolePromptKey, RolePromptDefinition
     buildReplacements: ({ caseRow, userMessage }) => {
       const strategy = getText(caseRow, "findings_release_strategy", "immediate");
       const instruction = strategy === "on_demand"
-        ? "If the student asks for results generally, ask them to be specific. Do NOT provide all findings at once. Only release specific values or groups of values (e.g. 'CBC', 'Chem') when explicitly requested."
+        ? "If the student asks for results generally, DO NOT provide all diagnostic results. Instead, ask the student to request a specific test or group (for example: 'CBC', 'Chemistry panel', 'urinalysis'). Respond with a short clarifying prompt such as: \"Please request a specific test or group (for example: 'CBC' or 'Chem'). Which results would you like to see?\" Only disclose the requested values once explicitly asked."
         : "If the student asks for results generally, provide all available diagnostic findings immediately.";
 
       return {
