@@ -683,6 +683,50 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       });
     }
 
+    // Short-circuit rules before calling the LLM:
+    // 1) During Physical Examination stage: if student asks for lab tests or imaging,
+    //    instruct them that those results are available in the Laboratory & Tests stage
+    //    instead of answering that they are "not recorded" here.
+    // 2) During Laboratory & Tests stage: if diagnostic findings are present in the
+    //    case record and the student requests a specific test/value, return the
+    //    recorded value directly from the DB to avoid hallucination.
+    const userText = (lastUserMessage?.content ?? "").toLowerCase();
+    const physicalStageKeywords = ["physical", "physical exam", "physical examination"];
+    const labRequestKeywords = ["lab", "labs", "blood", "cbc", "chem", "chemistry", "urinalysis", "urine", "ketone", "ketones", "bhb", "calcium", "electrolyte", "imaging", "x-ray", "xray", "radiograph", "radiographs", "ultrasound", "echo", "ecg", "ecg", "ecg", "ecg"];
+
+    const stageTitle = stageDescriptor?.title ?? "";
+    const isPhysicalStage = /physical/i.test(stageTitle) || physicalStageKeywords.some(k=>stageTitle.toLowerCase().includes(k));
+    const isLabStage = /laboratory|lab|diagnostic/i.test(stageTitle);
+
+    if (isPhysicalStage && labRequestKeywords.some(k => userText.includes(k))) {
+      const reply = `Those laboratory or imaging results are not released during the physical examination stage. Diagnostic results (bloodwork, imaging) are available in the Laboratory & Tests stage — please request them there or proceed to that stage to view the recorded results.`;
+      return NextResponse.json({ content: reply, displayRole, portraitUrl: undefined, voiceId: undefined, personaSex: undefined, personaRoleKey, media: [] });
+    }
+
+    if (isLabStage && caseRecord && typeof caseRecord === "object") {
+      const diag = (caseRecord as Record<string, unknown>)["diagnostic_findings"];
+      if (typeof diag === "string" && diag.trim().length > 0) {
+        // If user asked specifically for a test or value, try to return the matching lines
+        const diagText = diag as string;
+        // Look for any of the labRequestKeywords in the user text; if found, try to extract matching lines
+        const matchedKeyword = labRequestKeywords.find(k => userText.includes(k));
+        if (matchedKeyword) {
+          const lines = diagText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+          const matchingLines = lines.filter(l => l.toLowerCase().includes(matchedKeyword));
+          if (matchingLines.length > 0) {
+            const reply = matchingLines.join("\n");
+            return NextResponse.json({ content: reply, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+          }
+          // fallback: if keyword not found in lines, but diag text contains the keyword anywhere, return surrounding context
+          if (diagText.toLowerCase().includes(matchedKeyword)) {
+            return NextResponse.json({ content: diagText, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+          }
+          // no matching data recorded
+          return NextResponse.json({ content: `That result is not available in the record.`, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+        }
+      }
+    }
+
     // High-priority system guideline to shape assistant tone and avoid
     // verbose, repetitive, or overly-polite filler. Keep replies natural,
     // concise, and human-like. Avoid phrases like "Thank you for asking"
