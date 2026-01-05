@@ -699,6 +699,34 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     const isLabStage = /laboratory|lab|diagnostic/i.test(stageTitle);
 
     if (isPhysicalStage && labRequestKeywords.some(k => userText.includes(k))) {
+      const matchedKeyword = labRequestKeywords.find(k => userText.includes(k));
+      // If diagnostic_findings contains the requested item, be explicit that it exists
+      const diagField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["diagnostic_findings"] : null;
+      const physField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["physical_exam_findings"] : null;
+      const diagText = typeof diagField === "string" ? diagField : "";
+      const physText = typeof physField === "string" ? physField : "";
+
+      // If user actually asked about something recorded in the physical exam, allow returning that.
+      const physicalRequestKeywords = ["temp","temperature","heart","pulse","respiratory","respirations","resp","mucous","mucous membrane","mm","hydration","lymph","lymph node","ballottement","abdomen","abdominal","auscultation","palpation","mm color","mm colour","crt","capillary refill"];
+      const matchedPhysical = physicalRequestKeywords.find(k => userText.includes(k));
+      if (matchedPhysical && physText) {
+        const lines = physText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        const matchingLines = lines.filter(l => l.toLowerCase().includes(matchedPhysical));
+        if (matchingLines.length > 0) {
+          return NextResponse.json({ content: matchingLines.join("\n"), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+        }
+        // if no line match, return the full phys text so the student sees what's recorded
+        return NextResponse.json({ content: physText, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+      }
+
+      if (matchedKeyword && diagText) {
+        // If diag text contains the matched keyword, tell the student the result exists but is released in next stage
+        if (diagText.toLowerCase().includes(matchedKeyword)) {
+          const reply = `That result is recorded for this case but diagnostic results are released in the Laboratory & Tests stage. Please request that item in the Laboratory & Tests stage to view the recorded value.`;
+          return NextResponse.json({ content: reply, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+        }
+      }
+
       const reply = `Those laboratory or imaging results are not released during the physical examination stage. Diagnostic results (bloodwork, imaging) are available in the Laboratory & Tests stage — please request them there or proceed to that stage to view the recorded results.`;
       return NextResponse.json({ content: reply, displayRole, portraitUrl: undefined, voiceId: undefined, personaSex: undefined, personaRoleKey, media: [] });
     }
