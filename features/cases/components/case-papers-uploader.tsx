@@ -8,6 +8,15 @@ import { uploadFile } from "@/features/cases/components/case-media-editor";
 import { buildAuthHeaders } from "@/lib/auth-headers";
 import axios from "axios";
 import { isCaseMediaItem } from "@/features/cases/models/caseMedia";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog";
 
 type Props = {
   caseId: string;
@@ -21,72 +30,114 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
   const [ingesting, setIngesting] = useState(false);
   const [processForAi, setProcessForAi] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [modelAccessInfo, setModelAccessInfo] = useState<{
+    model?: string | null;
+    attemptedModels?: string[] | null;
+    message?: string | null;
+  } | null>(null);
+  const [copiedFlag, setCopiedFlag] = useState<string | null>(null);
+
+  const copyToClipboard = async (text: string, key: string) => {
+    try {
+      if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Fallback for older browsers
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      setCopiedFlag(key);
+      setTimeout(() => setCopiedFlag(null), 3000);
+    } catch (e) {
+      console.error("Copy failed", e);
+      setCopiedFlag(null);
+    }
+  };
   const inputRef = React.useRef<HTMLInputElement | null>(null);
 
   const handleUpload = async () => {
     if (!file) return setError("Select a file first");
-    setUploading(true);
+    // Set uploading immediately so the UI can reflect state
     setError(null);
-    try {
-      const { url, path } = await uploadFile(file, "document", caseId);
+    setUploading(true);
 
-      // Build media item
-      const mediaItem = {
-        id: `${Date.now()}-${Math.random()}`,
-        type: "document",
-        url,
-        caption: caption || file.name,
-        mimeType: file.type || undefined,
-        metadata: { sourcePath: path },
-        trigger: "on_demand",
-      };
+    // Defer heavy work to next tick to ensure UI updates (prevents long event handler jank)
+    setTimeout(async () => {
+      try {
+        const { url, path } = await uploadFile(file, "document", caseId);
 
-      const headers = await buildAuthHeaders({ "Content-Type": "application/json" });
-      const resp = await axios.post(`/api/cases/media`, { caseId, media: mediaItem }, { headers });
-      if (resp.status === 200) {
+        // Build media item
+        const mediaItem = {
+          id: `${Date.now()}-${Math.random()}`,
+          type: "document",
+          url,
+          caption: caption || file.name,
+          mimeType: file.type || undefined,
+          metadata: { sourcePath: path },
+          trigger: "on_demand",
+        };
 
-        // Trigger Ingestion if requested
-        if (processForAi) {
-          setIngesting(true);
-          try {
-            const formData = new FormData();
-            formData.append("file", file);
-            formData.append("case_id", caseId);
+        const headers = await buildAuthHeaders({ "Content-Type": "application/json" });
+        const resp = await axios.post(`/api/cases/media`, { caseId, media: mediaItem }, { headers });
+        if (resp.status === 200) {
 
-            // Using axios for consistency
-            const ingestHeaders = await buildAuthHeaders({ "Content-Type": "multipart/form-data" });
-            await axios.post("/api/cases/ingest", formData, {
-              headers: ingestHeaders,
-            });
-            console.log("Ingestion complete");
-          } catch (ingestErr) {
-            console.error("Ingestion failed", ingestErr);
-            // Extract and display specific error message if available
-            if (ingestErr instanceof Error || (typeof ingestErr === 'object' && ingestErr !== null)) {
-              const errorObj = ingestErr as any;
-              const errorMsg = errorObj?.response?.data?.error || errorObj?.message || "AI processing failed";
-              const errorCode = errorObj?.response?.data?.code;
-              setError(`Ingestion error${errorCode ? ` (${errorCode})` : ""}: ${errorMsg}`);
-            } else {
-              setError("File uploaded but AI processing failed.");
+          // Trigger Ingestion if requested
+          if (processForAi) {
+            setIngesting(true);
+            try {
+              const formData = new FormData();
+              formData.append("file", file);
+              formData.append("case_id", caseId);
+
+              // Using axios for consistency
+              const ingestHeaders = await buildAuthHeaders({ "Content-Type": "multipart/form-data" });
+              await axios.post("/api/cases/ingest", formData, {
+                headers: ingestHeaders,
+              });
+              console.log("Ingestion complete");
+            } catch (ingestErr) {
+              console.error("Ingestion failed", ingestErr);
+              // Extract and display specific error message if available
+              if (ingestErr instanceof Error || (typeof ingestErr === 'object' && ingestErr !== null)) {
+                const errorObj = ingestErr as any;
+                const errorMsg = errorObj?.response?.data?.error || errorObj?.message || "AI processing failed";
+                const errorCode = errorObj?.response?.data?.code;
+                // If this is an embedding model access error, surface a modal with guidance
+                if (errorCode === "EMBEDDING_MODEL_ACCESS") {
+                  setModelAccessInfo({
+                    model: errorObj?.response?.data?.model ?? null,
+                    attemptedModels: errorObj?.response?.data?.attemptedModels ?? null,
+                    message: errorMsg,
+                  });
+                  setError(`Ingestion error (EMBEDDING_MODEL_ACCESS): ${errorMsg}`);
+                } else {
+                  setError(`Ingestion error${errorCode ? ` (${errorCode})` : ""}: ${errorMsg}`);
+                }
+              } else {
+                setError("File uploaded but AI processing failed.");
+              }
+            } finally {
+              setIngesting(false);
             }
-          } finally {
-            setIngesting(false);
           }
-        }
 
-        setFile(null);
-        setCaption("");
-        if (onUploaded) onUploaded(mediaItem);
-      } else {
-        setError("Failed to attach paper to case");
+          setFile(null);
+          setCaption("");
+          if (onUploaded) onUploaded(mediaItem);
+        } else {
+          setError("Failed to attach paper to case");
+        }
+      } catch (err) {
+        console.error("Upload error", err);
+        setError(String((err as Error).message ?? "Upload failed"));
+      } finally {
+        setUploading(false);
       }
-    } catch (err) {
-      console.error("Upload error", err);
-      setError(String((err as Error).message ?? "Upload failed"));
-    } finally {
-      setUploading(false);
-    }
+    }, 0);
   };
 
   return (
@@ -101,6 +152,53 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
           className="ml-2"
         />
       </div>
+      {/* Model access modal */}
+      <Dialog open={Boolean(modelAccessInfo)} onOpenChange={() => setModelAccessInfo(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Embedding Model Access Error</DialogTitle>
+            <DialogDescription>
+              The AI ingestion service couldn't access the preferred embedding model.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-2 text-sm space-y-2">
+            {modelAccessInfo?.message ? <div className="text-sm">{modelAccessInfo.message}</div> : null}
+            {modelAccessInfo?.model ? (
+              <div className="text-sm">Preferred model: <strong>{modelAccessInfo.model}</strong></div>
+            ) : null}
+            {modelAccessInfo?.attemptedModels ? (
+              <div className="text-sm">Attempted models: <strong>{modelAccessInfo.attemptedModels.join(", ")}</strong></div>
+            ) : null}
+            <div className="text-sm">
+              Actions you can take:
+              <ul className="list-disc ml-5 mt-1">
+                <li>Set `OPENAI_EMBEDDING_MODEL` to a model your OpenAI project can access.</li>
+                <li>Or set `OPENAI_EMBEDDING_FALLBACKS` to a comma-separated list of alternative models.</li>
+                <li>Ask your OpenAI account admin to grant model access to the project key.</li>
+                <li>Uncheck "Process for AI Knowledge Base" to skip ingestion for now.</li>
+              </ul>
+            </div>
+
+            <div className="mt-3">
+              <div className="text-sm font-medium">Commands to list models for your key</div>
+              <div className="mt-2 grid grid-cols-1 gap-2">
+                <div className="flex items-start gap-2">
+                  <pre className="rounded bg-muted p-2 text-xs flex-1 overflow-auto">curl https://api.openai.com/v1/models -H "Authorization: Bearer $OPENAI_API_KEY"</pre>
+                  <Button size="sm" onClick={() => copyToClipboard('curl https://api.openai.com/v1/models -H "Authorization: Bearer $OPENAI_API_KEY"', 'bash')}>{copiedFlag === 'bash' ? 'Copied' : 'Copy curl'}</Button>
+                </div>
+                <div className="flex items-start gap-2">
+                  <pre className="rounded bg-muted p-2 text-xs flex-1 overflow-auto">{`Invoke-RestMethod -Uri "https://api.openai.com/v1/models" -Headers @{{ Authorization = "Bearer $env:OPENAI_API_KEY" }}`}</pre>
+                  <Button size="sm" onClick={() => copyToClipboard('Invoke-RestMethod -Uri "https://api.openai.com/v1/models" -Headers @{{ Authorization = "Bearer $env:OPENAI_API_KEY" }}', 'ps')}>{copiedFlag === 'ps' ? 'Copied' : 'Copy PowerShell'}</Button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setModelAccessInfo(null)}>Close</Button>
+          </DialogFooter>
+          <DialogClose />
+        </DialogContent>
+      </Dialog>
       <div>
         <Label>Caption (optional)</Label>
         <Input value={caption} onChange={(e) => setCaption(e.target.value)} />

@@ -6,6 +6,15 @@ import type { Stage } from "@/features/stages/types";
 import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
 import { Button } from "@/components/ui/button";
 
+// Match any [MEDIA:...] token (allow dots, underscores, hyphens, digits, and more)
+const MEDIA_TAG_REGEX = /\[MEDIA:([^\]]+)\]/g;
+
+function stripMediaTags(text: string): string {
+  if (!text) return text;
+  // Remove [MEDIA:123] tokens and collapse extra whitespace left behind
+  return text.replace(MEDIA_TAG_REGEX, "").replace(/\s{2,}/g, " ").trim();
+}
+
 type MediaRendererProps = {
   items: CaseMediaItem[];
 };
@@ -134,10 +143,12 @@ function CollapsibleContent({ content }: { content: string }) {
     return <div className="whitespace-pre-wrap text-sm">{content}</div>;
   }
 
+  const safeContent = stripMediaTags(content);
+
   return (
     <div className="space-y-2">
       <div className={cn("whitespace-pre-wrap text-sm", !isExpanded && "line-clamp-6 max-h-40 overflow-hidden relative")}>
-        {content}
+        {safeContent}
         {!isExpanded && (
           <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-background to-transparent" />
         )}
@@ -247,9 +258,9 @@ export function ChatMessage({ message, stages, onRetry }: ChatMessageProps) {
           )}
         </div>
         {isUser ? (
-          <div className="whitespace-pre-wrap text-sm">{message.content}</div>
+          <div className="whitespace-pre-wrap text-sm">{stripMediaTags(message.content)}</div>
         ) : (
-          <CollapsibleContent content={message.content} />
+          <CollapsibleContent content={stripMediaTags(message.content)} />
         )}
         {Array.isArray(message.media) && message.media.length > 0 ? (
           <MediaRenderer items={message.media} />

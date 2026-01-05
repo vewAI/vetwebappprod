@@ -5,10 +5,14 @@ import { useAuth } from "@/features/auth/services/authService";
 import { debugEventBus, DebugEvent } from "@/lib/debug-events-fixed";
 import { X, Info, AlertTriangle, AlertCircle, CheckCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import dynamic from "next/dynamic";
+
+const LLMProviderManager = dynamic(() => import("./LLMProviderManager"), { ssr: false });
 
 export function AdminDebugPanel() {
   const { isAdmin } = useAuth();
   const [events, setEvents] = useState<DebugEvent[]>([]);
+  const [llmOpen, setLlmOpen] = useState(false);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -18,18 +22,28 @@ export function AdminDebugPanel() {
   }, [isAdmin]);
 
   if (!isAdmin) return null;
-  if (events.length === 0) return null;
 
   return (
     <div className="mt-6 border rounded bg-card p-3">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-sm font-medium">Admin Debug Events</h3>
-        <button
-          className="text-xs text-muted-foreground hover:underline"
-          onClick={() => setEvents([])}
-        >
-          Clear
-        </button>
+        <div className="flex gap-2 items-center">
+          <button
+            className="text-xs text-muted-foreground hover:underline"
+            onClick={() => setEvents([])}
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+      <div className="mb-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <button className="text-xs text-muted-foreground hover:underline" onClick={() => setLlmOpen(true)}>Open LLM Provider Manager</button>
+          </div>
+          <div className="text-xs text-muted-foreground">Debug events: {events.length}</div>
+        </div>
+        <LLMProviderManager open={llmOpen} onOpenChange={setLlmOpen} />
       </div>
       <div className="space-y-2 max-h-56 overflow-auto">
         {events.map((ev) => (

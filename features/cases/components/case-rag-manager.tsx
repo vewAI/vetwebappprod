@@ -18,6 +18,7 @@ export function CaseRagManager({ caseId }: Props) {
     const [items, setItems] = useState<CaseKnowledgeItem[]>([]);
     const [loading, setLoading] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    const [syncing, setSyncing] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
     const [error, setError] = useState<string | null>(null);
@@ -90,6 +91,33 @@ export function CaseRagManager({ caseId }: Props) {
         }
     };
 
+    const handleSyncCaseData = async () => {
+        setSyncing(true);
+        setError(null);
+        try {
+            const headers = await buildAuthHeaders({ "Content-Type": "application/json" });
+            const res = await fetch(`/api/cases/${caseId}/sync-rag`, {
+                method: "POST",
+                headers,
+            });
+            if (!res.ok) {
+                const json = await res.json().catch(() => ({}));
+                const msg = json.error || "Failed to sync case data";
+                throw new Error(msg);
+            }
+            const json = await res.json();
+            if (json.success) {
+                alert(`Successfully synced ${json.chunks || 0} case data chunks to RAG`);
+                await fetchKnowledge();
+            }
+        } catch (err: any) {
+            setError(err.message);
+            alert(err.message);
+        } finally {
+            setSyncing(false);
+        }
+    };
+
     const toggleSelect = (id: string) => {
         const next = new Set(selectedIds);
         if (next.has(id)) next.delete(id);
@@ -149,6 +177,15 @@ export function CaseRagManager({ caseId }: Props) {
                     </div>
                 </div>
                 <div className="flex gap-2">
+                    <button
+                        onClick={handleSyncCaseData}
+                        disabled={syncing}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium shadow-sm transition-colors disabled:opacity-50"
+                        title="Sync Case Data to RAG"
+                    >
+                        <Database className={`w-4 h-4 ${syncing ? 'animate-pulse' : ''}`} />
+                        {syncing ? 'Syncing...' : 'Sync Case Data'}
+                    </button>
                     <button
                         onClick={fetchKnowledge}
                         disabled={loading}
