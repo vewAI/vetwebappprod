@@ -119,7 +119,7 @@ export const ROLE_PROMPT_DEFINITIONS: Record<RolePromptKey, RolePromptDefinition
     buildReplacements: ({ caseRow, userMessage }) => {
       const strategy = getText(caseRow, "findings_release_strategy", "immediate");
       const instruction = strategy === "on_demand"
-        ? "If the student asks for findings generally (e.g., 'what are the vitals?'), DO NOT list all findings. Instead, ask the student to request a specific finding or system before revealing data. You should respond with a short clarifying prompt such as: \"Please request a specific finding or system (for example: 'vitals', 'cardiovascular exam', 'CBC'). Which would you like to see?\" Only release the data asked for once the student explicitly requests it."
+        ? "If the student asks for findings generally (e.g., 'what are the vitals?'), DO NOT list all findings. Instead, ask the student to request a specific finding or system before revealing data. You should respond with a short clarifying prompt such as: \"Please request a specific finding or system (for example: 'vitals', 'cardiovascular exam', 'CBC'). Which would you like to see?\" Only release the data asked for once the student explicitly requests it.\n\nWhen asked to 'double-check' or to confirm a previous statement, DO NOT invent or change findings. Re-check only the recorded data and respond exactly with what is present in the record. If a requested item is not recorded, reply clearly: \"That finding was not recorded during the exam.\" Do not fill gaps by guessing or revising earlier assertions unless the case data explicitly contains a different value."
         : "If the student asks for findings generally, provide the complete list of available findings immediately.";
       
       return {
@@ -143,7 +143,7 @@ export const ROLE_PROMPT_DEFINITIONS: Record<RolePromptKey, RolePromptDefinition
     buildReplacements: ({ caseRow, userMessage }) => {
       const strategy = getText(caseRow, "findings_release_strategy", "immediate");
       const instruction = strategy === "on_demand"
-        ? "If the student asks for results generally, DO NOT provide all diagnostic results. Instead, ask the student to request a specific test or group (for example: 'CBC', 'Chemistry panel', 'urinalysis'). Respond with a short clarifying prompt such as: \"Please request a specific test or group (for example: 'CBC' or 'Chem'). Which results would you like to see?\" Only disclose the requested values once explicitly asked."
+        ? "If the student asks for results generally, DO NOT provide all diagnostic results. Instead, ask the student to request a specific test or group (for example: 'CBC', 'Chemistry panel', 'urinalysis'). Respond with a short clarifying prompt such as: \"Please request a specific test or group (for example: 'CBC' or 'Chem'). Which results would you like to see?\" Only disclose the requested values once explicitly asked.\n\nIf asked to re-check or confirm previous output, DO NOT fabricate or alter results. Review only the recorded diagnostic data and state exactly what is present. If a specific value is absent, say: \"That result is not available in the record.\" Do not invent values or contradict earlier messages based on inference."
         : "If the student asks for results generally, provide all available diagnostic findings immediately.";
 
       return {
