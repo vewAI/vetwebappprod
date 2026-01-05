@@ -717,20 +717,33 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       abdomen: ["abdomen", "abdominal", "rumen"]
     };
 
+    function normalizeForMatching(s: string): string {
+      return String(s || "")
+        .toLowerCase()
+        .replace(/[ _\-]+/g, " ")
+        .replace(/[^a-z0-9 ]+/g, "")
+        .trim();
+    }
+
     function findSynonymKey(text: string, groups: Record<string, string[]>): string | null {
-      const t = text.toLowerCase();
+      const tNorm = normalizeForMatching(text);
       for (const [key, syns] of Object.entries(groups)) {
         for (const s of syns) {
           if (!s) continue;
-          if (t.includes(s)) return key;
+          const sNorm = normalizeForMatching(s);
+          if (sNorm && tNorm.includes(sNorm)) return key;
         }
       }
       return null;
     }
 
     function lineMatchesSynonym(line: string, syns: string[]): boolean {
-      const l = line.toLowerCase();
-      return syns.some(s => s && l.includes(s));
+      const lNorm = normalizeForMatching(line);
+      return syns.some(s => {
+        if (!s) return false;
+        const sNorm = normalizeForMatching(s);
+        return sNorm && lNorm.includes(sNorm);
+      });
     }
 
     const stageTitle = stageDescriptor?.title ?? "";
@@ -761,14 +774,16 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
         try {
           const parsed = JSON.parse(physText);
           if (parsed && typeof parsed === 'object') {
-            const normQuery = userText.replace(/[^a-z0-9\s]/gi, ' ').trim().toLowerCase();
+            const normQuery = normalizeForMatching(userText);
             const hits: string[] = [];
             const visit = (obj: any, prefix = '') => {
               if (!obj || typeof obj !== 'object') return;
               for (const key of Object.keys(obj)) {
                 const value = obj[key];
-                const lcKey = (prefix ? `${prefix}.${key}` : key).toLowerCase();
-                if (lcKey.includes(normQuery) || (typeof value === 'string' && value.toLowerCase().includes(normQuery))) {
+                const lcKey = (prefix ? `${prefix}.${key}` : key);
+                const lcKeyNorm = normalizeForMatching(lcKey);
+                const valueNorm = typeof value === 'string' ? normalizeForMatching(value) : '';
+                if (lcKeyNorm.includes(normQuery) || valueNorm.includes(normQuery)) {
                   hits.push(`${prefix ? `${prefix}.` : ''}${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`);
                 }
                 if (typeof value === 'object') visit(value, prefix ? `${prefix}.${key}` : key);
@@ -784,11 +799,11 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
         }
 
         // Fuzzy line match: require all query tokens to appear in a line
-        const normQueryTokens = userText.replace(/[^a-z0-9\s]/gi, ' ').trim().toLowerCase().split(/\s+/).filter(Boolean);
+        const normQueryTokens = normalizeForMatching(userText).split(/\s+/).filter(Boolean);
         if (normQueryTokens.length > 0) {
           const fuzzyMatches = lines.filter(l => {
-            const ll = l.toLowerCase();
-            return normQueryTokens.every((t: string) => ll.includes(t));
+            const llNorm = normalizeForMatching(l.toLowerCase());
+            return normQueryTokens.every((t: string) => llNorm.includes(t));
           });
           if (fuzzyMatches.length > 0) {
             return NextResponse.json({ content: fuzzyMatches.join('\n'), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
