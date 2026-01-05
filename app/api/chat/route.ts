@@ -756,11 +756,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
         if (matchingLines.length > 0) {
           return NextResponse.json({ content: matchingLines.join("\n"), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
         }
-        const lines = physText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-        const matchingLines = lines.filter(l => l.toLowerCase().includes(matchedPhysical));
-        if (matchingLines.length > 0) {
-          return NextResponse.json({ content: matchingLines.join("\n"), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
-        }
+        
         // Additional robust checks: try JSON key/value lookup and fuzzy line matching
         try {
           const parsed = JSON.parse(physText);
