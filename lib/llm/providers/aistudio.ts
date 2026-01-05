@@ -3,8 +3,6 @@
 //  - Service account credentials via `AISTUDIO_SERVICE_ACCOUNT` (JSON string or base64)
 //  - API key via `AISTUDIO_API_KEY` (appended as ?key=... when appropriate)
 
-import { GoogleAuth } from "google-auth-library";
-
 async function obtainAccessTokenFromServiceAccount(): Promise<string> {
   const raw = process.env.AISTUDIO_SERVICE_ACCOUNT;
   if (!raw) throw new Error("AISTUDIO_SERVICE_ACCOUNT not provided");
@@ -23,6 +21,12 @@ async function obtainAccessTokenFromServiceAccount(): Promise<string> {
 
   // Request an access token scoped for Google Cloud (Vertex AI) operations.
   // The cloud-platform scope is required for most Vertex/Generative AI endpoints.
+  let GoogleAuth: any;
+  try {
+    GoogleAuth = (await import('google-auth-library')).GoogleAuth;
+  } catch (e) {
+    throw new Error('google-auth-library is required for AISTUDIO_SERVICE_ACCOUNT auth but is not installed. Install with `npm install google-auth-library` or set AISTUDIO_API_KEY instead.');
+  }
   const auth = new GoogleAuth({ credentials: creds, scopes: ["https://www.googleapis.com/auth/cloud-platform"] });
   const client = await auth.getClient();
   const at: any = await client.getAccessToken();
@@ -47,6 +51,12 @@ async function obtainIdTokenFromServiceAccount(audience: string): Promise<string
     }
   }
 
+  let GoogleAuth: any;
+  try {
+    GoogleAuth = (await import('google-auth-library')).GoogleAuth;
+  } catch (e) {
+    throw new Error('google-auth-library is required for AISTUDIO_SERVICE_ACCOUNT auth but is not installed. Install with `npm install google-auth-library` or set AISTUDIO_API_KEY instead.');
+  }
   const auth = new GoogleAuth({ credentials: creds });
   // getIdTokenClient will return a client that provides ID tokens for the given audience
   const client = await auth.getIdTokenClient(audience);

@@ -683,6 +683,160 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       });
     }
 
+    // Short-circuit rules before calling the LLM:
+    // 1) During Physical Examination stage: if student asks for lab tests or imaging,
+    //    instruct them that those results are available in the Laboratory & Tests stage
+    //    instead of answering that they are "not recorded" here.
+    // 2) During Laboratory & Tests stage: if diagnostic findings are present in the
+    //    case record and the student requests a specific test/value, return the
+    //    recorded value directly from the DB to avoid hallucination.
+    const userText = (lastUserMessage?.content ?? "").toLowerCase();
+    const physicalStageKeywords = ["physical", "physical exam", "physical examination"];
+
+    // Synonym maps for diagnostic and physical queries. Keys are canonical tokens.
+    const DIAG_SYNONYMS: Record<string, string[]> = {
+      bhb: ["beta-hydroxybutyrate", "bhb", "ketone", "ketones"],
+      cbc: ["cbc", "complete blood count", "haematology", "hematology"],
+      chem: ["chem", "chemistry", "chemistry panel", "blood chemistry"],
+      glucose: ["glucose", "blood sugar", "sugar"],
+      urinalysis: ["urinalysis", "urine"],
+      xray: ["x-ray", "xray", "radiograph", "radiographs"],
+      ultrasound: ["ultrasound", "usg", "echography", "echo"],
+      ecg: ["ecg", "ecg tracing", "ecg report"],
+      calcium: ["calcium", "ca"],
+    };
+
+    const PHYS_SYNONYMS: Record<string, string[]> = {
+      rumen_turnover: ["rumen turnover", "rumen_turnover", "rumen_turnover"],
+      ballottement: ["ballottement", "ballottement was", "ballott"],
+      temperature: ["temp", "temperature"],
+      heart_rate: ["heart", "heart rate", "pulse"],
+      respiratory_rate: ["respiratory", "respirations", "resp rate", "resp"] ,
+      mucous_membranes: ["mucous", "mucous membrane", "mm", "mm color", "mm colour"],
+      hydration: ["hydration"],
+      abdomen: ["abdomen", "abdominal", "rumen"]
+    };
+
+    function findSynonymKey(text: string, groups: Record<string, string[]>): string | null {
+      const t = text.toLowerCase();
+      for (const [key, syns] of Object.entries(groups)) {
+        for (const s of syns) {
+          if (!s) continue;
+          if (t.includes(s)) return key;
+        }
+      }
+      return null;
+    }
+
+    function lineMatchesSynonym(line: string, syns: string[]): boolean {
+      const l = line.toLowerCase();
+      return syns.some(s => s && l.includes(s));
+    }
+
+    const stageTitle = stageDescriptor?.title ?? "";
+    const isPhysicalStage = /physical/i.test(stageTitle) || physicalStageKeywords.some(k=>stageTitle.toLowerCase().includes(k));
+    const isLabStage = /laboratory|lab|diagnostic/i.test(stageTitle);
+
+    const matchedDiagKeyInUser = findSynonymKey(userText, DIAG_SYNONYMS);
+    if (isPhysicalStage && matchedDiagKeyInUser) {
+      const matchedKeyword = matchedDiagKeyInUser;
+      // If diagnostic_findings contains the requested item, be explicit that it exists
+      const diagField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["diagnostic_findings"] : null;
+      const physField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["physical_exam_findings"] : null;
+      const diagText = typeof diagField === "string" ? diagField : "";
+      const physText = typeof physField === "string" ? physField : "";
+
+      // If user actually asked about something recorded in the physical exam, allow returning that.
+      const matchedPhysicalKey = findSynonymKey(userText, PHYS_SYNONYMS);
+      if (matchedPhysicalKey && physText) {
+        const lines = physText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        // first try exact line contains the user phrase tokens
+        const syns = PHYS_SYNONYMS[matchedPhysicalKey] ?? [];
+        const matchingLines = lines.filter(l => lineMatchesSynonym(l, syns));
+        if (matchingLines.length > 0) {
+          return NextResponse.json({ content: matchingLines.join("\n"), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+        }
+        
+        // Additional robust checks: try JSON key/value lookup and fuzzy line matching
+        try {
+          const parsed = JSON.parse(physText);
+          if (parsed && typeof parsed === 'object') {
+            const normQuery = userText.replace(/[^a-z0-9\s]/gi, ' ').trim().toLowerCase();
+            const hits: string[] = [];
+            const visit = (obj: any, prefix = '') => {
+              if (!obj || typeof obj !== 'object') return;
+              for (const key of Object.keys(obj)) {
+                const value = obj[key];
+                const lcKey = (prefix ? `${prefix}.${key}` : key).toLowerCase();
+                if (lcKey.includes(normQuery) || (typeof value === 'string' && value.toLowerCase().includes(normQuery))) {
+                  hits.push(`${prefix ? `${prefix}.` : ''}${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`);
+                }
+                if (typeof value === 'object') visit(value, prefix ? `${prefix}.${key}` : key);
+              }
+            };
+            visit(parsed);
+            if (hits.length > 0) {
+              return NextResponse.json({ content: hits.join('\n'), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+            }
+          }
+        } catch (e) {
+          // not JSON, continue
+        }
+
+        // Fuzzy line match: require all query tokens to appear in a line
+        const normQueryTokens = userText.replace(/[^a-z0-9\s]/gi, ' ').trim().toLowerCase().split(/\s+/).filter(Boolean);
+        if (normQueryTokens.length > 0) {
+          const fuzzyMatches = lines.filter(l => {
+            const ll = l.toLowerCase();
+            return normQueryTokens.every((t: string) => ll.includes(t));
+          });
+          if (fuzzyMatches.length > 0) {
+            return NextResponse.json({ content: fuzzyMatches.join('\n'), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+          }
+        }
+
+        // if no match, return the full phys text so the student sees what's recorded
+        return NextResponse.json({ content: physText, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+      }
+
+      if (matchedKeyword && diagText) {
+        // If diag text contains any synonym for the matched diagnostic key, tell the student the result exists but is released in next stage
+        const syns = DIAG_SYNONYMS[matchedKeyword] ?? [];
+        if (syns.some(s => s && diagText.toLowerCase().includes(s))) {
+          const reply = `That result is recorded for this case but diagnostic results are released in the Laboratory & Tests stage. Please request that item in the Laboratory & Tests stage to view the recorded value.`;
+          return NextResponse.json({ content: reply, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+        }
+      }
+
+      const reply = `Those laboratory or imaging results are not released during the physical examination stage. Diagnostic results (bloodwork, imaging) are available in the Laboratory & Tests stage — please request them there or proceed to that stage to view the recorded results.`;
+      return NextResponse.json({ content: reply, displayRole, portraitUrl: undefined, voiceId: undefined, personaSex: undefined, personaRoleKey, media: [] });
+    }
+
+    if (isLabStage && caseRecord && typeof caseRecord === "object") {
+      const diag = (caseRecord as Record<string, unknown>)["diagnostic_findings"];
+      if (typeof diag === "string" && diag.trim().length > 0) {
+        // If user asked specifically for a test or value, try to return the matching lines
+        const diagText = diag as string;
+        // Find diagnostic canonical key from user text
+        const matchedDiagKey = findSynonymKey(userText, DIAG_SYNONYMS);
+        if (matchedDiagKey) {
+          const lines = diagText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+          const syns = DIAG_SYNONYMS[matchedDiagKey] ?? [];
+          const matchingLines = lines.filter(l => lineMatchesSynonym(l, syns));
+          if (matchingLines.length > 0) {
+            const reply = matchingLines.join("\n");
+            return NextResponse.json({ content: reply, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+          }
+          // fallback: if diag text contains any synonym, return full diag text
+          if (syns.some(s => s && diagText.toLowerCase().includes(s))) {
+            return NextResponse.json({ content: diagText, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+          }
+          // no matching data recorded
+          return NextResponse.json({ content: `That result is not available in the record.`, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+        }
+      }
+    }
+
     // High-priority system guideline to shape assistant tone and avoid
     // verbose, repetitive, or overly-polite filler. Keep replies natural,
     // concise, and human-like. Avoid phrases like "Thank you for asking"
