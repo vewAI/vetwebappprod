@@ -225,6 +225,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
+
+
     let displayRole: string | undefined = undefined;
     let stageRole: string | undefined = undefined;
     let stageDescriptor: { id?: string; title?: string; role?: string } | null = null;
@@ -281,6 +283,32 @@ export async function POST(request: NextRequest) {
     }
 
     personaRoleKey = resolveChatPersonaRoleKey(stageRole, displayRole);
+
+    // Enforce on_demand findings release after persona resolution so we know
+    // which persona is answering. If the case is configured for 'on_demand'
+    // release and the student asked a general findings/results question,
+    // return a clarifying prompt instead of releasing all findings.
+    try {
+      const strategy = caseRecord && typeof caseRecord === 'object' ? (caseRecord as any)["findings_release_strategy"] : undefined;
+      const isOnDemand = strategy === 'on_demand';
+      const q = lastUserMessage?.content ?? "";
+      const looksLikeGeneralFindingsRequest = /\b(findings|vitals|results|diagnostic results|test results)\b/i.test(q) || /what\b.*\b(findings|results|vitals)\b/i.test(q) || /show\b.*\b(findings|results|vitals)\b/i.test(q);
+      const personaIsNurseOrLab = Boolean(personaRoleKey && (personaRoleKey === 'veterinary-nurse' || personaRoleKey === 'lab-technician')) || Boolean(stageDescriptor && /nurse|laboratory|lab/i.test(String(stageDescriptor.role ?? '')));
+      if (isOnDemand && looksLikeGeneralFindingsRequest && personaIsNurseOrLab) {
+        const clarifying = "Please request a specific finding or system (for example: 'vitals', 'cardiovascular exam', 'CBC'). Which would you like to see?";
+        try { debugEventBus.emitEvent('info','ChatDBMatch','on_demand-clarify',{ caseId, q }); } catch {}
+        return NextResponse.json({
+          content: clarifying,
+          displayRole: displayRole,
+          portraitUrl: undefined,
+          voiceId: undefined,
+          personaSex: undefined,
+          personaRoleKey: personaRoleKey ?? undefined,
+        });
+      }
+    } catch (e) {
+      console.warn('Error enforcing on_demand findings guard', e);
+    }
 
     // Filter media relevant to the current stage
     const stageTokens = new Set<string>();
@@ -708,6 +736,8 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
 
     const PHYS_SYNONYMS: Record<string, string[]> = {
       rumen_turnover: ["rumen turnover", "rumen_turnover", "rumen_turnover"],
+      // include dash/underscore variants and common phrase forms
+      rumen_turnover_alt: ["rumen-turnover", "rumen turnover", "rumen_turnover"],
       ballottement: ["ballottement", "ballottement was", "ballott"],
       temperature: ["temp", "temperature"],
       heart_rate: ["heart", "heart rate", "pulse"],
@@ -822,8 +852,15 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
     const isLabStage = /laboratory|lab|diagnostic/i.test(stageTitle);
 
     const matchedDiagKeyInUser = findSynonymKey(userText, DIAG_SYNONYMS);
-    if (isPhysicalStage && matchedDiagKeyInUser) {
+    // Handle physical-stage queries regardless of diagnostic-key matches.
+    // Previously this branch required a diagnostic synonym which prevented
+    // physical findings (e.g. 'rumen turnover') from being detected when
+    // the user asked directly. Process physical-stage requests here.
+    if (isPhysicalStage) {
       const matchedKeyword = matchedDiagKeyInUser;
+      try {
+        debugEventBus.emitEvent('info', 'ChatDBMatch', 'Physical stage query', { userText, stageTitle, matchedDiagKeyInUser });
+      } catch {}
       // If diagnostic_findings contains the requested item, be explicit that it exists
       const diagField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["diagnostic_findings"] : null;
       const physField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["physical_exam_findings"] : null;
@@ -838,6 +875,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
         const syns = PHYS_SYNONYMS[matchedPhysicalKey] ?? [];
         const matchingLines = lines.filter(l => lineMatchesSynonym(l, syns));
         if (matchingLines.length > 0) {
+          try { debugEventBus.emitEvent('info','ChatDBMatch','line-match',{ matchedKey: matchedPhysicalKey, lines: matchingLines.length }); } catch {}
           return NextResponse.json({ content: matchingLines.join("\n"), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
         }
         
@@ -862,6 +900,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
             };
             visit(parsed);
             if (hits.length > 0) {
+              try { debugEventBus.emitEvent('info','ChatDBMatch','json-key-match',{ query: userText, hits: hits.length }); } catch {}
               return NextResponse.json({ content: hits.join('\n'), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
             }
           }
@@ -877,6 +916,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
             return normQueryTokens.every((t: string) => llNorm.includes(t));
           });
           if (fuzzyMatches.length > 0) {
+            try { debugEventBus.emitEvent('info','ChatDBMatch','fuzzy-line-match',{ tokens: normQueryTokens, matches: fuzzyMatches.length }); } catch {}
             return NextResponse.json({ content: fuzzyMatches.join('\n'), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
           }
         }
@@ -884,6 +924,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
         // if no match in the physical-exam block, try searching the rest of the case
         const caseWideHits = searchCaseRecordForQuery(userText, caseRecord as Record<string, unknown> | null);
         if (caseWideHits.length > 0) {
+          try { debugEventBus.emitEvent('info','ChatDBMatch','case-wide-hits',{ query: userText, hits: caseWideHits.length }); } catch {}
           return NextResponse.json({ content: caseWideHits.join('\n'), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
         }
 
@@ -898,6 +939,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
           if (synHits.length > 0) break;
         }
         if (synHits.length > 0) {
+          try { debugEventBus.emitEvent('info','ChatDBMatch','synonym-case-hits',{ query: userText, hits: synHits.length }); } catch {}
           return NextResponse.json({ content: synHits.join('\n'), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
         }
 
@@ -905,6 +947,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
         try {
           const fallback = await llmCautiousFallback(ragContext, userText);
           if (fallback) {
+            try { debugEventBus.emitEvent('info','ChatDBMatch','llm-fallback-used',{ query: userText }); } catch {}
             return NextResponse.json({ content: fallback, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
           }
         } catch (e) {
@@ -913,6 +956,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
         }
 
         // As last resort, return the full phys text so the student sees what's recorded
+        try { debugEventBus.emitEvent('info','ChatDBMatch','return-full-phys-text',{ length: physText.length }); } catch {}
         return NextResponse.json({ content: physText, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
       }
 
