@@ -133,7 +133,7 @@ export async function POST(req: any, ctx: any) {
             stage_activation: nextActivation,
             updated_at: new Date().toISOString(),
           },
-          { onConflict: ["case_id"] }
+          { onConflict: "case_id" }
         );
         if (fb.error) {
           console.error("Fallback write to case_stage_settings failed", fb.error, { caseId, nextActivation });
