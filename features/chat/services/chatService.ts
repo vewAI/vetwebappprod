@@ -132,7 +132,7 @@ export const chatService = {
         { fragment, caseId, stageIndex },
         { headers: authHeaders }
       );
-      return resp.data;
+      return resp.data as { complete: boolean; canonical?: string | null; type?: string | null };
     } catch (e) {
       // On errors, default to complete to avoid blocking user input
       console.warn("checkCompleteness failed, defaulting to complete", e);

@@ -921,8 +921,8 @@ export default function CaseViewerPage() {
                           try {
                             setApplying(true);
                             const resp = await axios.post(`/api/cases/${encodeURIComponent(caseIdValue)}/compare/apply`, { updates }, { headers: authHeaders });
-                            const d = resp.data;
-                            if (d?.success && d.data) {
+                            const d = resp.data as any;
+                            if ((d as any)?.success && d.data) {
                               // update UI copy in-place
                               setFormState(prev => prev ? { ...prev, ...d.data } : prev);
                               setCases(prev => {

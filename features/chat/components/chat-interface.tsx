@@ -597,6 +597,9 @@ export function ChatInterface({
   // Track last appended chunk and time to avoid rapid duplicate appends
   const lastAppendedTextRef = useRef<string | null>(null);
   const lastAppendTimeRef = useRef<number>(0);
+  // Timers for STT error toast fade and voice-mode restart
+  const sttErrorToastTimerRef = useRef<number | null>(null);
+  const sttErrorRestartTimerRef = useRef<number | null>(null);
 
   const resetNextStageIntent = useCallback(() => {
     if (nextStageIntentTimeoutRef.current) {
@@ -760,6 +763,36 @@ export function ChatInterface({
         // fallback to setting state directly if handler not available
         setVoiceMode(false);
       }
+      // fade the toast after 1s, then restart voice mode 2s after the fade
+      if (sttErrorToastTimerRef.current) {
+        window.clearTimeout(sttErrorToastTimerRef.current);
+        sttErrorToastTimerRef.current = null;
+      }
+      if (sttErrorRestartTimerRef.current) {
+        window.clearTimeout(sttErrorRestartTimerRef.current);
+        sttErrorRestartTimerRef.current = null;
+      }
+      sttErrorToastTimerRef.current = window.setTimeout(() => {
+        hideTimepointToastWithFade(300);
+        sttErrorToastTimerRef.current = null;
+        // restart voice mode 2s after fade completes
+        sttErrorRestartTimerRef.current = window.setTimeout(() => {
+          try {
+            setVoiceModeEnabled(true);
+          } catch (e) {
+            setVoiceMode(true);
+          }
+          // if voice mode is intended and we're not listening, start STT
+          if (voiceModeRef.current && !isListening) {
+            try {
+              start();
+            } catch (e) {
+              console.warn("Failed to restart STT after error:", e);
+            }
+          }
+          sttErrorRestartTimerRef.current = null;
+        }, 2000);
+      }, 1000);
     }
   }, [sttError]);
 
@@ -773,6 +806,14 @@ export function ChatInterface({
       if (autoSendFinalTimerRef.current) {
         window.clearTimeout(autoSendFinalTimerRef.current);
         autoSendFinalTimerRef.current = null;
+      }
+      if (sttErrorToastTimerRef.current) {
+        window.clearTimeout(sttErrorToastTimerRef.current);
+        sttErrorToastTimerRef.current = null;
+      }
+      if (sttErrorRestartTimerRef.current) {
+        window.clearTimeout(sttErrorRestartTimerRef.current);
+        sttErrorRestartTimerRef.current = null;
       }
       autoSendPendingTextRef.current = null;
       resetNextStageIntent();

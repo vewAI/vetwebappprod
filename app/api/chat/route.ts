@@ -746,6 +746,77 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       });
     }
 
+    // Search across all fields of the case record (recursively) for any matches
+    function searchCaseRecordForQuery(query: string, record: Record<string, unknown> | null): string[] {
+      const results: string[] = [];
+      if (!record) return results;
+      const qNorm = normalizeForMatching(query);
+      const visit = (obj: any, path = "") => {
+        if (obj === null || obj === undefined) return;
+        if (typeof obj === "string") {
+          const vNorm = normalizeForMatching(obj as string);
+          if (qNorm && vNorm.includes(qNorm)) {
+            results.push(`${path}: ${obj}`);
+          }
+          return;
+        }
+        if (typeof obj === "number" || typeof obj === "boolean") {
+          const vNorm = String(obj);
+          if (normalizeForMatching(vNorm).includes(qNorm)) {
+            results.push(`${path}: ${obj}`);
+          }
+          return;
+        }
+        if (Array.isArray(obj)) {
+          for (let i = 0; i < obj.length; i++) {
+            visit(obj[i], `${path}[${i}]`);
+          }
+          return;
+        }
+        if (typeof obj === "object") {
+          for (const k of Object.keys(obj)) {
+            const v = (obj as Record<string, unknown>)[k];
+            const keyPath = path ? `${path}.${k}` : k;
+            const keyNorm = normalizeForMatching(keyPath);
+            if (qNorm && keyNorm.includes(qNorm)) {
+              results.push(`${keyPath}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`);
+            }
+            visit(v, keyPath);
+          }
+        }
+      };
+      try {
+        visit(record, "");
+      } catch (e) {
+        // swallow traversal errors
+      }
+      return results;
+    }
+
+    async function llmCautiousFallback(ragContext: string, userQuery: string): Promise<string | null> {
+      if (!ragContext || !ragContext.trim()) return null;
+      try {
+        const prompt = `You are an assistant that should not hallucinate medical facts. Using ONLY the following reference context, provide a short, cautious reply to the student's request. If the requested test/result is not recorded, say so first, then if the references provide a clear, evidence-backed statement about typical/expected findings, include a single concise, hedged sentence such as "We didn't run that test but available references suggest it is within normal limits." If no evidence exists, say that no inference can be made.
+
+REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
+
+        const resp = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: "You are a cautious clinical assistant. Answer concisely and hedge clearly; do not invent tests or values." },
+            { role: "user", content: prompt }
+          ],
+          temperature: 0.0,
+          max_tokens: 150,
+        });
+        const msg = resp?.choices?.[0]?.message?.content;
+        return typeof msg === "string" ? msg.trim() : null;
+      } catch (e) {
+        console.warn("LLM fallback failed:", e);
+        return null;
+      }
+    }
+
     const stageTitle = stageDescriptor?.title ?? "";
     const isPhysicalStage = /physical/i.test(stageTitle) || physicalStageKeywords.some(k=>stageTitle.toLowerCase().includes(k));
     const isLabStage = /laboratory|lab|diagnostic/i.test(stageTitle);
@@ -810,7 +881,38 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
           }
         }
 
-        // if no match, return the full phys text so the student sees what's recorded
+        // if no match in the physical-exam block, try searching the rest of the case
+        const caseWideHits = searchCaseRecordForQuery(userText, caseRecord as Record<string, unknown> | null);
+        if (caseWideHits.length > 0) {
+          return NextResponse.json({ content: caseWideHits.join('\n'), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+        }
+
+        // Next, try synonyms across the whole case record
+        const synHits: string[] = [];
+        for (const syns of Object.values(PHYS_SYNONYMS)) {
+          for (const s of syns) {
+            if (!s) continue;
+            const h = searchCaseRecordForQuery(s, caseRecord as Record<string, unknown> | null);
+            if (h.length > 0) synHits.push(...h);
+          }
+          if (synHits.length > 0) break;
+        }
+        if (synHits.length > 0) {
+          return NextResponse.json({ content: synHits.join('\n'), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+        }
+
+        // Finally, consult the RAG/LLM context for a cautious, evidence-backed statement
+        try {
+          const fallback = await llmCautiousFallback(ragContext, userText);
+          if (fallback) {
+            return NextResponse.json({ content: fallback, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+          }
+        } catch (e) {
+          // ignore and fall through to return raw physText
+          console.warn('LLM cautious fallback failed', e);
+        }
+
+        // As last resort, return the full phys text so the student sees what's recorded
         return NextResponse.json({ content: physText, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
       }
 
@@ -846,7 +948,36 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
           if (syns.some(s => s && diagText.toLowerCase().includes(s))) {
             return NextResponse.json({ content: diagText, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
           }
-          // no matching data recorded
+          // no matching data recorded in diagnostics -> search rest of case fields
+          const caseWideHits = searchCaseRecordForQuery(userText, caseRecord as Record<string, unknown> | null);
+          if (caseWideHits.length > 0) {
+            return NextResponse.json({ content: caseWideHits.join('\n'), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+          }
+
+          // Try synonyms across all case fields for diagnostics
+          const synHits: string[] = [];
+          for (const syns of Object.values(DIAG_SYNONYMS)) {
+            for (const s of syns) {
+              if (!s) continue;
+              const h = searchCaseRecordForQuery(s, caseRecord as Record<string, unknown> | null);
+              if (h.length > 0) synHits.push(...h);
+            }
+            if (synHits.length > 0) break;
+          }
+          if (synHits.length > 0) {
+            return NextResponse.json({ content: synHits.join('\n'), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+          }
+
+          // LLM cautious fallback using RAG context
+          try {
+            const fallback = await llmCautiousFallback(ragContext, userText);
+            if (fallback) {
+              return NextResponse.json({ content: fallback, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+            }
+          } catch (e) {
+            console.warn('LLM cautious fallback failed', e);
+          }
+
           return NextResponse.json({ content: `That result is not available in the record.`, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
         }
       }
