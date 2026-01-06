@@ -168,6 +168,8 @@ export const chatService = {
    * @param roleName Display role name for the message
    * @returns Assistant message object
    */
+  // Remove typical AI-style helper openers (e.g. "How can I help you...")
+  // while preserving intentional placeholders like "...".
   createAssistantMessage: (
     content: string,
     stageIndex: number,
@@ -177,22 +179,43 @@ export const chatService = {
     personaSex?: string,
     personaRoleKey?: string,
     media?: CaseMediaItem[]
-  ): Message => ({
-    id:
-      typeof crypto !== "undefined" && (crypto as any).randomUUID
-        ? `${(crypto as any).randomUUID()}`
-        : (Date.now() + 1).toString(),
-    role: "assistant",
-    content,
-    timestamp: new Date().toISOString(),
-    stageIndex,
-    displayRole: roleName,
-    portraitUrl,
-    voiceId,
-    personaSex,
-    personaRoleKey,
-    media,
-  }),
+  ): Message => {
+    const sanitize = (s: string) => {
+      if (!s) return s;
+      // Preserve explicit placeholder
+      if (s.trim() === "...") return s;
+      // Remove leading sentences that are AI-helper style questions
+      // e.g. "How can I help you with your cow today?"
+      try {
+        const cleaned = s
+          .replace(/(^|\.|\!|\?)\s*(how\s+(?:can|may)\s+i\s+(?:help|assist|be of assistance)[^\.!\?]*[\.!\?]?)/ig, "")
+          .replace(/(^|\.|\!|\?)\s*(i\s+am\s+here\s+to\s+help[^\.!\?]*[\.!\?]?)/ig, "")
+          .trim();
+        return cleaned || s;
+      } catch (e) {
+        return s;
+      }
+    };
+
+    const safeContent = sanitize(content);
+
+    return {
+      id:
+        typeof crypto !== "undefined" && (crypto as any).randomUUID
+          ? `${(crypto as any).randomUUID()}`
+          : (Date.now() + 1).toString(),
+      role: "assistant",
+      content: safeContent,
+      timestamp: new Date().toISOString(),
+      stageIndex,
+      displayRole: roleName,
+      portraitUrl,
+      voiceId,
+      personaSex,
+      personaRoleKey,
+      media,
+    };
+  },
 
   /**
    * Create a system message object

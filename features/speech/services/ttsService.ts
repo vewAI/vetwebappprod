@@ -218,14 +218,42 @@ async function speakWithSpeechSynthesis(text: string, voice?: string, meta?: Tts
 
     const pickVoice = () => {
       voices = synth.getVoices() || [];
-      // Prefer en-US voices matching desired gender in the name when possible
-      const genderPriority = desiredGender === 'female' ? ['female','woman','f'] : desiredGender === 'male' ? ['male','man','m'] : [];
-      const byLang = voices.filter(v => v.lang && v.lang.startsWith('en'));
-      let candidate: SpeechSynthesisVoice | undefined;
-      if (genderPriority.length) {
-        candidate = byLang.find(v => genderPriority.some(g => String(v.name).toLowerCase().includes(g)));
-      }
-      if (!candidate) candidate = byLang[0] || voices[0];
+      // Prefer British English voices (en-GB) first, then any English (en-*)
+      // and finally any available voice. Also respect desired gender when
+      // possible by looking for gender tokens in the voice name.
+      const genderPriority =
+        desiredGender === "female"
+          ? ["female", "woman", "f"]
+          : desiredGender === "male"
+          ? ["male", "man", "m"]
+          : [];
+
+      const normalize = (s?: string) => (s || "").toLowerCase();
+
+      const gbVoices = voices.filter(
+        (v) => v.lang && normalize(v.lang).startsWith("en-gb")
+      );
+      const enVoices = voices.filter(
+        (v) => v.lang && normalize(v.lang).startsWith("en")
+      );
+
+      const findByName = (list: SpeechSynthesisVoice[]) => {
+        if (!list || list.length === 0) return undefined;
+        if (genderPriority.length) {
+          const found = list.find((v) =>
+            genderPriority.some((g) => normalize(v.name).includes(g))
+          );
+          if (found) return found;
+        }
+        // Prefer voices whose name indicates British/UK if present
+        const britishNamed = list.find((v) =>
+          normalize(v.name).includes("british") || normalize(v.name).includes("uk")
+        );
+        if (britishNamed) return britishNamed;
+        return list[0];
+      };
+
+      let candidate = findByName(gbVoices) || findByName(enVoices) || findByName(voices);
       return candidate;
     };
 
