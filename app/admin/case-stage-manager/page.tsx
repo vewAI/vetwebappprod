@@ -81,10 +81,37 @@ export default function CaseStageManager() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stageActivation: activation }),
       });
-      const payload = await resp.json().catch(() => ({}));
-      if (payload?.ok === false) {
-        console.warn("Save failed", payload.error);
-      } else {
+      let payload: any = {};
+      try {
+        payload = await resp.json();
+      } catch {
+        payload = {};
+      }
+
+      if (!resp.ok || payload?.ok === false) {
+        const msg = payload?.error || `Save failed (${resp.status})`;
+        console.warn("Save failed", msg);
+        window.alert(`Failed to save stage settings: ${msg}`);
+        return;
+      }
+
+      // On success, re-fetch saved settings to ensure DB persistence and correct typing
+      try {
+        const getResp = await fetch(`/api/cases/${encodeURIComponent(selectedCase)}/stage-settings`);
+        const getPayload = await getResp.json().catch(() => ({}));
+        const saved = getPayload?.stageActivation || {};
+        // Coerce saved values to booleans
+        const coerced: Record<string, boolean> = {};
+        Object.keys(saved).forEach((k) => {
+          const v = (saved as any)[k];
+          coerced[k] = v === true || v === "true";
+        });
+        setActivation((p) => ({ ...p, ...coerced }));
+        setOriginalActivation((p) => ({ ...p, ...coerced }));
+        setHasChanges(false);
+      } catch (e) {
+        // If refetch fails, still mark as saved to avoid blocking the user, but warn
+        console.warn("Saved but failed to refresh saved settings", e);
         setOriginalActivation(activation);
         setHasChanges(false);
       }
