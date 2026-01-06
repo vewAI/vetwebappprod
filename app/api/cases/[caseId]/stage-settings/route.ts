@@ -123,16 +123,45 @@ export async function POST(req: any, ctx: any) {
     const upd = await supabase.from("cases").update({ settings: nextSettings }).eq("id", caseId);
     if (upd.error) {
       console.error("Failed to update case settings", upd.error, { caseId, nextSettings });
-      // Return verbose debug info to help diagnose deployed schema/permission issues.
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "update-failed",
-          detail: upd.error.message || String(upd.error),
-          attempted: { caseId, nextSettings },
-        },
-        { status: 500 }
-      );
+      // Attempt a safe fallback: persist activation in a dedicated table to avoid
+      // row-level security issues or schema differences. This table is created
+      // by `db/create_case_stage_settings.sql` and is intended for admin writes.
+      try {
+        const fb = await supabase.from("case_stage_settings").upsert(
+          {
+            case_id: caseId,
+            stage_activation: nextActivation,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: ["case_id"] }
+        );
+        if (fb.error) {
+          console.error("Fallback write to case_stage_settings failed", fb.error, { caseId, nextActivation });
+          return NextResponse.json(
+            {
+              ok: false,
+              error: "update-failed",
+              detail: upd.error.message || String(upd.error),
+              attempted: { caseId, nextSettings },
+              fallback_error: fb.error.message || String(fb.error),
+            },
+            { status: 500 }
+          );
+        }
+        return NextResponse.json({ ok: true, stageActivation: nextActivation, written: { via: "case_stage_settings" } });
+      } catch (fbErr) {
+        console.error("Exception during fallback write", fbErr, { caseId, nextActivation });
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "update-failed",
+            detail: upd.error.message || String(upd.error),
+            attempted: { caseId, nextSettings },
+            fallback_exception: String(fbErr),
+          },
+          { status: 500 }
+        );
+      }
     }
     return NextResponse.json({ ok: true, stageActivation: nextActivation, written: nextSettings });
   } catch (e) {
