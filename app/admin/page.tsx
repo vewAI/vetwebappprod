@@ -96,6 +96,17 @@ export default function AdminPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            id="btn-modify-case-stages"
+            className="w-full justify-start"
+            onClick={() => router.push("/admin/case-stage-manager")}
+          >
+            Modify Case Stages
+          </Button>
+          <HelpTip content="Open the Case Stage Manager to enable/disable stages per case." />
+        </div>
+
+        <div className="flex items-center gap-2">
           <Button className="w-full justify-start" onClick={() => setLlmOpen(true)}>
             LLM Provider Manager
           </Button>
