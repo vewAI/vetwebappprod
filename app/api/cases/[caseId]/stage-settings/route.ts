@@ -44,11 +44,17 @@ export async function POST(req: any, ctx: any) {
   const maybe = resolveCaseIdFromCtx(ctx);
   const caseId = typeof maybe === "string" ? maybe : await maybe;
   const body = await req.json().catch(() => ({}));
-  const { stageIndex, active } = body as { stageIndex?: number; active?: boolean };
+  // Accept either a single stage update `{ stageIndex, active }`
+  // or a full map `{ stageActivation: { "0": true, "1": false } }`.
+  const { stageIndex, active, stageActivation } = body as {
+    stageIndex?: number;
+    active?: boolean;
+    stageActivation?: Record<string, boolean>;
+  };
   const supabase = getSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ ok: false, error: "supabase-unavailable" }, { status: 500 });
 
-  if (typeof stageIndex !== "number" || typeof active !== "boolean") {
+  if (!stageActivation && (typeof stageIndex !== "number" || typeof active !== "boolean")) {
     return NextResponse.json({ ok: false, error: "invalid-payload" }, { status: 400 });
   }
 
@@ -64,14 +70,21 @@ export async function POST(req: any, ctx: any) {
     }
     const current = (data && (data as any).settings) || {};
     const activation = current.stageActivation || {};
-    activation[String(stageIndex)] = active;
-    const nextSettings = { ...current, stageActivation: activation };
+    let nextActivation = activation;
+    if (stageActivation && typeof stageActivation === "object") {
+      // Replace full activation map
+      nextActivation = { ...activation, ...stageActivation };
+    } else {
+      // Single-stage update
+      nextActivation = { ...activation, [String(stageIndex)]: Boolean(active) };
+    }
+    const nextSettings = { ...current, stageActivation: nextActivation };
     const upd = await supabase.from("cases").update({ settings: nextSettings }).eq("id", caseId);
     if (upd.error) {
       console.error("Failed to update case settings", upd.error);
       return NextResponse.json({ ok: false, error: "update-failed" }, { status: 500 });
     }
-    return NextResponse.json({ ok: true, stageActivation: activation });
+    return NextResponse.json({ ok: true, stageActivation: nextActivation });
   } catch (e) {
     console.error("Error updating stage settings", e);
     return NextResponse.json({ ok: false, error: "exception" }, { status: 500 });

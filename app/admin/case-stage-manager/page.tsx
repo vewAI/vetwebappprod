@@ -13,6 +13,8 @@ export default function CaseStageManager() {
   const [selectedCase, setSelectedCase] = useState<string | null>(null);
   const [stages, setStages] = useState<any[]>([]);
   const [activation, setActivation] = useState<Record<string, boolean>>({});
+  const [originalActivation, setOriginalActivation] = useState<Record<string, boolean>>({});
+  const [hasChanges, setHasChanges] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -38,7 +40,15 @@ export default function CaseStageManager() {
         const resp = await fetch(`/api/cases/${encodeURIComponent(selectedCase)}/stage-settings`);
         const payload = await resp.json().catch(() => ({}));
         const act = payload?.stageActivation || {};
-        setActivation(act);
+        // Default: all stages active unless explicitly set to false in activation map
+        const withDefaults: Record<string, boolean> = {};
+        s.forEach((_, idx) => {
+          const key = String(idx);
+          withDefaults[key] = act.hasOwnProperty(key) ? Boolean(act[key]) : true;
+        });
+        setActivation(withDefaults);
+        setOriginalActivation(withDefaults);
+        setHasChanges(false);
       } catch (e) {
         console.warn("Failed to load stages for case", e);
       } finally {
@@ -47,18 +57,41 @@ export default function CaseStageManager() {
     })();
   }, [selectedCase]);
 
-  const toggle = async (idx: number) => {
-    const next = !Boolean(activation[String(idx)]);
-    setActivation((p) => ({ ...p, [String(idx)]: next }));
+  const toggleLocal = (idx: number) => {
+    const key = String(idx);
+    setActivation((p) => {
+      const next = { ...p, [key]: !Boolean(p[key]) };
+      setHasChanges(true);
+      return next;
+    });
+  };
+
+  const saveChanges = async () => {
+    if (!selectedCase) return;
+    setLoading(true);
     try {
-      await fetch(`/api/cases/${encodeURIComponent(selectedCase!)}/stage-settings`, {
+      const resp = await fetch(`/api/cases/${encodeURIComponent(selectedCase)}/stage-settings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stageIndex: idx, active: next }),
+        body: JSON.stringify({ stageActivation: activation }),
       });
+      const payload = await resp.json().catch(() => ({}));
+      if (payload?.ok === false) {
+        console.warn("Save failed", payload.error);
+      } else {
+        setOriginalActivation(activation);
+        setHasChanges(false);
+      }
     } catch (e) {
-      console.warn("Failed to update activation", e);
+      console.warn("Failed to save activation", e);
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const cancelChanges = () => {
+    setActivation(originalActivation);
+    setHasChanges(false);
   };
 
   return (
@@ -66,7 +99,11 @@ export default function CaseStageManager() {
       <h1 className="text-2xl font-bold mb-4">Case Stage Manager</h1>
       <div className="mb-4">
         <label className="block text-sm mb-2">Select case</label>
-        <select value={selectedCase ?? ""} onChange={(e) => setSelectedCase(e.target.value)} className="border rounded px-2 py-1">
+        <select
+          value={selectedCase ?? ""}
+          onChange={(e) => setSelectedCase(e.target.value)}
+          className="mt-1 block w-full px-2 py-1 border rounded bg-background text-foreground dark:bg-slate-800 dark:text-white"
+        >
           {cases.map((c) => (
             <option key={c.id} value={c.id}>{c.title || c.id}</option>
           ))}
@@ -79,13 +116,24 @@ export default function CaseStageManager() {
         {!loading && stages.length === 0 && <div>No stages defined for this case.</div>}
         {!loading && stages.map((s) => (
           <div key={s.idx} className="flex items-center gap-3 mb-2">
-            <Checkbox checked={Boolean(activation[String(s.idx)])} onCheckedChange={() => toggle(s.idx)} />
+            <Checkbox checked={Boolean(activation[String(s.idx)])} onCheckedChange={() => toggleLocal(s.idx)} />
             <div>
               <div className="font-medium">{s.title}</div>
               <div className="text-sm text-muted-foreground">{s.description}</div>
             </div>
           </div>
         ))}
+        {stages.length > 0 && (
+          <div className="mt-4 flex gap-2">
+            <Button variant="primary" onClick={saveChanges} disabled={!hasChanges || loading}>
+              Save
+            </Button>
+            <Button variant="secondary" onClick={cancelChanges} disabled={!hasChanges || loading}>
+              Cancel
+            </Button>
+            {hasChanges && <div className="ml-2 text-sm text-muted-foreground">Unsaved changes</div>}
+          </div>
+        )}
       </div>
     </div>
   );
