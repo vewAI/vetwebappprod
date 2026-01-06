@@ -78,6 +78,10 @@ const PHRASE_CORRECTIONS: Record<string, string> = {
   "roman turnover": "rumen turnover",
 };
 
+// Common mis-hearing where users say something that sounds like 'ask quotation'
+// but actually mean 'auscultation'.
+PHRASE_CORRECTIONS["ask quotation"] = "auscultation";
+
 function postProcessTranscript(text: string): string {
   let processed = text;
   const substitutions: Array<{ from: string; to: string }> = [];

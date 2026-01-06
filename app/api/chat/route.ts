@@ -755,6 +755,23 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
         .trim();
     }
 
+    // Convert Celsius temperature mentions in free text to Fahrenheit.
+    // Replace occurrences like '38.7 °C' or '38.7°C' with '101.7 °F (38.7 °C)'.
+    function convertCelsiusToFahrenheitInText(s: string): string {
+      if (!s || typeof s !== 'string') return s;
+      try {
+        return s.replace(/([-+]?\d+(?:\.\d+)?)\s*°?\s*C\b/gi, (_m, cstr) => {
+          const c = parseFloat(cstr);
+          if (Number.isNaN(c)) return _m;
+          const f = (c * 9) / 5 + 32;
+          // show Fahrenheit first (one decimal) and keep original Celsius in parens
+          return `${f.toFixed(1)} °F (${c} °C)`;
+        });
+      } catch (e) {
+        return s;
+      }
+    }
+
     function findSynonymKey(text: string, groups: Record<string, string[]>): string | null {
       const tNorm = normalizeForMatching(text);
       for (const [key, syns] of Object.entries(groups)) {
@@ -876,7 +893,8 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
         const matchingLines = lines.filter(l => lineMatchesSynonym(l, syns));
         if (matchingLines.length > 0) {
           try { debugEventBus.emitEvent('info','ChatDBMatch','line-match',{ matchedKey: matchedPhysicalKey, lines: matchingLines.length }); } catch {}
-          return NextResponse.json({ content: matchingLines.join("\n"), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+          const out = convertCelsiusToFahrenheitInText(matchingLines.join("\n"));
+          return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
         }
         
         // Additional robust checks: try JSON key/value lookup and fuzzy line matching
@@ -901,7 +919,8 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
             visit(parsed);
             if (hits.length > 0) {
               try { debugEventBus.emitEvent('info','ChatDBMatch','json-key-match',{ query: userText, hits: hits.length }); } catch {}
-              return NextResponse.json({ content: hits.join('\n'), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+              const out = convertCelsiusToFahrenheitInText(hits.join('\n'));
+              return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
             }
           }
         } catch (e) {
@@ -917,7 +936,8 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
           });
           if (fuzzyMatches.length > 0) {
             try { debugEventBus.emitEvent('info','ChatDBMatch','fuzzy-line-match',{ tokens: normQueryTokens, matches: fuzzyMatches.length }); } catch {}
-            return NextResponse.json({ content: fuzzyMatches.join('\n'), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+            const out = convertCelsiusToFahrenheitInText(fuzzyMatches.join('\n'));
+            return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
           }
         }
 
@@ -925,7 +945,8 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
         const caseWideHits = searchCaseRecordForQuery(userText, caseRecord as Record<string, unknown> | null);
         if (caseWideHits.length > 0) {
           try { debugEventBus.emitEvent('info','ChatDBMatch','case-wide-hits',{ query: userText, hits: caseWideHits.length }); } catch {}
-          return NextResponse.json({ content: caseWideHits.join('\n'), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+          const out = convertCelsiusToFahrenheitInText(caseWideHits.join('\n'));
+          return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
         }
 
         // Next, try synonyms across the whole case record
@@ -940,7 +961,8 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
         }
         if (synHits.length > 0) {
           try { debugEventBus.emitEvent('info','ChatDBMatch','synonym-case-hits',{ query: userText, hits: synHits.length }); } catch {}
-          return NextResponse.json({ content: synHits.join('\n'), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+          const out = convertCelsiusToFahrenheitInText(synHits.join('\n'));
+          return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
         }
 
         // Finally, consult the RAG/LLM context for a cautious, evidence-backed statement
@@ -957,7 +979,8 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
 
         // As last resort, return the full phys text so the student sees what's recorded
         try { debugEventBus.emitEvent('info','ChatDBMatch','return-full-phys-text',{ length: physText.length }); } catch {}
-        return NextResponse.json({ content: physText, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+        const out = convertCelsiusToFahrenheitInText(physText);
+        return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
       }
 
       if (matchedKeyword && diagText) {
@@ -983,12 +1006,12 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
           const syns = DIAG_SYNONYMS[matchedDiagKey] ?? [];
           const matchingLines = lines.filter(l => lineMatchesSynonym(l, syns));
           if (matchingLines.length > 0) {
-            const reply = matchingLines.join("\n");
+            const reply = convertCelsiusToFahrenheitInText(matchingLines.join("\n"));
             return NextResponse.json({ content: reply, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
           }
           // fallback: if diag text contains any synonym, return full diag text
           if (syns.some(s => s && diagText.toLowerCase().includes(s))) {
-            return NextResponse.json({ content: diagText, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+            return NextResponse.json({ content: convertCelsiusToFahrenheitInText(diagText), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
           }
           // no matching data recorded in diagnostics -> search rest of case fields
           const caseWideHits = searchCaseRecordForQuery(userText, caseRecord as Record<string, unknown> | null);
