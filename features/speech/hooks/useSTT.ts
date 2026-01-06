@@ -80,8 +80,28 @@ export function useSTT(
   // Handle speech recognition results
   const handleResult = useCallback(
     (text: string, isFinal: boolean) => {
+      // Merge finals into the existing transcript but avoid duplicating
+      // overlapping words that were already shown as interim. For example,
+      // if interim emitted "Corporate" and final is "Corporate heart rate",
+      // merge to "Corporate heart rate" instead of "Corporate Corporate heart rate".
+      const mergeAvoidOverlap = (prev: string, next: string) => {
+        if (!prev || !next) return (prev + " " + next).trim();
+        const pWords = prev.trim().split(/\s+/);
+        const nWords = next.trim().split(/\s+/);
+        // Find largest overlap where tail of prev equals head of next
+        const maxOverlap = Math.min(pWords.length, nWords.length);
+        for (let k = maxOverlap; k > 0; k--) {
+          const tail = pWords.slice(-k).join(" ").toLowerCase();
+          const head = nWords.slice(0, k).join(" ").toLowerCase();
+          if (tail === head) {
+            return [...pWords.slice(0, pWords.length - k), ...nWords].join(" ");
+          }
+        }
+        return (prev + " " + next).trim();
+      };
+
       if (isFinal) {
-        setTranscript((prev) => (prev + " " + text).trim());
+        setTranscript((prev) => mergeAvoidOverlap(prev, text));
         setInterimTranscript("");
         // Debounce final results so short pauses are merged into one send
         try {

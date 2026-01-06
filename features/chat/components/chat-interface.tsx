@@ -5,6 +5,7 @@ import type React from "react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { SendIcon, PenLine, Mic, MicOff, Volume2, VolumeX, Pause, Play, SkipForward } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
@@ -197,6 +198,24 @@ export function ChatInterface({
   const [showTimepointDialog, setShowTimepointDialog] = useState(false);
   const [pendingTimepoint, setPendingTimepoint] = useState<any>(null);
   const awaitingContinuationRef = useRef<{ partial: string; placeholderId: string } | null>(null);
+  const [autoSendStt, setAutoSendStt] = useState<boolean>(() => {
+    try {
+      const raw = typeof window !== "undefined" ? window.localStorage.getItem("sttAutoSend") : null;
+      if (raw === null) return true;
+      return raw === "true";
+    } catch {
+      return true;
+    }
+  });
+  const autoSendSttRef = useRef<boolean>(autoSendStt);
+  useEffect(() => {
+    autoSendSttRef.current = autoSendStt;
+    try {
+      localStorage.setItem("sttAutoSend", autoSendStt ? "true" : "false");
+    } catch {
+      // ignore
+    }
+  }, [autoSendStt]);
 
   // Handlers for dialog actions (implement as no-ops or TODOs for now)
   const handleSnoozeTimepoint = () => setShowTimepointDialog(false);
@@ -805,22 +824,22 @@ export function ChatInterface({
           lastAppendedTextRef.current = trimmed;
           lastAppendTimeRef.current = now;
           // Schedule a final-only timer which should not be cancelled by
-          // subsequent interim updates. This ensures that after a true
-          // final transcript the text is always sent even if interims arrive
-          // briefly after. Use a short delay to allow any minor buffering.
-          autoSendFinalTimerRef.current = window.setTimeout(() => {
-            autoSendFinalTimerRef.current = null;
-            autoSendPendingTextRef.current = null;
-            try {
-              console.debug(
-                "Auto-send (final) firing with text:",
-                baseInputRef.current
-              );
-              void triggerAutoSend(baseInputRef.current);
-            } catch (e) {
-              console.error("Failed to auto-send final transcript:", e);
-            }
-          }, 500);
+          // subsequent interim updates. Only schedule if auto-send is enabled.
+          if (autoSendSttRef.current) {
+            autoSendFinalTimerRef.current = window.setTimeout(() => {
+              autoSendFinalTimerRef.current = null;
+              autoSendPendingTextRef.current = null;
+              try {
+                console.debug(
+                  "Auto-send (final) firing with text:",
+                  baseInputRef.current
+                );
+                void triggerAutoSend(baseInputRef.current);
+              } catch (e) {
+                console.error("Failed to auto-send final transcript:", e);
+              }
+            }, 500);
+          }
         }
       },
       700,
@@ -1466,24 +1485,26 @@ export function ChatInterface({
           baseInputRef.current = trimmed;
           setInput(trimmed);
           // schedule an auto-send if no continuation arrives within 6s
-          if (placeholderAutoSendTimerRef.current) {
-            window.clearTimeout(placeholderAutoSendTimerRef.current);
-            placeholderAutoSendTimerRef.current = null;
-          }
-          placeholderAutoSendTimerRef.current = window.setTimeout(() => {
-            if (awaitingContinuationRef.current) {
-              const pid = awaitingContinuationRef.current.placeholderId;
-              setMessages((prev) => prev.filter((m) => m.id !== pid));
-              awaitingContinuationRef.current = null;
-              // trigger send of the current base input
-              try {
-                void triggerAutoSend(baseInputRef.current || "");
-              } catch (e) {
-                console.warn("Auto-send of placeholder fragment failed", e);
-              }
+          if (autoSendSttRef.current) {
+            if (placeholderAutoSendTimerRef.current) {
+              window.clearTimeout(placeholderAutoSendTimerRef.current);
+              placeholderAutoSendTimerRef.current = null;
             }
-            placeholderAutoSendTimerRef.current = null;
-          }, 6000);
+            placeholderAutoSendTimerRef.current = window.setTimeout(() => {
+              if (awaitingContinuationRef.current) {
+                const pid = awaitingContinuationRef.current.placeholderId;
+                setMessages((prev) => prev.filter((m) => m.id !== pid));
+                awaitingContinuationRef.current = null;
+                // trigger send of the current base input
+                try {
+                  void triggerAutoSend(baseInputRef.current || "");
+                } catch (e) {
+                  console.warn("Auto-send of placeholder fragment failed", e);
+                }
+              }
+              placeholderAutoSendTimerRef.current = null;
+            }, 6000);
+          }
           // do not proceed with sending
           return;
         }
@@ -2406,7 +2427,7 @@ export function ChatInterface({
         // If the STT engine exposed the final via the `transcript` state
         // rather than the onFinal callback, ensure we still schedule the
         // final-only auto-send timer so the message doesn't get stuck.
-        if (voiceMode && !autoSendFinalTimerRef.current) {
+        if (voiceMode && !autoSendFinalTimerRef.current && autoSendSttRef.current) {
           autoSendFinalTimerRef.current = window.setTimeout(() => {
             autoSendFinalTimerRef.current = null;
             autoSendPendingTextRef.current = null;
@@ -3246,8 +3267,23 @@ export function ChatInterface({
                 {showNotepad ? "Hide Notepad" : "Show Notepad"}
               </Button>
               <div className="flex items-center gap-1 border rounded-md px-1 bg-background/50">
-                <FontSizeToggle />
-              </div>
+                  <FontSizeToggle />
+                </div>
+                <div className="flex items-center gap-2 px-2">
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <Checkbox checked={autoSendStt} onCheckedChange={(v) => setAutoSendStt(Boolean(v))} />
+                          <span className="text-xs">Auto-send STT</span>
+                        </label>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>When enabled, spoken messages are sent automatically; when disabled, click Send to submit.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
               {/* Developer Skip Button - Hidden by default unless needed, or we can just show it */}
               <Button
                 variant="ghost"

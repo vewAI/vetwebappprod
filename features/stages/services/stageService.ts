@@ -19,6 +19,29 @@ export function getStagesForCase(caseId: string): Stage[] {
   return stages;
 }
 
+// Fetch stages for a case and apply server-side activation overrides when available.
+export async function getActiveStagesForCase(caseId: string): Promise<Stage[]> {
+  const stages = getStagesForCase(caseId) ?? [];
+  try {
+    const resp = await fetch(`/api/cases/${encodeURIComponent(caseId)}/stage-settings`);
+    if (!resp.ok) return stages;
+    const payload = await resp.json().catch(() => ({}));
+    const activation = payload?.stageActivation || {};
+    const filtered = stages.filter((s, idx) => {
+      const key = String(idx);
+      if (activation.hasOwnProperty(key)) {
+        return Boolean(activation[key]);
+      }
+      // default: present
+      return true;
+    });
+    return filtered;
+  } catch (e) {
+    console.warn("Failed to load active stage settings", e);
+    return stages;
+  }
+}
+
 /**
  * Get a transition message for a specific stage in a case
  * Add new cases to the switch below as you expand the app.

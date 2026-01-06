@@ -81,7 +81,18 @@ export default function ViewAttemptPage() {
         setMessages(serverMessages || []);
         setFeedback(serverFeedback || []);
 
-        const caseStages = getStagesForCase(serverAttempt.caseId);
+        const caseStages = await (async () => {
+          try {
+            const mod = await import("@/features/stages/services/stageService");
+            if (mod.getActiveStagesForCase) {
+              return await mod.getActiveStagesForCase(serverAttempt.caseId);
+            }
+            return mod.getStagesForCase(serverAttempt.caseId);
+          } catch (e) {
+            console.warn("Failed to resolve active stages; falling back", e);
+            return getStagesForCase(serverAttempt.caseId);
+          }
+        })();
         setStages(caseStages);
       } catch (e) {
         console.error('Failed to load attempt view', e);

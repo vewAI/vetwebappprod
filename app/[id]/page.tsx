@@ -61,10 +61,7 @@ export default function CaseChatPage() {
   const [isCreatingAttempt, setIsCreatingAttempt] = useState(false);
   const [attemptId, setAttemptId] = useState<string | null>(null);
   const hasInitializedAttempt = useRef(false);
-  const [stages, setStages] = useState<Stage[]>(() => {
-    const caseStages = getStagesForCase(id);
-    return initializeStages(caseStages);
-  });
+  const [stages, setStages] = useState<Stage[]>([]);
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
   const [initialMessages, setInitialMessages] = useState<Message[]>([]);
   const [isRestoring, setIsRestoring] = useState(true);
@@ -81,6 +78,27 @@ export default function CaseChatPage() {
       setLoading(false);
     }
     loadCase();
+  }, [id]);
+
+  // Load active stages (may be filtered by admin toggles)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const mod = await import("@/features/stages/services/stageService");
+        const active = mod.getActiveStagesForCase
+          ? await mod.getActiveStagesForCase(id)
+          : mod.getStagesForCase(id);
+        if (!cancelled) setStages(initializeStages(active));
+      } catch (e) {
+        console.warn("Failed to load active stages", e);
+        const fallback = getStagesForCase(id);
+        if (!cancelled) setStages(initializeStages(fallback));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   // Initialize attempt (create or resume) once user is available

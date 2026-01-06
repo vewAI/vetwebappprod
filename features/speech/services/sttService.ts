@@ -67,6 +67,10 @@ const CORRECTIONS: Record<string, string> = {
   "roman": "rumen",
   // User may say 'nifa' which should be the acronym 'NEFA' (Non-Esterified Fatty Acids)
   "nifa": "NEFA",
+  // Common mis-hearing of 'rectal' as 'rental'
+  "rental": "rectal",
+  // Short-hand mis-hearings for basophils
+  "baseball": "basophils",
 };
 
 // Phrase-level corrections for multi-word mis-transcriptions.
@@ -83,6 +87,9 @@ const PHRASE_CORRECTIONS: Record<string, string> = {
 // Common mis-hearing where users say something that sounds like 'ask quotation'
 // but actually mean 'auscultation'.
 PHRASE_CORRECTIONS["ask quotation"] = "auscultation";
+// Common mis-hearing: 'baseball fields' -> 'basophils'
+PHRASE_CORRECTIONS["baseball fields"] = "basophils";
+PHRASE_CORRECTIONS["baseball field"] = "basophils";
 
 function postProcessTranscript(text: string): string {
   let processed = text;
