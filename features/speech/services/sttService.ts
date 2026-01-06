@@ -63,6 +63,8 @@ const CORRECTIONS: Record<string, string> = {
   "creating": "creatinine",
   "borborigmi": "borborygmi",
   "borborygmi": "borborygmi",
+  // Common mis-hearings of 'rumen'
+  "roman": "rumen",
 };
 
 // Phrase-level corrections for multi-word mis-transcriptions.
@@ -72,6 +74,8 @@ const PHRASE_CORRECTIONS: Record<string, string> = {
   "old findingd": "all findings",
   "old findings": "all findings",
   "give me old findings": "give me all findings",
+  // Mis-transcription where 'Roman' is heard instead of 'rumen'
+  "roman turnover": "rumen turnover",
 };
 
 function postProcessTranscript(text: string): string {
