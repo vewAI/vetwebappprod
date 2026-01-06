@@ -54,19 +54,27 @@ export async function POST(req: any, ctx: any) {
   const supabase = getSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ ok: false, error: "supabase-unavailable" }, { status: 500 });
 
+  if (!caseId) {
+    console.warn("Missing caseId in request context when updating stage settings", { body });
+    return NextResponse.json({ ok: false, error: "missing-case-id" }, { status: 400 });
+  }
+
   if (!stageActivation && (typeof stageIndex !== "number" || typeof active !== "boolean")) {
     return NextResponse.json({ ok: false, error: "invalid-payload" }, { status: 400 });
   }
 
   try {
-    const { data, error } = await supabase
-      .from("cases")
-      .select("settings")
-      .eq("id", caseId)
-      .single();
-    if (error) {
-      console.warn("Failed to fetch case for update", error);
-      return NextResponse.json({ ok: false, error: "fetch-failed" }, { status: 500 });
+    let data: any = null;
+    try {
+      const res = await supabase.from("cases").select("settings").eq("id", caseId).single();
+      if (res.error) {
+        console.warn("Supabase returned error fetching case for update", res.error, { caseId });
+        return NextResponse.json({ ok: false, error: "fetch-failed", detail: res.error.message || String(res.error) }, { status: 500 });
+      }
+      data = res.data;
+    } catch (err) {
+      console.error("Exception while fetching case for update", err, { caseId });
+      return NextResponse.json({ ok: false, error: "fetch-exception", detail: String(err) }, { status: 500 });
     }
     const current = (data && (data as any).settings) || {};
     const activation = current.stageActivation || {};
