@@ -125,7 +125,7 @@ export default function CaseStageManager() {
         ))}
         {stages.length > 0 && (
           <div className="mt-4 flex gap-2">
-            <Button variant="primary" onClick={saveChanges} disabled={!hasChanges || loading}>
+            <Button variant="default" onClick={saveChanges} disabled={!hasChanges || loading}>
               Save
             </Button>
             <Button variant="secondary" onClick={cancelChanges} disabled={!hasChanges || loading}>
