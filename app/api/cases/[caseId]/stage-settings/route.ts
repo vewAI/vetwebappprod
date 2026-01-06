@@ -22,16 +22,25 @@ export async function GET(req: any, ctx: any) {
   if (!supabase) return NextResponse.json({ stageActivation: {} });
 
   try {
-    const { data, error } = await supabase
-      .from("cases")
-      .select("settings")
-      .eq("id", caseId)
-      .single();
-    if (error) {
-      console.warn("Failed to fetch case settings", error);
+    // Try selecting only the settings column first (most common schema)
+    const res = await supabase.from("cases").select("settings").eq("id", caseId).single();
+    if (res.error) {
+      // If the column doesn't exist, fall back to selecting the whole row
+      const msg = String(res.error.message || res.error);
+      if (msg.toLowerCase().includes("column") && msg.toLowerCase().includes("settings")) {
+        const full = await supabase.from("cases").select("*").eq("id", caseId).single();
+        if (full.error) {
+          console.warn("Failed to fetch full case row after missing settings column", full.error);
+          return NextResponse.json({ stageActivation: {} });
+        }
+        const settingsFallback = (full.data && (full.data as any).settings) || {};
+        const stageActivationFallback = settingsFallback.stageActivation || {};
+        return NextResponse.json({ stageActivation: stageActivationFallback });
+      }
+      console.warn("Failed to fetch case settings", res.error);
       return NextResponse.json({ stageActivation: {} });
     }
-    const settings = (data && (data as any).settings) || {};
+    const settings = (res.data && (res.data as any).settings) || {};
     const stageActivation = settings.stageActivation || {};
     return NextResponse.json({ stageActivation });
   } catch (e) {
@@ -68,10 +77,22 @@ export async function POST(req: any, ctx: any) {
     try {
       const res = await supabase.from("cases").select("settings").eq("id", caseId).single();
       if (res.error) {
-        console.warn("Supabase returned error fetching case for update", res.error, { caseId });
-        return NextResponse.json({ ok: false, error: "fetch-failed", detail: res.error.message || String(res.error) }, { status: 500 });
+        const msg = String(res.error.message || res.error).toLowerCase();
+        if (msg.includes("column") && msg.includes("settings")) {
+          // Fallback: select full row when settings column is absent in this DB
+          const full = await supabase.from("cases").select("*").eq("id", caseId).single();
+          if (full.error) {
+            console.warn("Failed to fetch full case row after missing settings column", full.error, { caseId });
+            return NextResponse.json({ ok: false, error: "fetch-failed", detail: full.error.message || String(full.error) }, { status: 500 });
+          }
+          data = full.data;
+        } else {
+          console.warn("Supabase returned error fetching case for update", res.error, { caseId });
+          return NextResponse.json({ ok: false, error: "fetch-failed", detail: res.error.message || String(res.error) }, { status: 500 });
+        }
+      } else {
+        data = res.data;
       }
-      data = res.data;
     } catch (err) {
       console.error("Exception while fetching case for update", err, { caseId });
       return NextResponse.json({ ok: false, error: "fetch-exception", detail: String(err) }, { status: 500 });
