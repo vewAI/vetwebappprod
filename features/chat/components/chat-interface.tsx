@@ -522,6 +522,8 @@ export function ChatInterface({
 
   const isAdvancingRef = useRef<boolean>(false);
   const isPlayingAudioRef = useRef<boolean>(false);
+  // When true, temporarily ignore STT outputs to avoid self-capture
+  const isSuppressingSttRef = useRef<boolean>(false);
   const lastTtsEndRef = useRef<number>(0);
   const nextStageIntentTimeoutRef = useRef<number | null>(null);
   const handleProceedRef = useRef<(() => Promise<void>) | null>(null);
@@ -687,6 +689,13 @@ export function ChatInterface({
           "finalText=",
           finalText
         );
+        // If we're suppressing STT (TTS playing or shortly after), ignore finals
+        if (isSuppressingSttRef.current) {
+          // mark handled to avoid re-appending via transcript effect
+          lastFinalHandledRef.current = finalText;
+          return;
+        }
+
         if (voiceMode && finalText && finalText.trim()) {
           // Trim and attempt to de-duplicate obvious repeats from STT finals
           const trimmed = collapseImmediateRepeat(finalText.trim());
@@ -1120,6 +1129,9 @@ export function ChatInterface({
         // Use abort() to immediately discard any pending audio buffer to prevent
         // self-recording of the TTS start.
         try {
+          // Set suppression flag so any STT events emitted while the mic is
+          // shutting down or while TTS plays are ignored.
+          isSuppressingSttRef.current = true;
           if (abort) {
             abort();
           } else {
@@ -1164,6 +1176,13 @@ export function ChatInterface({
       }
     } finally {
       isPlayingAudioRef.current = false;
+      // Record the tts end time and keep STT suppressed briefly to avoid
+      // residual self-capture from the assistant audio.
+      lastTtsEndRef.current = Date.now();
+      // clear suppression after a short grace period (600ms)
+      window.setTimeout(() => {
+        isSuppressingSttRef.current = false;
+      }, 600);
       // Resume listening if we previously stopped for playback and voiceMode
       // is still enabled. Start immediately since the awaited TTS promise
       // resolves only after playback has finished.
@@ -1230,9 +1249,15 @@ export function ChatInterface({
         sex: personaMeta?.sex,
       });
 
-      setMessages((prev) => [...prev, assistantMsg]);
+      // Do not append the same readiness prompt more than once in this conversation
+      const alreadyShown = messages.some(
+        (m) => m.role === "assistant" && m.content === cautionText
+      );
+      if (!alreadyShown) {
+        setMessages((prev) => [...prev, assistantMsg]);
+      }
 
-      if (ttsEnabled && cautionText) {
+      if (!alreadyShown && ttsEnabled && cautionText) {
         try {
           const guardMeta: TtsPlaybackMeta = {
             roleKey: normalizedRoleKey,
@@ -1311,6 +1336,32 @@ export function ChatInterface({
   const sendUserMessage = async (text: string, existingMessageId?: string) => {
     const trimmed = String(text ?? "").trim();
     if (!trimmed || isLoading) return;
+
+    // Prevent duplicate user messages: if the most recent user message
+    // matches this content and was sent very recently, skip to avoid
+    // showing the same message twice (e.g., from race between manual
+    // submit and STT auto-send).
+    try {
+      const lastUser = [...messages].reverse().find((m) => m.role === "user");
+      if (lastUser && lastUser.content) {
+        const normalize = (s: string) =>
+          String(s)
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/gi, "")
+            .replace(/\s+/g, " ")
+            .trim();
+        const normLast = normalize(lastUser.content);
+        const normTrim = normalize(trimmed);
+        const lastTs = lastUser.timestamp ? Date.parse(lastUser.timestamp) : NaN;
+        const recent = Number.isFinite(lastTs) ? Date.now() - lastTs < 3000 : false;
+        if (normLast && normTrim && normLast === normTrim && recent) {
+          // duplicate detected; do not re-send
+          return;
+        }
+      }
+    } catch (e) {
+      // ignore normalization errors and proceed
+    }
 
       // Simplified behavior: instead of a general LLM-based completeness check,
       // only treat very short (<=2 words) voice fragments as potentially
@@ -1756,6 +1807,8 @@ export function ChatInterface({
       // Clear base input buffer after a send so future dictation starts
       // from an empty buffer.
       baseInputRef.current = "";
+      // Ensure visible input is cleared after the send completes
+      setInput("");
     }
   };
 
