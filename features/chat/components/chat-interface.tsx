@@ -510,50 +510,16 @@ export function ChatInterface({
       if (
         rule.minAssistantKeywordHits &&
         metrics.matchedAssistantKeywords < rule.minAssistantKeywordHits
+      ) {
+        ready = false;
       }
-      isPlayingAudioRef.current = false;
-      // Resume listening if we previously stopped for playback and voiceMode
-      // is still enabled. Prefer to wait for the explicit TTS-end event to
-      // avoid self-recording; fall back to a timeout if the event is missed.
-      if (resumeListeningRef.current) {
-        resumeListeningRef.current = false;
-        if (voiceMode) {
-          let fallbackTimer: number | null = null;
-          const handleTtsEnd = () => {
-            try {
-              window.removeEventListener("vw:tts-end", handleTtsEnd as EventListener);
-            } catch {}
-            if (fallbackTimer) {
-              window.clearTimeout(fallbackTimer);
-              fallbackTimer = null;
-            }
-            try {
-              start();
-            } catch (e) {
-              // ignore
-            }
-          };
-
-          try {
-            window.addEventListener("vw:tts-end", handleTtsEnd as EventListener);
-          } catch {
-            // ignore
-          }
-
-          // Fallback: resume after 2000ms if no event arrives
-          fallbackTimer = window.setTimeout(() => {
-            try {
-              window.removeEventListener("vw:tts-end", handleTtsEnd as EventListener);
-            } catch {}
-            try {
-              start();
-            } catch (e) {
-              // ignore
-            }
-          }, 2000) as unknown as number;
-        }
+      
+      if (ready) {
+        return { status: "ready", metrics, rule };
       }
-  );
+      return { status: "insufficient", metrics, rule };
+  }, [stages]);
+
   const isAdvancingRef = useRef<boolean>(false);
   const isPlayingAudioRef = useRef<boolean>(false);
   const nextStageIntentTimeoutRef = useRef<number | null>(null);
@@ -1146,12 +1112,44 @@ export function ChatInterface({
     } finally {
       isPlayingAudioRef.current = false;
       // Resume listening if we previously stopped for playback and voiceMode
-      // is still enabled.
+      // is still enabled. Prefer to wait for the explicit TTS-end event to
+      // avoid self-recording; fall back to a timeout if the event is missed.
       if (resumeListeningRef.current) {
         resumeListeningRef.current = false;
         if (voiceMode) {
-          // Resume after a longer delay to avoid picking up echo/reverb
-          setTimeout(() => start(), 1200);
+          let fallbackTimer: number | null = null;
+          const handleTtsEnd = () => {
+            try {
+              window.removeEventListener("vw:tts-end", handleTtsEnd as EventListener);
+            } catch {}
+            if (fallbackTimer) {
+              window.clearTimeout(fallbackTimer);
+              fallbackTimer = null;
+            }
+            try {
+              start();
+            } catch (e) {
+              // ignore
+            }
+          };
+
+          try {
+            window.addEventListener("vw:tts-end", handleTtsEnd as EventListener);
+          } catch {
+            // ignore
+          }
+
+          // Fallback: resume after 2000ms if no event arrives
+          fallbackTimer = window.setTimeout(() => {
+            try {
+              window.removeEventListener("vw:tts-end", handleTtsEnd as EventListener);
+            } catch {}
+            try {
+              start();
+            } catch (e) {
+              // ignore
+            }
+          }, 2000) as unknown as number;
         }
       }
     }
