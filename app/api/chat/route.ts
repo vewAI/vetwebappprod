@@ -990,8 +990,12 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
         const syns = DIAG_SYNONYMS[matchedKeyword] ?? [];
       }
 
-      const reply = `Those laboratory or imaging results are not released during the physical examination stage. Diagnostic results (bloodwork, imaging) are available in the Laboratory & Tests stage — please request them there or proceed to that stage to view the recorded results.`;
-      return NextResponse.json({ content: reply, displayRole, portraitUrl: undefined, voiceId: undefined, personaSex: undefined, personaRoleKey, media: [] });
+      // Previously we returned a canned message here. Suppress it entirely
+      // so the client does not append the repetitive warning in the chat UI.
+      // Client will respect `suppress: true` and will not create/append
+      // an assistant message for this case.
+      try { debugEventBus.emitEvent('info','ChatDBMatch','suppressed-physical-canned-reply',{ caseId, q: userText }); } catch {}
+      return NextResponse.json({ content: "", displayRole, portraitUrl: undefined, voiceId: undefined, personaSex: undefined, personaRoleKey, media: [], suppress: true });
     }
 
     if (isLabStage && caseRecord && typeof caseRecord === "object") {

@@ -1390,6 +1390,56 @@ export function ChatInterface({
       // ignore normalization errors and proceed
     }
 
+    // If we're in the Physical Examination stage and the user is asking
+    // about lab tests/results, reply very briefly client-side and do not
+    // forward the query to the server. This keeps the UX tight and avoids
+    // the assistant inventing diagnostic data during the physical exam.
+    try {
+      const stage = stages?.[currentStageIndex];
+      const stageKey = stage?.title?.toLowerCase().trim() ?? "";
+      const physicalStage = stageKey === "physical examination" || stageKey === "physical";
+      const labRegex = /\b(lab|labs|bloodwork|bloods|blood|cbc|chemistry|biochemistry|hematology|urine|urinalysis|radiograph|x-?ray|xray|imaging|ultrasound|test|tests|results|culture|pcr|serology)\b/i;
+      if (physicalStage && labRegex.test(trimmed)) {
+        const roleLabel = stage?.role
+          ? (stage.role === "owner" ? "Owner" : stage.role.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()))
+          : "Assistant";
+
+        const normalizedRoleKey = resolveChatPersonaRoleKey(stage?.role, roleLabel);
+        const personaMeta = await ensurePersonaMetadata(normalizedRoleKey);
+        const voiceForRole = getOrAssignVoiceForRole(normalizedRoleKey, attemptId, {
+          preferredVoice: personaMeta?.voiceId,
+          sex: personaMeta?.sex as any,
+        });
+
+        const brief = "Please wait until the Laboratory & Tests stage for those results.";
+        const assistantMsg = chatService.createAssistantMessage(
+          brief,
+          currentStageIndex,
+          personaMeta?.displayName ?? roleLabel,
+          personaMeta?.portraitUrl,
+          voiceForRole,
+          personaMeta?.sex,
+          normalizedRoleKey
+        );
+        appendAssistantMessage(assistantMsg);
+        if (ttsEnabled && brief) {
+          try {
+            await playTtsAndPauseStt(brief, voiceForRole, { roleKey: normalizedRoleKey, displayRole: assistantMsg.displayRole, role: stage?.role ?? roleLabel, caseId } as any, personaMeta?.sex as any);
+          } catch (e) {
+            /* ignore TTS errors for this brief prompt */
+          }
+        }
+        // Mark base input empty and return without sending to server
+        baseInputRef.current = "";
+        setInput("");
+        reset();
+        return;
+      }
+    } catch (e) {
+      // If detection or TTS fails, fall back to normal send behavior
+      console.warn("Physical-stage lab-query handler failed", e);
+    }
+
       // Simplified behavior: instead of a general LLM-based completeness check,
       // only treat very short (<=2 words) voice fragments as potentially
       // incomplete and wait for continuation. This avoids false positives.
@@ -1623,6 +1673,18 @@ export function ChatInterface({
         caseId,
         { attemptId }
       );
+      // If server indicates this response should be suppressed (e.g. canned
+      // physical-stage warning), do not append or play TTS for it.
+      if ((response as any)?.suppress) {
+        if (userMessage) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === userMessage!.id ? { ...m, status: "sent" } : m
+            )
+          );
+        }
+        return;
+      }
       const stage = stages[currentStageIndex] ?? stages[0];
       const roleName = response.displayRole ?? stage?.role ?? "assistant";
       const safePersonaRoleKey =
@@ -2049,6 +2111,13 @@ export function ChatInterface({
           p.caseId,
           { attemptId }
         );
+
+        // Respect server-side suppression flag for pending flush responses
+        if ((response as any)?.suppress) {
+          // remove from pending store so we don't retry
+          dequeuePendingById(p.id);
+          continue;
+        }
 
         // Append assistant reply into chat UI
         const stage = stages[p.stageIndex] ?? stages[currentStageIndex];

@@ -65,6 +65,8 @@ const CORRECTIONS: Record<string, string> = {
   "borborygmi": "borborygmi",
   // Common mis-hearings of 'rumen'
   "roman": "rumen",
+  // User may say 'nifa' which should be the acronym 'NEFA' (Non-Esterified Fatty Acids)
+  "nifa": "NEFA",
 };
 
 // Phrase-level corrections for multi-word mis-transcriptions.
@@ -84,6 +86,43 @@ PHRASE_CORRECTIONS["ask quotation"] = "auscultation";
 
 function postProcessTranscript(text: string): string {
   let processed = text;
+  // Collapse very short immediate repeats like "okay don't okay don't don't worry"
+  // by removing adjacent repeated n-grams for n=1..4.
+  const collapseShortRepeats = (s: string) => {
+    try {
+      const words = s.trim().split(/\s+/);
+      if (words.length < 3) return s;
+      // Check window sizes from longest to shortest to prefer longer phrase matches
+      for (let n = Math.min(4, Math.floor(words.length / 2)); n >= 1; n--) {
+        let i = 0;
+        const out: string[] = [];
+        while (i < words.length) {
+          // Look ahead for immediate repeat of next n words
+          const chunk = words.slice(i, i + n).join(" ");
+          const next = words.slice(i + n, i + 2 * n).join(" ");
+          if (chunk && next && chunk.toLowerCase() === next.toLowerCase()) {
+            // Skip the repeated chunk once
+            out.push(chunk);
+            i += 2 * n;
+            // Skip any additional immediate repeats of the same chunk
+            while (i + n <= words.length && words.slice(i, i + n).join(" ").toLowerCase() === chunk.toLowerCase()) {
+              i += n;
+            }
+          } else {
+            out.push(words[i]);
+            i += 1;
+          }
+        }
+        const candidate = out.join(" ");
+        if (candidate.split(/\s+/).length < words.length) return candidate;
+      }
+      return s;
+    } catch (e) {
+      return s;
+    }
+  };
+
+  processed = collapseShortRepeats(processed);
   const substitutions: Array<{ from: string; to: string }> = [];
 
   // Prefer veterinary sense for ambiguous tokens (e.g., 'other' -> 'udder').
