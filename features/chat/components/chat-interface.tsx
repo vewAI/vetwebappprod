@@ -600,6 +600,8 @@ export function ChatInterface({
   // Timers for STT error toast fade and voice-mode restart
   const sttErrorToastTimerRef = useRef<number | null>(null);
   const sttErrorRestartTimerRef = useRef<number | null>(null);
+  // Timer for auto-sending when a '...' placeholder is left waiting
+  const placeholderAutoSendTimerRef = useRef<number | null>(null);
 
   const resetNextStageIntent = useCallback(() => {
     if (nextStageIntentTimeoutRef.current) {
@@ -814,6 +816,10 @@ export function ChatInterface({
       if (sttErrorRestartTimerRef.current) {
         window.clearTimeout(sttErrorRestartTimerRef.current);
         sttErrorRestartTimerRef.current = null;
+      }
+      if (placeholderAutoSendTimerRef.current) {
+        window.clearTimeout(placeholderAutoSendTimerRef.current);
+        placeholderAutoSendTimerRef.current = null;
       }
       autoSendPendingTextRef.current = null;
       resetNextStageIntent();
@@ -1257,10 +1263,14 @@ export function ChatInterface({
           const check = await chatService.checkCompleteness(trimmed, caseId, currentStageIndex);
           if (check && check.complete === false) {
             // Insert assistant placeholder '...' and keep listening for continuation
+            const stage = stages?.[currentStageIndex];
+            const roleLabel = stage?.role
+              ? (stage.role === "owner" ? "Owner" : stage.role.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()))
+              : "Assistant";
             const placeholder = chatService.createAssistantMessage(
               "...",
               currentStageIndex,
-              "Veterinary Nurse",
+              roleLabel,
               undefined,
               undefined,
               undefined,
@@ -1271,6 +1281,25 @@ export function ChatInterface({
             // reflect in input but do not send to server yet
             baseInputRef.current = trimmed;
             setInput(trimmed);
+            // schedule an auto-send if no continuation arrives within 6s
+            if (placeholderAutoSendTimerRef.current) {
+              window.clearTimeout(placeholderAutoSendTimerRef.current);
+              placeholderAutoSendTimerRef.current = null;
+            }
+            placeholderAutoSendTimerRef.current = window.setTimeout(() => {
+              if (awaitingContinuationRef.current) {
+                const pid = awaitingContinuationRef.current.placeholderId;
+                setMessages((prev) => prev.filter((m) => m.id !== pid));
+                awaitingContinuationRef.current = null;
+                // trigger send of the current base input
+                try {
+                  void triggerAutoSend(baseInputRef.current || "");
+                } catch (e) {
+                  console.warn("Auto-send of placeholder fragment failed", e);
+                }
+              }
+              placeholderAutoSendTimerRef.current = null;
+            }, 6000);
             // do not proceed with sending
             return;
           }
@@ -1451,6 +1480,10 @@ export function ChatInterface({
         const pid = awaitingContinuationRef.current.placeholderId;
         setMessages((prev) => prev.filter((m) => m.id !== pid));
         awaitingContinuationRef.current = null;
+        if (placeholderAutoSendTimerRef.current) {
+          window.clearTimeout(placeholderAutoSendTimerRef.current);
+          placeholderAutoSendTimerRef.current = null;
+        }
       }
 
       const response = await chatService.sendMessage(
