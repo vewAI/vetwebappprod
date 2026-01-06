@@ -196,6 +196,7 @@ export function ChatInterface({
   // State for timepoint progression dialog
   const [showTimepointDialog, setShowTimepointDialog] = useState(false);
   const [pendingTimepoint, setPendingTimepoint] = useState<any>(null);
+  const awaitingContinuationRef = useRef<{ partial: string; placeholderId: string } | null>(null);
 
   // Handlers for dialog actions (implement as no-ops or TODOs for now)
   const handleSnoozeTimepoint = () => setShowTimepointDialog(false);
@@ -646,7 +647,7 @@ export function ChatInterface({
     return s;
   };
 
-  const { isListening, transcript, interimTranscript, start, stop, abort, reset, error: sttError } =
+  const { isListening, transcript, interimTranscript, start, stop, abort, reset, error: sttError, ambientLevel, setDebounceMs } =
     useSTT(
       (finalText: string) => {
         console.debug(
@@ -1209,6 +1210,34 @@ export function ChatInterface({
     const trimmed = String(text ?? "").trim();
     if (!trimmed || isLoading) return;
 
+      // If we're in voice mode and not already awaiting continuation, perform a quick completeness check.
+      if (voiceMode && !awaitingContinuationRef.current) {
+        try {
+          const check = await chatService.checkCompleteness(trimmed, caseId, currentStageIndex);
+          if (check && check.complete === false) {
+            // Insert assistant placeholder '...' and keep listening for continuation
+            const placeholder = chatService.createAssistantMessage(
+              "...",
+              currentStageIndex,
+              "Veterinary Nurse",
+              undefined,
+              undefined,
+              undefined,
+              undefined
+            );
+            setMessages((prev) => [...prev, placeholder]);
+            awaitingContinuationRef.current = { partial: trimmed, placeholderId: placeholder.id };
+            // reflect in input but do not send to server yet
+            baseInputRef.current = trimmed;
+            setInput(trimmed);
+            // do not proceed with sending
+            return;
+          }
+        } catch (e) {
+          console.warn("Completeness check failed, proceeding to send", e);
+        }
+      }
+
     if (!existingMessageId && voiceMode && ttsEnabled) {
       const normalize = (value: string) =>
         value
@@ -1375,6 +1404,14 @@ export function ChatInterface({
     setIsLoading(true);
 
     try {
+      // If we previously inserted a '...' placeholder waiting for continuation,
+      // remove it now that we're sending the stitched message to the server.
+      if (awaitingContinuationRef.current) {
+        const pid = awaitingContinuationRef.current.placeholderId;
+        setMessages((prev) => prev.filter((m) => m.id !== pid));
+        awaitingContinuationRef.current = null;
+      }
+
       const response = await chatService.sendMessage(
         snapshot,
         currentStageIndex,
@@ -2114,6 +2151,22 @@ export function ChatInterface({
       }
     }
   }, [interimTranscript, transcript, isListening]);
+
+  // Adjust STT debounce adaptively based on ambient noise level to reduce
+  // false positives in noisy environments.
+  useEffect(() => {
+    try {
+      if (typeof ambientLevel === "number" && setDebounceMs) {
+        // Map ambientLevel 0..1 to debounce between 600..1800ms
+        const min = 600;
+        const max = 1800;
+        const ms = Math.round(min + (max - min) * Math.min(1, ambientLevel));
+        setDebounceMs(ms);
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, [ambientLevel, setDebounceMs]);
 
   // Scroll to bottom when messages change
   useEffect(() => {

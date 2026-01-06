@@ -115,6 +115,30 @@ export const chatService = {
       throw new Error(String(error));
     }
   },
+  /**
+   * Check whether a user fragment is likely complete or needs continuation.
+   * Uses server-side classification at /api/chat/check-complete.
+   */
+  checkCompleteness: async (
+    fragment: string,
+    caseId?: string,
+    stageIndex?: number
+  ): Promise<{ complete: boolean; canonical?: string | null; type?: string | null }> => {
+    try {
+      const token = await getAccessToken();
+      const authHeaders = await buildAuthHeaders({}, token || undefined);
+      const resp = await axios.post(
+        "/api/chat/check-complete",
+        { fragment, caseId, stageIndex },
+        { headers: authHeaders }
+      );
+      return resp.data;
+    } catch (e) {
+      // On errors, default to complete to avoid blocking user input
+      console.warn("checkCompleteness failed, defaulting to complete", e);
+      return { complete: true };
+    }
+  },
 
   /**
    * Create a user message object
