@@ -522,6 +522,7 @@ export function ChatInterface({
 
   const isAdvancingRef = useRef<boolean>(false);
   const isPlayingAudioRef = useRef<boolean>(false);
+  const lastTtsEndRef = useRef<number>(0);
   const nextStageIntentTimeoutRef = useRef<number | null>(null);
   const handleProceedRef = useRef<(() => Promise<void>) | null>(null);
   const scheduleAutoProceedRef = useRef<(() => void) | null>(null);
@@ -608,6 +609,33 @@ export function ChatInterface({
     }
   }, []);
 
+  // Listen for global TTS lifecycle events so we can accurately track when
+  // audio playback is active and when it ends. This helps avoid STT picking
+  // up the assistant's own audio and treating it as user input.
+  useEffect(() => {
+    const handleStart = () => {
+      isPlayingAudioRef.current = true;
+    };
+    const handleEnd = () => {
+      isPlayingAudioRef.current = false;
+      lastTtsEndRef.current = Date.now();
+    };
+    try {
+      window.addEventListener("vw:tts-start", handleStart as EventListener);
+      window.addEventListener("vw:tts-end", handleEnd as EventListener);
+    } catch {
+      // ignore
+    }
+    return () => {
+      try {
+        window.removeEventListener("vw:tts-start", handleStart as EventListener);
+        window.removeEventListener("vw:tts-end", handleEnd as EventListener);
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
+
   // Collapse immediate repeated phrases in a final transcript. Some STT
   // engines occasionally emit duplicated chunks (the same phrase twice in a
   // row). This attempts a conservative de-dup: if the final transcript
@@ -662,6 +690,31 @@ export function ChatInterface({
         if (voiceMode && finalText && finalText.trim()) {
           // Trim and attempt to de-duplicate obvious repeats from STT finals
           const trimmed = collapseImmediateRepeat(finalText.trim());
+          // If the final appears to exactly repeat the last assistant message
+          // (likely because the mic picked up the TTS), ignore it and do not
+          // send to the LLM. Keep listening open so the student can speak.
+          try {
+            const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+            if (lastAssistant && lastAssistant.content) {
+              const normalize = (s: string) =>
+                s
+                  .toLowerCase()
+                  .replace(/[^a-z0-9\s]/g, " ")
+                  .replace(/\s+/g, " ")
+                  .trim();
+              const normFinal = normalize(trimmed);
+              const normAssistant = normalize(String(lastAssistant.content));
+              const recentTts = isPlayingAudioRef.current || Date.now() - (lastTtsEndRef.current || 0) < 2500;
+              if (normFinal && normAssistant && normFinal === normAssistant && recentTts) {
+                // Mark handled to avoid re-appending from transcript effect
+                lastFinalHandledRef.current = trimmed;
+                // Do not append or send; keep listening active for the student's reply
+                return;
+              }
+            }
+          } catch (e) {
+            // ignore normalization errors
+          }
           const now = Date.now();
 
           // Avoid duplicating identical final chunks that may be emitted
