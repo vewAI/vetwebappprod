@@ -72,8 +72,13 @@ export async function POST(req: any, ctx: any) {
     const activation = current.stageActivation || {};
     let nextActivation = activation;
     if (stageActivation && typeof stageActivation === "object") {
-      // Replace full activation map
-      nextActivation = { ...activation, ...stageActivation };
+      // Replace full activation map. Coerce values to booleans in case strings were sent/stored.
+      const coerced: Record<string, boolean> = {};
+      Object.keys(stageActivation).forEach((k) => {
+        const v = (stageActivation as any)[k];
+        coerced[k] = v === true || v === "true";
+      });
+      nextActivation = { ...activation, ...coerced };
     } else {
       // Single-stage update
       nextActivation = { ...activation, [String(stageIndex)]: Boolean(active) };

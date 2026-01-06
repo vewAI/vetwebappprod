@@ -30,7 +30,9 @@ export async function getActiveStagesForCase(caseId: string): Promise<Stage[]> {
     const filtered = stages.filter((s, idx) => {
       const key = String(idx);
       if (activation.hasOwnProperty(key)) {
-        return Boolean(activation[key]);
+        const v = (activation as any)[key];
+        // Accept booleans or string booleans from DB/APIs
+        return v === true || v === "true";
       }
       // default: present
       return true;
