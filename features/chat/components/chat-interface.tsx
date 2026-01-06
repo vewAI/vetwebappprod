@@ -1257,54 +1257,52 @@ export function ChatInterface({
     const trimmed = String(text ?? "").trim();
     if (!trimmed || isLoading) return;
 
-      // If we're in voice mode and not already awaiting continuation, perform a quick completeness check.
+      // Simplified behavior: instead of a general LLM-based completeness check,
+      // only treat very short (<=2 words) voice fragments as potentially
+      // incomplete and wait for continuation. This avoids false positives.
       if (voiceMode && !awaitingContinuationRef.current) {
-        try {
-          const check = await chatService.checkCompleteness(trimmed, caseId, currentStageIndex);
-          if (check && check.complete === false) {
-            // Insert assistant placeholder '...' and keep listening for continuation
-            const stage = stages?.[currentStageIndex];
-            const roleLabel = stage?.role
-              ? (stage.role === "owner" ? "Owner" : stage.role.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()))
-              : "Assistant";
-            const placeholder = chatService.createAssistantMessage(
-              "...",
-              currentStageIndex,
-              roleLabel,
-              undefined,
-              undefined,
-              undefined,
-              undefined
-            );
-            setMessages((prev) => [...prev, placeholder]);
-            awaitingContinuationRef.current = { partial: trimmed, placeholderId: placeholder.id };
-            // reflect in input but do not send to server yet
-            baseInputRef.current = trimmed;
-            setInput(trimmed);
-            // schedule an auto-send if no continuation arrives within 6s
-            if (placeholderAutoSendTimerRef.current) {
-              window.clearTimeout(placeholderAutoSendTimerRef.current);
-              placeholderAutoSendTimerRef.current = null;
-            }
-            placeholderAutoSendTimerRef.current = window.setTimeout(() => {
-              if (awaitingContinuationRef.current) {
-                const pid = awaitingContinuationRef.current.placeholderId;
-                setMessages((prev) => prev.filter((m) => m.id !== pid));
-                awaitingContinuationRef.current = null;
-                // trigger send of the current base input
-                try {
-                  void triggerAutoSend(baseInputRef.current || "");
-                } catch (e) {
-                  console.warn("Auto-send of placeholder fragment failed", e);
-                }
-              }
-              placeholderAutoSendTimerRef.current = null;
-            }, 6000);
-            // do not proceed with sending
-            return;
+        const tokenCount = String(trimmed).split(/\s+/).filter(Boolean).length;
+        if (tokenCount <= 2) {
+          // Insert assistant placeholder '...' and keep listening for continuation
+          const stage = stages?.[currentStageIndex];
+          const roleLabel = stage?.role
+            ? (stage.role === "owner" ? "Owner" : stage.role.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()))
+            : "Assistant";
+          const placeholder = chatService.createAssistantMessage(
+            "...",
+            currentStageIndex,
+            roleLabel,
+            undefined,
+            undefined,
+            undefined,
+            undefined
+          );
+          setMessages((prev) => [...prev, placeholder]);
+          awaitingContinuationRef.current = { partial: trimmed, placeholderId: placeholder.id };
+          // reflect in input but do not send to server yet
+          baseInputRef.current = trimmed;
+          setInput(trimmed);
+          // schedule an auto-send if no continuation arrives within 6s
+          if (placeholderAutoSendTimerRef.current) {
+            window.clearTimeout(placeholderAutoSendTimerRef.current);
+            placeholderAutoSendTimerRef.current = null;
           }
-        } catch (e) {
-          console.warn("Completeness check failed, proceeding to send", e);
+          placeholderAutoSendTimerRef.current = window.setTimeout(() => {
+            if (awaitingContinuationRef.current) {
+              const pid = awaitingContinuationRef.current.placeholderId;
+              setMessages((prev) => prev.filter((m) => m.id !== pid));
+              awaitingContinuationRef.current = null;
+              // trigger send of the current base input
+              try {
+                void triggerAutoSend(baseInputRef.current || "");
+              } catch (e) {
+                console.warn("Auto-send of placeholder fragment failed", e);
+              }
+            }
+            placeholderAutoSendTimerRef.current = null;
+          }, 6000);
+          // do not proceed with sending
+          return;
         }
       }
 
