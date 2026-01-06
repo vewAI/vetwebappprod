@@ -237,6 +237,33 @@ export function ChatInterface({
   };
 
   const [messages, setMessages] = useState<Message[]>(initialMessages);
+  // Helper to avoid appending duplicate assistant messages in the recent history
+  const normalizeForDedupe = (s?: string | null) =>
+    String(s ?? "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const appendAssistantMessage = (msg: Message) => {
+    setMessages((prev) => {
+      try {
+        const recent = prev.slice(-6);
+        const norm = normalizeForDedupe(msg.content);
+        const role = msg.displayRole ?? msg.role ?? "assistant";
+        const duplicate = recent.some((m) => {
+          if (m.role !== "assistant") return false;
+          const mRole = m.displayRole ?? m.role ?? "assistant";
+          if (mRole !== role) return false;
+          return normalizeForDedupe(m.content) === norm;
+        });
+        if (duplicate) return prev;
+      } catch (e) {
+        // ignore dedupe errors
+      }
+      return [...prev, msg];
+    });
+  };
   const { timepoints } = useCaseTimepoints(caseId);
   const latestInitialMessagesRef = useRef<Message[]>(initialMessages ?? []);
   const lastHydratedAttemptKeyRef = useRef<string | null>(null);
@@ -364,7 +391,7 @@ export function ChatInterface({
           displayRole: "Reference",
           status: "sent",
         };
-        setMessages((prev) => [...prev, assistantMsg]);
+        appendAssistantMessage(assistantMsg);
       }
     } catch (err) {
       console.error("Paper search failed", err);
@@ -1254,7 +1281,7 @@ export function ChatInterface({
         (m) => m.role === "assistant" && m.content === cautionText
       );
       if (!alreadyShown) {
-        setMessages((prev) => [...prev, assistantMsg]);
+        appendAssistantMessage(assistantMsg);
       }
 
       if (!alreadyShown && ttsEnabled && cautionText) {
@@ -1720,7 +1747,7 @@ export function ChatInterface({
             }
           } else {
             // Default behavior: show the text immediately, then play audio
-            setMessages((prev) => [...prev, aiMessage]);
+            appendAssistantMessage(aiMessage);
             try {
               await playTtsAndPauseStt(
                 response.content,
@@ -1752,11 +1779,11 @@ export function ChatInterface({
         } catch (e) {
           console.error("Error during TTS handling:", e);
           // If anything falls through, ensure message is visible
-          setMessages((prev) => [...prev, aiMessage]);
+          appendAssistantMessage(aiMessage);
         }
       } else {
         // TTS disabled ��� just show the message
-        setMessages((prev) => [...prev, aiMessage]);
+        appendAssistantMessage(aiMessage);
         // Mark user message as sent
         if (userMessage) {
           setMessages((prev) =>
@@ -2066,7 +2093,7 @@ export function ChatInterface({
           voiceId: assistantVoiceId,
           sex: response.personaSex,
         });
-        setMessages((prev) => [...prev, aiMessage]);
+        appendAssistantMessage(aiMessage);
         // remove from pending store
         dequeuePendingById(p.id);
         // optionally clear any connection notice when successful
@@ -2734,7 +2761,7 @@ export function ChatInterface({
     });
 
     // Append assistant message immediately so user sees it
-    setMessages((prev) => [...prev, assistantMsg]);
+    appendAssistantMessage(assistantMsg);
 
     // Speak if tts enabled; stop listening first so the assistant audio
     // isn't picked up by STT, then resume listening after TTS completes.
