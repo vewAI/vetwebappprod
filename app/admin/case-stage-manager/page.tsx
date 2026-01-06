@@ -41,10 +41,16 @@ export default function CaseStageManager() {
         const payload = await resp.json().catch(() => ({}));
         const act = payload?.stageActivation || {};
         // Default: all stages active unless explicitly set to false in activation map
+        // Accept stored string booleans like "true"/"false".
         const withDefaults: Record<string, boolean> = {};
         s.forEach((_, idx) => {
           const key = String(idx);
-          withDefaults[key] = act.hasOwnProperty(key) ? Boolean(act[key]) : true;
+          if (act.hasOwnProperty(key)) {
+            const v = (act as any)[key];
+            withDefaults[key] = v === true || v === "true";
+          } else {
+            withDefaults[key] = true;
+          }
         });
         setActivation(withDefaults);
         setOriginalActivation(withDefaults);
