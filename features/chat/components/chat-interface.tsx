@@ -29,6 +29,7 @@ import {
   speakRemoteStream,
   stopActiveTtsPlayback,
 } from "@/features/speech/services/ttsService";
+import { setSttSuppressed } from "@/features/speech/services/sttService";
 import { isSpeechRecognitionSupported } from "@/features/speech/services/sttService";
 import { ChatMessage } from "@/features/chat/components/chat-message";
 import { Notepad } from "@/features/chat/components/notepad";
@@ -1171,13 +1172,16 @@ export function ChatInterface({
         // even if we are currently stopped (e.g. due to pulseVoiceModeControls).
         resumeListeningRef.current = true;
 
-        // Always attempt to stop if voice mode is on, to ensure mic is off during playback.
-        // Use abort() to immediately discard any pending audio buffer to prevent
-        // self-recording of the TTS start.
+        // Set global suppression to prevent recognition from starting/restarting
+        // while TTS is about to play. Also set local suppression ref so the
+        // hook's onFinal handler ignores any finals that slip through.
         try {
-          // Set suppression flag so any STT events emitted while the mic is
-          // shutting down or while TTS plays are ignored.
-          isSuppressingSttRef.current = true;
+          setSttSuppressed(true);
+        } catch {}
+        isSuppressingSttRef.current = true;
+
+        // Always attempt to stop if voice mode is on, to ensure mic is off during playback.
+        try {
           if (abort) {
             abort();
           } else {
@@ -1190,7 +1194,7 @@ export function ChatInterface({
 
         // Give a moment for the mic to fully release. Increased to 500ms to prevent
         // self-recording of the TTS start.
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise((resolve) => setTimeout(resolve, 500));
       }
 
       // Try streaming first for low latency, fall back to buffered playback
@@ -1225,10 +1229,18 @@ export function ChatInterface({
       // Record the tts end time and keep STT suppressed briefly to avoid
       // residual self-capture from the assistant audio.
       lastTtsEndRef.current = Date.now();
-      // clear suppression after a short grace period (600ms)
+      // Clear suppression after a short grace period (600ms). We must clear
+      // both the global suppression (which prevents auto-restart) and the
+      // local suppression ref used in handlers. Clear global suppression
+      // slightly later to avoid races with onend handlers.
       window.setTimeout(() => {
         isSuppressingSttRef.current = false;
       }, 600);
+      window.setTimeout(() => {
+        try {
+          setSttSuppressed(false);
+        } catch {}
+      }, 700);
       // Resume listening if we previously stopped for playback and voiceMode
       // is still enabled. Start immediately since the awaited TTS promise
       // resolves only after playback has finished.

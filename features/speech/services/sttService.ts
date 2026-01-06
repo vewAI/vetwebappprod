@@ -10,6 +10,11 @@ let micStream: MediaStream | null = null;
 // Whether we should auto-restart recognition when it ends (true while
 // the app intends continuous listening). Cleared by stopListening().
 let shouldRestart = false;
+// When true, suppress any attempts to start recognition (used while TTS plays)
+let sttSuppressed = false;
+// Timestamp (ms) until which starts are suppressed even after clearing the explicit flag.
+let sttSuppressedUntil = 0;
+const STT_SUPPRESSION_COOLDOWN_MS = 800; // cooldown after suppression is lifted
 // Small guard to avoid re-entrant start calls
 let starting = false;
 // Restart protection: avoid infinite start/stop loops by limiting attempts
@@ -202,6 +207,13 @@ export async function startListening(
   options?: StartListeningOptions
 ): Promise<boolean> {
   debugEventBus.emitEvent('info', 'STT', 'Starting speech recognition');
+  // Respect global suppression flag (set when playing TTS) to avoid
+  // starting the microphone while assistant audio is playing.
+  // Explicit suppression or cooldown period prevents starting
+  if (sttSuppressed || Date.now() < sttSuppressedUntil) {
+    debugEventBus.emitEvent('info', 'STT', 'Start suppressed by global flag');
+    return false;
+  }
   // Stop any ongoing recognition to ensure a fresh instance
   stopListening();
 
@@ -314,7 +326,9 @@ export async function startListening(
     recognition.onend = () => {
       debugEventBus.emitEvent('info', 'STT', 'Speech recognition ended');
       try {
-        if (!shouldRestart) return;
+          if (!shouldRestart) return;
+          // If suppression is active or we're in the cooldown window, do not auto-restart
+          if (sttSuppressed || Date.now() < sttSuppressedUntil) return;
         if (starting) return;
 
         // Protect against tight restart loops: allow a bounded number of restarts
@@ -415,4 +429,37 @@ export function abortListening(): void {
     }
     micStream = null;
   }
+}
+
+/**
+ * Temporarily suppress STT start/restart attempts (used while playing TTS).
+ * When `true`, calls to `startListening` will no-op and auto-restart onend
+ * will be prevented. When clearing suppression, callers may choose to
+ * restart listening as appropriate.
+ */
+export function setSttSuppressed(val: boolean) {
+  sttSuppressed = Boolean(val);
+  if (sttSuppressed) {
+    // Ensure any active recognition is stopped immediately
+    try {
+      shouldRestart = false;
+      if (recognition) {
+        recognition.abort();
+      }
+    } catch {}
+    // When explicitly suppressing, extend the cooldown window
+    try {
+      sttSuppressedUntil = Date.now() + (STT_SUPPRESSION_COOLDOWN_MS * 2);
+    } catch {}
+  }
+  else {
+    // When clearing suppression, set a short cooldown to avoid immediate mic restart
+    try {
+      sttSuppressedUntil = Date.now() + STT_SUPPRESSION_COOLDOWN_MS;
+    } catch {}
+  }
+}
+
+export function isSttSuppressed() {
+  return Boolean(sttSuppressed);
 }

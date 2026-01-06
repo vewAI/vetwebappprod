@@ -113,12 +113,28 @@ export async function POST(req: any, ctx: any) {
       nextActivation = { ...activation, [String(stageIndex)]: Boolean(active) };
     }
     const nextSettings = { ...current, stageActivation: nextActivation };
+    // Log the settings we will attempt to write for debugging
+    try {
+      console.info("Updating case settings for", caseId, { nextSettings });
+    } catch (e) {
+      // ignore
+    }
+
     const upd = await supabase.from("cases").update({ settings: nextSettings }).eq("id", caseId);
     if (upd.error) {
-      console.error("Failed to update case settings", upd.error);
-      return NextResponse.json({ ok: false, error: "update-failed" }, { status: 500 });
+      console.error("Failed to update case settings", upd.error, { caseId, nextSettings });
+      // Return verbose debug info to help diagnose deployed schema/permission issues.
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "update-failed",
+          detail: upd.error.message || String(upd.error),
+          attempted: { caseId, nextSettings },
+        },
+        { status: 500 }
+      );
     }
-    return NextResponse.json({ ok: true, stageActivation: nextActivation });
+    return NextResponse.json({ ok: true, stageActivation: nextActivation, written: nextSettings });
   } catch (e) {
     console.error("Error updating stage settings", e);
     return NextResponse.json({ ok: false, error: "exception" }, { status: 500 });
