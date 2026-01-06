@@ -917,12 +917,10 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
       }
 
       if (matchedKeyword && diagText) {
-        // If diag text contains any synonym for the matched diagnostic key, tell the student the result exists but is released in next stage
+        // If diag text contains any synonym for the matched diagnostic key, fall through
+        // to the default diagnostic-stage response below rather than returning the
+        // previous specialized message.
         const syns = DIAG_SYNONYMS[matchedKeyword] ?? [];
-        if (syns.some(s => s && diagText.toLowerCase().includes(s))) {
-          const reply = `That result is recorded for this case but diagnostic results are released in the Laboratory & Tests stage. Please request that item in the Laboratory & Tests stage to view the recorded value.`;
-          return NextResponse.json({ content: reply, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
-        }
       }
 
       const reply = `Those laboratory or imaging results are not released during the physical examination stage. Diagnostic results (bloodwork, imaging) are available in the Laboratory & Tests stage — please request them there or proceed to that stage to view the recorded results.`;
