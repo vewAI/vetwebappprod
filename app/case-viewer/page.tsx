@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 // ImageUploader intentionally not used here to allow manual image_url input in edit mode.
@@ -57,6 +57,8 @@ export default function CaseViewerPage() {
     return accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined;
   }, [accessToken]);
 
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [editable, setEditable] = useState(false);
@@ -83,6 +85,9 @@ export default function CaseViewerPage() {
     >
   >({});
   const [mediaDraft, setMediaDraft] = useState<CaseMediaItem[]>([]);
+  const [compareResult, setCompareResult] = useState<null | { suggested?: Record<string, unknown>; diffs?: Record<string, { original: unknown; suggested: unknown }>; snippet?: string; error?: string }>(null);
+  const [selectedSuggestKeys, setSelectedSuggestKeys] = useState<Record<string, boolean>>({});
+  const [applying, setApplying] = useState(false);
 
   const parseMedia = useCallback((raw: unknown): CaseMediaItem[] => {
     if (typeof raw === "string") {
@@ -781,7 +786,7 @@ export default function CaseViewerPage() {
           />
         </div>
       )}
-      {formState && caseIdValue && editable && (
+      {formState && caseIdValue && (
         <div className="mb-6">
           <div className="flex items-center justify-between">
             <div className="text-lg font-medium">Reference Papers</div>
@@ -806,6 +811,167 @@ export default function CaseViewerPage() {
               }
             }}
           />
+          <div className="mt-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                try {
+                  const arr = await f.arrayBuffer();
+                  const bytes = new Uint8Array(arr);
+                  let binary = "";
+                  const chunkSize = 0x8000;
+                  for (let i = 0; i < bytes.length; i += chunkSize) {
+                    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)) as any);
+                  }
+                  const b64 = typeof window !== "undefined" ? window.btoa(binary) : Buffer.from(bytes).toString("base64");
+                  const headers = authHeaders ?? {};
+                    const resp = await axios.post(`/api/cases/${encodeURIComponent(caseIdValue)}/compare`, {
+                      fileName: f.name,
+                      mimeType: f.type || "application/octet-stream",
+                      contentBase64: b64,
+                    }, { headers });
+                    const data = resp.data as any;
+                    if ((data as any)?.error) {
+                      setCompareResult({ error: String((data as any).error) });
+                      setSelectedSuggestKeys({});
+                    } else if (data?.diffs && Object.keys(data.diffs).length > 0) {
+                      setCompareResult(data);
+                      const keys: Record<string, boolean> = {};
+                      Object.keys(data.diffs).forEach((k) => (keys[k] = true));
+                      setSelectedSuggestKeys(keys);
+                    } else if (data?.suggested) {
+                      setCompareResult(data);
+                      const keys: Record<string, boolean> = {};
+                      Object.keys(data.suggested).forEach((k) => (keys[k] = true));
+                      setSelectedSuggestKeys(keys);
+                    } else {
+                      setCompareResult({});
+                      setSelectedSuggestKeys({});
+                    }
+                } catch (err) {
+                  console.error(err);
+                  alert("Upload & compare failed");
+                } finally {
+                  // clear input
+                  (e.target as HTMLInputElement).value = "";
+                }
+              }}
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              Upload & Compare
+            </Button>
+            {/* Diff / suggestions panel */}
+            {compareResult && (
+              <div className="mt-4 rounded border bg-background p-4">
+                {compareResult.error ? (
+                  <div className="text-sm text-red-600">Error: {compareResult.error}</div>
+                ) : null}
+                {compareResult.diffs && Object.keys(compareResult.diffs).length > 0 ? (
+                  <div>
+                    <div className="font-semibold mb-2">Suggested updates</div>
+                    <div className="space-y-2">
+                      {Object.entries(compareResult.diffs).map(([key, pair]) => (
+                        <div key={key} className="flex flex-col gap-1 border-b pb-2">
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={!!selectedSuggestKeys[key]}
+                              onChange={(e) => setSelectedSuggestKeys((prev) => ({ ...prev, [key]: e.target.checked }))}
+                            />
+                            <div className="font-medium">{key.replace(/_/g, " ")}</div>
+                          </label>
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <div className="text-xs text-muted-foreground">Original</div>
+                              <pre className="whitespace-pre-wrap max-h-32 overflow-auto p-2 rounded bg-muted text-xs">{typeof pair.original === 'string' ? pair.original : JSON.stringify(pair.original, null, 2)}</pre>
+                            </div>
+                            <div>
+                              <div className="text-xs text-muted-foreground">Suggested</div>
+                              <pre className="whitespace-pre-wrap max-h-32 overflow-auto p-2 rounded bg-muted text-xs">{typeof pair.suggested === 'string' ? pair.suggested : JSON.stringify(pair.suggested, null, 2)}</pre>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={async () => {
+                          // build updates from selected keys
+                          const keys = Object.keys(selectedSuggestKeys).filter(k => selectedSuggestKeys[k]);
+                          if (keys.length === 0) {
+                            alert('No fields selected');
+                            return;
+                          }
+                          const updates: Record<string, unknown> = {};
+                          for (const k of keys) {
+                            const val = compareResult.diffs?.[k]?.suggested ?? (compareResult.suggested ? compareResult.suggested[k] : undefined);
+                            if (val !== undefined) updates[k] = val;
+                          }
+                          try {
+                            setApplying(true);
+                            const resp = await axios.post(`/api/cases/${encodeURIComponent(caseIdValue)}/compare/apply`, { updates }, { headers: authHeaders });
+                            const d = resp.data;
+                            if (d?.success && d.data) {
+                              // update UI copy in-place
+                              setFormState(prev => prev ? { ...prev, ...d.data } : prev);
+                              setCases(prev => {
+                                const next = [...prev];
+                                if (next[currentIndex]) {
+                                  next[currentIndex] = { ...next[currentIndex], ...d.data };
+                                }
+                                return next;
+                              });
+                              setCompareResult(null);
+                              setSelectedSuggestKeys({});
+                              alert('Applied updates');
+                            } else if (d?.error) {
+                              alert(`Apply failed: ${d.error}`);
+                            } else {
+                              alert('Apply returned unexpected response');
+                            }
+                          } catch (err) {
+                            console.error(err);
+                            alert('Failed to apply updates');
+                          } finally {
+                            setApplying(false);
+                          }
+                        }}
+                        disabled={applying}
+                      >
+                        {applying ? 'Applying...' : 'Confirm & Apply'}
+                      </Button>
+                      <Button type="button" size="sm" variant="ghost" onClick={() => { setCompareResult(null); setSelectedSuggestKeys({}); }}>
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : compareResult.suggested && Object.keys(compareResult.suggested).length > 0 ? (
+                  <div>
+                    <div className="font-semibold mb-2">Suggested updates (no diffs)</div>
+                    <pre className="whitespace-pre-wrap text-sm">{JSON.stringify(compareResult.suggested, null, 2)}</pre>
+                    <div className="mt-3">
+                      <Button type="button" size="sm" onClick={() => { setCompareResult(null); setSelectedSuggestKeys({}); }}>
+                        Close
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-sm text-muted-foreground">No suggestions returned.</div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
       {formState && caseIdValue && (
