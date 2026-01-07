@@ -1,10 +1,8 @@
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
 import type { Case } from "../models/case";
 import { normalizeCaseMedia } from "@/features/cases/models/caseMedia";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Use shared singleton Supabase client to avoid multiple GoTrue instances
 
 type DbCase = {
   id?: string;

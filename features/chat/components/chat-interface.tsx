@@ -955,28 +955,44 @@ export function ChatInterface({
 
     async function loadPersonaDirectory() {
       try {
+        const token = await (async () => {
+          try {
+            const { getAccessToken } = await import("@/lib/auth-headers");
+            return await getAccessToken();
+          } catch (e) {
+            return null;
+          }
+        })();
+
+        const fetchOpts: RequestInit = token
+          ? { headers: { Authorization: `Bearer ${token}` } }
+          : {};
+
         let response = await fetch(
-          `/api/personas?caseId=${encodeURIComponent(caseId)}`
+          `/api/personas?caseId=${encodeURIComponent(caseId)}`,
+          fetchOpts
         );
 
         let personasToProcess: any[] | undefined;
 
-        // If case-specific personas are unauthorized, fall back to global personas
+        // If case-specific personas are unauthorized or otherwise fail, fall back to global personas
         if (!response.ok) {
-          if (response.status === 401) {
+          if (response.status === 401 || response.status === 403) {
             try {
-              console.warn("/api/personas returned 401 — attempting /api/global-personas fallback");
-              const globalResp = await fetch(`/api/global-personas`);
+              console.warn(`/api/personas returned ${response.status} — attempting /api/global-personas fallback`);
+              const globalResp = await fetch(`/api/global-personas`, fetchOpts);
               if (globalResp.ok) {
                 const globalPayload = await globalResp.json().catch(() => ({ personas: [] }));
                 personasToProcess = Array.isArray(globalPayload?.personas)
                   ? globalPayload.personas
                   : [];
               } else {
-                throw new Error(`Failed to load global personas: ${globalResp.status}`);
+                console.warn(`/api/global-personas also returned ${globalResp.status}; using empty directory`);
+                personasToProcess = [];
               }
             } catch (globalErr) {
-              throw globalErr;
+              console.warn("Fallback to global personas failed", globalErr);
+              personasToProcess = [];
             }
           } else {
             throw new Error(`Failed to load personas: ${response.status}`);

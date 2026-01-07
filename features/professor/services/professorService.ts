@@ -173,17 +173,31 @@ export const professorService = {
   },
 
   async getAssignedCasesForStudent(studentId: string) {
-    const { data, error } = await supabase
+    // Avoid PostgREST FK join requirement by doing a manual join in code.
+    const { data: assignments, error } = await supabase
       .from('professor_assigned_cases')
-      .select(`*, case:cases (id, title, difficulty, species, image_url)`)
+      .select('id, professor_id, student_id, case_id, assigned_at')
       .eq('student_id', studentId)
       .order('assigned_at', { ascending: false });
 
-    // Supabase client may return an empty error object in some failure modes.
-    // Treat any non-informative error as a non-fatal condition and return an
-    // empty array to keep the UI resilient.
     if (error && Object.keys(error).length > 0) throw error;
-    return data || [];
+    if (!assignments || assignments.length === 0) return [];
+
+    const caseIds = Array.from(new Set(assignments.map(a => a.case_id).filter(Boolean)));
+    if (caseIds.length === 0) return assignments.map(a => ({ ...a, case: null }));
+
+    const { data: cases, error: casesErr } = await supabase
+      .from('cases')
+      .select('id, title, difficulty, species, image_url')
+      .in('id', caseIds);
+
+    if (casesErr && Object.keys(casesErr).length > 0) throw casesErr;
+    const caseMap = new Map<string, any>((cases || []).map((c: any) => [c.id, c]));
+
+    return assignments.map((a: any) => ({
+      ...a,
+      case: caseMap.get(a.case_id) || null,
+    }));
   },
 
   async getClassStats(professorId: string) {

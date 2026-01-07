@@ -9,6 +9,19 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? null;
 
+// Cache admin client to avoid multiple instantiations
+let cachedAdminClient: SupabaseClient | null = null;
+
+function getOrCreateAdminClient(): SupabaseClient | null {
+  if (!supabaseServiceKey) return null;
+  if (!cachedAdminClient) {
+    cachedAdminClient = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { persistSession: false },
+    });
+  }
+  return cachedAdminClient;
+}
+
 type AuthSuccess = {
   supabase: SupabaseClient;
   user: User;
@@ -99,9 +112,7 @@ export async function requireUser(
 
   let adminSupabase: SupabaseClient | undefined;
   if (supabaseServiceKey) {
-    adminSupabase = createClient(supabaseUrl, supabaseServiceKey, {
-      auth: { persistSession: false },
-    });
+    adminSupabase = getOrCreateAdminClient() ?? undefined;
   }
 
   let role: string | null = null;
@@ -202,10 +213,16 @@ export async function requireAdmin(req: Request) {
   }
 
   const adminSupabase =
-    result.adminSupabase ??
-    createClient(supabaseUrl, supabaseServiceKey, {
-      auth: { persistSession: false },
-    });
+    result.adminSupabase ?? getOrCreateAdminClient();
+
+  if (!adminSupabase) {
+    return {
+      error: NextResponse.json(
+        { error: "Admin operations unavailable" },
+        { status: 500 }
+      ),
+    };
+  }
 
   return {
     ...result,
