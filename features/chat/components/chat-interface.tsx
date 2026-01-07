@@ -1256,15 +1256,23 @@ export function ChatInterface({
         } catch {}
       }, 700);
       // Resume listening if we previously stopped for playback and voiceMode
-      // is still enabled. Start immediately since the awaited TTS promise
-      // resolves only after playback has finished.
+      // is still enabled. Delay the restart slightly so the STT suppression
+      // cooldown has time to clear (otherwise start() will no-op).
       if (resumeListeningRef.current) {
         resumeListeningRef.current = false;
         if (voiceMode) {
           try {
-            start();
+            window.setTimeout(() => {
+              try {
+                if (!userToggledOffRef.current && voiceMode) {
+                  start();
+                }
+              } catch (e) {
+                // ignore errors starting STT
+              }
+            }, 900);
           } catch (e) {
-            // ignore errors starting STT
+            // ignore
           }
         }
       }
@@ -1870,11 +1878,18 @@ export function ChatInterface({
           }
 
           // After TTS completes, resume listening if we previously stopped and
-          // voiceMode is still active.
+          // voiceMode is still active. Delay restart to allow STT suppression
+          // cooldown to expire so `start()` succeeds.
           if (resumeListeningRef.current) {
             resumeListeningRef.current = false;
             if (voiceMode) {
-              setTimeout(() => start(), 50);
+              setTimeout(() => {
+                try {
+                  if (!userToggledOffRef.current && voiceMode) start();
+                } catch (e) {
+                  /* ignore */
+                }
+              }, 900);
             }
           }
           // Mark the user message as sent (clear pending)
@@ -2910,12 +2925,18 @@ export function ChatInterface({
         } catch (err) {
           console.error("Intro TTS failed:", err);
         }
-      } finally {
+        } finally {
         if (resumeListeningRef.current) {
           resumeListeningRef.current = false;
           if (voiceMode) {
-            // Resume after a short delay so mic hardware settles
-            setTimeout(() => start(), 150);
+            // Delay restart so STT suppression cooldown expires and mic hardware settles
+            setTimeout(() => {
+              try {
+                if (!userToggledOffRef.current && voiceMode) start();
+              } catch (e) {
+                /* ignore */
+              }
+            }, 900);
           }
         }
       }
