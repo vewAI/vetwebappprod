@@ -88,6 +88,31 @@ const STAGE_KEYWORD_SYNONYMS: Record<string, string[]> = {
   plan: ["treatment", "management", "strategy"],
 };
 
+// Merge two text fragments by avoiding duplicated overlapping words at the
+// junction. Returns a string that preserves spacing and avoids repeating
+// tokens that appear at the end of `base` and the start of `add`.
+function mergeStringsNoDup(base: string | undefined, add: string | undefined): string {
+  const b = String(base || "").trim();
+  const a = String(add || "").trim();
+  if (!b) return a;
+  if (!a) return b;
+  // Tokenize on whitespace, keep case for display but compare lowercased
+  const bWords = b.split(/\s+/);
+  const aWords = a.split(/\s+/);
+  const maxOverlap = Math.min(bWords.length, aWords.length);
+  // Find largest k where last k words of b equal first k words of a (case-insensitive)
+  for (let k = maxOverlap; k > 0; k--) {
+    const bSlice = bWords.slice(bWords.length - k).join(" ").toLowerCase();
+    const aSlice = aWords.slice(0, k).join(" ").toLowerCase();
+    if (bSlice === aSlice) {
+      const remainder = aWords.slice(k).join(" ");
+      return remainder ? `${b} ${remainder}` : b;
+    }
+  }
+  // No overlap found
+  return `${b} ${a}`;
+}
+
 type StageCompletionRule = {
   minUserTurns?: number;
   minAssistantTurns?: number;
@@ -799,18 +824,7 @@ export function ChatInterface({
           // Append the final trimmed text to the committed base input so
           // pauses do not erase earlier content. Maintain spacing. Also
           // guard against the base already ending with the same text.
-          if (
-            baseInputRef.current &&
-            baseInputRef.current.trim().length > 0 &&
-            !baseInputRef.current.trim().endsWith(trimmed)
-          ) {
-            baseInputRef.current = `${baseInputRef.current.trim()} ${trimmed}`;
-          } else if (
-            !baseInputRef.current ||
-            baseInputRef.current.trim().length === 0
-          ) {
-            baseInputRef.current = trimmed;
-          }
+            baseInputRef.current = mergeStringsNoDup(baseInputRef.current, trimmed);
           // Reflect in the visible textarea immediately
           setInput(baseInputRef.current);
 
@@ -2384,10 +2398,7 @@ export function ChatInterface({
           autoSendTimerRef.current = null;
           autoSendPendingTextRef.current = null;
         }
-        const combined =
-          baseInputRef.current && baseInputRef.current.trim().length > 0
-            ? `${baseInputRef.current.trim()} ${interimTranscript.trim()}`
-            : interimTranscript;
+        const combined = mergeStringsNoDup(baseInputRef.current, interimTranscript.trim());
         setInput(combined);
         return;
       }
@@ -2422,15 +2433,7 @@ export function ChatInterface({
           !baseInputRef.current ||
           !baseInputRef.current.includes(finalTrim)
         ) {
-          if (
-            baseInputRef.current &&
-            baseInputRef.current.trim().length > 0 &&
-            !baseInputRef.current.trim().endsWith(finalTrim)
-          ) {
-            baseInputRef.current = `${baseInputRef.current.trim()} ${finalTrim}`;
-          } else {
-            baseInputRef.current = finalTrim;
-          }
+          baseInputRef.current = mergeStringsNoDup(baseInputRef.current, finalTrim);
           lastAppendedTextRef.current = finalTrim;
           lastAppendTimeRef.current = now;
         }
@@ -3014,6 +3017,20 @@ export function ChatInterface({
               disabled={startSequenceActive}
             >
               {startSequenceActive ? "Starting voice..." : "Click Here to START Speaking"}
+            </Button>
+            {/* Auto-send toggle button (student control) */}
+            <Button
+              type="button"
+              size="icon"
+              title={autoSendStt
+                ? "Auto-send is ON — spoken messages will be sent automatically"
+                : "Auto-send is OFF — click the arrow to send after speaking"
+              }
+              aria-pressed={autoSendStt}
+              onClick={() => setAutoSendStt((v) => !v)}
+              className={`absolute bottom-2 right-6 ${autoSendStt ? "bg-emerald-500 hover:bg-emerald-600 text-white" : "bg-muted text-white/90 hover:bg-muted/80"}`}
+            >
+              {autoSendStt ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
             </Button>
             <Button
               type="button"
