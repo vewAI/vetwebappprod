@@ -959,6 +959,8 @@ export function ChatInterface({
           `/api/personas?caseId=${encodeURIComponent(caseId)}`
         );
 
+        let personasToProcess: any[] | undefined;
+
         // If case-specific personas are unauthorized, fall back to global personas
         if (!response.ok) {
           if (response.status === 401) {
@@ -967,11 +969,9 @@ export function ChatInterface({
               const globalResp = await fetch(`/api/global-personas`);
               if (globalResp.ok) {
                 const globalPayload = await globalResp.json().catch(() => ({ personas: [] }));
-                const personas = Array.isArray(globalPayload?.personas)
+                personasToProcess = Array.isArray(globalPayload?.personas)
                   ? globalPayload.personas
                   : [];
-                // process global personas below by assigning to `personasToProcess`
-                var personasToProcess = personas;
               } else {
                 throw new Error(`Failed to load global personas: ${globalResp.status}`);
               }
@@ -984,12 +984,11 @@ export function ChatInterface({
         }
 
         // If we didn't already set personasToProcess from global fallback, parse the case response
-        let personasToProcess: any[] | undefined;
         if (typeof personasToProcess === "undefined") {
           const payload = await response.json().catch(() => ({ personas: [] }));
           personasToProcess = Array.isArray(payload?.personas) ? payload.personas : [];
         }
-        const personas = personasToProcess;
+        const personas = personasToProcess || [];
         const next: Record<string, PersonaDirectoryEntry> = {};
 
         for (const row of personas) {
@@ -1839,11 +1838,20 @@ export function ChatInterface({
       const normalizedPersonaKey = safePersonaRoleKey;
       const portraitUrl = response.portraitUrl;
       const serverVoiceId = normalizeVoiceId(response.voiceId);
+      // Prefer patientSex (if provided by server) for pronoun/voice
+      // selection; fall back to personaSex when patientSex is absent.
+      const resolvedResponseSex =
+        response.patientSex === "male" ||
+        response.patientSex === "female" ||
+        response.patientSex === "neutral"
+          ? response.patientSex
+          : response.personaSex;
+
       let responseVoiceSex: "male" | "female" | "neutral" =
-        response.personaSex === "male" ||
-          response.personaSex === "female" ||
-          response.personaSex === "neutral"
-          ? response.personaSex
+        resolvedResponseSex === "male" ||
+        resolvedResponseSex === "female" ||
+        resolvedResponseSex === "neutral"
+          ? resolvedResponseSex
           : "neutral";
 
       const resolvedVoiceForRole = getOrAssignVoiceForRole(
@@ -1866,7 +1874,8 @@ export function ChatInterface({
         finalDisplayName,
         portraitUrl,
         assistantVoiceId,
-        response.personaSex,
+        // pass the resolved sex (prefer patientSex)
+        resolvedResponseSex,
         safePersonaRoleKey,
         response.media
       );
@@ -1875,7 +1884,7 @@ export function ChatInterface({
         displayName: aiMessage.displayRole,
         portraitUrl,
         voiceId: assistantVoiceId,
-        sex: response.personaSex,
+        sex: resolvedResponseSex,
       });
 
       // Speak the assistant response when TTS is enabled. We support a
@@ -2276,11 +2285,19 @@ export function ChatInterface({
         const normalizedPersonaKey = safePersonaRoleKey;
         const portraitUrl = response.portraitUrl;
         const serverVoiceId = normalizeVoiceId(response.voiceId);
+        // Prefer patientSex (if provided) for pronoun/voice selection.
+        const resolvedResponseSex =
+          response.patientSex === "male" ||
+          response.patientSex === "female" ||
+          response.patientSex === "neutral"
+            ? response.patientSex
+            : response.personaSex;
+
         let responseVoiceSex: "male" | "female" | "neutral" =
-          response.personaSex === "male" ||
-            response.personaSex === "female" ||
-            response.personaSex === "neutral"
-            ? response.personaSex
+          resolvedResponseSex === "male" ||
+          resolvedResponseSex === "female" ||
+          resolvedResponseSex === "neutral"
+            ? resolvedResponseSex
             : "neutral";
 
         const resolvedVoiceForRole = getOrAssignVoiceForRole(
@@ -2298,7 +2315,8 @@ export function ChatInterface({
           String(roleName ?? "assistant"),
           portraitUrl,
           assistantVoiceId,
-          response.personaSex,
+          // pass resolved sex (prefer patientSex)
+          resolvedResponseSex,
           safePersonaRoleKey,
           response.media
         );
@@ -2306,7 +2324,7 @@ export function ChatInterface({
           displayName: aiMessage.displayRole,
           portraitUrl,
           voiceId: assistantVoiceId,
-          sex: response.personaSex,
+          sex: resolvedResponseSex,
         });
         appendAssistantMessage(aiMessage);
         // remove from pending store

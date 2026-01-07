@@ -26,6 +26,7 @@ export const chatService = {
     portraitUrl?: string;
     voiceId?: string;
     personaSex?: string;
+    patientSex?: string;
     personaRoleKey?: string;
     media?: CaseMediaItem[];
   }> => {
@@ -78,6 +79,7 @@ export const chatService = {
             portraitUrl?: string;
             voiceId?: string;
             personaSex?: string;
+            patientSex?: string;
             personaRoleKey?: string;
             media?: CaseMediaItem[];
           };

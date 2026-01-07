@@ -200,6 +200,24 @@ export async function POST(request: NextRequest) {
     // Deconstruct DB results.
     let { ownerInfo: ownerBackground, timepointInfo: timepointPrompt, dbRecord: caseRecord, mediaItems: caseMedia } = dbResult;
 
+    // Normalize patient sex from the case record so the client can prefer
+    // patient sex (for pronouns/voice) when present.
+    const normalizePatientSex = (raw?: unknown): string | undefined => {
+      if (!raw) return undefined;
+      try {
+        const s = String(raw).toLowerCase().trim();
+        if (!s) return undefined;
+        if (s.includes("gelding") || s.includes("stallion") || s.includes("male")) return "male";
+        if (s.includes("mare") || s.includes("filly") || s.includes("cow") || s.includes("female")) return "female";
+        if (s.includes("unknown") || s.includes("other") || s.includes("neutral")) return "neutral";
+      } catch (e) {
+        // ignore and fall through
+      }
+      return undefined;
+    };
+
+    const patientSex = normalizePatientSex(caseRecord && typeof caseRecord === "object" ? (caseRecord as any)["patient_sex"] : undefined);
+
     if (!caseId) {
       console.warn("No caseId provided");
     }
@@ -894,7 +912,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
         if (matchingLines.length > 0) {
           try { debugEventBus.emitEvent('info','ChatDBMatch','line-match',{ matchedKey: matchedPhysicalKey, lines: matchingLines.length }); } catch {}
           const out = convertCelsiusToFahrenheitInText(matchingLines.join("\n"));
-          return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+          return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
         }
         
         // Additional robust checks: try JSON key/value lookup and fuzzy line matching
@@ -920,7 +938,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
             if (hits.length > 0) {
               try { debugEventBus.emitEvent('info','ChatDBMatch','json-key-match',{ query: userText, hits: hits.length }); } catch {}
               const out = convertCelsiusToFahrenheitInText(hits.join('\n'));
-              return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+              return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
             }
           }
         } catch (e) {
@@ -937,7 +955,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
           if (fuzzyMatches.length > 0) {
             try { debugEventBus.emitEvent('info','ChatDBMatch','fuzzy-line-match',{ tokens: normQueryTokens, matches: fuzzyMatches.length }); } catch {}
             const out = convertCelsiusToFahrenheitInText(fuzzyMatches.join('\n'));
-            return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+            return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
           }
         }
 
@@ -946,7 +964,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
         if (caseWideHits.length > 0) {
           try { debugEventBus.emitEvent('info','ChatDBMatch','case-wide-hits',{ query: userText, hits: caseWideHits.length }); } catch {}
           const out = convertCelsiusToFahrenheitInText(caseWideHits.join('\n'));
-          return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+          return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
         }
 
         // Next, try synonyms across the whole case record
@@ -962,7 +980,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
         if (synHits.length > 0) {
           try { debugEventBus.emitEvent('info','ChatDBMatch','synonym-case-hits',{ query: userText, hits: synHits.length }); } catch {}
           const out = convertCelsiusToFahrenheitInText(synHits.join('\n'));
-          return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+          return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
         }
 
         // Finally, consult the RAG/LLM context for a cautious, evidence-backed statement
@@ -970,7 +988,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
           const fallback = await llmCautiousFallback(ragContext, userText);
           if (fallback) {
             try { debugEventBus.emitEvent('info','ChatDBMatch','llm-fallback-used',{ query: userText }); } catch {}
-            return NextResponse.json({ content: fallback, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+            return NextResponse.json({ content: fallback, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
           }
         } catch (e) {
           // ignore and fall through to return raw physText
@@ -980,7 +998,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
         // As last resort, return the full phys text so the student sees what's recorded
         try { debugEventBus.emitEvent('info','ChatDBMatch','return-full-phys-text',{ length: physText.length }); } catch {}
         const out = convertCelsiusToFahrenheitInText(physText);
-        return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+        return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
       }
 
       if (matchedKeyword && diagText) {
@@ -995,7 +1013,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
       // Client will respect `suppress: true` and will not create/append
       // an assistant message for this case.
       try { debugEventBus.emitEvent('info','ChatDBMatch','suppressed-physical-canned-reply',{ caseId, q: userText }); } catch {}
-      return NextResponse.json({ content: "", displayRole, portraitUrl: undefined, voiceId: undefined, personaSex: undefined, personaRoleKey, media: [], suppress: true });
+      return NextResponse.json({ content: "", displayRole, portraitUrl: undefined, voiceId: undefined, personaSex: undefined, personaRoleKey, media: [], suppress: true, patientSex });
     }
 
     if (isLabStage && caseRecord && typeof caseRecord === "object") {
@@ -1011,16 +1029,16 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
           const matchingLines = lines.filter(l => lineMatchesSynonym(l, syns));
           if (matchingLines.length > 0) {
             const reply = convertCelsiusToFahrenheitInText(matchingLines.join("\n"));
-            return NextResponse.json({ content: reply, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+            return NextResponse.json({ content: reply, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
           }
           // fallback: if diag text contains any synonym, return full diag text
           if (syns.some(s => s && diagText.toLowerCase().includes(s))) {
-            return NextResponse.json({ content: convertCelsiusToFahrenheitInText(diagText), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+            return NextResponse.json({ content: convertCelsiusToFahrenheitInText(diagText), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
           }
           // no matching data recorded in diagnostics -> search rest of case fields
           const caseWideHits = searchCaseRecordForQuery(userText, caseRecord as Record<string, unknown> | null);
           if (caseWideHits.length > 0) {
-            return NextResponse.json({ content: caseWideHits.join('\n'), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+            return NextResponse.json({ content: caseWideHits.join('\n'), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
           }
 
           // Try synonyms across all case fields for diagnostics
@@ -1034,7 +1052,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
             if (synHits.length > 0) break;
           }
           if (synHits.length > 0) {
-            return NextResponse.json({ content: synHits.join('\n'), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+            return NextResponse.json({ content: synHits.join('\n'), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
           }
 
           // LLM cautious fallback using RAG context
@@ -1124,6 +1142,7 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
       personaSex,
       personaRoleKey,
       media: requestedMedia,
+      patientSex,
     });
   } catch (error) {
     console.error("Error in chat API:", error);

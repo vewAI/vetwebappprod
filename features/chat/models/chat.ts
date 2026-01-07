@@ -10,6 +10,7 @@ export interface Message {
   portraitUrl?: string;
   voiceId?: string;
   personaSex?: string;
+  patientSex?: string;
   personaRoleKey?: string;
   // optional status for UI (pending, failed, sent)
   status?: "pending" | "failed" | "sent";
