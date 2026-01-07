@@ -955,16 +955,41 @@ export function ChatInterface({
 
     async function loadPersonaDirectory() {
       try {
-        const response = await fetch(
+        let response = await fetch(
           `/api/personas?caseId=${encodeURIComponent(caseId)}`
         );
+
+        // If case-specific personas are unauthorized, fall back to global personas
         if (!response.ok) {
-          throw new Error(`Failed to load personas: ${response.status}`);
+          if (response.status === 401) {
+            try {
+              console.warn("/api/personas returned 401 — attempting /api/global-personas fallback");
+              const globalResp = await fetch(`/api/global-personas`);
+              if (globalResp.ok) {
+                const globalPayload = await globalResp.json().catch(() => ({ personas: [] }));
+                const personas = Array.isArray(globalPayload?.personas)
+                  ? globalPayload.personas
+                  : [];
+                // process global personas below by assigning to `personasToProcess`
+                var personasToProcess = personas;
+              } else {
+                throw new Error(`Failed to load global personas: ${globalResp.status}`);
+              }
+            } catch (globalErr) {
+              throw globalErr;
+            }
+          } else {
+            throw new Error(`Failed to load personas: ${response.status}`);
+          }
         }
-        const payload = await response.json().catch(() => ({ personas: [] }));
-        const personas = Array.isArray(payload?.personas)
-          ? payload.personas
-          : [];
+
+        // If we didn't already set personasToProcess from global fallback, parse the case response
+        let personasToProcess: any[] | undefined;
+        if (typeof personasToProcess === "undefined") {
+          const payload = await response.json().catch(() => ({ personas: [] }));
+          personasToProcess = Array.isArray(payload?.personas) ? payload.personas : [];
+        }
+        const personas = personasToProcess;
         const next: Record<string, PersonaDirectoryEntry> = {};
 
         for (const row of personas) {
@@ -1370,7 +1395,7 @@ export function ChatInterface({
         personaMeta?.displayName ?? roleName,
         personaMeta?.portraitUrl,
         voiceForRole,
-        personaMeta?.sex,
+        voiceSex,
         normalizedRoleKey
       );
 
@@ -1511,6 +1536,15 @@ export function ChatInterface({
 
         const normalizedRoleKey = resolveChatPersonaRoleKey(stage?.role, roleLabel);
         const personaMeta = await ensurePersonaMetadata(normalizedRoleKey);
+        const voiceSex: "male" | "female" | "neutral" =
+          personaMeta?.sex === "male" ||
+          personaMeta?.sex === "female" ||
+          personaMeta?.sex === "neutral"
+            ? (personaMeta.sex as "male" | "female" | "neutral")
+            : "neutral";
+        try {
+          console.debug("physical-stage personaMeta", { normalizedRoleKey, personaMeta, voiceSex });
+        } catch (e) {}
         try {
           console.debug("physical-stage personaMeta", { normalizedRoleKey, personaMeta });
         } catch (e) {}
@@ -1526,7 +1560,7 @@ export function ChatInterface({
           personaMeta?.displayName ?? roleLabel,
           personaMeta?.portraitUrl,
           voiceForRole,
-          personaMeta?.sex,
+          voiceSex,
           normalizedRoleKey
         );
         appendAssistantMessage(assistantMsg);
