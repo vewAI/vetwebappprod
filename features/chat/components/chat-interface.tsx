@@ -1005,6 +1005,16 @@ export function ChatInterface({
               normalizeSex(typeof metadata?.sex === "string" ? (metadata.sex as string) : undefined) ??
               normalizeSex(typeof identity?.sex === "string" ? identity.sex : undefined),
           };
+          // lightweight diagnostic: log resolved persona sex and key
+          try {
+            console.debug("personaDirectory load", {
+              key: normalizedKey,
+              sex: next[normalizedKey].sex,
+              displayName: next[normalizedKey].displayName,
+            });
+          } catch (e) {
+            /* ignore logging errors */
+          }
         }
 
         /*
@@ -1171,22 +1181,36 @@ export function ChatInterface({
   const attemptStartListening = useCallback((initialDelay = 0) => {
     // schedule the initial attempt after the given delay
     window.setTimeout(() => {
-      if (userToggledOffRef.current) return;
-      if (!voiceModeRef.current) return;
+      console.debug("attemptStartListening scheduled", { initialDelay });
+      if (userToggledOffRef.current) {
+        console.debug("attemptStartListening aborted: user toggled mic off");
+        return;
+      }
+      if (!voiceModeRef.current) {
+        console.debug("attemptStartListening aborted: voiceMode disabled");
+        return;
+      }
       let attempts = 0;
       const maxAttempts = 3;
       const tryOnce = () => {
-        if (userToggledOffRef.current || !voiceModeRef.current) return;
+        if (userToggledOffRef.current || !voiceModeRef.current) {
+          console.debug("attemptStartListening stopping retries", { attempts });
+          return;
+        }
         try {
+          console.debug("attemptStartListening try", { attempt: attempts + 1 });
           start();
         } catch (e) {
-          // ignore start errors and retry
+          console.debug("attemptStartListening start() threw", e);
         }
         attempts += 1;
         if (attempts < maxAttempts) {
           window.setTimeout(() => {
             if (!isListening && !userToggledOffRef.current && voiceModeRef.current) tryOnce();
+            else console.debug("attemptStartListening stopping further retries: isListening or toggled off", { isListening: !!isListening });
           }, 700);
+        } else {
+          console.debug("attemptStartListening reached max attempts", { attempts });
         }
       };
       tryOnce();
@@ -1296,6 +1320,9 @@ export function ChatInterface({
         resumeListeningRef.current = false;
         // Use the robust start helper with a short delay so suppression cooldown
         // has time to clear. Helper will retry a few times if needed.
+        try {
+          console.debug("playTtsAndPauseStt: resuming STT, scheduling attemptStartListening", { delay: 900 });
+        } catch (e) {}
         attemptStartListening(900);
       }
     }
@@ -1321,6 +1348,9 @@ export function ChatInterface({
       const roleName = stage.role ?? "Virtual Assistant";
       const normalizedRoleKey = resolveChatPersonaRoleKey(stage.role, roleName);
       const personaMeta = await ensurePersonaMetadata(normalizedRoleKey);
+      try {
+        console.debug("emitStageReadinessPrompt personaMeta", { normalizedRoleKey, personaMeta });
+      } catch (e) {}
 
       let voiceSex: "male" | "female" | "neutral" =
         personaMeta?.sex === "male" ||
@@ -1481,6 +1511,9 @@ export function ChatInterface({
 
         const normalizedRoleKey = resolveChatPersonaRoleKey(stage?.role, roleLabel);
         const personaMeta = await ensurePersonaMetadata(normalizedRoleKey);
+        try {
+          console.debug("physical-stage personaMeta", { normalizedRoleKey, personaMeta });
+        } catch (e) {}
         const voiceForRole = getOrAssignVoiceForRole(normalizedRoleKey, attemptId, {
           preferredVoice: personaMeta?.voiceId,
           sex: personaMeta?.sex as any,
