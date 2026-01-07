@@ -1001,13 +1001,9 @@ export function ChatInterface({
                   ? identity.voiceId
                   : undefined,
             sex:
-              typeof row?.sex === "string"
-                ? row.sex
-                : typeof metadata?.sex === "string"
-                  ? (metadata.sex as string)
-                  : typeof identity?.sex === "string"
-                    ? identity.sex
-                    : undefined,
+              normalizeSex(typeof row?.sex === "string" ? row.sex : undefined) ??
+              normalizeSex(typeof metadata?.sex === "string" ? (metadata.sex as string) : undefined) ??
+              normalizeSex(typeof identity?.sex === "string" ? identity.sex : undefined),
           };
         }
 
@@ -1159,6 +1155,44 @@ export function ChatInterface({
     }
   };
 
+  // Normalize sex/sex-like labels coming from persona rows (e.g. 'Gelding')
+  const normalizeSex = (raw?: string | null): "male" | "female" | "neutral" | undefined => {
+    if (!raw) return undefined;
+    const s = String(raw).toLowerCase().trim();
+    if (!s) return undefined;
+    if (s.includes("gelding") || s.includes("stallion") || s.includes("colt") || s.includes("male")) return "male";
+    if (s.includes("mare") || s.includes("filly") || s.includes("cow") || s.includes("female")) return "female";
+    if (s.includes("neutral") || s.includes("unknown") || s.includes("other")) return "neutral";
+    return undefined;
+  };
+
+  // Attempt to start STT with a few retries if the engine doesn't immediately begin.
+  // This makes resume-after-TTS more robust across browsers and STT implementations.
+  const attemptStartListening = useCallback((initialDelay = 0) => {
+    // schedule the initial attempt after the given delay
+    window.setTimeout(() => {
+      if (userToggledOffRef.current) return;
+      if (!voiceModeRef.current) return;
+      let attempts = 0;
+      const maxAttempts = 3;
+      const tryOnce = () => {
+        if (userToggledOffRef.current || !voiceModeRef.current) return;
+        try {
+          start();
+        } catch (e) {
+          // ignore start errors and retry
+        }
+        attempts += 1;
+        if (attempts < maxAttempts) {
+          window.setTimeout(() => {
+            if (!isListening && !userToggledOffRef.current && voiceModeRef.current) tryOnce();
+          }, 700);
+        }
+      };
+      tryOnce();
+    }, initialDelay);
+  }, [start, isListening]);
+
   const stopRef = useRef(stop);
   const resetRef = useRef(reset);
   useEffect(() => {
@@ -1260,21 +1294,9 @@ export function ChatInterface({
       // cooldown has time to clear (otherwise start() will no-op).
       if (resumeListeningRef.current) {
         resumeListeningRef.current = false;
-        if (voiceMode) {
-          try {
-            window.setTimeout(() => {
-              try {
-                if (!userToggledOffRef.current && voiceMode) {
-                  start();
-                }
-              } catch (e) {
-                // ignore errors starting STT
-              }
-            }, 900);
-          } catch (e) {
-            // ignore
-          }
-        }
+        // Use the robust start helper with a short delay so suppression cooldown
+        // has time to clear. Helper will retry a few times if needed.
+        attemptStartListening(900);
       }
     }
   };
@@ -1882,15 +1904,10 @@ export function ChatInterface({
           // cooldown to expire so `start()` succeeds.
           if (resumeListeningRef.current) {
             resumeListeningRef.current = false;
-            if (voiceMode) {
-              setTimeout(() => {
-                try {
-                  if (!userToggledOffRef.current && voiceMode) start();
-                } catch (e) {
-                  /* ignore */
-                }
-              }, 900);
-            }
+            // Use the robust start helper so the STT engine is retried if it
+            // does not immediately begin listening. Delay to let suppression
+            // cooldown clear on the service.
+            attemptStartListening(900);
           }
           // Mark the user message as sent (clear pending)
           if (userMessage) {
@@ -2928,16 +2945,7 @@ export function ChatInterface({
         } finally {
         if (resumeListeningRef.current) {
           resumeListeningRef.current = false;
-          if (voiceMode) {
-            // Delay restart so STT suppression cooldown expires and mic hardware settles
-            setTimeout(() => {
-              try {
-                if (!userToggledOffRef.current && voiceMode) start();
-              } catch (e) {
-                /* ignore */
-              }
-            }, 900);
-          }
+          attemptStartListening(900);
         }
       }
     }
@@ -3289,20 +3297,7 @@ export function ChatInterface({
                 )}
               </Tooltip>
             </TooltipProvider>
-            {role && (role === "professor" || role === "admin") && (
-              <Button
-                type="button"
-                size="icon"
-                title="Search attached reference papers"
-                className="absolute bottom-2 right-14 bg-white text-gray-700 border"
-                onClick={() => {
-                  const q = input.trim() || (messages.length > 0 ? messages[messages.length - 1].content : "");
-                  void runPaperSearch(q);
-                }}
-              >
-                🔎
-              </Button>
-            )}
+            {/* Paper-search button removed per UX request */}
           </form>
 
           <div className="mt-2 flex justify-between text-xs text-muted-foreground">
