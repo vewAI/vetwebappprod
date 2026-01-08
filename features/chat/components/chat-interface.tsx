@@ -1504,6 +1504,7 @@ export function ChatInterface({
 
   // sendUserMessage helper (used by manual submit and auto-send)
   const sendUserMessage = async (text: string, existingMessageId?: string) => {
+    const trimmed = text.trim();
     // If we're already loading, don't return early; queue or drop instead.
     // However, dropping is bad ux. For now, if auto-send triggers while loading,
     // we should let it pass IF it's a new message, OR better yet, block only if
