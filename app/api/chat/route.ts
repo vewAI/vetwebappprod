@@ -315,9 +315,14 @@ export async function POST(request: NextRequest) {
       if (isOnDemand && looksLikeGeneralFindingsRequest && personaIsNurseOrLab) {
         const clarifying = "Please request a specific finding or system (for example: 'vitals', 'cardiovascular exam', 'CBC'). Which would you like to see?";
         try { debugEventBus.emitEvent('info','ChatDBMatch','on_demand-clarify',{ caseId, q }); } catch {}
+        // Must match the standard response shape (including 'role')
         return NextResponse.json({
+          role: "assistant", 
           content: clarifying,
           displayRole: displayRole,
+          roleKey: personaRoleKey,
+        });
+      }
           portraitUrl: undefined,
           voiceId: undefined,
           personaSex: undefined,

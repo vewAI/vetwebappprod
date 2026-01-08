@@ -1502,24 +1502,30 @@ export function ChatInterface({
     }, 600);
   };
 
+  const lastSubmissionRef = useRef<{ content: string; timestamp: number } | null>(null);
+
   // sendUserMessage helper (used by manual submit and auto-send)
   const sendUserMessage = async (text: string, existingMessageId?: string) => {
     const trimmed = text.trim();
-    // If we're already loading, don't return early; queue or drop instead.
-    // However, dropping is bad ux. For now, if auto-send triggers while loading,
-    // we should let it pass IF it's a new message, OR better yet, block only if
-    // we are very strict. But wait, if we return here, the message is never sent!
-    // The previous implementation was: if (!trimmed || isLoading) return;
-    // We must relax 'isLoading' for queueing logic or handle it.
-    // Since we don't have a queue built, let's relax the check but ensure state consistency.
-    // Actually, Concurrent requests are handled by most backends.
-    // The only risk is 'messages' state updates race.
-    // Let's remove isLoading check to fix the stuck behavior.
     if (!trimmed) return;
-    // matches this content and was sent very recently, skip to avoid
-    // showing the same message twice (e.g., from race between manual
-    // submit and STT auto-send).
+
+    // Robust duplication check using ref (ignores slow state updates)
+    // If the exact same content is submitted within 2.5 seconds, block it.
+    const now = Date.now();
+    if (
+      lastSubmissionRef.current &&
+      lastSubmissionRef.current.content === trimmed &&
+      now - lastSubmissionRef.current.timestamp < 2500
+    ) {
+      console.warn("Duplicate submission blocked by ref-check:", trimmed);
+      return;
+    }
+    
+    // Update submission tracker immediately
+    lastSubmissionRef.current = { content: trimmed, timestamp: now };
+
     try {
+      // Also check against React state for slightly older duplicates
       const lastUser = [...messages].reverse().find((m) => m.role === "user");
       if (lastUser && lastUser.content) {
         const normalize = (s: string) =>
