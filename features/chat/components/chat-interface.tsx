@@ -903,7 +903,8 @@ export function ChatInterface({
         // restart voice mode 2s after fade completes
         sttErrorRestartTimerRef.current = window.setTimeout(() => {
           // if voice mode is intended and we're not listening, start STT
-          if (voiceModeRef.current && !isListening && !userToggledOffRef.current && !isPaused) {
+          // Verify we are not currently playing audio (which would cause self-capture)
+          if (voiceModeRef.current && !isListening && !userToggledOffRef.current && !isPaused && !isPlayingAudioRef.current) {
             try {
               start();
             } catch (e) {
@@ -1276,7 +1277,8 @@ export function ChatInterface({
     isPlayingAudioRef.current = true;
     let stoppedForPlayback = false;
     try {
-      if (isListening || voiceMode) {
+      // Check refs to ensure we capture the latest voice mode state
+      if (isListening || voiceMode || voiceModeRef.current) {
         // If voice mode is on, we want to ensure we resume listening after playback,
         // even if we are currently stopped (e.g. due to pulseVoiceModeControls).
         resumeListeningRef.current = true;
@@ -1291,11 +1293,9 @@ export function ChatInterface({
 
         // Always attempt to stop if voice mode is on, to ensure mic is off during playback.
         try {
-          if (abort) {
-            abort();
-          } else {
-            stop();
-          }
+          // Prefer stop() over abort() to avoid triggering "aborted" errors in the STT hook,
+          // which can cause the error handler to schedule a conflicting restart.
+          stop();
           stoppedForPlayback = true;
         } catch (e) {
           // ignore
