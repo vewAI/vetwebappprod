@@ -1989,7 +1989,7 @@ export function ChatInterface({
                         ...m,
                         content: finalAssistantContent,
                         media: aiMessage.media,
-                        status: "received"
+                        status: "sent" // TS requires "sent", "failed", "pending" or undefined
                       }
                     : m
                 )
