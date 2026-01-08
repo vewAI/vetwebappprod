@@ -198,9 +198,11 @@ export function resolvePersonaIdentity(
   }
 
   const config = ROLE_CONFIG[roleKey] ?? DEFAULT_CONFIG;
+  // Use caseId in the seed to ensure the identity is consistent and fixed for this specific case.
+  // Fallback to species/role logic only if caseId is missing (unlikely) or for shared contexts.
   const seedBase = context?.sharedPersonaKey
     ? context.sharedPersonaKey
-    : `${roleKey}:${context?.species ?? "shared"}`;
+    : `${caseId}:${roleKey}`;
   const nameEntry = pickNameEntry(config, seedBase);
   const honorific = nameEntry.honorific ?? config.defaultHonorific;
   const firstName = nameEntry.first;

@@ -41,7 +41,7 @@ export const personaTemplates: PersonaTemplateMap = {
       roleKey: "owner",
       displayName: `${identity.fullName} (Owner)`,
       prompt: [
-        `Ultra-realistic portrait of ${identity.fullName}, a ${mood} horse owner standing in a stable yard, ${context.ownerSetting || "rural equestrian facility"}.`,
+        `Ultra-realistic portrait of ${identity.fullName}, a ${mood} ${identity.sex} horse owner standing in a stable yard, ${context.ownerSetting || "rural equestrian facility"}.`,
         `The owner is described as ${context.ownerRoleDescription}. ${identity.pronouns.subject.toUpperCase()} has a poised stance that still shows how much ${identity.pronouns.subject} cares for ${context.patientName}.`,
         `Camera height at eye level, ${joinLexicon(
           "natural warm tones",
@@ -72,7 +72,7 @@ export const personaTemplates: PersonaTemplateMap = {
       roleKey: "lab-technician",
       displayName: `${identity.fullName} (Laboratory Technician)`,
       prompt: [
-        `Hyper-realistic portrait of ${identity.fullName}, a veterinary laboratory technician working amid analytical instruments with centrifuges and microscopes softly blurred in the background.`,
+        `Hyper-realistic portrait of ${identity.fullName}, a ${identity.sex} veterinary laboratory technician working amid analytical instruments with centrifuges and microscopes softly blurred in the background.`,
       `Lab coat with neatly rolled sleeves, nitrile gloves, and a tablet in hand ready to review results. ${joinLexicon(
         "cool ambient lighting",
         "polished stainless-steel surfaces",
@@ -101,7 +101,7 @@ export const personaTemplates: PersonaTemplateMap = {
       roleKey: "veterinarian",
       displayName: `${identity.fullName} (Attending Veterinarian)`,
       prompt: [
-      `Ultra-realistic portrait of ${identity.fullName}, an attending veterinarian in a contemporary clinical setting with frosted glass partitions and medical carts in soft focus.`,
+      `Ultra-realistic portrait of ${identity.fullName}, an attending ${identity.sex} veterinarian in a contemporary clinical setting with frosted glass partitions and medical carts in soft focus.`,
       `${joinLexicon(
         "balanced warm and cool practical lighting",
         "stethoscope resting over a tailored clinical coat",
@@ -130,7 +130,7 @@ export const personaTemplates: PersonaTemplateMap = {
       roleKey: "veterinary-nurse",
       displayName: `${identity.fullName} (Veterinary Nurse)`,
       prompt: [
-        `Ultra-realistic portrait of ${identity.fullName}, a veterinary nurse organising IV lines and monitoring sheets on a prep table.`,
+        `Ultra-realistic portrait of ${identity.fullName}, a ${identity.sex} veterinary nurse organising IV lines and monitoring sheets on a prep table.`,
         `${joinLexicon(
           "soft diffused daylight",
           "neatly pressed scrub top with embroidered clinic logo",
@@ -159,7 +159,7 @@ export const personaTemplates: PersonaTemplateMap = {
       roleKey: "producer",
       displayName: `${identity.fullName} (Agricultural Producer)`,
       prompt: [
-        `Hyper-realistic portrait of ${identity.fullName}, an agricultural producer standing alongside a modern barn lane with feed silos and fencing softly blurred behind.`,
+        `Hyper-realistic portrait of ${identity.fullName}, an agricultural ${identity.sex} producer standing alongside a modern barn lane with feed silos and fencing softly blurred behind.`,
         `${joinLexicon(
           "warm golden-hour rim lighting",
           "dust motes catching the light",
@@ -188,7 +188,7 @@ export const personaTemplates: PersonaTemplateMap = {
       roleKey: "veterinary-assistant",
       displayName: `${identity.fullName} (Veterinary Assistant)`,
       prompt: [
-        `Ultra-realistic portrait of ${identity.fullName}, a veterinary assistant arranging sterile packs and anesthetic circuits on a prep counter.`,
+        `Ultra-realistic portrait of ${identity.fullName}, a ${identity.sex} veterinary assistant arranging sterile packs and anesthetic circuits on a prep counter.`,
         `${joinLexicon(
           "clean clinical prep room",
           "soft practical lighting with gentle lens bloom",
