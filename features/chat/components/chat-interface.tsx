@@ -2019,9 +2019,9 @@ export function ChatInterface({
               await playTtsAndPauseStt(
                 response.content,
                 finalVoiceForRole,
-                ttsMeta,,
+                ttsMeta,
+                responseVoiceSex === "male" || responseVoiceSex === "female" ? responseVoiceSex : undefined,
                 true // skip internal resume; let sendUserMessage handle it
-                responseVoiceSex === "male" || responseVoiceSex === "female" ? responseVoiceSex : undefined
               );
             } catch (err) {
               console.error("TTS failed:", err);
