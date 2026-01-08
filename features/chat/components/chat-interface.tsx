@@ -1653,7 +1653,7 @@ export function ChatInterface({
                 }
               }
               placeholderAutoSendTimerRef.current = null;
-            }, 6000);
+            }, 4000); // Wait 4s (reduced from 6s) before auto-sending incomplete fragments
           }
           // do not proceed with sending
           return;
@@ -1844,16 +1844,19 @@ export function ChatInterface({
         caseId,
         { attemptId }
       );
+
+      // Mark user message as sent immediately upon server receipt
+      if (userMessage) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === userMessage!.id ? { ...m, status: "sent" } : m
+          )
+        );
+      }
+
       // If server indicates this response should be suppressed (e.g. canned
       // physical-stage warning), do not append or play TTS for it.
       if ((response as any)?.suppress) {
-        if (userMessage) {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === userMessage!.id ? { ...m, status: "sent" } : m
-            )
-          );
-        }
         return;
       }
       const stage = stages[currentStageIndex] ?? stages[0];
@@ -1968,15 +1971,21 @@ export function ChatInterface({
             
             // Give React a frame to render the placeholder
             await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
-
-            let playbackError: unknown = null;
-            try {
-              await playTtsAndPauseStt(
-                response.content,
-                finalVoiceForRole,
-                ttsMeta,
-                responseVoiceSex === "male" || responseVoiceSex === "female" ? responseVoiceSex : undefined
-              );
+// Race TTS against a 5s timeout to ensure we don't show "..." forever if audio hangs
+              await Promise.race([
+                playTtsAndPauseStt(
+                  response.content,
+                  finalVoiceForRole,
+                  ttsMeta,
+                  responseVoiceSex === "male" || responseVoiceSex === "female" ? responseVoiceSex : undefined
+                ),
+                new Promise((_, reject) => setTimeout(() => reject(new Error("TTS prep timeout")), 5000))
+              ]);
+            } catch (streamErr) {
+              playbackError = streamErr;
+              if ((streamErr as Error)?.message !== "TTS prep timeout") {
+                console.warn("Voice-first TTS playback encountered an error:", streamErr);
+              }
             } catch (streamErr) {
               playbackError = streamErr;
               console.warn("Voice-first TTS playback encountered an error:", streamErr);

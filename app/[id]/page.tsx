@@ -80,6 +80,29 @@ export default function CaseChatPage() {
     loadCase();
   }, [id]);
 
+  // Sync stages completion with current progress index
+  // This replaces the imperative logic in getAttemptById which suffered from closure staleness
+  useEffect(() => {
+    if (stages.length === 0) return;
+    
+    // Check if any previous stages are not marked as completed
+    const needsUpdate = stages.slice(0, currentStageIndex).some(stage => !stage.completed);
+    
+    if (needsUpdate) {
+      setStages(prev => {
+        let next = [...prev];
+        let changed = false;
+        for (let i = 0; i < currentStageIndex; i++) {
+          if (!next[i]?.completed) {
+            next = markStageCompleted(next, i);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }
+  }, [currentStageIndex, stages]);
+
   // Load active stages (may be filtered by admin toggles)
   useEffect(() => {
     let cancelled = false;
@@ -119,13 +142,8 @@ export default function CaseChatPage() {
         if (attempt) {
           const lastIndex = attempt.lastStageIndex || 0;
           setCurrentStageIndex(lastIndex);
-
-          // Mark previous stages as completed
-          let updatedStages = [...stages];
-          for (let i = 0; i < lastIndex; i++) {
-            updatedStages = markStageCompleted(updatedStages, i);
-          }
-          setStages(updatedStages);
+          // Stage completion synchronization is now handled by a dedicated useEffect
+          // to avoid stale closure issues that were causing stages to disappear.
         }
 
         if (messages) {

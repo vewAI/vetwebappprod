@@ -89,6 +89,7 @@ const PHRASE_CORRECTIONS: Record<string, string> = {
   "roman turnover": "rumen turnover",
   "room in turnover": "rumen turnover",
   "room and turnover": "rumen turnover",
+  "breathing rights": "breathing rate",
 };
 
 // Common mis-hearing where users say something that sounds like 'ask quotation'
