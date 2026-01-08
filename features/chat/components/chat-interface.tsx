@@ -1971,7 +1971,10 @@ export function ChatInterface({
             
             // Give React a frame to render the placeholder
             await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
-// Race TTS against a 5s timeout to ensure we don't show "..." forever if audio hangs
+
+            let playbackError: unknown = null;
+            try {
+              // Race TTS against a 5s timeout to ensure we don't show "..." forever if audio hangs
               await Promise.race([
                 playTtsAndPauseStt(
                   response.content,
@@ -1986,9 +1989,6 @@ export function ChatInterface({
               if ((streamErr as Error)?.message !== "TTS prep timeout") {
                 console.warn("Voice-first TTS playback encountered an error:", streamErr);
               }
-            } catch (streamErr) {
-              playbackError = streamErr;
-              console.warn("Voice-first TTS playback encountered an error:", streamErr);
             } finally {
               // Replace placeholder with real content
               setMessages((prev) =>
