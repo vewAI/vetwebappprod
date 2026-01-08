@@ -1270,7 +1270,8 @@ export function ChatInterface({
     text: string,
     voice?: string,
     meta?: TtsPlaybackMeta,
-    gender?: "male" | "female"
+    gender?: "male" | "female",
+    skipResume?: boolean
   ) => {
     if (!text) return;
     stopActiveTtsPlayback();
@@ -1354,8 +1355,8 @@ export function ChatInterface({
       }, 500);
 
       // Resume listening if we previously stopped for playback and voiceMode
-      // is still enabled.
-      if (resumeListeningRef.current) {
+      // is still enabled, UNLESS the caller explicitly requested to handle resumption.
+      if (resumeListeningRef.current && !skipResume) {
         resumeListeningRef.current = false;
         // Schedule start slightly after suppression clears (500ms + 100ms buffer = 600ms)
         try {
@@ -1980,7 +1981,8 @@ export function ChatInterface({
                   response.content,
                   finalVoiceForRole,
                   ttsMeta,
-                  responseVoiceSex === "male" || responseVoiceSex === "female" ? responseVoiceSex : undefined
+                  responseVoiceSex === "male" || responseVoiceSex === "female" ? responseVoiceSex : undefined,
+                  true // skip internal resume; let sendUserMessage handle it
                 ),
                 // User requested 4 second limit for TTS prep fallback
                 new Promise((_, reject) => setTimeout(() => reject(new Error("TTS prep timeout")), 4000))
@@ -2017,7 +2019,8 @@ export function ChatInterface({
               await playTtsAndPauseStt(
                 response.content,
                 finalVoiceForRole,
-                ttsMeta,
+                ttsMeta,,
+                true // skip internal resume; let sendUserMessage handle it
                 responseVoiceSex === "male" || responseVoiceSex === "female" ? responseVoiceSex : undefined
               );
             } catch (err) {
