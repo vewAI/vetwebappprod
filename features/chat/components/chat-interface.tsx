@@ -1956,13 +1956,19 @@ export function ChatInterface({
           } satisfies Omit<TtsEventDetail, "audio">;
 
           if (voiceFirst) {
+            // Placeholder logic:
+            // We want to show a loading-like message OR an empty message bubble while audio preloads.
+            // But we must NOT use empty content if the UI discards empty messages.
             const placeholderMessage: Message = {
               ...aiMessage,
-              content: "",
+              content: "...", // Use ellipsis instead of empty string to ensure visibility
+              status: "pending" // Add visual indicator if UI supports it
             };
             setMessages((prev) => [...prev, placeholderMessage]);
-            // Ensure React renders the placeholder before audio playback starts.
+            
+            // Give React a frame to render the placeholder
             await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+
             let playbackError: unknown = null;
             try {
               await playTtsAndPauseStt(
@@ -1975,18 +1981,22 @@ export function ChatInterface({
               playbackError = streamErr;
               console.warn("Voice-first TTS playback encountered an error:", streamErr);
             } finally {
+              // Replace placeholder with real content
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === placeholderMessage.id
                     ? {
-                      ...m,
-                      content: finalAssistantContent,
-                      media: aiMessage.media,
-                    }
+                        ...m,
+                        content: finalAssistantContent,
+                        media: aiMessage.media,
+                        status: "received"
+                      }
                     : m
                 )
               );
+              
               if (playbackError) {
+                // If audio failed, ensure text is visible anyway (handled by setMessages detailed above)
                 console.error("TTS playback failed after voice-first attempt:", playbackError);
               }
             }
