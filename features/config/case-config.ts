@@ -167,6 +167,35 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       roleInfoKey: "getOwnerDiagnosisPrompt",
     },
   ],
+  "case-4": [
+    {
+      id: "stage-1",
+      title: "History Taking",
+      description: "Start the clinical interview and gather all the information you can about the case.",
+      completed: false,
+      role: "Client",
+      roleInfoKey: "getOwnerPrompt",
+      feedbackPromptKey: "getHistoryFeedbackPrompt",
+    },
+    {
+      id: "stage-2",
+      title: "Physical Examination",
+      description: "Ask the nurse about all the examination findings you consider necessary.",
+      completed: false,
+      role: "Veterinary Nurse",
+      roleInfoKey: "getPhysicalExamPrompt",
+      feedbackPromptKey: "getPhysicalExamFeedbackPrompt",
+    },
+    {
+      id: "stage-3",
+      title: "Diagnosis & Treatment",
+      description: "Formulate your diagnosis and treatment plan.",
+      completed: false,
+      role: "Professor",
+      roleInfoKey: "getDiagnosisPrompt",
+      feedbackPromptKey: "getDiagnosisFeedbackPrompt",
+    }
+  ],
   "case-5": [
     {
       id: "stage-1",

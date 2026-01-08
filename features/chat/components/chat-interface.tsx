@@ -1908,7 +1908,9 @@ export function ChatInterface({
       // message text is appended after playback completes.
       if (ttsEnabled && response.content) {
         try {
-          if (isListening || voiceMode) {
+          // Use refs for voice status to avoid stale closures in this async flow
+          const shouldResume = isListening || voiceMode || voiceModeRef.current;
+          if (shouldResume) {
             // Remember to resume after TTS finishes.
             resumeListeningRef.current = true;
             try {
