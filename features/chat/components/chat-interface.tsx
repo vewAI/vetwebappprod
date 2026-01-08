@@ -879,13 +879,15 @@ export function ChatInterface({
       }
 
       setTimepointToast({ title, body });
-      // Use setVoiceModeEnabled so we run the proper cleanup (stop STT/TTS)
+      
+      // Do NOT disable voice mode on transient errors. Just stop listening momentarily.
+      // The user wants the mode to remain "On" unless they explicitly turn it off.
       try {
-        setVoiceModeEnabled(false);
+        stop();
       } catch (e) {
-        // fallback to setting state directly if handler not available
-        setVoiceMode(false);
+        // ignore
       }
+
       // fade the toast after 1s, then restart voice mode 2s after the fade
       if (sttErrorToastTimerRef.current) {
         window.clearTimeout(sttErrorToastTimerRef.current);
@@ -900,13 +902,8 @@ export function ChatInterface({
         sttErrorToastTimerRef.current = null;
         // restart voice mode 2s after fade completes
         sttErrorRestartTimerRef.current = window.setTimeout(() => {
-          try {
-            setVoiceModeEnabled(true);
-          } catch (e) {
-            setVoiceMode(true);
-          }
           // if voice mode is intended and we're not listening, start STT
-          if (voiceModeRef.current && !isListening) {
+          if (voiceModeRef.current && !isListening && !userToggledOffRef.current && !isPaused) {
             try {
               start();
             } catch (e) {
@@ -2509,15 +2506,27 @@ export function ChatInterface({
     }
     setStartSequenceActive(true);
     try {
-      await pulseVoiceModeControls();
-      await pulseTtsControls();
+      // Explicitly enable Voice Mode and TTS without toggling/pulsing.
+      // The user click is a valid trusted event for starting audio contexts.
+      setVoiceModeEnabled(true);
+      setTtsEnabledState(true);
+      
+      // Ensure we start listening immediately
+      userToggledOffRef.current = false; 
+      if (!isListening) {
+        try {
+          start();
+        } catch (e) {
+          console.warn("Failed to start STT on click", e);
+        }
+      }
       setShowStartSpeakingPrompt(false);
     } catch (err) {
       console.error("Failed to initialize voice controls:", err);
     } finally {
       setStartSequenceActive(false);
     }
-  }, [pulseVoiceModeControls, pulseTtsControls, startSequenceActive]);
+  }, [startSequenceActive, setVoiceModeEnabled, setTtsEnabledState, isListening, start]);
 
   // Update input when transcript changes
   // Update input when interim or final transcripts arrive. When listening,
