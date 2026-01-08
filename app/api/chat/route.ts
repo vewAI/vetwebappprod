@@ -321,8 +321,6 @@ export async function POST(request: NextRequest) {
           content: clarifying,
           displayRole: displayRole,
           roleKey: personaRoleKey,
-        });
-      }
           portraitUrl: undefined,
           voiceId: undefined,
           personaSex: undefined,
