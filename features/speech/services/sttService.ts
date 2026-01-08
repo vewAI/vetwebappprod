@@ -437,7 +437,7 @@ export function abortListening(): void {
  * will be prevented. When clearing suppression, callers may choose to
  * restart listening as appropriate.
  */
-export function setSttSuppressed(val: boolean) {
+export function setSttSuppressed(val: boolean, skipCooldown = false) {
   sttSuppressed = Boolean(val);
   if (sttSuppressed) {
     // Ensure any active recognition is stopped immediately
@@ -453,9 +453,10 @@ export function setSttSuppressed(val: boolean) {
     } catch {}
   }
   else {
-    // When clearing suppression, set a short cooldown to avoid immediate mic restart
+    // When clearing suppression, usually set a short cooldown to avoid immediate mic restart.
+    // However, if the caller handles timing (skipCooldown), we can clear it immediately.
     try {
-      sttSuppressedUntil = Date.now() + STT_SUPPRESSION_COOLDOWN_MS;
+      sttSuppressedUntil = skipCooldown ? 0 : (Date.now() + STT_SUPPRESSION_COOLDOWN_MS);
     } catch {}
   }
 }

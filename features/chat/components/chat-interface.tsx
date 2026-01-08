@@ -1338,29 +1338,30 @@ export function ChatInterface({
       // Record the tts end time and keep STT suppressed briefly to avoid
       // residual self-capture from the assistant audio.
       lastTtsEndRef.current = Date.now();
-      // Clear suppression after a short grace period (600ms). We must clear
-      // both the global suppression (which prevents auto-restart) and the
-      // local suppression ref used in handlers. Clear global suppression
-      // slightly later to avoid races with onend handlers.
+      
+      // Clear suppression and restart STT. We use a manual delay sequence here
+      // rather than relying on the service's default cooldown, because we know
+      // exactly when playback ended.
+      // 1. Wait 500ms for audio tail/echo to die down.
+      // 2. Clear suppression (skip cooldown).
+      // 3. Start listening immediately after.
       window.setTimeout(() => {
         isSuppressingSttRef.current = false;
-      }, 600);
-      window.setTimeout(() => {
         try {
-          setSttSuppressed(false);
+          // Pass true to skip the internal service cooldown, since we already waited 500ms
+          setSttSuppressed(false, true);
         } catch {}
-      }, 700);
+      }, 500);
+
       // Resume listening if we previously stopped for playback and voiceMode
-      // is still enabled. Delay the restart slightly so the STT suppression
-      // cooldown has time to clear (otherwise start() will no-op).
+      // is still enabled.
       if (resumeListeningRef.current) {
         resumeListeningRef.current = false;
-        // Use the robust start helper with a short delay so suppression cooldown
-        // has time to clear. Helper will retry a few times if needed.
+        // Schedule start slightly after suppression clears (500ms + 100ms buffer = 600ms)
         try {
-          console.debug("playTtsAndPauseStt: resuming STT, scheduling attemptStartListening", { delay: 900 });
+          console.debug("playTtsAndPauseStt: resuming STT", { delay: 600 });
         } catch (e) {}
-        attemptStartListening(900);
+        attemptStartListening(600);
       }
     }
   };
