@@ -1982,7 +1982,8 @@ export function ChatInterface({
                   ttsMeta,
                   responseVoiceSex === "male" || responseVoiceSex === "female" ? responseVoiceSex : undefined
                 ),
-                new Promise((_, reject) => setTimeout(() => reject(new Error("TTS prep timeout")), 5000))
+                // User requested 4 second limit for TTS prep fallback
+                new Promise((_, reject) => setTimeout(() => reject(new Error("TTS prep timeout")), 4000))
               ]);
             } catch (streamErr) {
               playbackError = streamErr;

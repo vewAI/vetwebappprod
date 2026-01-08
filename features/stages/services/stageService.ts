@@ -37,6 +37,14 @@ export async function getActiveStagesForCase(caseId: string): Promise<Stage[]> {
       // default: present
       return true;
     });
+    
+    // Safety net: if filtering removed everything, return the full list.
+    // This prevents the UI from showing an empty sidebar if configuration is corrupted.
+    if (stages.length > 0 && filtered.length === 0) {
+      console.warn(`Stage activation filter removed all stages for case ${caseId}. Falling back to default.`);
+      return stages;
+    }
+    
     return filtered;
   } catch (e) {
     console.warn("Failed to load active stage settings", e);
