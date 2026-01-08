@@ -87,6 +87,7 @@ const PHRASE_CORRECTIONS: Record<string, string> = {
   "give me old findings": "give me all findings",
   // Mis-transcription where 'Roman' is heard instead of 'rumen'
   "roman turnover": "rumen turnover",
+  "room in turnover": "rumen turnover",
 };
 
 // Common mis-hearing where users say something that sounds like 'ask quotation'

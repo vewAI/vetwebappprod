@@ -1011,12 +1011,9 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
         const syns = DIAG_SYNONYMS[matchedKeyword] ?? [];
       }
 
-      // Previously we returned a canned message here. Suppress it entirely
-      // so the client does not append the repetitive warning in the chat UI.
-      // Client will respect `suppress: true` and will not create/append
-      // an assistant message for this case.
-      try { debugEventBus.emitEvent('info','ChatDBMatch','suppressed-physical-canned-reply',{ caseId, q: userText }); } catch {}
-      return NextResponse.json({ content: "", displayRole, portraitUrl: undefined, voiceId: undefined, personaSex: undefined, personaRoleKey, media: [], suppress: true, patientSex });
+      // Fall through to general LLM logic instead of suppressing
+      // This ensures general conversation (Greetings, help, etc) is not silenced
+      // and unmapped physical exam queries get a polite response.
     }
 
     if (isLabStage && caseRecord && typeof caseRecord === "object") {
