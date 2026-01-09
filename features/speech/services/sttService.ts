@@ -254,10 +254,16 @@ export async function startListening(
 
   if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
     try {
+      // Apply noise suppression and echo cancellation constraints to help
+      // filter out background noise and other people talking nearby.
+      const audioConstraints: MediaTrackConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        ...(normalizedDeviceId ? { deviceId: { exact: normalizedDeviceId } } : {}),
+      };
       micStream = await navigator.mediaDevices.getUserMedia({
-        audio: normalizedDeviceId
-          ? { deviceId: { exact: normalizedDeviceId } }
-          : true,
+        audio: audioConstraints,
       });
     } catch (err) {
       console.warn("Microphone access failed; falling back to default device", err);

@@ -337,6 +337,14 @@ export function ChatInterface({
   const [isPaused, setIsPaused] = useState(false);
   const [showStartSpeakingPrompt, setShowStartSpeakingPrompt] = useState(true);
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
+  // Lightweight toast for mic/noise status
+  const [micToast, setMicToast] = useState<string | null>(null);
+  const micToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showMicToast = useCallback((msg: string, durationMs = 2000) => {
+    if (micToastTimeoutRef.current) clearTimeout(micToastTimeoutRef.current);
+    setMicToast(msg);
+    micToastTimeoutRef.current = setTimeout(() => setMicToast(null), durationMs);
+  }, []);
   const { role } = useAuth();
   const [startSequenceActive, setStartSequenceActive] = useState(false);
   const [personaDirectory, setPersonaDirectory] = useState<
@@ -348,6 +356,17 @@ export function ChatInterface({
   }, [personaDirectory]);
 
   const voiceModeRef = useRef(voiceMode);
+  
+  // Noise detection state for ambient sound suppression
+  const [noiseLevel, setNoiseLevel] = useState<number>(0);
+  const [noiseSuppression, setNoiseSuppression] = useState<boolean>(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const noiseStreamRef = useRef<MediaStream | null>(null);
+  const noiseCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  
+  // Note: Noise detection effect is defined below after isListening is available from useSTT
+  
   useEffect(() => {
     voiceModeRef.current = voiceMode;
   }, [voiceMode]);
@@ -675,6 +694,11 @@ export function ChatInterface({
   const sttErrorRestartTimerRef = useRef<number | null>(null);
   // Timer for auto-sending when a '...' placeholder is left waiting
   const placeholderAutoSendTimerRef = useRef<number | null>(null);
+  // Ref for noise suppression to avoid stale closures
+  const noiseSuppressionRef = useRef(false);
+  useEffect(() => {
+    noiseSuppressionRef.current = noiseSuppression;
+  }, [noiseSuppression]);
 
   const resetNextStageIntent = useCallback(() => {
     if (nextStageIntentTimeoutRef.current) {
@@ -841,10 +865,21 @@ export function ChatInterface({
           // Schedule a final-only timer which should not be cancelled by
           // subsequent interim updates. Only schedule if auto-send is enabled.
           if (autoSendSttRef.current) {
+            // When noise suppression is active, use a longer delay to filter
+            // out ambient chatter that might be picked up as speech.
+            const autoSendDelay = noiseSuppressionRef.current ? 1500 : 500;
             autoSendFinalTimerRef.current = window.setTimeout(() => {
               autoSendFinalTimerRef.current = null;
               autoSendPendingTextRef.current = null;
               try {
+                // Extra validation when noise suppression is on: require at
+                // least 3 words to reduce accidental sends from ambient noise
+                const textToSend = baseInputRef.current?.trim() || "";
+                const wordCount = textToSend.split(/\s+/).filter(Boolean).length;
+                if (noiseSuppressionRef.current && wordCount < 3) {
+                  console.debug("Auto-send skipped: too short during noise suppression", { wordCount, text: textToSend });
+                  return;
+                }
                 console.debug(
                   "Auto-send (final) firing with text:",
                   baseInputRef.current
@@ -853,7 +888,7 @@ export function ChatInterface({
               } catch (e) {
                 console.error("Failed to auto-send final transcript:", e);
               }
-            }, 500);
+            }, autoSendDelay);
           }
         }
       },
@@ -916,6 +951,90 @@ export function ChatInterface({
       }, 1000);
     }
   }, [sttError]);
+
+  // Noise detection effect - monitors ambient sound when voice mode is on
+  // Placed after useSTT so that isListening is available
+  useEffect(() => {
+    if (!voiceMode || !isListening) {
+      // Cleanup when voice mode or listening is off
+      if (noiseCheckIntervalRef.current) {
+        clearInterval(noiseCheckIntervalRef.current);
+        noiseCheckIntervalRef.current = null;
+      }
+      if (noiseStreamRef.current) {
+        noiseStreamRef.current.getTracks().forEach(t => t.stop());
+        noiseStreamRef.current = null;
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close().catch(() => {});
+        audioContextRef.current = null;
+      }
+      setNoiseSuppression(false);
+      return;
+    }
+    
+    // Start noise monitoring
+    const startNoiseMonitoring = async () => {
+      try {
+        // Reuse mic stream or get a new one
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        noiseStreamRef.current = stream;
+        
+        const audioContext = new AudioContext();
+        audioContextRef.current = audioContext;
+        
+        const source = audioContext.createMediaStreamSource(stream);
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.8;
+        source.connect(analyser);
+        analyserRef.current = analyser;
+        
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        
+        // Check noise level every 500ms
+        noiseCheckIntervalRef.current = setInterval(() => {
+          if (!analyserRef.current) return;
+          analyserRef.current.getByteFrequencyData(dataArray);
+          
+          // Calculate average volume (0-255)
+          const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+          const normalizedLevel = Math.min(100, Math.round((avg / 255) * 100));
+          setNoiseLevel(normalizedLevel);
+          
+          // If noise is above threshold (ambient chatter), enable suppression
+          const threshold = 25; // ~25% ambient noise triggers suppression
+          if (normalizedLevel > threshold && !noiseSuppression) {
+            setNoiseSuppression(true);
+            showMicToast("🔇 Noise detected - sensitivity reduced", 2500);
+          } else if (normalizedLevel <= threshold * 0.6 && noiseSuppression) {
+            // Hysteresis: only disable suppression when noise drops significantly
+            setNoiseSuppression(false);
+            showMicToast("🎤 Normal listening resumed", 1500);
+          }
+        }, 500);
+      } catch (err) {
+        console.warn("Noise monitoring unavailable:", err);
+      }
+    };
+    
+    startNoiseMonitoring();
+    
+    return () => {
+      if (noiseCheckIntervalRef.current) {
+        clearInterval(noiseCheckIntervalRef.current);
+        noiseCheckIntervalRef.current = null;
+      }
+      if (noiseStreamRef.current) {
+        noiseStreamRef.current.getTracks().forEach(t => t.stop());
+        noiseStreamRef.current = null;
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close().catch(() => {});
+        audioContextRef.current = null;
+      }
+    };
+  }, [voiceMode, isListening, noiseSuppression, showMicToast]);
 
   // clear timers on unmount
   useEffect(() => {
@@ -1276,37 +1395,28 @@ export function ChatInterface({
     if (!text) return;
     stopActiveTtsPlayback();
     isPlayingAudioRef.current = true;
-    let stoppedForPlayback = false;
+    
+    // ALWAYS stop STT before playing TTS to prevent mic from picking up audio
+    // Set suppression FIRST to prevent any auto-restart
     try {
-      // Check refs to ensure we capture the latest voice mode state
-      if (isListening || voiceMode || voiceModeRef.current) {
-        // If voice mode is on, we want to ensure we resume listening after playback,
-        // even if we are currently stopped (e.g. due to pulseVoiceModeControls).
-        resumeListeningRef.current = true;
-
-        // Set global suppression to prevent recognition from starting/restarting
-        // while TTS is about to play. Also set local suppression ref so the
-        // hook's onFinal handler ignores any finals that slip through.
-        try {
-          setSttSuppressed(true);
-        } catch {}
-        isSuppressingSttRef.current = true;
-
-        // Always attempt to stop if voice mode is on, to ensure mic is off during playback.
-        try {
-          // Prefer stop() over abort() to avoid triggering "aborted" errors in the STT hook,
-          // which can cause the error handler to schedule a conflicting restart.
-          stop();
-          stoppedForPlayback = true;
-        } catch (e) {
-          // ignore
-        }
-
-        // Give a moment for the mic to fully release. Increased to 500ms to prevent
-        // self-recording of the TTS start.
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      }
-
+      setSttSuppressed(true);
+    } catch {}
+    isSuppressingSttRef.current = true;
+    
+    // Now stop the mic
+    try {
+      stop();
+    } catch {}
+    
+    // Check if we should resume after playback
+    if (isListening || voiceMode || voiceModeRef.current) {
+      resumeListeningRef.current = true;
+    }
+    
+    // Wait for mic hardware to fully release before playing audio
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    
+    try {
       // Try streaming first for low latency, fall back to buffered playback
       // and finally to browser TTS if needed.
       // Use a sanitized version for TTS so the speech engine does not try
@@ -1929,17 +2039,8 @@ export function ChatInterface({
           if (shouldResume) {
             // Remember to resume after TTS finishes.
             resumeListeningRef.current = true;
-            try {
-              // Stop listening synchronously; some STT implementations
-              // may take a moment to fully stop the microphone stream,
-              // so wait briefly before starting playback to avoid the
-              // assistant audio being picked up.
-              stop();
-            } catch (e) {
-              /* ignore */
-            }
-            // Small settle delay to let the microphone/hardware stop.
-            await new Promise((res) => setTimeout(res, 150));
+            // Note: mic stopping is now handled entirely by playTtsAndPauseStt
+            // to avoid race conditions from multiple stop/start calls
           }
 
           const preferredVoice = normalizeVoiceId(aiMessage.voiceId);
@@ -2460,6 +2561,8 @@ export function ChatInterface({
           reset();
           setInput("");
           baseInputRef.current = "";
+          // Also enable TTS (speaker) when voice mode is turned on
+          setTtsEnabledState(true);
           if (!isPlayingAudioRef.current) {
             start();
           }
@@ -3154,6 +3257,15 @@ export function ChatInterface({
       {fallbackNotice && (
         <div className="w-full bg-blue-100 text-blue-900 px-4 py-2 text-sm text-center z-40">
           {fallbackNotice}
+        </div>
+      )}
+      
+      {/* Lightweight mic/noise status toast */}
+      {micToast && (
+        <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none">
+          <div className="bg-gray-900/90 text-white text-xs px-3 py-1.5 rounded-full shadow-lg backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2 duration-200">
+            {micToast}
+          </div>
         </div>
       )}
 
