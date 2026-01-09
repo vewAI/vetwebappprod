@@ -955,8 +955,9 @@ export function ChatInterface({
   // Noise detection effect - monitors ambient sound when voice mode is on
   // Placed after useSTT so that isListening is available
   useEffect(() => {
-    if (!voiceMode || !isListening) {
-      // Cleanup when voice mode or listening is off
+    // Don't run noise detection during TTS playback
+    if (!voiceMode || !isListening || isPlayingAudioRef.current) {
+      // Cleanup when voice mode or listening is off, or during TTS
       if (noiseCheckIntervalRef.current) {
         clearInterval(noiseCheckIntervalRef.current);
         noiseCheckIntervalRef.current = null;
@@ -969,7 +970,10 @@ export function ChatInterface({
         audioContextRef.current.close().catch(() => {});
         audioContextRef.current = null;
       }
-      setNoiseSuppression(false);
+      // Don't reset suppression if we're playing audio - keep it active
+      if (!isPlayingAudioRef.current) {
+        setNoiseSuppression(false);
+      }
       return;
     }
     
@@ -1403,18 +1407,23 @@ export function ChatInterface({
     } catch {}
     isSuppressingSttRef.current = true;
     
-    // Now stop the mic
-    try {
-      stop();
-    } catch {}
-    
     // Check if we should resume after playback
     if (isListening || voiceMode || voiceModeRef.current) {
       resumeListeningRef.current = true;
     }
     
-    // Wait for mic hardware to fully release before playing audio
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    // Use abort() for immediate stop - stop() may allow some processing to continue
+    try {
+      abort();
+    } catch {}
+    // Also call stop() as backup
+    try {
+      stop();
+    } catch {}
+    
+    // Wait longer for mic hardware to fully release before playing audio
+    // This is critical to prevent self-capture
+    await new Promise((resolve) => setTimeout(resolve, 500));
     
     try {
       // Try streaming first for low latency, fall back to buffered playback
