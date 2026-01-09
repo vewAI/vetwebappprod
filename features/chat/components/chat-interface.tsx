@@ -2029,14 +2029,18 @@ export function ChatInterface({
           }
 
           // After TTS completes, resume listening if we previously stopped and
-          // voiceMode is still active. Delay restart to allow STT suppression
-          // cooldown to expire so `start()` succeeds.
+          // voiceMode is still active.
           if (resumeListeningRef.current) {
             resumeListeningRef.current = false;
-            // Use the robust start helper so the STT engine is retried if it
-            // does not immediately begin listening. Delay to let suppression
-            // cooldown clear on the service.
-            attemptStartListening(900);
+            // Explicitly clear suppression now (TTS is done), then start listening.
+            // The 500ms setTimeout in playTtsAndPauseStt may not have fired yet,
+            // so we clear it here to ensure the mic can restart.
+            isSuppressingSttRef.current = false;
+            try {
+              setSttSuppressed(false, true);
+            } catch {}
+            // Use the robust start helper with minimal delay since we just cleared suppression
+            attemptStartListening(100);
           }
           // Mark the user message as sent (clear pending)
           if (userMessage) {

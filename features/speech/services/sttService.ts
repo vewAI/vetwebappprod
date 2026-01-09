@@ -450,14 +450,11 @@ export function setSttSuppressed(val: boolean, skipCooldown = false) {
         recognition.abort();
       }
     } catch {}
-    // When explicitly suppressing, extend the cooldown window
-    try {
-      sttSuppressedUntil = Date.now() + (STT_SUPPRESSION_COOLDOWN_MS * 2);
-    } catch {}
+    // Don't extend cooldown here; it causes timing issues with resume
   }
   else {
-    // When clearing suppression, usually set a short cooldown to avoid immediate mic restart.
-    // However, if the caller handles timing (skipCooldown), we can clear it immediately.
+    // When clearing suppression, also clear the timestamp-based cooldown.
+    // If skipCooldown is true, clear immediately; otherwise add a short buffer.
     try {
       sttSuppressedUntil = skipCooldown ? 0 : (Date.now() + STT_SUPPRESSION_COOLDOWN_MS);
     } catch {}
