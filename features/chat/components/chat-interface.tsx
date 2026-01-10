@@ -865,9 +865,37 @@ export function ChatInterface({
           // Schedule a final-only timer which should not be cancelled by
           // subsequent interim updates. Only schedule if auto-send is enabled.
           if (autoSendSttRef.current) {
+            // Check if the phrase appears incomplete (ends with articles,
+            // prepositions, conjunctions, etc.) - give more time to complete
+            const textToCheck = baseInputRef.current?.trim() || "";
+            const lastWord = textToCheck.split(/\s+/).pop()?.toLowerCase() || "";
+            const incompleteMarkers = [
+              // Articles
+              "the", "a", "an",
+              // Prepositions
+              "of", "at", "in", "on", "to", "for", "with", "by", "from", "about", "into", "through", "during", "before", "after", "above", "below", "between", "under", "over",
+              // Conjunctions
+              "and", "or", "but", "so", "yet", "nor",
+              // Other continuation signals
+              "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "do", "does", "did", "will", "would", "could", "should", "may", "might", "must", "shall", "can",
+              "that", "which", "who", "whom", "whose", "what", "where", "when", "why", "how",
+              "if", "then", "because", "although", "while", "unless", "until", "since",
+              "my", "your", "his", "her", "its", "our", "their", "this", "that", "these", "those",
+              "very", "really", "just", "also", "even", "still", "already", "always", "never", "often", "usually", "sometimes",
+              "not", "no", "any", "some", "all", "each", "every", "both", "either", "neither",
+            ];
+            const looksIncomplete = incompleteMarkers.includes(lastWord);
+            
             // When noise suppression is active, use a longer delay to filter
             // out ambient chatter that might be picked up as speech.
-            const autoSendDelay = noiseSuppressionRef.current ? 1500 : 500;
+            // When phrase looks incomplete, give extra time to finish
+            let autoSendDelay = 500;
+            if (noiseSuppressionRef.current) {
+              autoSendDelay = 1500;
+            } else if (looksIncomplete) {
+              autoSendDelay = 1200; // Give 1.2s for incomplete phrases
+            }
+            
             autoSendFinalTimerRef.current = window.setTimeout(() => {
               autoSendFinalTimerRef.current = null;
               autoSendPendingTextRef.current = null;
