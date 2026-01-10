@@ -2160,7 +2160,15 @@ export function ChatInterface({
               ]);
             } catch (streamErr) {
               playbackError = streamErr;
-              if ((streamErr as Error)?.message !== "TTS prep timeout") {
+              if ((streamErr as Error)?.message === "TTS prep timeout") {
+                // Timeout fired but TTS might still be playing!
+                // Keep deaf mode active if audio is still playing
+                if (isPlayingAudioRef.current) {
+                  console.debug("TTS prep timeout fired but audio still playing - keeping deaf mode active");
+                  // Re-enter deaf mode in case it was exited
+                  try { enterDeafMode(); } catch {}
+                }
+              } else {
                 console.warn("Voice-first TTS playback encountered an error:", streamErr);
               }
             } finally {
@@ -2201,7 +2209,9 @@ export function ChatInterface({
 
           // After TTS completes, resume listening if we previously stopped and
           // voiceMode is still active.
-          if (resumeListeningRef.current) {
+          // CRITICAL: Only resume if TTS is actually finished playing!
+          // If the timeout fired but audio is still playing, do NOT resume yet.
+          if (resumeListeningRef.current && !isPlayingAudioRef.current) {
             resumeListeningRef.current = false;
             // Explicitly clear suppression now (TTS is done), then start listening.
             // The 500ms setTimeout in playTtsAndPauseStt may not have fired yet,
@@ -2210,8 +2220,16 @@ export function ChatInterface({
             try {
               setSttSuppressed(false, true);
             } catch {}
+            // Exit deaf mode immediately since we're manually resuming
+            try {
+              exitDeafMode();
+            } catch {}
             // Use the robust start helper with minimal delay since we just cleared suppression
             attemptStartListening(100);
+          } else if (resumeListeningRef.current && isPlayingAudioRef.current) {
+            // Audio still playing (timeout fired early), don't clear the flag
+            // The playTtsAndPauseStt finally block will handle resumption when audio actually ends
+            console.debug("TTS timeout fired but audio still playing, deferring mic resume");
           }
           // Mark the user message as sent (clear pending)
           if (userMessage) {
