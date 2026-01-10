@@ -2153,7 +2153,7 @@ export function ChatInterface({
                   finalVoiceForRole,
                   ttsMeta,
                   responseVoiceSex === "male" || responseVoiceSex === "female" ? responseVoiceSex : undefined,
-                  true // skip internal resume; let sendUserMessage handle it
+                  false // Let playTtsAndPauseStt handle mic resume when audio actually ends
                 ),
                 // User requested 4 second limit for TTS prep fallback
                 new Promise((_, reject) => setTimeout(() => reject(new Error("TTS prep timeout")), 4000))
@@ -2678,14 +2678,28 @@ export function ChatInterface({
       setIsPaused(false);
       // Clear global pause flag so STT can restart
       setGlobalPaused(false);
+      
+      // CRITICAL: Reset ALL STT suppression state when resuming
+      // These might be stuck from TTS that was playing when we paused
+      isSuppressingSttRef.current = false;
+      isPlayingAudioRef.current = false;
+      try {
+        setSttSuppressed(false, true); // skip cooldown
+        exitDeafMode(); // clear deaf mode timestamp
+      } catch {}
+      
       // Ensure voice mode and TTS are enabled when resuming
       setVoiceModeEnabled(true);
       setTtsEnabledState(true);
 
       // If voice mode was already on (so setVoiceModeEnabled didn't trigger start),
       // we need to manually restart listening now that we are unpaused.
+      // Also check isListening from ref to avoid stale closure
       if (voiceModeRef.current && !isListening) {
-        start();
+        // Small delay to ensure state is fully cleared before starting
+        setTimeout(() => {
+          start();
+        }, 100);
       }
       // fade out the "Attempt Paused" toast when resuming
       if (timepointToast) hideTimepointToastWithFade(300);
