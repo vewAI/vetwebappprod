@@ -29,7 +29,7 @@ import {
   speakRemoteStream,
   stopActiveTtsPlayback,
 } from "@/features/speech/services/ttsService";
-import { setSttSuppressed, enterDeafMode, exitDeafMode, setGlobalPaused } from "@/features/speech/services/sttService";
+import { setSttSuppressed, enterDeafMode, exitDeafMode, setGlobalPaused, isInDeafMode } from "@/features/speech/services/sttService";
 import { isSpeechRecognitionSupported } from "@/features/speech/services/sttService";
 import { ChatMessage } from "@/features/chat/components/chat-message";
 import { Notepad } from "@/features/chat/components/notepad";
@@ -785,9 +785,24 @@ export function ChatInterface({
           "finalText=",
           finalText
         );
+        // DEAF MODE CHECK: If we're in deaf mode, completely ignore all results
+        // This is a client-side backup in case the service-level check missed it
+        if (isInDeafMode()) {
+          console.debug("STT onFinal ignored - in deaf mode (TTS playing or recently ended)");
+          lastFinalHandledRef.current = finalText;
+          return;
+        }
+        
         // If we're suppressing STT (TTS playing or shortly after), ignore finals
         if (isSuppressingSttRef.current) {
           // mark handled to avoid re-appending via transcript effect
+          lastFinalHandledRef.current = finalText;
+          return;
+        }
+        
+        // Also check isPlayingAudioRef directly - belt and suspenders
+        if (isPlayingAudioRef.current) {
+          console.debug("STT onFinal ignored - audio is playing");
           lastFinalHandledRef.current = finalText;
           return;
         }

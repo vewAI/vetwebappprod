@@ -20,7 +20,7 @@ const STT_SUPPRESSION_COOLDOWN_MS = 800; // cooldown after suppression is lifted
 // This is the nuclear option - even if recognition is active, we discard results.
 // This prevents the mic from "hearing" TTS audio no matter what.
 let deafUntil = 0;
-const DEAF_WINDOW_AFTER_TTS_MS = 1500; // ignore all results for 1.5s after TTS ends
+const DEAF_WINDOW_AFTER_TTS_MS = 250; // ignore all results for 250ms after TTS ends
 
 // Global pause state - when true, STT should not auto-start on visibility changes
 let globalPaused = false;
