@@ -15,6 +15,12 @@ let sttSuppressed = false;
 // Timestamp (ms) until which starts are suppressed even after clearing the explicit flag.
 let sttSuppressedUntil = 0;
 const STT_SUPPRESSION_COOLDOWN_MS = 800; // cooldown after suppression is lifted
+
+// DEAF WINDOW: Timestamp (ms) until which ALL recognition results are IGNORED.
+// This is the nuclear option - even if recognition is active, we discard results.
+// This prevents the mic from "hearing" TTS audio no matter what.
+let deafUntil = 0;
+const DEAF_WINDOW_AFTER_TTS_MS = 1500; // ignore all results for 1.5s after TTS ends
 // Small guard to avoid re-entrant start calls
 let starting = false;
 // Restart protection: avoid infinite start/stop loops by limiting attempts
@@ -306,6 +312,13 @@ export async function startListening(
     // Handle results: aggregate interim and final transcripts
     recognition.onresult = (event: any) => {
       try {
+        // DEAF MODE CHECK: If we're in deaf mode, completely ignore ALL results.
+        // This is the bulletproof way to prevent mic from "hearing" TTS.
+        if (Date.now() < deafUntil) {
+          debugEventBus.emitEvent('info', 'STT', 'Ignoring STT result - in deaf mode (TTS playing or recently ended)');
+          return;
+        }
+        
         let interim = "";
         let finalT = "";
         // event.results is a SpeechRecognitionResultList
@@ -469,4 +482,30 @@ export function setSttSuppressed(val: boolean, skipCooldown = false) {
 
 export function isSttSuppressed() {
   return Boolean(sttSuppressed);
+}
+
+/**
+ * Enter "deaf mode" - all recognition results will be discarded until the window ends.
+ * Call this when TTS starts playing to completely ignore any mic pickup.
+ */
+export function enterDeafMode(durationMs = 0) {
+  // If durationMs is 0, we're starting TTS - set a far future timestamp
+  // The actual end will be set when exitDeafMode is called
+  deafUntil = durationMs > 0 ? Date.now() + durationMs : Number.MAX_SAFE_INTEGER;
+  debugEventBus.emitEvent('info', 'STT', `Entered deaf mode until ${deafUntil}`);
+}
+
+/**
+ * Exit deaf mode after TTS ends. Adds a buffer period to catch any trailing audio.
+ */
+export function exitDeafMode() {
+  deafUntil = Date.now() + DEAF_WINDOW_AFTER_TTS_MS;
+  debugEventBus.emitEvent('info', 'STT', `Exiting deaf mode, deaf until ${deafUntil} (${DEAF_WINDOW_AFTER_TTS_MS}ms buffer)`);
+}
+
+/**
+ * Check if we're currently in deaf mode (should ignore all results)
+ */
+export function isInDeafMode(): boolean {
+  return Date.now() < deafUntil;
 }

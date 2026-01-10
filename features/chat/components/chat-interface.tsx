@@ -29,7 +29,7 @@ import {
   speakRemoteStream,
   stopActiveTtsPlayback,
 } from "@/features/speech/services/ttsService";
-import { setSttSuppressed } from "@/features/speech/services/sttService";
+import { setSttSuppressed, enterDeafMode, exitDeafMode } from "@/features/speech/services/sttService";
 import { isSpeechRecognitionSupported } from "@/features/speech/services/sttService";
 import { ChatMessage } from "@/features/chat/components/chat-message";
 import { Notepad } from "@/features/chat/components/notepad";
@@ -1400,6 +1400,13 @@ export function ChatInterface({
     stopActiveTtsPlayback();
     isPlayingAudioRef.current = true;
     
+    // NUCLEAR OPTION: Enter deaf mode IMMEDIATELY before doing anything else.
+    // This ensures ALL STT results are discarded during TTS playback.
+    // Even if the mic somehow stays active, results will be ignored.
+    try {
+      enterDeafMode(); // Sets deafUntil to MAX_SAFE_INTEGER until TTS ends
+    } catch {}
+    
     // ALWAYS stop STT before playing TTS to prevent mic from picking up audio
     // Set suppression FIRST to prevent any auto-restart
     try {
@@ -1419,6 +1426,11 @@ export function ChatInterface({
     // Also call stop() as backup
     try {
       stop();
+    } catch {}
+    
+    // Reset the STT transcript to clear any buffered audio that might have been captured
+    try {
+      reset();
     } catch {}
     
     // Wait longer for mic hardware to fully release before playing audio
@@ -1458,6 +1470,12 @@ export function ChatInterface({
       // Record the tts end time and keep STT suppressed briefly to avoid
       // residual self-capture from the assistant audio.
       lastTtsEndRef.current = Date.now();
+      
+      // Exit deaf mode - this adds a 1.5 second buffer where results are still ignored
+      // to catch any trailing audio/echo from TTS
+      try {
+        exitDeafMode();
+      } catch {}
       
       // Clear suppression and restart STT. We use a manual delay sequence here
       // rather than relying on the service's default cooldown, because we know
