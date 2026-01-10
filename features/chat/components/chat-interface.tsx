@@ -29,7 +29,7 @@ import {
   speakRemoteStream,
   stopActiveTtsPlayback,
 } from "@/features/speech/services/ttsService";
-import { setSttSuppressed, enterDeafMode, exitDeafMode } from "@/features/speech/services/sttService";
+import { setSttSuppressed, enterDeafMode, exitDeafMode, setGlobalPaused } from "@/features/speech/services/sttService";
 import { isSpeechRecognitionSupported } from "@/features/speech/services/sttService";
 import { ChatMessage } from "@/features/chat/components/chat-message";
 import { Notepad } from "@/features/chat/components/notepad";
@@ -2615,6 +2615,8 @@ export function ChatInterface({
   const togglePause = useCallback(async () => {
     if (isPaused) {
       setIsPaused(false);
+      // Clear global pause flag so STT can restart
+      setGlobalPaused(false);
       // Ensure voice mode and TTS are enabled when resuming
       setVoiceModeEnabled(true);
       setTtsEnabledState(true);
@@ -2628,6 +2630,8 @@ export function ChatInterface({
       if (timepointToast) hideTimepointToastWithFade(300);
     } else {
       setIsPaused(true);
+      // Set global pause flag to prevent STT auto-restart on visibility change
+      setGlobalPaused(true);
       // Inactivate voice mode and TTS when pausing the attempt
       try {
         setVoiceModeEnabled(false);
@@ -2862,6 +2866,10 @@ export function ChatInterface({
     const handleVisibility = () => {
       if (document.visibilityState === "hidden") {
         setIsPaused(true);
+        // Set global pause flag to prevent STT auto-restart when window is refocused
+        setGlobalPaused(true);
+        // Also enter deaf mode to ignore any pending STT results
+        enterDeafMode();
         setTimepointToast({
           title: "Attempt Paused",
           body: "You left the case. The attempt is paused. Re-enter to unpause.",

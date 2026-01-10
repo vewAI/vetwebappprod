@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { startListening, stopListening, abortListening } from "../services/sttService";
+import { startListening, stopListening, abortListening, isSttSuppressed, isInDeafMode, isGlobalPaused } from "../services/sttService";
 
 type UseSttOptions = {
   inputDeviceId?: string | null;
@@ -44,6 +44,11 @@ export function useSTT(
     if (!isMobile || !isListening) return;
     const handleVisibility = () => {
       if (document.visibilityState === "visible" && !isListening) {
+        // SAFETY CHECK: Do not auto-restart if suppressed, in deaf mode, or globally paused
+        if (isSttSuppressed() || isInDeafMode() || isGlobalPaused()) {
+          console.debug("useSTT: Visibility change ignored - suppressed/deaf/paused");
+          return;
+        }
         // Try to restart listening if interrupted
         start();
       }

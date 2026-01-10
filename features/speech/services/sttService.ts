@@ -21,6 +21,9 @@ const STT_SUPPRESSION_COOLDOWN_MS = 800; // cooldown after suppression is lifted
 // This prevents the mic from "hearing" TTS audio no matter what.
 let deafUntil = 0;
 const DEAF_WINDOW_AFTER_TTS_MS = 1500; // ignore all results for 1.5s after TTS ends
+
+// Global pause state - when true, STT should not auto-start on visibility changes
+let globalPaused = false;
 // Small guard to avoid re-entrant start calls
 let starting = false;
 // Restart protection: avoid infinite start/stop loops by limiting attempts
@@ -508,4 +511,19 @@ export function exitDeafMode() {
  */
 export function isInDeafMode(): boolean {
   return Date.now() < deafUntil;
+}
+
+/**
+ * Set global pause state - prevents auto-restart on visibility changes
+ */
+export function setGlobalPaused(paused: boolean) {
+  globalPaused = Boolean(paused);
+  debugEventBus.emitEvent('info', 'STT', `Global pause set to ${globalPaused}`);
+}
+
+/**
+ * Check if globally paused
+ */
+export function isGlobalPaused(): boolean {
+  return globalPaused;
 }

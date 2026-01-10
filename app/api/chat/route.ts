@@ -1114,8 +1114,32 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
 
     const assistantRawContent = message.content ?? "";
 
+    // Post-process to remove consecutive duplicate blocks (LLM sometimes repeats itself)
+    // This detects when the same paragraph/block is repeated back-to-back and dedupes it.
+    const deduplicateConsecutiveBlocks = (text: string): string => {
+      // Split into blocks by double newlines or single newlines
+      const blocks = text.split(/\n{2,}/).map(b => b.trim()).filter(Boolean);
+      if (blocks.length < 2) return text;
+      
+      const deduped: string[] = [];
+      for (let i = 0; i < blocks.length; i++) {
+        // Normalize for comparison (lowercase, collapse whitespace)
+        const normalized = blocks[i].toLowerCase().replace(/\s+/g, ' ').trim();
+        const prevNormalized = deduped.length > 0 
+          ? deduped[deduped.length - 1].toLowerCase().replace(/\s+/g, ' ').trim()
+          : '';
+        
+        // Skip if this block is identical to the previous one
+        if (normalized && normalized === prevNormalized) {
+          continue;
+        }
+        deduped.push(blocks[i]);
+      }
+      return deduped.join('\n\n');
+    };
+
     // Parse on-demand media tags
-    let content = assistantRawContent;
+    let content = deduplicateConsecutiveBlocks(assistantRawContent);
     const mediaIds: string[] = [];
     const mediaRegex = /\[MEDIA:([a-zA-Z0-9-]+)\]/g;
     let match;
