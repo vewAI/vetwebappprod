@@ -810,7 +810,7 @@ export function ChatInterface({
         if (voiceMode && finalText && finalText.trim()) {
           // Trim and attempt to de-duplicate obvious repeats from STT finals
           const trimmed = collapseImmediateRepeat(finalText.trim());
-          // If the final appears to exactly repeat the last assistant message
+          // If the final appears to repeat (or mostly repeat) the last assistant message
           // (likely because the mic picked up the TTS), ignore it and do not
           // send to the LLM. Keep listening open so the student can speak.
           try {
@@ -825,11 +825,32 @@ export function ChatInterface({
               const normFinal = normalize(trimmed);
               const normAssistant = normalize(String(lastAssistant.content));
               const recentTts = isPlayingAudioRef.current || Date.now() - (lastTtsEndRef.current || 0) < 2500;
+              
+              // Check for exact match
               if (normFinal && normAssistant && normFinal === normAssistant && recentTts) {
-                // Mark handled to avoid re-appending from transcript effect
+                console.debug("STT onFinal ignored - exact TTS echo detected");
                 lastFinalHandledRef.current = trimmed;
-                // Do not append or send; keep listening active for the student's reply
                 return;
+              }
+              
+              // Check for fuzzy match (STT might mishear a few words)
+              // If >80% of words match and it's recent TTS, likely an echo
+              if (normFinal && normAssistant && recentTts && normFinal.length > 20) {
+                const finalWords = normFinal.split(" ");
+                const assistantWords = normAssistant.split(" ");
+                // Only check if lengths are similar (within 20%)
+                if (Math.abs(finalWords.length - assistantWords.length) <= Math.max(finalWords.length, assistantWords.length) * 0.2) {
+                  let matchCount = 0;
+                  for (const word of finalWords) {
+                    if (assistantWords.includes(word)) matchCount++;
+                  }
+                  const matchRatio = matchCount / finalWords.length;
+                  if (matchRatio > 0.8) {
+                    console.debug("STT onFinal ignored - fuzzy TTS echo detected", { matchRatio });
+                    lastFinalHandledRef.current = trimmed;
+                    return;
+                  }
+                }
               }
             }
           } catch (e) {
