@@ -36,8 +36,14 @@ function generateIdentity(role: "owner" | "nurse", index: number) {
   const lastName = getRandomElement(SURNAMES);
   const fullName = `${firstName} ${lastName}`;
   
-  // Simple voice ID mapping (placeholders, assuming system handles mapping or generation)
-  const voiceId = sex === "female" ? "alloy" : "echo"; 
+  // Use British ElevenLabs voices with correct gender matching
+  // British Female: alice, charlotte, lily, matilda
+  // British Male: charlie, george, harry
+  const femaleVoices = ["alice", "charlotte", "lily", "matilda"];
+  const maleVoices = ["charlie", "george", "harry"];
+  const voiceId = sex === "female" 
+    ? femaleVoices[index % femaleVoices.length] 
+    : maleVoices[index % maleVoices.length];
 
   return {
     fullName,

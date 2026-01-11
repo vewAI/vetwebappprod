@@ -29,20 +29,28 @@ type PersonaIdentityConfig = {
 
 const DEFAULT_CONFIG: PersonaIdentityConfig = {
   sex: "female",
-  voiceId: "alloy",
+  voiceId: "alice", // British female (ElevenLabs)
   names: [
-    { first: "Alex", last: "Morgan" },
-    { first: "Jordan", last: "Lee" },
-    { first: "Taylor", last: "Quinn" },
-    { first: "Riley", last: "Adams" },
+    { first: "Alexandra", last: "Morgan" },
+    { first: "Victoria", last: "Lee" },
+    { first: "Charlotte", last: "Quinn" },
+    { first: "Olivia", last: "Adams" },
   ],
 };
+
+// Voice IDs aligned with voiceMap.ts:
+// British Male: fable (OpenAI), charlie, george, harry (ElevenLabs)
+// British Female: alice, charlotte, lily, matilda (ElevenLabs)
+// American Male: onyx, echo (OpenAI)  
+// American Female: shimmer, nova (OpenAI)
+// Neutral: alloy (OpenAI)
 
 const ROLE_CONFIG: Record<string, PersonaIdentityConfig> = {
   owner: {
     sex: "female",
-    voiceId: "nova",
+    voiceId: "alice", // British female (ElevenLabs)
     names: [
+      // British/UK-style names for coherence with British accent
       { first: "Sarah", last: "Bennett" },
       { first: "Emma", last: "Thompson" },
       { first: "Mary", last: "Williams" },
@@ -51,74 +59,78 @@ const ROLE_CONFIG: Record<string, PersonaIdentityConfig> = {
       { first: "Elizabeth", last: "Jones" },
       { first: "Linda", last: "Miller" },
       { first: "Barbara", last: "Davis" },
-      { first: "Susan", last: "Garcia" },
-      { first: "Jessica", last: "Rodriguez" },
+      { first: "Susan", last: "Clarke" },
+      { first: "Jessica", last: "Wright" },
       { first: "Karen", last: "Wilson" },
-      { first: "Nancy", last: "Martinez" },
+      { first: "Nancy", last: "Hughes" },
       { first: "Lisa", last: "Anderson" },
       { first: "Margaret", last: "Taylor" },
       { first: "Betty", last: "Thomas" },
-      { first: "Sandra", last: "Hernandez" },
+      { first: "Sandra", last: "Edwards" },
       { first: "Ashley", last: "Moore" },
       { first: "Dorothy", last: "Martin" },
       { first: "Kimberly", last: "Jackson" },
       { first: "Emily", last: "Thompson" },
       { first: "Donna", last: "White" },
-      { first: "Michelle", last: "Lopez" },
+      { first: "Michelle", last: "Roberts" },
       { first: "Carol", last: "Lee" },
-      { first: "Amanda", last: "Gonzalez" },
-      { first: "Melissa", last: "Harris" },
+      { first: "Amanda", last: "Harris" },
+      { first: "Melissa", last: "Cooper" },
       { first: "Deborah", last: "Clark" },
       { first: "Stephanie", last: "Lewis" },
       { first: "Rebecca", last: "Robinson" },
       { first: "Sharon", last: "Walker" },
-      { first: "Laura", last: "Perez" },
-      { first: "Cynthia", last: "Hall" },
-      { first: "Kathleen", last: "Young" },
-      { first: "Amy", last: "Allen" },
-      { first: "Shirley", last: "Sanchez" },
-      { first: "Angela", last: "Wright" },
-      { first: "Helen", last: "King" },
-      { first: "Anna", last: "Scott" },
-      { first: "Brenda", last: "Green" },
-      { first: "Pamela", last: "Baker" },
-      { first: "Nicole", last: "Adams" },
-      { first: "Samantha", last: "Nelson" },
-      { first: "Katherine", last: "Hill" },
-      { first: "Christine", last: "Ramirez" },
-      { first: "Debra", last: "Campbell" },
-      { first: "Rachel", last: "Mitchell" },
-      { first: "Carolyn", last: "Roberts" },
-      { first: "Janet", last: "Carter" },
-      { first: "Maria", last: "Phillips" },
-      { first: "Heather", last: "Evans" },
-      { first: "Diane", last: "Turner" },
+      { first: "Laura", last: "Hall" },
+      { first: "Cynthia", last: "Young" },
+      { first: "Kathleen", last: "Allen" },
+      { first: "Amy", last: "King" },
+      { first: "Shirley", last: "Scott" },
+      { first: "Angela", last: "Green" },
+      { first: "Helen", last: "Baker" },
+      { first: "Anna", last: "Adams" },
+      { first: "Brenda", last: "Nelson" },
+      { first: "Pamela", last: "Hill" },
+      { first: "Nicole", last: "Campbell" },
+      { first: "Samantha", last: "Mitchell" },
+      { first: "Katherine", last: "Carter" },
+      { first: "Christine", last: "Phillips" },
+      { first: "Debra", last: "Evans" },
+      { first: "Rachel", last: "Turner" },
+      { first: "Carolyn", last: "Parker" },
+      { first: "Janet", last: "Collins" },
+      { first: "Catherine", last: "Stewart" },
+      { first: "Heather", last: "Morris" },
+      { first: "Diane", last: "Murphy" },
     ],
   },
   "lab-technician": {
     sex: "male",
-    voiceId: "onyx",
+    voiceId: "george", // British male (ElevenLabs)
     names: [
-      { first: "Andre", last: "Silva" },
-      { first: "Jasper", last: "Hayes" },
-      { first: "Malik", last: "Daniels" },
-      { first: "Rowan", last: "Li" },
+      { first: "Andrew", last: "Silva" },
+      { first: "James", last: "Hayes" },
+      { first: "Michael", last: "Daniels" },
+      { first: "Robert", last: "Li" },
+      { first: "William", last: "Chen" },
+      { first: "Thomas", last: "Foster" },
     ],
   },
   veterinarian: {
     sex: "male",
-    voiceId: "verse",
+    voiceId: "charlie", // British male (ElevenLabs)
     names: [
-      { honorific: "Dr.", first: "Miguel", last: "Torres" },
-      { honorific: "Dr.", first: "Noah", last: "Kim" },
-      { honorific: "Dr.", first: "Luca", last: "Romero" },
-      { honorific: "Dr.", first: "Aiden", last: "Forsyth" },
+      { honorific: "Dr.", first: "Michael", last: "Torres" },
+      { honorific: "Dr.", first: "James", last: "Kim" },
+      { honorific: "Dr.", first: "William", last: "Romero" },
+      { honorific: "Dr.", first: "Alexander", last: "Forsyth" },
+      { honorific: "Dr.", first: "Christopher", last: "Hughes" },
+      { honorific: "Dr.", first: "Daniel", last: "Bennett" },
     ],
     defaultHonorific: "Dr.",
   },
   "veterinary-nurse": {
     sex: "female",
-    voiceId: "shimmer",
+    voiceId: "charlotte", // British female (ElevenLabs)
     names: [
       { first: "Sarah", last: "Jenkins" },
       { first: "Emily", last: "Wilson" },
@@ -134,32 +146,38 @@ const ROLE_CONFIG: Record<string, PersonaIdentityConfig> = {
   },
   producer: {
     sex: "male",
-    voiceId: "echo", // Changed from 'oliver' to 'echo' (neutral/male-ish)
+    voiceId: "harry", // British male (ElevenLabs)
     names: [
       { first: "Colin", last: "McDermott" },
-      { first: "Rafael", last: "Santos" },
-      { first: "Ethan", last: "Brooks" },
-      { first: "Declan", last: "Murphy" },
+      { first: "Richard", last: "Santos" },
+      { first: "Edward", last: "Brooks" },
+      { first: "Patrick", last: "Murphy" },
+      { first: "Thomas", last: "O'Brien" },
+      { first: "Martin", last: "Walsh" },
     ],
   },
   "veterinary-assistant": {
     sex: "female",
-    voiceId: "alloy",
+    voiceId: "lily", // British female (ElevenLabs)
     names: [
       { first: "Nina", last: "Zhao" },
-      { first: "Priya", last: "Kulkarni" },
-      { first: "Avery", last: "Lopez" },
-      { first: "Juniper", last: "Ellis" },
+      { first: "Sophie", last: "Patel" },
+      { first: "Grace", last: "Lopez" },
+      { first: "Hannah", last: "Ellis" },
+      { first: "Lucy", last: "Foster" },
+      { first: "Chloe", last: "Bennett" },
     ],
   },
   professor: {
     sex: "female",
-    voiceId: "sage",
+    voiceId: "matilda", // British female (ElevenLabs)
     names: [
       { honorific: "Dr.", first: "Evelyn", last: "Hart" },
-      { honorific: "Dr.", first: "Nalini", last: "Chandra" },
+      { honorific: "Dr.", first: "Victoria", last: "Chandra" },
       { honorific: "Dr.", first: "Miranda", last: "Kingsley" },
-      { honorific: "Dr.", first: "Sabine", last: "Dubois" },
+      { honorific: "Dr.", first: "Eleanor", last: "Dubois" },
+      { honorific: "Dr.", first: "Catherine", last: "Ashworth" },
+      { honorific: "Dr.", first: "Margaret", last: "Thornton" },
     ],
     defaultHonorific: "Dr.",
   },

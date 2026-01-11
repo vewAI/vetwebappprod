@@ -966,6 +966,35 @@ export function ChatInterface({
   useEffect(() => {
     if (sttError) {
       console.warn("ChatInterface received STT error:", sttError);
+      
+      // Only show toast for serious errors that require user attention
+      // Ignore transient errors that are normal during voice mode operation:
+      // - "no-speech": No speech detected (normal when user pauses)
+      // - "aborted": Recognition was aborted (normal during TTS playback)
+      // - "audio-capture": Brief audio capture issues (usually recovers)
+      const transientErrors = ["no-speech", "aborted", "audio-capture"];
+      const isTransient = transientErrors.some(e => sttError.toLowerCase().includes(e));
+      
+      if (isTransient) {
+        console.debug("STT transient error (not showing toast):", sttError);
+        // Still try to restart for transient errors, but silently
+        if (sttErrorRestartTimerRef.current) {
+          window.clearTimeout(sttErrorRestartTimerRef.current);
+        }
+        sttErrorRestartTimerRef.current = window.setTimeout(() => {
+          if (voiceModeRef.current && !isListening && !userToggledOffRef.current && !isPaused && !isPlayingAudioRef.current) {
+            try {
+              start();
+            } catch (e) {
+              console.warn("Failed to restart STT after transient error:", e);
+            }
+          }
+          sttErrorRestartTimerRef.current = null;
+        }, 1000);
+        return; // Don't show toast for transient errors
+      }
+      
+      // Serious errors that warrant a toast
       let title = "Speech Recognition Error";
       let body = "An error occurred with the speech service.";
 
