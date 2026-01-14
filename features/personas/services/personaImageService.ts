@@ -25,9 +25,10 @@ import type {
   PersonaSex,
 } from "@/features/personas/models/persona";
 import { ensureCasePersonas } from "@/features/personas/services/casePersonaPersistence";
-import { ensureSharedPersonas } from "@/features/personas/services/globalPersonaPersistence";
 import { resolvePersonaIdentity } from "@/features/personas/services/personaIdentityService";
-import { SHARED_CASE_ID } from "@/features/personas/services/personaSeedService";
+
+/** Constant for legacy global persona code - will be removed */
+const SHARED_CASE_ID = "shared";
 
 const DEFAULT_BUCKET =
   process.env.PERSONA_IMAGE_BUCKET ??
@@ -595,15 +596,15 @@ async function fetchGlobalPersonaRow(
   return data ?? null;
 }
 
+/**
+ * @deprecated Global personas are no longer used
+ */
 async function ensureGlobalPersonaRowExists(
-  supabase: SupabaseClient,
+  _supabase: SupabaseClient,
   roleKey: string
 ): Promise<GlobalPersonaRow | null> {
-  const existing = await fetchGlobalPersonaRow(supabase, roleKey);
-  if (existing) return existing;
-
-  await ensureSharedPersonas(supabase);
-  return await fetchGlobalPersonaRow(supabase, roleKey);
+  console.warn(`[DEPRECATED] ensureGlobalPersonaRowExists called for "${roleKey}" - global personas are deprecated`);
+  return null;
 }
 
 async function markGlobalPersonaStatus(
@@ -664,6 +665,10 @@ async function markPersonaStatus(
     );
 }
 
+/**
+ * Gets or generates a persona portrait for a case-specific persona.
+ * SIMPLIFIED: All personas are now case-specific - no global_personas routing.
+ */
 export async function getOrGeneratePersonaPortrait({
   supabase,
   openai,
@@ -675,23 +680,13 @@ export async function getOrGeneratePersonaPortrait({
   const roleKey = resolvePersonaRoleKey(stageRole, displayRole);
   if (!roleKey) return {};
 
-  if (roleKey !== "owner") {
-    return await getGlobalPersonaPortrait({
-      supabase,
-      openai,
-      roleKey,
-      stageRole,
-      displayRole,
-      force,
-    });
-  }
-
+  // All personas now use case-specific storage
   let personaRow = await ensurePersonaRowExists(supabase, caseId, roleKey);
   const personaMetadata = parsePersonaMetadata(personaRow);
   const sharedPersonaKey =
     typeof personaMetadata?.sharedPersonaKey === "string"
       ? personaMetadata.sharedPersonaKey
-      : undefined;
+      : `${caseId}-${roleKey}`;
   const identity =
     personaMetadata?.identity ?? resolvePersonaIdentity(caseId, roleKey);
   const voiceId = (personaMetadata?.voiceId ??
@@ -927,83 +922,42 @@ async function generateMissingPortraits(
   }
 }
 
+/**
+ * @deprecated Global personas are no longer used. This function is a no-op.
+ */
 async function generateMissingGlobalPortraitsInternal(
-  supabase: SupabaseClient,
-  openai: OpenAi,
-  options?: GlobalPortraitOptions
+  _supabase: SupabaseClient,
+  _openai: OpenAi,
+  _options?: GlobalPortraitOptions
 ) {
-  await ensureSharedPersonas(supabase);
-
-  const query = supabase
-    .from("global_personas")
-    .select("role_key, display_name, status, image_url")
-    .order("role_key", { ascending: true });
-
-  if (options?.roleKey) {
-    query.eq("role_key", options.roleKey);
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    console.warn("Unable to read shared personas for portrait generation", error);
-    return;
-  }
-
-  const personas = (data ?? []) as GlobalPersonaSummaryRow[];
-  for (const persona of personas) {
-    const roleKey = persona.role_key;
-    if (!roleKey) continue;
-
-    const shouldSkip =
-      !options?.force && persona.status === "ready" && persona.image_url;
-    if (shouldSkip) {
-      continue;
-    }
-
-    if (options?.force) {
-      await supabase
-        .from("global_personas")
-        .update({ status: "pending", image_url: null, last_generated_at: null })
-        .eq("role_key", roleKey);
-    }
-
-    try {
-      await getGlobalPersonaPortrait({
-        supabase,
-        openai,
-        roleKey,
-        displayRole: persona.display_name ?? undefined,
-      });
-    } catch (portraitErr) {
-      console.warn(
-        `Deferred portrait generation failed for shared persona ${roleKey}`,
-        portraitErr
-      );
-    }
-  }
+  console.warn("[DEPRECATED] generateMissingGlobalPortraitsInternal is no longer used. Personas are case-specific.");
+  // No-op - global personas are deprecated
 }
 
+/**
+ * @deprecated Global personas are no longer used. Use case-specific persona generation instead.
+ * This function is now a no-op to prevent breaking existing code.
+ */
 export async function generateMissingGlobalPortraits(
-  supabase: SupabaseClient,
-  openai: OpenAi,
-  options?: GlobalPortraitOptions
+  _supabase: SupabaseClient,
+  _openai: OpenAi,
+  _options?: GlobalPortraitOptions
 ): Promise<void> {
-  await generateMissingGlobalPortraitsInternal(supabase, openai, options);
+  console.warn("[DEPRECATED] generateMissingGlobalPortraits is no longer used. Personas are case-specific.");
+  // No-op - global personas are deprecated
 }
 
+/**
+ * @deprecated Global personas are no longer used. Use case-specific persona generation instead.
+ * This function is now a no-op to prevent breaking existing code.
+ */
 export function scheduleGlobalPersonaPortraitGeneration(
-  supabase: SupabaseClient,
-  openai: OpenAi,
-  options?: GlobalPortraitOptions
+  _supabase: SupabaseClient,
+  _openai: OpenAi,
+  _options?: GlobalPortraitOptions
 ) {
-  void generateMissingGlobalPortraitsInternal(supabase, openai, options).catch((error) => {
-    const roleKey = options?.roleKey ?? "all";
-    console.warn(
-      `Background shared persona portrait generation failed for ${roleKey}`,
-      error
-    );
-  });
+  console.warn("[DEPRECATED] scheduleGlobalPersonaPortraitGeneration is no longer used. Personas are case-specific.");
+  // No-op - global personas are deprecated
 }
 
 export function scheduleCasePersonaPortraitGeneration(

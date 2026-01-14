@@ -1074,7 +1074,61 @@ export default function CaseViewerPage() {
             }
 
             if (meta.isAvatarSelector) {
-              return null; // Hidden in viewer
+              if (!editable) {
+                // Show read-only view when not editing
+                const avatarUrl = formatValue(rawValue);
+                return (
+                  <div key={key}>
+                    <label className="block font-medium mb-1">{meta.label}</label>
+                    <div className="flex items-center gap-4">
+                      {avatarUrl ? (
+                        <div className="relative h-16 w-16 overflow-hidden rounded-full border">
+                          <Image
+                            src={avatarUrl}
+                            alt={meta.label}
+                            fill
+                            className="object-cover"
+                            unoptimized
+                          />
+                        </div>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">No avatar selected</span>
+                      )}
+                    </div>
+                    {meta.help && (
+                      <p className="mt-1 text-sm text-muted-foreground">{meta.help}</p>
+                    )}
+                  </div>
+                );
+              }
+              // Show avatar selector in edit mode
+              return (
+                <div key={key}>
+                  <label className="block font-medium mb-1">{meta.label}</label>
+                  <AvatarSelector
+                    role={meta.avatarRole ?? "owner"}
+                    value={formatValue(rawValue)}
+                    onChange={(url, roleKey) => {
+                      setFormState((prev) => {
+                        if (!prev) return prev;
+                        const next = { ...prev, [key]: url };
+                        // Also update the persona_id field when avatar is changed
+                        if (roleKey) {
+                          if (meta.avatarRole === "nurse") {
+                            next["nurse_persona_id"] = roleKey;
+                          } else if (meta.avatarRole === "owner") {
+                            next["owner_persona_id"] = roleKey;
+                          }
+                        }
+                        return next;
+                      });
+                    }}
+                  />
+                  {meta.help && (
+                    <p className="mt-1 text-sm text-muted-foreground">{meta.help}</p>
+                  )}
+                </div>
+              );
             }
 
             if (meta.multiline) {

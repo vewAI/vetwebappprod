@@ -1200,14 +1200,25 @@ export default function PersonasAdminPage() {
               <AvatarSelector
                 role={row.persona.role_key === "veterinary-nurse" ? "nurse" : "owner"}
                 value={row.draftImageUrl}
-                onChange={(url) =>
+                onChange={(url, personaId) => {
+                  // Update the image URL
                   handleInputChange(
                     scope,
                     row.persona.role_key,
                     "image",
                     url
-                  )
-                }
+                  );
+                  // Store the source persona ID in metadata for reference
+                  if (personaId) {
+                    updateDraft(scope, row.persona.role_key, (prev) => {
+                      const meta = (prev.draftMetadata as Record<string, unknown>) || {};
+                      return {
+                        ...prev,
+                        draftMetadata: { ...meta, sourcePersonaId: personaId },
+                      };
+                    });
+                  }
+                }}
               />
             </div>
             <p className="text-xs text-muted-foreground">

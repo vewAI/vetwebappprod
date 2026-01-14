@@ -14,7 +14,6 @@ import type {
 import { CHAT_SYSTEM_GUIDELINE } from "@/features/chat/prompts/systemGuideline";
 import { resolvePromptValue } from "@/features/prompts/services/promptService";
 import { ensureCasePersonas } from "@/features/personas/services/casePersonaPersistence";
-import { ensureSharedPersonas } from "@/features/personas/services/globalPersonaPersistence";
 import { requireUser } from "@/app/api/_lib/auth";
 import {
   normalizeCaseMedia,
@@ -484,42 +483,18 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
         console.warn("Failed to ensure persona row for chat", personaErr);
       }
 
+      // Log warning if persona still not found after case-level lookup
       if (!personaRow && personaRoleKey) {
-        try {
-          await ensureSharedPersonas(supabase);
-          const { data: fallbackRow } = await supabase
-            .from("global_personas")
-            .select(
-              "role_key, display_name, behavior_prompt, metadata, image_url, status"
-            )
-            .eq("role_key", personaRoleKey)
-            .maybeSingle();
-          if (fallbackRow) {
-            personaRow = fallbackRow as PersonaTableRow;
-          }
-        } catch (fallbackErr) {
-          console.warn("Failed to fallback to shared persona row", fallbackErr);
-        }
+        console.warn(
+          `[chat] No case persona found for role_key "${personaRoleKey}" in case "${caseId}". ` +
+          `Persona will use default behavior.`
+        );
       }
     } else if (personaRoleKey) {
-      try {
-        await ensureSharedPersonas(supabase);
-        const { data: globalRow, error: globalError } = await supabase
-          .from("global_personas")
-          .select(
-            "role_key, display_name, behavior_prompt, metadata, image_url, status"
-          )
-          .eq("role_key", personaRoleKey)
-          .maybeSingle();
-
-        if (globalError) {
-          console.warn("Failed to read shared persona row for chat", globalError);
-        } else if (globalRow) {
-          personaRow = globalRow as PersonaTableRow;
-        }
-      } catch (sharedErr) {
-        console.warn("Failed to ensure shared persona row for chat", sharedErr);
-      }
+      // No case context - persona behavior will rely on seed templates only
+      console.warn(
+        `[chat] Chat request without caseId - persona "${personaRoleKey}" will use default seed behavior`
+      );
     }
 
     if (personaRow?.display_name) {

@@ -309,13 +309,15 @@ async function loadRolePromptOverride(
       const prompts = extractRolePromptsFromMetadata(data?.metadata ?? null);
       return prompts[roleInfoKey] ?? null;
     }
+    // For non-owner roles, still query case_personas but look for the specific role
     const { data, error } = await supabase
-      .from("global_personas")
+      .from("case_personas")
       .select("metadata")
+      .eq("case_id", caseId)
       .eq("role_key", roleKey)
       .maybeSingle();
     if (error) {
-      console.warn("Failed to load global persona metadata for role prompt override", error);
+      console.warn("Failed to load case persona metadata for role prompt override", error);
       return null;
     }
     const prompts = extractRolePromptsFromMetadata(data?.metadata ?? null);
