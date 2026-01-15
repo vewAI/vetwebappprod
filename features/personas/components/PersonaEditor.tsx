@@ -23,7 +23,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { VOICE_PRESETS, type VoicePreset } from "@/features/speech/services/voiceMap";
 import { speakRemote, stopActiveTtsPlayback } from "@/features/speech/services/ttsService";
-import { Play, Square, Loader2, User, Mic, Pencil, ChevronDown, ChevronRight } from "lucide-react";
+import { Play, Square, Loader2, User, Mic, Pencil, ChevronDown, ChevronRight, Expand } from "lucide-react";
 import type { PersonaSex } from "@/features/personas/models/persona";
 
 // Avatar templates fetched from existing case_personas
@@ -76,6 +76,7 @@ export function PersonaEditor({
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [behaviorPromptOpen, setBehaviorPromptOpen] = useState(false);
+  const [expandedPromptOpen, setExpandedPromptOpen] = useState(false);
 
   // Current config with defaults
   const config: PersonaConfig = {
@@ -438,27 +439,63 @@ export function PersonaEditor({
           )}
           Behavior Prompt
           {config.behaviorPrompt && (
-            <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full ml-auto">
+            <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full ml-auto mr-2">
               Custom
             </span>
           )}
         </button>
         {behaviorPromptOpen && (
           <div className="space-y-2 mt-2">
-            <Textarea
-              id={`${role}-behavior-prompt`}
-              value={config.behaviorPrompt ?? ""}
-              onChange={(e) => onChange({ ...config, behaviorPrompt: e.target.value })}
-              placeholder={`Optional: Define custom personality and behavior for this ${role === "owner" ? "pet owner" : "veterinary nurse"}.\n\nExample: "Speaks with a rural accent, very attached to their pet, tends to worry easily about costs."`}
-              rows={6}
-              className="text-sm font-mono"
-            />
+            <div className="relative">
+              <Textarea
+                id={`${role}-behavior-prompt`}
+                value={config.behaviorPrompt ?? ""}
+                onChange={(e) => onChange({ ...config, behaviorPrompt: e.target.value })}
+                placeholder={`Optional: Define custom personality and behavior for this ${role === "owner" ? "pet owner" : "veterinary nurse"}.\n\nExample: "Speaks with a rural accent, very attached to their pet, tends to worry easily about costs."`}
+                rows={6}
+                className="text-sm font-mono pr-10"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute top-2 right-2 h-6 w-6"
+                onClick={() => setExpandedPromptOpen(true)}
+                title="Expand editor"
+              >
+                <Expand className="h-4 w-4" />
+              </Button>
+            </div>
             <p className="text-xs text-muted-foreground">
               This prompt is appended to the AI system prompt to customize how this persona responds during conversations.
             </p>
           </div>
         )}
       </div>
+
+      {/* Expanded Behavior Prompt Dialog */}
+      <Dialog open={expandedPromptOpen} onOpenChange={setExpandedPromptOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle>
+              {role === "owner" ? "Pet Owner" : "Veterinary Nurse"} - Behavior Prompt
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Textarea
+              value={config.behaviorPrompt ?? ""}
+              onChange={(e) => onChange({ ...config, behaviorPrompt: e.target.value })}
+              placeholder={`Define custom personality and behavior for this ${role === "owner" ? "pet owner" : "veterinary nurse"}.\n\nExample: "Speaks with a rural accent, very attached to their pet, tends to worry easily about costs."`}
+              rows={16}
+              className="text-sm font-mono"
+              autoFocus
+            />
+            <p className="text-sm text-muted-foreground">
+              This prompt is appended to the AI system prompt to customize how this persona responds during conversations.
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
