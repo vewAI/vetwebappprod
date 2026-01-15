@@ -98,6 +98,9 @@ const PHRASE_CORRECTIONS: Record<string, string> = {
   "roman turnover": "rumen turnover",
   "room in turnover": "rumen turnover",
   "room and turnover": "rumen turnover",
+  // Gastrointestinal sounds misheard as "testing sound"
+  "testing sound": "gastrointestinal sounds",
+  "testing sounds": "gastrointestinal sounds",
   "breathing rights": "breathing rate",
 };
 
