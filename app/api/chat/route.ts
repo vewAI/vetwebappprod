@@ -424,6 +424,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       metadata?: unknown;
       image_url?: string | null;
       status?: string | null;
+      sex?: string | null;
     };
 
     let personaRow: PersonaTableRow | null = null;
@@ -442,7 +443,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
         const { data: row, error } = await supabase
           .from("case_personas")
           .select(
-            "role_key, display_name, behavior_prompt, metadata, image_url, status"
+            "role_key, display_name, behavior_prompt, metadata, image_url, status, sex"
           )
           .eq("case_id", caseId)
           .eq("role_key", personaRoleKey)
@@ -470,7 +471,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
           const { data: retryRow } = await supabase
             .from("case_personas")
             .select(
-              "role_key, display_name, behavior_prompt, metadata, image_url, status"
+              "role_key, display_name, behavior_prompt, metadata, image_url, status, sex"
             )
             .eq("case_id", caseId)
             .eq("role_key", personaRoleKey)
@@ -567,7 +568,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       metadata: Record<string, unknown>
     ): string | undefined => {
       const direct = metadata["sex"];
-      if (direct === "male" || direct === "female") {
+      if (direct === "male" || direct === "female" || direct === "neutral") {
         return direct;
       }
       const identitySex =
@@ -576,32 +577,45 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
           metadata["identity"] !== null
           ? (metadata["identity"] as { sex?: unknown }).sex
           : undefined;
-      if (identitySex === "male" || identitySex === "female") {
+      if (identitySex === "male" || identitySex === "female" || identitySex === "neutral") {
         return identitySex;
       }
       return undefined;
     };
 
+    // PRIMARY: Read voice and sex from persona row (case_personas table is the source of truth)
+    // First check the direct sex column on the row
+    if (personaRow?.sex && (personaRow.sex === "male" || personaRow.sex === "female" || personaRow.sex === "neutral")) {
+      personaSex = personaRow.sex;
+      console.log(`[chat] personaSex from row.sex: "${personaSex}"`);
+    }
+    
+    // Then check metadata for voiceId and sex (if not found in direct column)
     if (personaMetadata) {
-      personaVoiceId = resolveVoiceFromMetadata(personaMetadata);
-      personaSex = resolveSexFromMetadata(personaMetadata);
+      const metaVoice = resolveVoiceFromMetadata(personaMetadata);
+      if (metaVoice) {
+        personaVoiceId = metaVoice;
+        console.log(`[chat] personaVoiceId from metadata: "${personaVoiceId}"`);
+      }
+      if (!personaSex) {
+        const metaSex = resolveSexFromMetadata(personaMetadata);
+        if (metaSex) {
+          personaSex = metaSex;
+          console.log(`[chat] personaSex from metadata: "${personaSex}"`);
+        }
+      }
     }
 
-    if (personaRoleKey) {
+    // FALLBACK: Only use seeds if no persona row data was found
+    // Seeds are legacy and should not override case-viewer persona manager settings
+    if (personaRoleKey && !personaRow) {
+      console.log(`[chat] No persona row found, falling back to seeds for roleKey="${personaRoleKey}"`);
       try {
-        if (!personaSeeds) {
-          if (personaRoleKey === "owner" && caseId && typeof caseId === "string") {
-            personaSeeds = buildPersonaSeeds(
-              caseId,
-              (caseRecord ?? {}) as Record<string, unknown>
-            );
-          } else {
-            personaSeeds = buildSharedPersonaSeeds();
-          }
-        }
-        const matchedSeed = personaSeeds.find(
-          (seed) => seed.roleKey === personaRoleKey
-        );
+        const seeds = personaRoleKey === "owner" && caseId && typeof caseId === "string"
+          ? buildPersonaSeeds(caseId, (caseRecord ?? {}) as Record<string, unknown>)
+          : buildSharedPersonaSeeds();
+        
+        const matchedSeed = seeds.find((seed) => seed.roleKey === personaRoleKey);
 
         if (!personaBehaviorPrompt && matchedSeed?.behaviorPrompt) {
           const trimmedBehavior = matchedSeed.behaviorPrompt.trim();
@@ -610,40 +624,30 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
           }
         }
 
-        if (!personaIdentity) {
-          const metadata = matchedSeed?.metadata;
-          if (metadata && typeof metadata === "object") {
-            const identityCandidate = (metadata as { identity?: unknown }).identity;
-            if (
-              identityCandidate &&
-              typeof identityCandidate === "object" &&
-              identityCandidate !== null
-            ) {
-              personaIdentity = identityCandidate as PersonaIdentity;
-              if (!personaVoiceId) {
-                const candidateVoice =
-                  (identityCandidate as { voiceId?: unknown }).voiceId;
-                if (typeof candidateVoice === "string") {
-                  personaVoiceId = candidateVoice;
-                }
+        if (!personaIdentity && matchedSeed?.metadata) {
+          const identityCandidate = (matchedSeed.metadata as { identity?: unknown }).identity;
+          if (identityCandidate && typeof identityCandidate === "object" && identityCandidate !== null) {
+            personaIdentity = identityCandidate as PersonaIdentity;
+            if (!personaVoiceId) {
+              const candidateVoice = (identityCandidate as { voiceId?: unknown }).voiceId;
+              if (typeof candidateVoice === "string") {
+                personaVoiceId = candidateVoice;
               }
-              if (!personaSex) {
-                const candidateSex = (identityCandidate as { sex?: unknown }).sex;
-                if (candidateSex === "male" || candidateSex === "female") {
-                  personaSex = candidateSex;
-                }
+            }
+            if (!personaSex) {
+              const candidateSex = (identityCandidate as { sex?: unknown }).sex;
+              if (candidateSex === "male" || candidateSex === "female" || candidateSex === "neutral") {
+                personaSex = candidateSex;
               }
             }
           }
         }
       } catch (seedErr) {
-        console.warn(
-          "Failed to resolve persona seed data",
-          { caseId, personaRoleKey },
-          seedErr
-        );
+        console.warn("Failed to resolve persona seed data", { caseId, personaRoleKey }, seedErr);
       }
     }
+
+    console.log(`[chat] Final persona resolution: displayRole="${displayRole}", voiceId="${personaVoiceId}", sex="${personaSex}", imageUrl="${personaImageUrl?.substring(0, 50)}..."`);
 
     // Reuse stageTokens and pushToken from earlier
     const matchingMedia = caseMedia.filter((item) => {
