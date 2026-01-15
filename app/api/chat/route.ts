@@ -498,7 +498,12 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     }
 
     if (personaRow?.display_name) {
+      console.log(`[chat] Overriding displayRole with persona display_name: "${personaRow.display_name}" (was "${displayRole}")`);
       displayRole = personaRow.display_name;
+    } else if (personaRow) {
+      console.log(`[chat] Persona row found but display_name is empty. personaRow:`, JSON.stringify(personaRow));
+    } else {
+      console.log(`[chat] No persona row found for roleKey="${personaRoleKey}" caseId="${caseId}". displayRole remains "${displayRole}"`);
     }
 
     if (
