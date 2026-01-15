@@ -1,6 +1,7 @@
 import { CaseFieldKey } from "../fieldMeta";
 
-type CaseTemplate = Record<CaseFieldKey, string>;
+// Partial type since persona configs are objects, not strings
+type CaseTemplate = Partial<Record<CaseFieldKey, string>>;
 
 const TEMPLATES: CaseTemplate[] = [
   {

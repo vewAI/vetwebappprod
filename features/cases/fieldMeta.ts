@@ -34,7 +34,9 @@ export type CaseFieldKey =
 	| "nurse_avatar_url"
 	| "owner_persona_id"
 	| "nurse_persona_id"
-	| "findings_release_strategy";
+	| "findings_release_strategy"
+	| "owner_persona_config"
+	| "nurse_persona_config";
 
 export type CaseFieldMeta = {
 	key: CaseFieldKey;
@@ -46,6 +48,9 @@ export type CaseFieldMeta = {
 	options?: string[];
 	isAvatarSelector?: boolean;
 	avatarRole?: "owner" | "nurse";
+	/** New persona editor field type */
+	isPersonaEditor?: boolean;
+	personaRole?: "owner" | "nurse";
 };
 
 const metaList: CaseFieldMeta[] = [
@@ -177,18 +182,32 @@ const metaList: CaseFieldMeta[] = [
 		options: ["immediate", "on_demand"],
 	},
 	{
+		key: "owner_persona_config",
+		label: "Owner Persona",
+		help: "Configure the owner character's appearance, name, gender, and voice.",
+		isPersonaEditor: true,
+		personaRole: "owner",
+	},
+	{
+		key: "nurse_persona_config",
+		label: "Nurse Persona",
+		help: "Configure the veterinary nurse character's appearance, name, gender, and voice.",
+		isPersonaEditor: true,
+		personaRole: "nurse",
+	},
+	{
 		key: "owner_avatar_url",
-		label: "Owner Avatar",
+		label: "Owner Avatar (Legacy)",
 		placeholder: "Select an avatar...",
-		help: "Choose the visual appearance for the owner.",
+		help: "Legacy field - use Owner Persona instead.",
 		isAvatarSelector: true,
 		avatarRole: "owner",
 	},
 	{
 		key: "nurse_avatar_url",
-		label: "Nurse Avatar",
+		label: "Nurse Avatar (Legacy)",
 		placeholder: "Select an avatar...",
-		help: "Choose the visual appearance for the veterinary nurse.",
+		help: "Legacy field - use Nurse Persona instead.",
 		isAvatarSelector: true,
 		avatarRole: "nurse",
 	},

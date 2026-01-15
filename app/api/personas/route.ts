@@ -68,33 +68,63 @@ export async function PUT(request: NextRequest) {
 
   const {
     id,
-    case_id: caseId,
-    role_key: roleKey,
-    display_name: displayName,
-    image_url: imageUrl,
-    behavior_prompt: behaviorPrompt,
-    metadata,
+    caseId,
+    case_id: caseidAlt,
+    roleKey,
+    role_key: roleKeyAlt,
+    displayName,
+    display_name: displayNameAlt,
+    imageUrl,
+    image_url: imageUrlAlt,
+    behaviorPrompt,
+    behavior_prompt: behaviorPromptAlt,
+    metadata: rawMetadata,
     prompt,
     sex,
+    voiceId,
+    sourcePersonaId,
   } = payload as Record<string, unknown>;
 
-  if (!id && (!caseId || !roleKey)) {
+  // Normalize field names (support both camelCase and snake_case)
+  const effectiveCaseId = (caseId ?? caseidAlt) as string | undefined;
+  const effectiveRoleKey = (roleKey ?? roleKeyAlt) as string | undefined;
+  const effectiveDisplayName = (displayName ?? displayNameAlt) as string | undefined;
+  const effectiveImageUrl = (imageUrl ?? imageUrlAlt) as string | null | undefined;
+  const effectiveBehaviorPrompt = (behaviorPrompt ?? behaviorPromptAlt) as string | null | undefined;
+
+  if (!id && (!effectiveCaseId || !effectiveRoleKey)) {
     return NextResponse.json(
-      { error: "Provide persona id or case_id and role_key" },
+      { error: "Provide persona id or caseId and roleKey" },
       { status: 400 }
     );
   }
 
+  // Build metadata with identity info
+  let metadata = rawMetadata as Record<string, unknown> | null | undefined;
+  if (sex || voiceId) {
+    metadata = metadata ?? {};
+    const identity = (metadata.identity as Record<string, unknown>) ?? {};
+    if (sex) {
+      identity.sex = sex;
+      metadata.sex = sex;
+    }
+    if (voiceId) {
+      identity.voiceId = voiceId;
+      metadata.voiceId = voiceId;
+    }
+    metadata.identity = identity;
+  }
+
   const updatePayload: Record<string, unknown> = {};
 
-  if (typeof displayName === "string") {
-    updatePayload.display_name = displayName;
+  if (typeof effectiveDisplayName === "string") {
+    updatePayload.display_name = effectiveDisplayName;
   }
-  if (typeof imageUrl === "string" || imageUrl === null) {
-    updatePayload.image_url = imageUrl;
+  if (typeof effectiveImageUrl === "string" || effectiveImageUrl === null) {
+    updatePayload.image_url = effectiveImageUrl;
   }
-  if (typeof behaviorPrompt === "string" || behaviorPrompt === null) {
-    updatePayload.behavior_prompt = behaviorPrompt;
+  if (typeof effectiveBehaviorPrompt === "string" || effectiveBehaviorPrompt === null) {
+    updatePayload.behavior_prompt = effectiveBehaviorPrompt;
   }
   if (typeof sex === "string" && ["male", "female", "neutral"].includes(sex)) {
     updatePayload.sex = sex;
@@ -120,12 +150,13 @@ export async function PUT(request: NextRequest) {
   }
 
   try {
+    // First, try to update existing persona
     let query = supabase.from("case_personas").update(updatePayload);
 
     if (id && typeof id === "string") {
       query = query.eq("id", id);
     } else {
-      query = query.eq("case_id", caseId).eq("role_key", roleKey);
+      query = query.eq("case_id", effectiveCaseId).eq("role_key", effectiveRoleKey);
     }
 
     const { data, error } = await query
@@ -135,12 +166,31 @@ export async function PUT(request: NextRequest) {
       .single();
 
     if (error) {
-      if (error.code === "PGRST116") {
-        return NextResponse.json(
-          { error: "Persona not found" },
-          { status: 404 }
-        );
+      // If persona doesn't exist, create it (upsert)
+      if (error.code === "PGRST116" && effectiveCaseId && effectiveRoleKey) {
+        const insertPayload = {
+          case_id: effectiveCaseId,
+          role_key: effectiveRoleKey,
+          ...updatePayload,
+          status: updatePayload.image_url ? "ready" : "pending",
+        };
+        
+        const { data: insertedData, error: insertError } = await supabase
+          .from("case_personas")
+          .upsert(insertPayload, { onConflict: "case_id,role_key" })
+          .select(
+            "id, case_id, role_key, display_name, status, image_url, prompt, behavior_prompt, metadata, generated_by, last_generated_at, updated_at, sex"
+          )
+          .single();
+
+        if (insertError) {
+          console.error("Failed to upsert persona", insertError);
+          return NextResponse.json({ error: insertError.message }, { status: 500 });
+        }
+
+        return NextResponse.json({ persona: insertedData });
       }
+      
       console.error("Failed to update persona", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }

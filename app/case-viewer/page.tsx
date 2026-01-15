@@ -15,6 +15,7 @@ import { useAuth } from "@/features/auth/services/authService";
 import { CaseMediaEditor } from "@/features/cases/components/case-media-editor";
 import CasePapersUploader from "@/features/cases/components/case-papers-uploader";
 import { AvatarSelector } from "@/features/cases/components/avatar-selector";
+import { PersonaEditor, type PersonaConfig } from "@/features/personas/components/PersonaEditor";
 import {
   normalizeCaseMedia,
   type CaseMediaItem,
@@ -34,6 +35,7 @@ type PersonaRow = {
   status?: string | null;
   image_url?: string | null;
   prompt?: string | null;
+  behavior_prompt?: string | null;
   metadata?: Record<string, unknown> | null;
   generated_by?: string | null;
   last_generated_at?: string | null;
@@ -74,6 +76,10 @@ export default function CaseViewerPage() {
   const [personas, setPersonas] = useState<PersonaRow[]>([]);
   const [personasLoading, setPersonasLoading] = useState(false);
   const [personasError, setPersonasError] = useState<string | null>(null);
+  // Persona configs for owner and nurse
+  const [ownerPersonaConfig, setOwnerPersonaConfig] = useState<Partial<PersonaConfig>>({});
+  const [nursePersonaConfig, setNursePersonaConfig] = useState<Partial<PersonaConfig>>({});
+  const [personaConfigsDirty, setPersonaConfigsDirty] = useState(false);
   const [automationState, setAutomationState] = useState<
     Record<
       string,
@@ -123,6 +129,20 @@ export default function CaseViewerPage() {
     []
   );
 
+  // Extract persona config from a PersonaRow
+  const extractPersonaConfig = useCallback((row: PersonaRow | undefined): Partial<PersonaConfig> => {
+    if (!row) return {};
+    const meta = (row.metadata ?? {}) as Record<string, unknown>;
+    const identity = meta.identity as Record<string, unknown> | undefined;
+    return {
+      imageUrl: row.image_url ?? undefined,
+      displayName: row.display_name ?? undefined,
+      sex: (identity?.sex ?? meta.sex) as PersonaConfig["sex"] | undefined,
+      voiceId: (identity?.voiceId ?? meta.voiceId) as string | undefined,
+      behaviorPrompt: row.behavior_prompt ?? undefined,
+    };
+  }, []);
+
   const loadPersonas = useCallback(
     async (caseId: string) => {
       if (!authHeaders) {
@@ -140,9 +160,17 @@ export default function CaseViewerPage() {
         });
         const data = resp.data as { personas?: PersonaRow[] };
         const list = Array.isArray(data?.personas) ? data.personas ?? [] : [];
-        const ownerRows = list.filter((row) => row.role_key === "owner");
+        
+        // Extract owner and nurse configs from case personas
+        const ownerRow = list.find((row) => row.role_key === "owner");
+        const nurseRow = list.find((row) => row.role_key === "veterinary-nurse");
+        
+        setOwnerPersonaConfig(extractPersonaConfig(ownerRow));
+        setNursePersonaConfig(extractPersonaConfig(nurseRow));
+        setPersonaConfigsDirty(false);
 
-        let combined = [...ownerRows];
+        // Get all case personas for display
+        let combined = [...list];
         try {
           const sharedResp = await axios.get("/api/global-personas", {
             headers: authHeaders,
@@ -192,7 +220,7 @@ export default function CaseViewerPage() {
         setPersonasLoading(false);
       }
     },
-    [authHeaders]
+    [authHeaders, extractPersonaConfig]
   );
 
   useEffect(() => {
@@ -263,6 +291,60 @@ export default function CaseViewerPage() {
   const updateField = (field: string, value: string) => {
     setFormState((prev) => (prev ? { ...prev, [field]: value } : prev));
   };
+
+  // Save persona configurations to case_personas table
+  const savePersonaConfigs = useCallback(async (caseId: string) => {
+    if (!authHeaders) return;
+    
+    const configs = [
+      { roleKey: "owner", config: ownerPersonaConfig },
+      { roleKey: "veterinary-nurse", config: nursePersonaConfig },
+    ];
+
+    for (const { roleKey, config } of configs) {
+      if (!config.imageUrl && !config.displayName && !config.sex && !config.voiceId && !config.behaviorPrompt) {
+        continue; // Skip if no config set
+      }
+
+      try {
+        await axios.put("/api/personas", {
+          caseId,
+          roleKey,
+          displayName: config.displayName,
+          imageUrl: config.imageUrl,
+          sex: config.sex,
+          voiceId: config.voiceId,
+          sourcePersonaId: config.sourcePersonaId,
+          behaviorPrompt: config.behaviorPrompt ?? null,
+        }, { headers: authHeaders });
+      } catch (err) {
+        console.error(`Failed to save ${roleKey} persona config`, err);
+      }
+    }
+  }, [authHeaders, ownerPersonaConfig, nursePersonaConfig]);
+
+  // Handle persona config changes
+  const handleOwnerPersonaChange = useCallback((config: PersonaConfig) => {
+    setOwnerPersonaConfig(config);
+    setPersonaConfigsDirty(true);
+    // Also update form state for avatar URL
+    setFormState((prev) => prev ? { 
+      ...prev, 
+      owner_avatar_url: config.imageUrl,
+      owner_persona_id: config.sourcePersonaId,
+    } : prev);
+  }, []);
+
+  const handleNursePersonaChange = useCallback((config: PersonaConfig) => {
+    setNursePersonaConfig(config);
+    setPersonaConfigsDirty(true);
+    // Also update form state for avatar URL
+    setFormState((prev) => prev ? { 
+      ...prev, 
+      nurse_avatar_url: config.imageUrl,
+      nurse_persona_id: config.sourcePersonaId,
+    } : prev);
+  }, []);
 
   const isAxiosError = (error: unknown): error is AxiosErrorLike => {
     return (
@@ -604,6 +686,11 @@ export default function CaseViewerPage() {
               setEditable((prev) => {
                 if (prev && cases[currentIndex]) {
                   loadCaseIntoForm(cases[currentIndex]);
+                  // Reset persona configs to saved state
+                  const caseId = formatValue(cases[currentIndex]["id"]).trim();
+                  if (caseId) {
+                    void loadPersonas(caseId);
+                  }
                 }
                 return !prev;
               });
@@ -619,7 +706,29 @@ export default function CaseViewerPage() {
                 return;
               }
               try {
-                const payload = { ...formState, media: mediaDraft };
+                // Build payload with persona config data for persistence
+                const payload: Record<string, unknown> = { 
+                  ...formState, 
+                  media: mediaDraft,
+                  // Include persona configs in payload for the API to process
+                  _ownerPersonaConfig: ownerPersonaConfig,
+                  _nursePersonaConfig: nursePersonaConfig,
+                };
+                
+                // Also update the avatar URL fields for backwards compatibility
+                if (ownerPersonaConfig.imageUrl) {
+                  payload["owner_avatar_url"] = ownerPersonaConfig.imageUrl;
+                }
+                if (nursePersonaConfig.imageUrl) {
+                  payload["nurse_avatar_url"] = nursePersonaConfig.imageUrl;
+                }
+                if (ownerPersonaConfig.sourcePersonaId) {
+                  payload["owner_persona_id"] = ownerPersonaConfig.sourcePersonaId;
+                }
+                if (nursePersonaConfig.sourcePersonaId) {
+                  payload["nurse_persona_id"] = nursePersonaConfig.sourcePersonaId;
+                }
+                
                 const resp = await axios.put("/api/cases", payload, {
                   headers: authHeaders,
                 });
@@ -637,10 +746,13 @@ export default function CaseViewerPage() {
                   loadCaseIntoForm(normalizedUpdated);
                   const updatedId = formatValue(updated["id"]).trim();
                   if (updatedId) {
+                    // Save persona configs to case_personas table
+                    await savePersonaConfigs(updatedId);
                     void loadPersonas(updatedId);
                   }
                   setEditable(false);
                   setExpandedField(null);
+                  setPersonaConfigsDirty(false);
                 }
               } catch (err) {
                 console.error("Error saving case:", err);
@@ -1073,62 +1185,33 @@ export default function CaseViewerPage() {
               );
             }
 
-            if (meta.isAvatarSelector) {
-              if (!editable) {
-                // Show read-only view when not editing
-                const avatarUrl = formatValue(rawValue);
-                return (
-                  <div key={key}>
-                    <label className="block font-medium mb-1">{meta.label}</label>
-                    <div className="flex items-center gap-4">
-                      {avatarUrl ? (
-                        <div className="relative h-16 w-16 overflow-hidden rounded-full border">
-                          <Image
-                            src={avatarUrl}
-                            alt={meta.label}
-                            fill
-                            className="object-cover"
-                            unoptimized
-                          />
-                        </div>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">No avatar selected</span>
-                      )}
-                    </div>
-                    {meta.help && (
-                      <p className="mt-1 text-sm text-muted-foreground">{meta.help}</p>
-                    )}
-                  </div>
-                );
-              }
-              // Show avatar selector in edit mode
+            // New PersonaEditor for comprehensive persona configuration
+            if (meta.isPersonaEditor) {
+              const personaRole = meta.personaRole ?? "owner";
+              const currentConfig = personaRole === "owner" ? ownerPersonaConfig : nursePersonaConfig;
+              const handleChange = personaRole === "owner" ? handleOwnerPersonaChange : handleNursePersonaChange;
+              
               return (
-                <div key={key}>
-                  <label className="block font-medium mb-1">{meta.label}</label>
-                  <AvatarSelector
-                    role={meta.avatarRole ?? "owner"}
-                    value={formatValue(rawValue)}
-                    onChange={(url, roleKey) => {
-                      setFormState((prev) => {
-                        if (!prev) return prev;
-                        const next = { ...prev, [key]: url };
-                        // Also update the persona_id field when avatar is changed
-                        if (roleKey) {
-                          if (meta.avatarRole === "nurse") {
-                            next["nurse_persona_id"] = roleKey;
-                          } else if (meta.avatarRole === "owner") {
-                            next["owner_persona_id"] = roleKey;
-                          }
-                        }
-                        return next;
-                      });
-                    }}
+                <div key={key} className="col-span-full">
+                  <label className="block font-medium mb-2">{meta.label}</label>
+                  <PersonaEditor
+                    role={personaRole}
+                    caseId={caseIdValue}
+                    value={currentConfig}
+                    onChange={handleChange}
+                    readOnly={!editable}
                   />
                   {meta.help && (
-                    <p className="mt-1 text-sm text-muted-foreground">{meta.help}</p>
+                    <p className="mt-2 text-sm text-muted-foreground">{meta.help}</p>
                   )}
                 </div>
               );
+            }
+
+            // Legacy avatar selector (hidden in favor of PersonaEditor)
+            if (meta.isAvatarSelector) {
+              // Skip legacy avatar selectors - they're replaced by PersonaEditor
+              return null;
             }
 
             if (meta.multiline) {
