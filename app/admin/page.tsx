@@ -70,18 +70,7 @@ export default function AdminPage() {
           <Button id="btn-review-cases" className="w-full justify-start" onClick={() => router.push("/case-viewer")}>
             Review and Edit Cases
           </Button>
-          <HelpTip content="Browse the list of all cases to make edits or check details." />
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button
-            id="btn-personas"
-            className="w-full justify-start"
-            onClick={() => router.push("/admin/personas")}
-          >
-            Manage Personas
-          </Button>
-          <HelpTip content="Customize the AI characters (Owner, Nurse) associated with each case." />
+          <HelpTip content="Browse the list of all cases to make edits or check details. Persona configuration is also managed here." />
         </div>
 
         <div className="flex items-center gap-2">

@@ -773,10 +773,16 @@ export default function CaseViewerPage() {
           </Button>
         </div>
       </div>
+      {/* Unified Personas Section - All persona config in one place */}
       {formState && caseIdValue && (
-        <div className="mb-6">
-          <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Persona Portraits</h2>
+        <div className="mb-8 p-6 border rounded-lg bg-card">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold">Personas</h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Configure the AI characters for this case. These settings override any previous configuration.
+              </p>
+            </div>
             <Button
               variant="outline"
               size="sm"
@@ -792,100 +798,34 @@ export default function CaseViewerPage() {
             </Button>
           </div>
           {personasError && (
-            <p className="mb-2 text-sm text-red-600">{personasError}</p>
+            <p className="mb-4 text-sm text-red-600">{personasError}</p>
           )}
-          {personas.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {personasLoading
-                ? "Loading portraits..."
-                : "No personas found for this case yet."}
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {personas.map((persona) => {
-                const label = persona.display_name ?? persona.role_key ?? "Persona";
-                const statusLabel = persona.status ?? "pending";
-                const updatedAt = persona.updated_at ?? persona.last_generated_at;
-                const errorDetail =
-                  persona.metadata &&
-                  typeof persona.metadata === "object" &&
-                  "error" in persona.metadata
-                    ? String((persona.metadata as Record<string, unknown>).error ?? "")
-                    : "";
-                const metadata =
-                  persona.metadata && typeof persona.metadata === "object"
-                    ? (persona.metadata as Record<string, unknown>)
-                    : null;
-                const identityRaw = metadata?.identity as
-                  | {
-                      fullName?: string;
-                      voiceId?: string;
-                      sex?: string;
-                    }
-                  | undefined;
-                const identityFullName = identityRaw?.fullName;
-                const voiceId = (metadata?.voiceId ?? identityRaw?.voiceId) as
-                  | string
-                  | undefined;
-                const sex = (metadata?.sex ?? identityRaw?.sex) as
-                  | string
-                  | undefined;
-                return (
-                  <div
-                    key={persona.id ?? `${persona.case_id ?? ""}-${persona.role_key ?? ""}`}
-                    className="flex items-center gap-3 rounded border p-3"
-                  >
-                    <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded bg-muted">
-                      {persona.image_url ? (
-                        <Image
-                          src={persona.image_url}
-                          alt={`${label} portrait`}
-                          fill
-                          className="object-cover"
-                          sizes="64px"
-                          loading="lazy"
-                          referrerPolicy="no-referrer"
-                          unoptimized
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
-                          No image
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <div className="font-medium">{label}</div>
-                      <div className="text-xs text-muted-foreground">
-                        Role key: {persona.role_key ?? "unknown"}
-                      </div>
-                      {identityFullName && (
-                        <div className="text-xs text-muted-foreground">
-                          Identity: {identityFullName}
-                        </div>
-                      )}
-                      <div className="text-xs text-muted-foreground">
-                        Voice: {voiceId ?? "auto"}
-                        {sex ? ` · Sex: ${sex}` : ""}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Status: {statusLabel}
-                        {updatedAt && (
-                          <span className="pl-1">
-                            · Updated {new Date(updatedAt).toLocaleString()}
-                          </span>
-                        )}
-                        {errorDetail && (
-                          <span className="block text-red-600">
-                            Error: {errorDetail}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+          
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Owner Persona */}
+            <div>
+              <h3 className="font-medium mb-3 text-lg">Pet Owner</h3>
+              <PersonaEditor
+                role="owner"
+                caseId={caseIdValue}
+                value={ownerPersonaConfig}
+                onChange={handleOwnerPersonaChange}
+                readOnly={!editable}
+              />
             </div>
-          )}
+            
+            {/* Nurse Persona */}
+            <div>
+              <h3 className="font-medium mb-3 text-lg">Veterinary Nurse</h3>
+              <PersonaEditor
+                role="nurse"
+                caseId={caseIdValue}
+                value={nursePersonaConfig}
+                onChange={handleNursePersonaChange}
+                readOnly={!editable}
+              />
+            </div>
+          </div>
         </div>
       )}
       {formState && (
@@ -1185,27 +1125,10 @@ export default function CaseViewerPage() {
               );
             }
 
-            // New PersonaEditor for comprehensive persona configuration
+            // PersonaEditor fields are now handled in the dedicated Personas section above
+            // Skip rendering them in the form grid
             if (meta.isPersonaEditor) {
-              const personaRole = meta.personaRole ?? "owner";
-              const currentConfig = personaRole === "owner" ? ownerPersonaConfig : nursePersonaConfig;
-              const handleChange = personaRole === "owner" ? handleOwnerPersonaChange : handleNursePersonaChange;
-              
-              return (
-                <div key={key} className="col-span-full">
-                  <label className="block font-medium mb-2">{meta.label}</label>
-                  <PersonaEditor
-                    role={personaRole}
-                    caseId={caseIdValue}
-                    value={currentConfig}
-                    onChange={handleChange}
-                    readOnly={!editable}
-                  />
-                  {meta.help && (
-                    <p className="mt-2 text-sm text-muted-foreground">{meta.help}</p>
-                  )}
-                </div>
-              );
+              return null;
             }
 
             // Legacy avatar selector (hidden in favor of PersonaEditor)
