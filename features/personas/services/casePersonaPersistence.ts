@@ -133,6 +133,7 @@ export async function ensureCasePersonas(
 /**
  * Load a source persona to copy data from.
  * Format: "case:{uuid}" - references a case_personas row by ID
+ * Format: "global:{uuid}" - legacy format, looks up global_personas for migration
  * Legacy: plain string - search by role_key in case_personas
  */
 async function loadSourcePersona(
@@ -165,11 +166,34 @@ async function loadSourcePersona(
     return data ?? null;
   }
 
-  // Legacy format: "global:{uuid}" - still supported for backwards compatibility
-  // but now looks in case_personas instead of global_personas
+  // Legacy format: "global:{uuid}" - look up from global_personas for backwards compatibility
+  // This allows older cases with global references to still load their selected persona data
   if (sourceKey.startsWith("global:")) {
-    // For legacy global references, we just skip - no global table lookup
-    console.warn(`Legacy global persona reference ignored: ${sourceKey}`);
+    const personaId = sourceKey.slice(7);
+    const { data, error } = await supabase
+      .from("global_personas")
+      .select(
+        "id, role_key, display_name, prompt, behavior_prompt, status, image_url, metadata"
+      )
+      .eq("id", personaId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn(`Failed to load legacy global persona: ${sourceKey}`, error);
+      cache.set(sourceKey, null);
+      return null;
+    }
+
+    if (data) {
+      // Convert to DbPersonaRow format (case_id is undefined since it's from global)
+      const row: DbPersonaRow = {
+        ...data,
+        case_id: undefined,
+      };
+      cache.set(sourceKey, row);
+      return row;
+    }
+
     cache.set(sourceKey, null);
     return null;
   }
