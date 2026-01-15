@@ -16,6 +16,8 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  console.log(`[personas GET] Loading personas for caseId="${caseId}"`);
+  
   try {
     const { data, error } = await supabase
       .from("case_personas")
@@ -27,12 +29,15 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error(
-        "Failed to load personas",
-        JSON.stringify({ caseId, message: error.message, details: error.details, hint: error.hint })
+        "[personas GET] FAILED to load personas",
+        JSON.stringify({ caseId, message: error.message, code: error.code, details: error.details, hint: error.hint })
       );
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    console.log(`[personas GET] Loaded ${data?.length ?? 0} personas for caseId="${caseId}"`, 
+      data?.map(p => ({ roleKey: p.role_key, displayName: p.display_name, sex: p.sex, hasMetadata: !!p.metadata })));
+    
     return NextResponse.json({ personas: data ?? [] });
   } catch (error) {
     console.error("Unhandled personas API error", error);
@@ -149,6 +154,13 @@ export async function PUT(request: NextRequest) {
     );
   }
 
+  console.log(`[personas PUT] Attempting update:`, JSON.stringify({
+    id,
+    caseId: effectiveCaseId,
+    roleKey: effectiveRoleKey,
+    updatePayload,
+  }));
+
   try {
     // First, try to update existing persona
     let query = supabase.from("case_personas").update(updatePayload);
@@ -166,6 +178,8 @@ export async function PUT(request: NextRequest) {
       .single();
 
     if (error) {
+      console.log(`[personas PUT] Update returned error code="${error.code}", message="${error.message}"`);
+      
       // If persona doesn't exist, create it (upsert)
       if (error.code === "PGRST116" && effectiveCaseId && effectiveRoleKey) {
         const insertPayload = {
@@ -174,6 +188,8 @@ export async function PUT(request: NextRequest) {
           ...updatePayload,
           status: updatePayload.image_url ? "ready" : "pending",
         };
+        
+        console.log(`[personas PUT] Persona not found, attempting upsert:`, JSON.stringify(insertPayload));
         
         const { data: insertedData, error: insertError } = await supabase
           .from("case_personas")
@@ -184,24 +200,48 @@ export async function PUT(request: NextRequest) {
           .single();
 
         if (insertError) {
-          console.error("Failed to upsert persona", insertError);
+          console.error(`[personas PUT] UPSERT FAILED:`, JSON.stringify({
+            code: insertError.code,
+            message: insertError.message,
+            details: insertError.details,
+            hint: insertError.hint,
+          }));
           return NextResponse.json({ error: insertError.message }, { status: 500 });
         }
 
+        console.log(`[personas PUT] Upsert SUCCESS:`, JSON.stringify({
+          id: insertedData?.id,
+          roleKey: insertedData?.role_key,
+          displayName: insertedData?.display_name,
+          sex: insertedData?.sex,
+        }));
         return NextResponse.json({ persona: insertedData });
       }
       
-      console.error("Failed to update persona", error);
+      console.error(`[personas PUT] UPDATE FAILED:`, JSON.stringify({
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      }));
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     if (!data) {
+      console.log(`[personas PUT] Update returned no data (persona not found)`);
       return NextResponse.json(
         { error: "Persona not found" },
         { status: 404 }
       );
     }
 
+    console.log(`[personas PUT] Update SUCCESS:`, JSON.stringify({
+      id: data.id,
+      roleKey: data.role_key,
+      displayName: data.display_name,
+      sex: data.sex,
+      metadata: data.metadata,
+    }));
     return NextResponse.json({ persona: data });
   } catch (error) {
     console.error("Unhandled persona update error", error);
