@@ -1543,9 +1543,10 @@ export function ChatInterface({
       reset();
     } catch {}
     
-    // Wait longer for mic hardware to fully release before playing audio
+    // Wait for mic hardware to fully release before playing audio
     // This is critical to prevent self-capture
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // Increased from 500ms to 600ms (+20%) for better separation
+    await new Promise((resolve) => setTimeout(resolve, 600));
     
     try {
       // Try streaming first for low latency, fall back to buffered playback
@@ -1596,20 +1597,20 @@ export function ChatInterface({
       window.setTimeout(() => {
         isSuppressingSttRef.current = false;
         try {
-          // Pass true to skip the internal service cooldown, since we already waited 500ms
+          // Pass true to skip the internal service cooldown, since we already waited 600ms
           setSttSuppressed(false, true);
         } catch {}
-      }, 500);
+      }, 600); // Increased from 500ms to 600ms (+20%) for better TTS/STT separation
 
       // Resume listening if we previously stopped for playback and voiceMode
       // is still enabled, UNLESS the caller explicitly requested to handle resumption.
       if (resumeListeningRef.current && !skipResume) {
         resumeListeningRef.current = false;
-        // Schedule start slightly after suppression clears (500ms + 100ms buffer = 600ms)
+        // Schedule start slightly after suppression clears (600ms + 120ms buffer = 720ms)
         try {
-          console.debug("playTtsAndPauseStt: resuming STT", { delay: 600 });
+          console.debug("playTtsAndPauseStt: resuming STT", { delay: 720 });
         } catch (e) {}
-        attemptStartListening(600);
+        attemptStartListening(720); // Increased from 600ms to 720ms (+20%)
       }
     }
   };
