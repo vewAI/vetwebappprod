@@ -553,6 +553,27 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       }
     }
 
+    // If we have a persona display_name, ensure the behaviorPrompt uses it
+    // Replace any hardcoded names with the display_name from case_personas
+    if (personaBehaviorPrompt && personaRow?.display_name) {
+      const personaDisplayName = personaRow.display_name;
+      // Replace "You are <Name>," patterns at the start
+      personaBehaviorPrompt = personaBehaviorPrompt.replace(
+        /^You are [A-Z][a-z]+(\s+[A-Z][a-z]+)*,/i,
+        `You are ${personaDisplayName},`
+      );
+      // Replace "I am <Name>" patterns
+      personaBehaviorPrompt = personaBehaviorPrompt.replace(
+        /\bI am [A-Z][a-z]+(\s+[A-Z][a-z]+)*/gi,
+        `I am ${personaDisplayName}`
+      );
+      // Replace "My name is <Name>" patterns
+      personaBehaviorPrompt = personaBehaviorPrompt.replace(
+        /\bMy name is [A-Z][a-z]+(\s+[A-Z][a-z]+)*/gi,
+        `My name is ${personaDisplayName}`
+      );
+    }
+
     let personaVoiceId: string | undefined = undefined;
     let personaSex: string | undefined = undefined;
 
