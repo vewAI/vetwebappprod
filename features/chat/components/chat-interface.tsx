@@ -944,6 +944,23 @@ export function ChatInterface({
                   console.debug("Auto-send skipped: too short during noise suppression", { wordCount, text: textToSend });
                   return;
                 }
+                
+                // Re-check if message still looks incomplete - block auto-send entirely
+                const finalLastWord = textToSend.split(/\s+/).pop()?.toLowerCase() || "";
+                const incompleteBlockers = [
+                  // Articles - strong signal of incomplete thought
+                  "the", "a", "an",
+                  // Prepositions often followed by object
+                  "of", "at", "in", "on", "to", "for", "with", "by", "from", "about", "into",
+                  // Common continuation patterns
+                  "is", "are", "was", "were", "and", "or", "but", "that", "which",
+                  "my", "your", "his", "her", "its", "our", "their", "this", "these", "those",
+                ];
+                if (incompleteBlockers.includes(finalLastWord)) {
+                  console.debug("Auto-send BLOCKED: message ends with incomplete marker", { finalLastWord, text: textToSend });
+                  return;
+                }
+                
                 console.debug(
                   "Auto-send (final) firing with text:",
                   baseInputRef.current
