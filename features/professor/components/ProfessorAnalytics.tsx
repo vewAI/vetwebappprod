@@ -33,7 +33,7 @@ export function ProfessorAnalytics() {
 
   return (
     <>
-      <Card className="min-h-36 p-2 h-full transition-all duration-300 ease-out hover:bg-white shadow-lg bg-muted/50 border border-transparent border-teal-500/30">
+      <Card className="min-h-36 p-2 h-full transition-all duration-300 ease-out hover:bg-muted/100 dark:hover:bg-muted/80 shadow-lg bg-muted/50 border border-transparent border-teal-500/30">
         <CardHeader className="pb-1 grow text-center px-3">
           <CardTitle className="text-sm font-medium text-muted-foreground text-teal-600">
             Total Attempts
@@ -48,7 +48,7 @@ export function ProfessorAnalytics() {
         </CardContent>
       </Card>
 
-      <Card className="min-h-36 p-2 h-full transition-all duration-300 ease-out hover:bg-white shadow-lg bg-muted/50 border border-transparent border-teal-500/30">
+      <Card className="min-h-36 p-2 h-full transition-all duration-300 ease-out hover:bg-muted/100 dark:hover:bg-muted/80 shadow-lg bg-muted/50 border border-transparent border-teal-500/30">
         <CardHeader className="pb-1 grow text-center px-3">
           <CardTitle className="text-sm font-medium text-teal-600">
             Completion Rate
@@ -71,7 +71,7 @@ export function ProfessorAnalytics() {
         </CardContent>
       </Card>
 
-      <Card className="min-h-36 p-2 h-full transition-all duration-300 ease-out hover:bg-white shadow-lg bg-muted/50 border border-transparent border-teal-500/30">
+      <Card className="min-h-36 p-2 h-full transition-all duration-300 ease-out hover:bg-muted/100 dark:hover:bg-muted/80 shadow-lg bg-muted/50 border border-transparent border-teal-500/30">
         <CardHeader className="pb-1 grow text-center px-3">
           <CardTitle className="text-sm font-medium text-muted-foreground text-teal-600">
             Avg. Time Spent
