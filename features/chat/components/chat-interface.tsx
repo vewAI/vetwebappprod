@@ -936,6 +936,13 @@ export function ChatInterface({
               autoSendFinalTimerRef.current = null;
               autoSendPendingTextRef.current = null;
               try {
+                // GUARD: If we're in deaf mode (TTS playing or just ended), skip auto-send
+                // This prevents the mic from "auto-sending" captured TTS audio
+                if (isInDeafMode()) {
+                  console.debug("Auto-send BLOCKED: in deaf mode (TTS playing or recently ended)");
+                  return;
+                }
+                
                 // Extra validation when noise suppression is on: require at
                 // least 3 words to reduce accidental sends from ambient noise
                 const textToSend = baseInputRef.current?.trim() || "";
@@ -1509,6 +1516,14 @@ export function ChatInterface({
     if (!text) return;
     stopActiveTtsPlayback();
     isPlayingAudioRef.current = true;
+    
+    // CRITICAL: Clear any pending auto-send timers FIRST to prevent race conditions
+    // where a timer fires and sends a message while TTS is starting
+    if (autoSendFinalTimerRef.current) {
+      window.clearTimeout(autoSendFinalTimerRef.current);
+      autoSendFinalTimerRef.current = null;
+    }
+    autoSendPendingTextRef.current = null;
     
     // NUCLEAR OPTION: Enter deaf mode IMMEDIATELY before doing anything else.
     // This ensures ALL STT results are discarded during TTS playback.
@@ -2938,6 +2953,11 @@ export function ChatInterface({
             autoSendFinalTimerRef.current = null;
             autoSendPendingTextRef.current = null;
             try {
+              // GUARD: If we're in deaf mode (TTS playing or just ended), skip auto-send
+              if (isInDeafMode()) {
+                console.debug("Auto-send (transcript) BLOCKED: in deaf mode");
+                return;
+              }
               console.debug(
                 "Auto-send (final via transcript) firing with text:",
                 baseInputRef.current

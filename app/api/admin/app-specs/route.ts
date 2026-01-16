@@ -15,6 +15,41 @@ export async function GET() {
 
   // Core app specifications
   const specs = {
+    promptIntegration: {
+      title: "How Prompts Integrate Together",
+      layers: [
+        {
+          layer: 1,
+          name: "ROLE_PROMPT_DEFINITIONS (Foundation)",
+          description: "Stage-specific templates defining the functional role the AI plays. Contains structural rules, data placeholders, and release strategy instructions.",
+          example: `"You are roleplaying as the owner... Stay in character..."
+{{PRESENTING_COMPLAINT}} → replaced with case data
+{{OWNER_BACKGROUND}} → replaced with case data  
+{{RELEASE_STRATEGY_INSTRUCTION}} → immediate/on_demand`,
+        },
+        {
+          layer: 2,
+          name: "Behavior Prompt (Personality)",
+          description: "Per-case persona customizations stored in case_personas.behavior_prompt. Defines HOW the AI says things (tone, mannerisms, personality traits).",
+          example: `"Amanda Burns is a 45-year-old horse breeder from Kentucky.
+She's practical, no-nonsense, but deeply attached to her animals.
+She tends to downplay her worry but watches the vet's face carefully."`,
+        },
+      ],
+      runtimeFlow: [
+        "1. Student sends message in a specific stage",
+        "2. System loads ROLE_PROMPT_DEFINITIONS template for that stage's roleInfoKey",
+        "3. Placeholders are replaced with actual case data (presenting_complaint, owner_background, etc.)",
+        "4. Persona behavior_prompt is injected for personality/tone",
+        "5. Final prompt combines: Functional instructions + Case data + Personality",
+      ],
+      responsibilities: [
+        { aspect: "WHAT to say (facts, findings)", controlledBy: "ROLE_PROMPT_DEFINITIONS + case fields" },
+        { aspect: "HOW to say it (tone, mannerisms)", controlledBy: "Behavior Prompt (case_personas)" },
+        { aspect: "WHEN to reveal (filtering)", controlledBy: "findings_release_strategy field" },
+        { aspect: "WHO they are (identity)", controlledBy: "case_personas (display_name, voiceId, image_url)" },
+      ],
+    },
     rolePromptDefinitions: rolePrompts,
     findingsReleaseStrategies: [
       {
@@ -51,7 +86,8 @@ export async function GET() {
       preDelay: 600,
       suppressionClear: 600,
       sttResumeDelay: 720,
-      description: "Timing delays (ms) for TTS/STT coordination in voice mode",
+      deafWindowAfterTts: 1000,
+      description: "Timing delays (ms) for TTS/STT coordination in voice mode. Deaf window prevents mic from hearing its own TTS playback.",
     },
   };
 

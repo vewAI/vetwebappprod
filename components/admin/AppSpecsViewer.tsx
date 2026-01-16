@@ -47,10 +47,31 @@ interface TTSConfig {
   preDelay: number;
   suppressionClear: number;
   sttResumeDelay: number;
+  deafWindowAfterTts: number;
   description: string;
 }
 
+interface PromptLayer {
+  layer: number;
+  name: string;
+  description: string;
+  example: string;
+}
+
+interface Responsibility {
+  aspect: string;
+  controlledBy: string;
+}
+
+interface PromptIntegration {
+  title: string;
+  layers: PromptLayer[];
+  runtimeFlow: string[];
+  responsibilities: Responsibility[];
+}
+
 interface AppSpecs {
+  promptIntegration: PromptIntegration;
   rolePromptDefinitions: RolePromptDefinition[];
   findingsReleaseStrategies: FindingsStrategy[];
   defaultStages: DefaultStage[];
@@ -124,10 +145,71 @@ export function AppSpecsViewer({ open, onOpenChange }: AppSpecsViewerProps) {
           {error && <p className="text-destructive">Error: {error}</p>}
           {specs && (
             <div className="space-y-2">
+              {/* Prompt Integration Overview */}
+              <CollapsibleSection
+                title="🔗 How Prompts Integrate Together"
+                defaultOpen={true}
+              >
+                <div className="space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    The AI behavior is composed of multiple layers that combine at runtime.
+                  </p>
+                  
+                  {/* Layers */}
+                  <div className="space-y-3">
+                    {specs.promptIntegration.layers.map((layer) => (
+                      <div key={layer.layer} className="border rounded-md p-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Badge className="w-6 h-6 flex items-center justify-center rounded-full shrink-0">
+                            {layer.layer}
+                          </Badge>
+                          <span className="font-semibold">{layer.name}</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground mb-2">
+                          {layer.description}
+                        </p>
+                        <pre className="text-xs bg-muted p-2 rounded-md whitespace-pre-wrap font-mono">
+                          {layer.example}
+                        </pre>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Runtime Flow */}
+                  <div>
+                    <h4 className="font-medium mb-2">Runtime Flow</h4>
+                    <div className="bg-muted rounded-md p-3 space-y-1">
+                      {specs.promptIntegration.runtimeFlow.map((step, idx) => (
+                        <div key={idx} className="text-sm font-mono">
+                          {step}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Responsibilities */}
+                  <div>
+                    <h4 className="font-medium mb-2">Division of Responsibility</h4>
+                    <div className="space-y-1">
+                      {specs.promptIntegration.responsibilities.map((r, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center gap-2 p-2 bg-muted rounded-md text-sm"
+                        >
+                          <span className="font-medium min-w-[180px]">{r.aspect}</span>
+                          <span className="text-muted-foreground">→</span>
+                          <span className="text-muted-foreground">{r.controlledBy}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </CollapsibleSection>
+
               {/* Role Prompt Definitions */}
               <CollapsibleSection
                 title={`Role Prompt Definitions (${specs.rolePromptDefinitions.length})`}
-                defaultOpen={true}
+                defaultOpen={false}
               >
                 <p className="text-sm text-muted-foreground mb-4">
                   Core prompts for each role in case stages. Define how AI behaves as owner, nurse, or technician.
@@ -272,7 +354,7 @@ export function AppSpecsViewer({ open, onOpenChange }: AppSpecsViewerProps) {
                     <p className="text-sm text-muted-foreground mb-2">
                       {specs.ttsConfig.description}
                     </p>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-4 gap-2">
                       <div className="p-3 bg-muted rounded-md text-center">
                         <div className="text-2xl font-mono font-bold">
                           {specs.ttsConfig.preDelay}
@@ -290,6 +372,12 @@ export function AppSpecsViewer({ open, onOpenChange }: AppSpecsViewerProps) {
                           {specs.ttsConfig.sttResumeDelay}
                         </div>
                         <div className="text-xs text-muted-foreground">STT resume (ms)</div>
+                      </div>
+                      <div className="p-3 bg-muted rounded-md text-center">
+                        <div className="text-2xl font-mono font-bold">
+                          {specs.ttsConfig.deafWindowAfterTts}
+                        </div>
+                        <div className="text-xs text-muted-foreground">Deaf window (ms)</div>
                       </div>
                     </div>
                   </div>
