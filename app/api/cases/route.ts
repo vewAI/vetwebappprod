@@ -246,6 +246,8 @@ export async function PUT(req: Request) {
   const { supabase } = auth;
   try {
     let body = await req.json();
+    console.log(`[cases PUT] Updating case id="${body?.id}"`);
+    
     if (!body || !body.id) {
       return NextResponse.json(
         { error: "id is required for update" },
@@ -256,6 +258,7 @@ export async function PUT(req: Request) {
     body = normalizeCaseBody(body);
 
     // Try to update the row
+    console.log(`[cases PUT] Calling supabase.update for case id="${body.id}"`);
     const { data, error } = await supabase
       .from("cases")
       .update(body)
@@ -264,22 +267,44 @@ export async function PUT(req: Request) {
       .single();
 
     if (error) {
+      console.error(`[cases PUT] Supabase update FAILED:`, JSON.stringify({
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      }));
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    console.log(`[cases PUT] Supabase update SUCCESS for case id="${data?.id}"`);
+
     if (data?.id) {
-      await ensureCasePersonas(supabase, data.id, body);
-      scheduleCasePersonaPortraitGeneration(supabase, openai, data.id);
-      scheduleCaseImageGeneration(
-        supabase,
-        openai,
-        data as Record<string, unknown>,
-        { force: !data?.image_url }
-      );
+      try {
+        console.log(`[cases PUT] Running ensureCasePersonas...`);
+        await ensureCasePersonas(supabase, data.id, body);
+        console.log(`[cases PUT] ensureCasePersonas completed`);
+      } catch (personaErr) {
+        console.error(`[cases PUT] ensureCasePersonas FAILED:`, personaErr);
+        // Don't fail the whole request for persona issues
+      }
+      
+      try {
+        scheduleCasePersonaPortraitGeneration(supabase, openai, data.id);
+        scheduleCaseImageGeneration(
+          supabase,
+          openai,
+          data as Record<string, unknown>,
+          { force: !data?.image_url }
+        );
+      } catch (scheduleErr) {
+        console.error(`[cases PUT] Image scheduling FAILED:`, scheduleErr);
+        // Don't fail the whole request for scheduling issues
+      }
     }
 
     return NextResponse.json({ success: true, data });
   } catch (err: unknown) {
+    console.error(`[cases PUT] Unhandled exception:`, err);
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
       { error: msg || "Unknown error" },
