@@ -38,6 +38,10 @@ function normalizeIncomingMedia(raw: unknown): CaseMediaItem[] {
 function normalizeCaseBody(body: Record<string, unknown>): Record<string, unknown> {
   const next = { ...body };
 
+  // Remove temporary UI-only fields that aren't database columns
+  delete next["_ownerPersonaConfig"];
+  delete next["_nursePersonaConfig"];
+
   // estimated_time
   if (next["estimated_time"] !== undefined && next["estimated_time"] !== "") {
     const n = Number(next["estimated_time"]);
