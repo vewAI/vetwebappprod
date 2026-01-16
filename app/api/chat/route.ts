@@ -271,41 +271,22 @@ export async function POST(request: NextRequest) {
         }
         if (stage && stage.role) {
           stageRole = stage.role;
-          if (/owner|client/i.test(stage.role) && ownerBackground) {
-            const roleMatch = ownerBackground.match(/Role:\s*(.+)/i);
-            if (roleMatch && roleMatch[1]) {
-              displayRole = roleMatch[1].trim();
-            } else {
-              const horseMatch = ownerBackground.match(/Horse:\s*([^\n]+)/i);
-              if (horseMatch && horseMatch[1]) {
-                const horseName = horseMatch[1].split("(")[0].trim();
-                displayRole = `Owner (${horseName})`;
-              } else {
-                displayRole = stage.role;
-              }
-            }
-          } else {
-            displayRole = stage.role;
-          }
+          // NOTE: We no longer extract displayRole from ownerBackground
+          // The persona display_name from case_personas is the source of truth
+          // Just use the stage role as a fallback; persona will override if found
+          displayRole = stage.role;
+          console.log(`[chat] Initial displayRole from stage.role: "${displayRole}"`);
         }
       } catch (stageErr) {
         console.warn("Failed to resolve stage role for case", caseId, stageErr);
       }
     }
 
-    if (!displayRole && ownerBackground) {
-      const roleMatch = ownerBackground.match(/Role:\s*(.+)/i);
-      if (roleMatch && roleMatch[1]) {
-        displayRole = roleMatch[1].trim();
-      } else {
-        const horseMatch = ownerBackground.match(/Horse:\s*([^\n]+)/i);
-        if (horseMatch && horseMatch[1]) {
-          const horseName = horseMatch[1].split("(")[0].trim();
-          displayRole = `Owner (${horseName})`;
-        } else {
-          displayRole = "Client (Owner)";
-        }
-      }
+    // Fallback displayRole if not set from stage
+    // NOTE: We no longer extract names from ownerBackground - persona is source of truth
+    if (!displayRole) {
+      displayRole = "Client (Owner)";
+      console.log(`[chat] Fallback displayRole: "${displayRole}"`);
     }
 
     personaRoleKey = resolveChatPersonaRoleKey(stageRole, displayRole);

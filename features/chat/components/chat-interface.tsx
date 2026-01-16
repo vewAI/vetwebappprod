@@ -1860,9 +1860,22 @@ export function ChatInterface({
       // Simplified behavior: instead of a general LLM-based completeness check,
       // only treat very short (<=2 words) voice fragments as potentially
       // incomplete and wait for continuation. This avoids false positives.
+      // ALSO: check if the phrase ends with an incomplete marker (article, preposition, etc.)
       if (voiceMode && !awaitingContinuationRef.current) {
         const tokenCount = String(trimmed).split(/\s+/).filter(Boolean).length;
-        if (tokenCount <= 2) {
+        const lastWord = String(trimmed).split(/\s+/).pop()?.toLowerCase() || "";
+        const incompleteMarkers = [
+          // Articles - strong signal of incomplete thought
+          "the", "a", "an",
+          // Prepositions often followed by object
+          "of", "at", "in", "on", "to", "for", "with", "by", "from", "about", "into",
+          // Common continuation patterns
+          "is", "are", "was", "were", "and", "or", "but", "that", "which",
+          "my", "your", "his", "her", "its", "our", "their", "this", "these", "those",
+        ];
+        const endsWithIncompleteMarker = incompleteMarkers.includes(lastWord);
+        
+        if (tokenCount <= 2 || endsWithIncompleteMarker) {
           // Insert assistant placeholder '...' and keep listening for continuation
           const stage = stages?.[currentStageIndex];
           const roleLabel = stage?.role
@@ -1882,6 +1895,7 @@ export function ChatInterface({
           // reflect in input but do not send to server yet
           baseInputRef.current = trimmed;
           setInput(trimmed);
+          console.debug("Waiting for continuation - incomplete phrase detected", { tokenCount, lastWord, endsWithIncompleteMarker, trimmed });
           // schedule an auto-send if no continuation arrives within 6s
           if (autoSendSttRef.current) {
             if (placeholderAutoSendTimerRef.current) {
@@ -1890,6 +1904,29 @@ export function ChatInterface({
             }
             placeholderAutoSendTimerRef.current = window.setTimeout(() => {
               if (awaitingContinuationRef.current) {
+                // Re-check if still incomplete before sending
+                const currentText = baseInputRef.current?.trim() || "";
+                const currentLastWord = currentText.split(/\s+/).pop()?.toLowerCase() || "";
+                if (incompleteMarkers.includes(currentLastWord)) {
+                  console.debug("Still incomplete after wait, keeping placeholder", { currentLastWord });
+                  // Extend the wait - don't send yet
+                  placeholderAutoSendTimerRef.current = window.setTimeout(() => {
+                    if (awaitingContinuationRef.current) {
+                      const pid = awaitingContinuationRef.current.placeholderId;
+                      setMessages((prev) => prev.filter((m) => m.id !== pid));
+                      awaitingContinuationRef.current = null;
+                      // Give up and send anyway after extended wait
+                      try {
+                        void triggerAutoSend(baseInputRef.current || "");
+                      } catch (e) {
+                        console.warn("Auto-send of placeholder fragment failed", e);
+                      }
+                    }
+                    placeholderAutoSendTimerRef.current = null;
+                  }, 4000); // Another 4s wait
+                  return;
+                }
+                
                 const pid = awaitingContinuationRef.current.placeholderId;
                 setMessages((prev) => prev.filter((m) => m.id !== pid));
                 awaitingContinuationRef.current = null;
@@ -3010,6 +3047,17 @@ export function ChatInterface({
         setIsPaused(true);
         // Set global pause flag to prevent STT auto-restart when window is refocused
         setGlobalPaused(true);
+        // Turn off voice mode when auto-pausing - CRITICAL for stopping STT/TTS
+        try {
+          setVoiceModeEnabled(false);
+        } catch {
+          // fallback: ensure listeners and TTS are stopped
+          if (isListening) {
+            try { stop(); } catch { };
+          }
+        }
+        stopActiveTtsPlayback();
+        setTtsEnabledState(false);
         // Also enter deaf mode to ignore any pending STT results
         enterDeafMode();
         setTimepointToast({
@@ -3022,7 +3070,7 @@ export function ChatInterface({
     return () => {
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [attemptId]);
+  }, [attemptId, isListening, stop, setVoiceModeEnabled, setTtsEnabledState, stopActiveTtsPlayback, enterDeafMode]);
 
   // Auto-save (throttled) ��� keeps the existing delete+insert server behavior
   useEffect(() => {
