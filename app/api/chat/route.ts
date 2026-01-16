@@ -168,9 +168,18 @@ export async function POST(request: NextRequest) {
 
             if (caseRow.owner_background) {
               ownerInfo = String(caseRow.owner_background);
-              const replacement = "the owner";
-              ownerInfo = ownerInfo.replace(/\[Your Name\]/g, replacement);
-              ownerInfo = ownerInfo.replace(/\{owner_name\}/g, replacement);
+              // Strip all owner naming - persona display_name from case_personas is the source of truth
+              const ownerPlaceholder = "the owner";
+              ownerInfo = ownerInfo.replace(/\[Your Name\]/g, ownerPlaceholder);
+              ownerInfo = ownerInfo.replace(/\{owner_name\}/g, ownerPlaceholder);
+              // Remove "Role: <Name>" lines - will be replaced by persona display_name
+              ownerInfo = ownerInfo.replace(/^Role:\s*.+$/gim, "");
+              // Remove "Name: <Name>" lines
+              ownerInfo = ownerInfo.replace(/^Name:\s*.+$/gim, "");
+              // Remove common name patterns like "I am <Name>" or "My name is <Name>"
+              ownerInfo = ownerInfo.replace(/\b(I am|I'm|My name is|Call me)\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*/gi, "I am the owner");
+              // Clean up extra blank lines
+              ownerInfo = ownerInfo.replace(/\n{3,}/g, "\n\n").trim();
             }
           }
 
