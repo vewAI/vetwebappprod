@@ -2250,34 +2250,25 @@ export function ChatInterface({
             await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
 
             let playbackError: unknown = null;
+            let ttsCompleted = false;
             try {
-              // Race TTS against a 5s timeout to ensure we don't show "..." forever if audio hangs
-              await Promise.race([
-                playTtsAndPauseStt(
-                  response.content,
-                  finalVoiceForRole,
-                  ttsMeta,
-                  responseVoiceSex === "male" || responseVoiceSex === "female" ? responseVoiceSex : undefined,
-                  false // Let playTtsAndPauseStt handle mic resume when audio actually ends
-                ),
-                // User requested 4 second limit for TTS prep fallback
-                new Promise((_, reject) => setTimeout(() => reject(new Error("TTS prep timeout")), 4000))
-              ]);
+              // Wait for TTS to actually complete playing before showing text
+              // No timeout race - we want to wait for the full audio
+              await playTtsAndPauseStt(
+                response.content,
+                finalVoiceForRole,
+                ttsMeta,
+                responseVoiceSex === "male" || responseVoiceSex === "female" ? responseVoiceSex : undefined,
+                false // Let playTtsAndPauseStt handle mic resume when audio actually ends
+              );
+              ttsCompleted = true;
             } catch (streamErr) {
               playbackError = streamErr;
-              if ((streamErr as Error)?.message === "TTS prep timeout") {
-                // Timeout fired but TTS might still be playing!
-                // Keep deaf mode active if audio is still playing
-                if (isPlayingAudioRef.current) {
-                  console.debug("TTS prep timeout fired but audio still playing - keeping deaf mode active");
-                  // Re-enter deaf mode in case it was exited
-                  try { enterDeafMode(); } catch {}
-                }
-              } else {
-                console.warn("Voice-first TTS playback encountered an error:", streamErr);
-              }
+              console.warn("Voice-first TTS playback encountered an error:", streamErr);
             } finally {
-              // Replace placeholder with real content
+              // Only replace placeholder with real content AFTER TTS completes or errors
+              // This ensures text appears after audio finishes
+              console.debug("Voice-first: replacing placeholder with content", { ttsCompleted, playbackError: !!playbackError });
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === placeholderMessage.id

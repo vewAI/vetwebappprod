@@ -119,7 +119,16 @@ export const ROLE_PROMPT_DEFINITIONS: Record<RolePromptKey, RolePromptDefinition
     buildReplacements: ({ caseRow, userMessage }) => {
       const strategy = getText(caseRow, "findings_release_strategy", "immediate");
       const instruction = strategy === "on_demand"
-        ? "If the student asks for findings generally (e.g., 'what are the vitals?'), DO NOT list all findings. Instead, ask the student to request a specific finding or system before revealing data. You should respond with a short clarifying prompt such as: \"Please request a specific finding or system (for example: 'vitals', 'cardiovascular exam', 'CBC'). Which would you like to see?\" Only release the data asked for once the student explicitly requests it.\n\nWhen asked to 'double-check' or to confirm a previous statement, DO NOT invent or change findings. Re-check only the recorded data and respond exactly with what is present in the record. If a requested item is not recorded, reply clearly: \"That finding was not recorded during the exam.\" Do not fill gaps by guessing or revising earlier assertions unless the case data explicitly contains a different value."
+        ? `CRITICAL: Only reveal findings for the EXACT body system or parameter the student requested. DO NOT provide findings from other systems.
+
+Example correct behavior:
+- Student asks: "What are the vitals?" → Only provide vital signs (temperature, heart rate, respiratory rate, blood pressure). Do NOT include other physical exam findings.
+- Student asks: "What did you find on abdominal palpation?" → Only provide abdominal findings. Do NOT include vitals, cardiac auscultation, or other systems.
+- Student asks: "What are all the findings?" or asks generally → Ask the student to specify which system they want: "Which findings would you like? For example: vitals, cardiovascular, respiratory, abdominal, or musculoskeletal?"
+
+If the student has not yet requested a specific system, ask them to specify before revealing any data.
+
+When asked to 'double-check' or confirm a previous statement, DO NOT invent or change findings. Re-check only the recorded data and respond exactly with what is present in the record. If a requested item is not recorded, reply clearly: "That finding was not recorded during the exam." Do not fill gaps by guessing or revising earlier assertions.`
         : "If the student asks for findings generally, provide the complete list of available findings immediately.";
       
       return {
@@ -143,7 +152,16 @@ export const ROLE_PROMPT_DEFINITIONS: Record<RolePromptKey, RolePromptDefinition
     buildReplacements: ({ caseRow, userMessage }) => {
       const strategy = getText(caseRow, "findings_release_strategy", "immediate");
       const instruction = strategy === "on_demand"
-        ? "If the student asks for results generally, DO NOT provide all diagnostic results. Instead, ask the student to request a specific test or group (for example: 'CBC', 'Chemistry panel', 'urinalysis'). Respond with a short clarifying prompt such as: \"Please request a specific test or group (for example: 'CBC' or 'Chem'). Which results would you like to see?\" Only disclose the requested values once explicitly asked.\n\nIf asked to re-check or confirm previous output, DO NOT fabricate or alter results. Review only the recorded diagnostic data and state exactly what is present. If a specific value is absent, say: \"That result is not available in the record.\" Do not invent values or contradict earlier messages based on inference."
+        ? `CRITICAL: Only reveal results for the EXACT test or category the student requested. DO NOT provide results from other tests.
+
+Example correct behavior:
+- Student asks: "What are the biochemistry results?" → Only provide biochemistry/chemistry panel values. Do NOT include CBC, urinalysis, ultrasound, x-ray, or any other tests.
+- Student asks: "What is the CBC?" → Only provide CBC values. Do NOT include chemistry, urinalysis, or imaging results.
+- Student asks: "What are all the results?" or asks generally → Ask the student to specify which test they want: "Which specific test results would you like to see? For example: CBC, chemistry panel, urinalysis, or imaging?"
+
+If the student has not yet requested a specific category, ask them to specify before revealing any data.
+
+If asked to re-check or confirm previous output, DO NOT fabricate or alter results. Review only the recorded diagnostic data and state exactly what is present. If a specific value is absent, say: "That result is not available in the record." Do not invent values or contradict earlier messages.`
         : "If the student asks for results generally, provide all available diagnostic findings immediately.";
 
       return {

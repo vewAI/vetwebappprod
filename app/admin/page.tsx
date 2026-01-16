@@ -7,10 +7,12 @@ import dynamic from "next/dynamic";
 import { AdminTour } from "@/components/admin/AdminTour";
 import { HelpTip } from "@/components/ui/help-tip";
 import { DebugToggle } from "@/components/admin/DebugToggle";
+import { AppSpecsViewer } from "@/components/admin/AppSpecsViewer";
 
 export default function AdminPage() {
   const router = useRouter();
   const [llmOpen, setLlmOpen] = React.useState(false);
+  const [specsOpen, setSpecsOpen] = React.useState(false);
   const LLMProviderManager = dynamic(() => import("@/features/admin/components/LLMProviderManager"), { ssr: false });
   // Start with a stable value for server rendering to avoid hydration mismatch.
   // Read/write to localStorage only after mount.
@@ -101,6 +103,14 @@ export default function AdminPage() {
           </Button>
           <HelpTip content="Open the LLM Provider Manager to set default and per-feature providers." />
           <LLMProviderManager open={llmOpen} onOpenChange={setLlmOpen} />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button className="w-full justify-start" variant="outline" onClick={() => setSpecsOpen(true)}>
+            📋 App Specifications Reference
+          </Button>
+          <HelpTip content="View core prompt templates, stage definitions, and voice configuration values used by the app." />
+          <AppSpecsViewer open={specsOpen} onOpenChange={setSpecsOpen} />
         </div>
       </div>
     </div>
