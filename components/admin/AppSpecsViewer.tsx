@@ -68,6 +68,8 @@ interface PromptIntegration {
   layers: PromptLayer[];
   runtimeFlow: string[];
   responsibilities: Responsibility[];
+  ownerGuardrails?: string[];
+  nurseGuardrails?: string[];
 }
 
 interface AppSpecs {
@@ -196,12 +198,42 @@ export function AppSpecsViewer({ open, onOpenChange }: AppSpecsViewerProps) {
                           key={idx}
                           className="flex items-center gap-2 p-2 bg-muted rounded-md text-sm"
                         >
-                          <span className="font-medium min-w-[180px]">{r.aspect}</span>
+                          <span className="font-medium min-w-[200px]">{r.aspect}</span>
                           <span className="text-muted-foreground">→</span>
                           <span className="text-muted-foreground">{r.controlledBy}</span>
                         </div>
                       ))}
                     </div>
+                  </div>
+
+                  {/* Guardrails */}
+                  <div className="grid grid-cols-2 gap-4">
+                    {specs.promptIntegration.ownerGuardrails && (
+                      <div>
+                        <h4 className="font-medium mb-2 text-amber-600">🐄 Owner Guardrails</h4>
+                        <div className="bg-amber-50 dark:bg-amber-950/30 rounded-md p-3 space-y-1">
+                          {specs.promptIntegration.ownerGuardrails.map((rule, idx) => (
+                            <div key={idx} className="text-sm flex items-start gap-2">
+                              <span className="text-amber-600">•</span>
+                              <span>{rule}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {specs.promptIntegration.nurseGuardrails && (
+                      <div>
+                        <h4 className="font-medium mb-2 text-blue-600">👩‍⚕️ Nurse/Tech Guardrails</h4>
+                        <div className="bg-blue-50 dark:bg-blue-950/30 rounded-md p-3 space-y-1">
+                          {specs.promptIntegration.nurseGuardrails.map((rule, idx) => (
+                            <div key={idx} className="text-sm flex items-start gap-2">
+                              <span className="text-blue-600">•</span>
+                              <span>{rule}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </CollapsibleSection>
@@ -212,7 +244,7 @@ export function AppSpecsViewer({ open, onOpenChange }: AppSpecsViewerProps) {
                 defaultOpen={false}
               >
                 <p className="text-sm text-muted-foreground mb-4">
-                  Core prompts for each role in case stages. Define how AI behaves as owner, nurse, or technician.
+                  Core prompts for each role in case stages. Define how AI behaves as owner, nurse, or technician. These now include STRICT GUARDRAILS built in.
                 </p>
                 <div className="space-y-2">
                   {specs.rolePromptDefinitions.map((prompt) => (

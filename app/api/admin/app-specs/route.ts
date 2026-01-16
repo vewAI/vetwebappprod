@@ -21,8 +21,13 @@ export async function GET() {
         {
           layer: 1,
           name: "ROLE_PROMPT_DEFINITIONS (Foundation)",
-          description: "Stage-specific templates defining the functional role the AI plays. Contains structural rules, data placeholders, and release strategy instructions.",
-          example: `"You are roleplaying as the owner... Stay in character..."
+          description: "Stage-specific templates defining the functional role the AI plays. Contains STRICT GUARDRAILS, information delivery rules, data placeholders, and release strategy instructions. These are UNIVERSAL rules that apply to ALL cases.",
+          example: `STRICT GUARDRAILS (Non-Negotiable):
+- NO DIAGNOSIS: Never reveal the diagnosis
+- NO TREATMENT: Never suggest treatments (owner) / Follow student's lead (nurse)
+- STRICT SCOPE: Only provide what was specifically requested
+- NATURAL LANGUAGE: No JSON, speak professionally
+
 {{PRESENTING_COMPLAINT}} → replaced with case data
 {{OWNER_BACKGROUND}} → replaced with case data  
 {{RELEASE_STRATEGY_INSTRUCTION}} → immediate/on_demand`,
@@ -30,24 +35,45 @@ export async function GET() {
         {
           layer: 2,
           name: "Behavior Prompt (Personality)",
-          description: "Per-case persona customizations stored in case_personas.behavior_prompt. Defines HOW the AI says things (tone, mannerisms, personality traits).",
+          description: "Per-case persona customizations stored in case_personas.behavior_prompt. Defines ONLY personality traits - tone, mannerisms, background. The pedagogical rules are now in Layer 1.",
           example: `"Amanda Burns is a 45-year-old horse breeder from Kentucky.
 She's practical, no-nonsense, but deeply attached to her animals.
-She tends to downplay her worry but watches the vet's face carefully."`,
+She tends to downplay her worry but watches the vet's face carefully."
+
+NOTE: No need to repeat guardrails here - they're built into the foundation layer.`,
         },
       ],
       runtimeFlow: [
         "1. Student sends message in a specific stage",
         "2. System loads ROLE_PROMPT_DEFINITIONS template for that stage's roleInfoKey",
-        "3. Placeholders are replaced with actual case data (presenting_complaint, owner_background, etc.)",
-        "4. Persona behavior_prompt is injected for personality/tone",
-        "5. Final prompt combines: Functional instructions + Case data + Personality",
+        "3. Template includes: STRICT GUARDRAILS + ROLE & TONE + INTERACTION GUIDELINES",
+        "4. Placeholders are replaced with actual case data",
+        "5. Persona behavior_prompt is injected for personality/tone only",
+        "6. Final prompt = Universal rules + Case data + Personality traits",
       ],
       responsibilities: [
         { aspect: "WHAT to say (facts, findings)", controlledBy: "ROLE_PROMPT_DEFINITIONS + case fields" },
-        { aspect: "HOW to say it (tone, mannerisms)", controlledBy: "Behavior Prompt (case_personas)" },
+        { aspect: "WHAT NOT to say (guardrails)", controlledBy: "ROLE_PROMPT_DEFINITIONS (NO DIAGNOSIS, NO TREATMENT, STRICT SCOPE)" },
+        { aspect: "HOW to deliver info", controlledBy: "ROLE_PROMPT_DEFINITIONS (temperature in F+C, missing data handling)" },
+        { aspect: "HOW to sound (personality)", controlledBy: "Behavior Prompt (case_personas.behavior_prompt)" },
         { aspect: "WHEN to reveal (filtering)", controlledBy: "findings_release_strategy field" },
         { aspect: "WHO they are (identity)", controlledBy: "case_personas (display_name, voiceId, image_url)" },
+      ],
+      ownerGuardrails: [
+        "NEVER reveal or hint at the diagnosis",
+        "NEVER describe physical exam findings or clinical metrics",
+        "NEVER mention lab results or diagnostic findings",
+        "NEVER suggest specific treatments",
+        "Observe SYMPTOMS (behavior), not SIGNS (clinical measurements)",
+        "Encourage reasoning, challenge vagueness, flag missed steps",
+      ],
+      nurseGuardrails: [
+        "NEVER mention the diagnosis or diagnostics_summary",
+        "NEVER provide or suggest treatment plans",
+        "STRICT SCOPE: Only provide what was specifically requested",
+        "Report temperatures in BOTH Fahrenheit AND Celsius",
+        "Missing data = 'not recorded' or 'within normal limits'",
+        "Standard profiles for Haematology and Biochemistry requests",
       ],
     },
     rolePromptDefinitions: rolePrompts,
