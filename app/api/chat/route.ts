@@ -732,6 +732,41 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       });
     }
 
+    // Inject authoritative patient facts from case record
+    // These override any information the AI might infer from case titles or descriptions
+    if (caseRecord && typeof caseRecord === "object") {
+      const patientFacts: string[] = [];
+      const cr = caseRecord as Record<string, unknown>;
+      
+      if (cr.patient_name && typeof cr.patient_name === "string") {
+        patientFacts.push(`Patient Name: ${cr.patient_name}`);
+      }
+      if (cr.species && typeof cr.species === "string") {
+        patientFacts.push(`Species: ${cr.species}`);
+      }
+      if (cr.breed && typeof cr.breed === "string") {
+        patientFacts.push(`Breed: ${cr.breed}`);
+      }
+      if (cr.patient_age && typeof cr.patient_age === "string") {
+        patientFacts.push(`Age: ${cr.patient_age}`);
+      }
+      if (cr.patient_sex && typeof cr.patient_sex === "string") {
+        patientFacts.push(`Sex: ${cr.patient_sex}`);
+      }
+
+      if (patientFacts.length > 0) {
+        const patientFactsPrompt = `AUTHORITATIVE PATIENT INFORMATION (from case database - use these exact values):
+${patientFacts.join("\n")}
+
+CRITICAL: Always use the patient name "${cr.patient_name || "the patient"}" exactly as specified above. Do not infer the patient's name from the case title or any other source.`;
+
+        enhancedMessages.unshift({
+          role: "system",
+          content: patientFactsPrompt,
+        });
+      }
+    }
+
     // Short-circuit rules before calling the LLM:
     // 1) During Physical Examination stage: if student asks for lab tests or imaging,
     //    instruct them that those results are available in the Laboratory & Tests stage
