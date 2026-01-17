@@ -285,6 +285,7 @@ export async function POST(request: NextRequest) {
     }
 
     personaRoleKey = resolveChatPersonaRoleKey(stageRole, displayRole);
+    console.log(`[chat] Persona resolution: stageRole="${stageRole}" displayRole="${displayRole}" → personaRoleKey="${personaRoleKey}"`);
 
     // Enforce on_demand findings release after persona resolution so we know
     // which persona is answering. If the case is configured for 'on_demand'
@@ -464,6 +465,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
           console.warn("Failed to read persona row for chat", error);
         } else if (row) {
           personaRow = row as PersonaTableRow;
+          console.log(`[chat] Persona DB lookup success: case_id="${caseId}" role_key="${personaRoleKey}" → display_name="${row.display_name}" image_url="${row.image_url?.substring(0, 50)}..."`);
         }
 
         // If no persona row exists, the case is misconfigured

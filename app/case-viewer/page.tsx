@@ -783,19 +783,6 @@ export default function CaseViewerPage() {
                 Configure the AI characters for this case. These settings override any previous configuration.
               </p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const caseId = caseIdValue;
-                if (caseId) {
-                  void loadPersonas(caseId);
-                }
-              }}
-              disabled={personasLoading}
-            >
-              {personasLoading ? "Refreshing..." : "Refresh"}
-            </Button>
           </div>
           {personasError && (
             <p className="mb-4 text-sm text-red-600">{personasError}</p>
