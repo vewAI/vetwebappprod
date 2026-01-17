@@ -8,7 +8,6 @@ import {
   type CasePayload,
 } from "@/features/cases/services/caseCompletion";
 import { orderedCaseFieldKeys } from "@/features/cases/fieldMeta";
-import { ensureCasePersonas } from "@/features/personas/services/casePersonaPersistence";
 import { requireAdmin } from "@/app/api/_lib/auth";
 
 const openai = new OpenAi({ apiKey: process.env.OPENAI_API_KEY });
@@ -145,9 +144,7 @@ export async function POST(req: Request) {
       );
     }
 
-    if (updated?.id) {
-      await ensureCasePersonas(supabase, updated.id, updatePayload);
-    }
+    // Note: Personas are created only on initial case creation, not on completion
 
     return NextResponse.json({ success: true, data: updated });
   } catch (err: unknown) {

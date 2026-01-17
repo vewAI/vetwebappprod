@@ -283,14 +283,8 @@ export async function PUT(req: Request) {
     console.log(`[cases PUT] Supabase update SUCCESS for case id="${data?.id}"`);
 
     if (data?.id) {
-      try {
-        console.log(`[cases PUT] Running ensureCasePersonas...`);
-        await ensureCasePersonas(supabase, data.id, body);
-        console.log(`[cases PUT] ensureCasePersonas completed`);
-      } catch (personaErr) {
-        console.error(`[cases PUT] ensureCasePersonas FAILED:`, personaErr);
-        // Don't fail the whole request for persona issues
-      }
+      // Note: Personas are created only on case INSERT, not on UPDATE
+      // Admin can modify personas via PersonaEditor in case-viewer
       
       try {
         scheduleCasePersonaPortraitGeneration(supabase, openai, data.id);

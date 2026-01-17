@@ -13,7 +13,6 @@ import type {
 } from "@/features/personas/models/persona";
 import { CHAT_SYSTEM_GUIDELINE } from "@/features/chat/prompts/systemGuideline";
 import { resolvePromptValue } from "@/features/prompts/services/promptService";
-import { ensureCasePersonas } from "@/features/personas/services/casePersonaPersistence";
 import { requireUser } from "@/app/api/_lib/auth";
 import {
   normalizeCaseMedia,
@@ -445,30 +444,12 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
           personaRow = row as PersonaTableRow;
         }
 
-        if (!personaRow && caseRecord) {
-          try {
-            await ensureCasePersonas(
-              supabase,
-              caseId,
-              caseRecord as Record<string, unknown>
-            );
-          } catch (personaEnsureError) {
-            console.warn(
-              "Unable to ensure persona rows during chat request",
-              personaEnsureError
-            );
-          }
-          const { data: retryRow } = await supabase
-            .from("case_personas")
-            .select(
-              "role_key, display_name, behavior_prompt, metadata, image_url, status, sex"
-            )
-            .eq("case_id", caseId)
-            .eq("role_key", personaRoleKey)
-            .maybeSingle();
-          if (retryRow) {
-            personaRow = retryRow as PersonaTableRow;
-          }
+        // If no persona row exists, the case is misconfigured
+        // Personas are created only when a case is first saved
+        if (!personaRow) {
+          console.warn(
+            `No persona found for case=${caseId} role=${personaRoleKey}. Case may need re-saving.`
+          );
         }
       } catch (personaErr) {
         console.warn("Failed to ensure persona row for chat", personaErr);
