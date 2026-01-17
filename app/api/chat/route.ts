@@ -229,12 +229,8 @@ export async function POST(request: NextRequest) {
       console.warn("No caseId provided");
     }
 
-    if (ragContext) {
-      enhancedMessages.unshift({
-        role: "system",
-        content: ragContext
-      });
-    }
+    // NOTE: RAG context injection is deferred until after personaRoleKey is known
+    // to ensure CASE_DATA is NOT injected for owner personas (guardrail protection)
 
     // Role Info Prompt logic (restored and correctly scoped)
     let roleInfoPromptContent: string | null = null;
@@ -337,6 +333,32 @@ export async function POST(request: NextRequest) {
     pushToken(stageTokens, stageRole);
     pushToken(stageTokens, displayRole);
     pushToken(stageTokens, personaRoleKey);
+
+    // GUARDRAIL: RAG context injection - filter CASE_DATA for owner personas
+    // Owner personas must NEVER receive case facts (diagnosis, lab results, etc.)
+    const isOwnerForRag = personaRoleKey === "owner" || /owner|client/i.test(stageRole ?? "");
+    if (ragContext && !isOwnerForRag) {
+      // Non-owner personas get full RAG context including case data
+      enhancedMessages.unshift({
+        role: "system",
+        content: ragContext
+      });
+    } else if (ragContext && isOwnerForRag) {
+      // Owner personas only get scientific references, NOT case facts
+      // The ragContext may contain both - we need to strip CASE FACTS section
+      const caseFactsMatch = ragContext.match(/^CASE FACTS \(from database\):[\s\S]*?(?=SCIENTIFIC REFERENCES|$)/);
+      const sanitizedRagContext = caseFactsMatch 
+        ? ragContext.replace(caseFactsMatch[0], "").trim()
+        : ragContext;
+      
+      if (sanitizedRagContext) {
+        enhancedMessages.unshift({
+          role: "system",
+          content: sanitizedRagContext
+        });
+        console.log(`[chat] RAG: Owner persona - stripped CASE FACTS, retained scientific refs only`);
+      }
+    }
 
     const relevantMedia = caseMedia.filter((item) => {
       const stageRef = item.stage ?? {};
@@ -862,8 +884,12 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
     }
 
     const stageTitle = stageDescriptor?.title ?? "";
-    const isPhysicalStage = /physical/i.test(stageTitle) || physicalStageKeywords.some(k=>stageTitle.toLowerCase().includes(k));
-    const isLabStage = /laboratory|lab|diagnostic/i.test(stageTitle);
+    // IMPORTANT: Only allow data retrieval for nurse/tech personas, NOT owners
+    // The owner should NEVER see diagnostic data, physical exam findings, or lab results
+    const isOwnerPersona = personaRoleKey === "owner" || /owner|client/i.test(stageRole ?? "");
+    const isPhysicalStage = !isOwnerPersona && (/physical/i.test(stageTitle) || physicalStageKeywords.some(k=>stageTitle.toLowerCase().includes(k)));
+    // Exclude "Diagnostic Planning" which is an owner stage despite having "diagnostic" in the name
+    const isLabStage = !isOwnerPersona && /laboratory|lab/i.test(stageTitle) && !/planning/i.test(stageTitle);
 
     const matchedDiagKeyInUser = findSynonymKey(userText, DIAG_SYNONYMS);
     // Handle physical-stage queries regardless of diagnostic-key matches.

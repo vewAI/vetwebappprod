@@ -1265,23 +1265,32 @@ export function ChatInterface({
                 sex?: string;
               })
               : undefined;
+          
+          // Build candidate entry from this row
+          const candidateDisplayName =
+            typeof row?.display_name === "string"
+              ? row.display_name
+              : identity?.fullName;
+          const candidatePortraitUrl =
+            typeof row?.image_url === "string" ? row.image_url : undefined;
+          const candidateVoiceId =
+            typeof metadata?.voiceId === "string"
+              ? (metadata.voiceId as string)
+              : typeof identity?.voiceId === "string"
+                ? identity.voiceId
+                : undefined;
+          const candidateSex =
+            normalizeSex(typeof row?.sex === "string" ? row.sex : undefined) ??
+            normalizeSex(typeof metadata?.sex === "string" ? (metadata.sex as string) : undefined) ??
+            normalizeSex(typeof identity?.sex === "string" ? identity.sex : undefined);
+          
+          // Merge with existing entry - prefer values that exist (don't let nulls overwrite data)
+          const existing = next[normalizedKey];
           next[normalizedKey] = {
-            displayName:
-              typeof row?.display_name === "string"
-                ? row.display_name
-                : identity?.fullName,
-            portraitUrl:
-              typeof row?.image_url === "string" ? row.image_url : undefined,
-            voiceId:
-              typeof metadata?.voiceId === "string"
-                ? (metadata.voiceId as string)
-                : typeof identity?.voiceId === "string"
-                  ? identity.voiceId
-                  : undefined,
-            sex:
-              normalizeSex(typeof row?.sex === "string" ? row.sex : undefined) ??
-              normalizeSex(typeof metadata?.sex === "string" ? (metadata.sex as string) : undefined) ??
-              normalizeSex(typeof identity?.sex === "string" ? identity.sex : undefined),
+            displayName: candidateDisplayName ?? existing?.displayName,
+            portraitUrl: candidatePortraitUrl ?? existing?.portraitUrl,
+            voiceId: candidateVoiceId ?? existing?.voiceId,
+            sex: candidateSex ?? existing?.sex,
           };
           // lightweight diagnostic: log resolved persona sex and key
           try {
