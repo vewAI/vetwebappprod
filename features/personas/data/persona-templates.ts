@@ -239,3 +239,12 @@ export const personaTemplates: PersonaTemplateMap = {
 export function getDefaultPersonaKeys(): string[] {
   return Object.keys(personaTemplates);
 }
+
+/**
+ * Returns only the persona keys that should be created per-case.
+ * Each case should have exactly ONE owner and ONE nurse persona.
+ * Other personas (producer, professor, etc.) are only used if explicitly selected.
+ */
+export function getCasePersonaKeys(): string[] {
+  return ["owner", "veterinary-nurse"];
+}

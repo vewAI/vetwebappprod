@@ -3,6 +3,7 @@ import type {
   PersonaSeedContext,
 } from "@/features/personas/models/persona";
 import {
+  getCasePersonaKeys,
   getDefaultPersonaKeys,
   personaTemplates,
 } from "@/features/personas/data/persona-templates";
@@ -82,7 +83,8 @@ export function buildPersonaSeeds(
   caseBody: Record<string, unknown>
 ): PersonaSeed[] {
   const context = buildSeedContext(caseId, caseBody);
-  const keys = getDefaultPersonaKeys();
+  // Only seed owner and nurse personas per case - other roles are optional
+  const keys = getCasePersonaKeys();
 
   const seeds: PersonaSeed[] = [];
 

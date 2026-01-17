@@ -462,18 +462,36 @@ export function resolvePersonaRoleKey(
   if (!source) return null;
   const lower = source.toLowerCase();
 
+  // Owner/Client roles → owner persona
   if (lower.includes("owner") || lower.includes("client")) return "owner";
-  if (lower.includes("lab") || lower.includes("technician"))
-    return "lab-technician";
-  if (lower.includes("nurse")) return "veterinary-nurse";
-  if (lower.includes("producer") || lower.includes("farmer")) return "producer";
-  if (lower.includes("assistant")) return "veterinary-assistant";
-  if (lower.includes("professor") || lower.includes("faculty")) return "professor";
-  if (lower.includes("mentor")) return "professor";
-  if (lower.includes("veterinarian") || lower.includes("vet"))
-    return "veterinarian";
+  
+  // All other clinical staff roles → veterinary-nurse persona
+  // This includes: nurse, technician, lab technician, assistant, etc.
+  // Each case has only ONE nurse persona that handles all non-owner stages
+  if (
+    lower.includes("nurse") ||
+    lower.includes("technician") ||
+    lower.includes("lab") ||
+    lower.includes("assistant")
+  ) {
+    return "veterinary-nurse";
+  }
+  
+  // Producer/Farmer → owner persona (they own the animal)
+  if (lower.includes("producer") || lower.includes("farmer")) return "owner";
+  
+  // Professor/Faculty roles are special - they don't get case personas
+  if (lower.includes("professor") || lower.includes("faculty") || lower.includes("mentor")) {
+    return null;
+  }
+  
+  // Veterinarian role - typically this is the student, not a persona
+  if (lower.includes("veterinarian") || lower.includes("vet")) {
+    return null;
+  }
 
-  return normalizeRoleKey(source);
+  // Unknown role - default to nurse for clinical staff
+  return "veterinary-nurse";
 }
 
 type PersonaSummaryRow = {
