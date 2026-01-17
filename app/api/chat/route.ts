@@ -814,12 +814,61 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       });
     }
 
+    // Fields that contain internal instructions/feedback and should NEVER be exposed to students
+    const INTERNAL_FIELD_BLOCKLIST = new Set([
+      // Prompt fields - contain AI instructions
+      "get_owner_prompt",
+      "get_physical_exam_prompt", 
+      "get_diagnostic_prompt",
+      "get_owner_follow_up_prompt",
+      "get_owner_diagnosis_prompt",
+      "get_treatment_plan_prompt",
+      "get_history_feedback_prompt",
+      "get_owner_follow_up_feedback_prompt",
+      "get_overall_feedback_prompt",
+      // Feedback fields - contain grading/feedback instructions
+      "history_feedback",
+      "owner_follow_up_feedback",
+      "diagnostics_feedback",
+      "treatment_feedback",
+      "overall_feedback",
+      // Other internal fields
+      "owner_background", // Contains role-play instructions
+      "behavior_prompt",
+      "settings",
+      "metadata",
+      "owner_persona_id",
+      "nurse_persona_id",
+      "findings_release_strategy",
+    ]);
+
+    // Check if a field path should be blocked from student output
+    function isBlockedField(path: string): boolean {
+      const pathLower = path.toLowerCase();
+      // Check exact match or if path starts with a blocked field
+      for (const blocked of INTERNAL_FIELD_BLOCKLIST) {
+        if (pathLower === blocked || pathLower.startsWith(blocked + ".") || pathLower.startsWith(blocked + "[")) {
+          return true;
+        }
+      }
+      // Also block any field containing "feedback", "prompt", or "instruction" in the name
+      if (/feedback|prompt|instruction/i.test(pathLower)) {
+        return true;
+      }
+      return false;
+    }
+
     // Search across all fields of the case record (recursively) for any matches
+    // IMPORTANT: Excludes internal fields like prompts and feedback instructions
     function searchCaseRecordForQuery(query: string, record: Record<string, unknown> | null): string[] {
       const results: string[] = [];
       if (!record) return results;
       const qNorm = normalizeForMatching(query);
       const visit = (obj: any, path = "") => {
+        // GUARDRAIL: Skip blocked internal fields (prompts, feedback, instructions)
+        if (path && isBlockedField(path)) {
+          return;
+        }
         if (obj === null || obj === undefined) return;
         if (typeof obj === "string") {
           const vNorm = normalizeForMatching(obj as string);
@@ -845,6 +894,10 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
           for (const k of Object.keys(obj)) {
             const v = (obj as Record<string, unknown>)[k];
             const keyPath = path ? `${path}.${k}` : k;
+            // GUARDRAIL: Skip blocked fields before processing
+            if (isBlockedField(keyPath)) {
+              continue;
+            }
             const keyNorm = normalizeForMatching(keyPath);
             if (qNorm && keyNorm.includes(qNorm)) {
               results.push(`${keyPath}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`);
