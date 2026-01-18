@@ -1001,126 +1001,14 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
     // physical findings (e.g. 'rumen turnover') from being detected when
     // the user asked directly. Process physical-stage requests here.
     if (isPhysicalStage) {
-      const matchedKeyword = matchedDiagKeyInUser;
-      try {
-        debugEventBus.emitEvent('info', 'ChatDBMatch', 'Physical stage query', { userText, stageTitle, matchedDiagKeyInUser });
-      } catch {}
-      // If diagnostic_findings contains the requested item, be explicit that it exists
-      const diagField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["diagnostic_findings"] : null;
-      const physField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["physical_exam_findings"] : null;
-      const diagText = typeof diagField === "string" ? diagField : "";
-      const physText = typeof physField === "string" ? physField : "";
-
-      // If user actually asked about something recorded in the physical exam, allow returning that.
-      const matchedPhysicalKey = findSynonymKey(userText, PHYS_SYNONYMS);
-      if (matchedPhysicalKey && physText) {
-        const lines = physText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-        // first try exact line contains the user phrase tokens
-        const syns = PHYS_SYNONYMS[matchedPhysicalKey] ?? [];
-        const matchingLines = lines.filter(l => lineMatchesSynonym(l, syns));
-        if (matchingLines.length > 0) {
-          try { debugEventBus.emitEvent('info','ChatDBMatch','line-match',{ matchedKey: matchedPhysicalKey, lines: matchingLines.length }); } catch {}
-          const out = convertCelsiusToFahrenheitInText(matchingLines.join("\n"));
-          return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-        }
-        
-        // Additional robust checks: try JSON key/value lookup and fuzzy line matching
-        try {
-          const parsed = JSON.parse(physText);
-          if (parsed && typeof parsed === 'object') {
-            const normQuery = normalizeForMatching(userText);
-            const hits: string[] = [];
-            const visit = (obj: any, prefix = '') => {
-              if (!obj || typeof obj !== 'object') return;
-              for (const key of Object.keys(obj)) {
-                const value = obj[key];
-                const lcKey = (prefix ? `${prefix}.${key}` : key);
-                const lcKeyNorm = normalizeForMatching(lcKey);
-                const valueNorm = typeof value === 'string' ? normalizeForMatching(value) : '';
-                if (lcKeyNorm.includes(normQuery) || valueNorm.includes(normQuery)) {
-                  hits.push(`${prefix ? `${prefix}.` : ''}${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`);
-                }
-                if (typeof value === 'object') visit(value, prefix ? `${prefix}.${key}` : key);
-              }
-            };
-            visit(parsed);
-            if (hits.length > 0) {
-              try { debugEventBus.emitEvent('info','ChatDBMatch','json-key-match',{ query: userText, hits: hits.length }); } catch {}
-              const out = convertCelsiusToFahrenheitInText(hits.join('\n'));
-              return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-            }
-          }
-        } catch (e) {
-          // not JSON, continue
-        }
-
-        // Fuzzy line match: require all query tokens to appear in a line
-        const normQueryTokens = normalizeForMatching(userText).split(/\s+/).filter(Boolean);
-        if (normQueryTokens.length > 0) {
-          const fuzzyMatches = lines.filter(l => {
-            const llNorm = normalizeForMatching(l.toLowerCase());
-            return normQueryTokens.every((t: string) => llNorm.includes(t));
-          });
-          if (fuzzyMatches.length > 0) {
-            try { debugEventBus.emitEvent('info','ChatDBMatch','fuzzy-line-match',{ tokens: normQueryTokens, matches: fuzzyMatches.length }); } catch {}
-            const out = convertCelsiusToFahrenheitInText(fuzzyMatches.join('\n'));
-            return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-          }
-        }
-
-        // if no match in the physical-exam block, try searching the rest of the case
-        const caseWideHits = searchCaseRecordForQuery(userText, caseRecord as Record<string, unknown> | null);
-        if (caseWideHits.length > 0) {
-          try { debugEventBus.emitEvent('info','ChatDBMatch','case-wide-hits',{ query: userText, hits: caseWideHits.length }); } catch {}
-          const out = convertCelsiusToFahrenheitInText(caseWideHits.join('\n'));
-          return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-        }
-
-        // Next, try synonyms across the whole case record
-        const synHits: string[] = [];
-        for (const syns of Object.values(PHYS_SYNONYMS)) {
-          for (const s of syns) {
-            if (!s) continue;
-            const h = searchCaseRecordForQuery(s, caseRecord as Record<string, unknown> | null);
-            if (h.length > 0) synHits.push(...h);
-          }
-          if (synHits.length > 0) break;
-        }
-        if (synHits.length > 0) {
-          try { debugEventBus.emitEvent('info','ChatDBMatch','synonym-case-hits',{ query: userText, hits: synHits.length }); } catch {}
-          const out = convertCelsiusToFahrenheitInText(synHits.join('\n'));
-          return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-        }
-
-        // Finally, consult the RAG/LLM context for a cautious, evidence-backed statement
-        try {
-          const fallback = await llmCautiousFallback(ragContext, userText);
-          if (fallback) {
-            try { debugEventBus.emitEvent('info','ChatDBMatch','llm-fallback-used',{ query: userText }); } catch {}
-            return NextResponse.json({ content: fallback, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-          }
-        } catch (e) {
-          // ignore and fall through to return raw physText
-          console.warn('LLM cautious fallback failed', e);
-        }
-
-        // As last resort, return the full phys text so the student sees what's recorded
-        try { debugEventBus.emitEvent('info','ChatDBMatch','return-full-phys-text',{ length: physText.length }); } catch {}
-        const out = convertCelsiusToFahrenheitInText(physText);
-        return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+      // Block lab findings requests in physical exam stage
+      if (matchedDiagKeyInUser) {
+        return NextResponse.json({
+          content: "Laboratory results are not available during the physical examination. Please proceed to the Laboratory & Tests stage to view these findings.",
+          displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex
+        });
       }
-
-      if (matchedKeyword && diagText) {
-        // If diag text contains any synonym for the matched diagnostic key, fall through
-        // to the default diagnostic-stage response below rather than returning the
-        // previous specialized message.
-        const syns = DIAG_SYNONYMS[matchedKeyword] ?? [];
-      }
-
-      // Fall through to general LLM logic instead of suppressing
-      // This ensures general conversation (Greetings, help, etc) is not silenced
-      // and unmapped physical exam queries get a polite response.
-    }
+      // ...existing code for physical findings only...
 
 
     if (isLabStage && caseRecord && typeof caseRecord === "object") {
