@@ -1008,7 +1008,43 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
           displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex
         });
       }
-      // ...existing code for physical findings only...
+
+      // Multi-parameter physical findings support
+      const physField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["physical_exam_findings"] : null;
+      const physText = typeof physField === "string" ? physField : "";
+      if (physText) {
+        // Find all requested physical parameters
+        const requestedKeys: string[] = [];
+        const tNorm = normalizeForMatching(userText);
+        for (const [key, syns] of Object.entries(PHYS_SYNONYMS)) {
+          for (const s of syns) {
+            if (!s) continue;
+            const sNorm = normalizeForMatching(s);
+            if (sNorm && tNorm.includes(sNorm)) {
+              requestedKeys.push(key);
+              break;
+            }
+          }
+        }
+        if (requestedKeys.length > 0) {
+          // Try to match each requested parameter in the findings text
+          const lines = physText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+          const found: string[] = [];
+          for (const key of requestedKeys) {
+            const syns = PHYS_SYNONYMS[key] ?? [];
+            const matchingLines = lines.filter(l => lineMatchesSynonym(l, syns));
+            found.push(...matchingLines);
+          }
+          if (found.length > 0) {
+            const out = convertCelsiusToFahrenheitInText(found.join("\n"));
+            return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+          } else {
+            return NextResponse.json({ content: `No matching physical exam findings were recorded for your request.`, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+          }
+        }
+      }
+      // If no specific parameters requested, ask for clarification
+      return NextResponse.json({ content: `Which parameters of the physical exam do you request?`, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
 
 
     if (isLabStage && caseRecord && typeof caseRecord === "object") {
