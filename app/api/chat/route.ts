@@ -1,17 +1,3 @@
-// Helper: Format diagnostic findings as conversational text
-function formatDiagnosticFinding(key: string, value: any): string {
-  if (typeof value === "string" || typeof value === "number") {
-    return `The ${key.replace(/_/g, ' ')} is ${value}.`;
-  }
-  if (Array.isArray(value)) {
-    return `The ${key.replace(/_/g, ' ')} values are: ${value.join(", ")}.`;
-  }
-  if (typeof value === "object" && value !== null) {
-    return `The ${key.replace(/_/g, ' ')} findings are: ${Object.entries(value).map(([k, v]) => `${k}: ${v}`).join(", ")}.`;
-  }
-  return String(value);
-}
-
 import OpenAi from "openai";
 import { NextRequest, NextResponse } from "next/server";
 import { getRoleInfoPrompt } from "@/features/role-info/services/roleInfoService";
@@ -34,6 +20,20 @@ import {
 } from "@/features/cases/models/caseMedia";
 import { searchMerckManual } from "@/features/external-resources/services/merckService";
 import { debugEventBus } from "@/lib/debug-events-fixed";
+
+// Helper: Format diagnostic findings as conversational text
+function formatDiagnosticFinding(key: string, value: any): string {
+  if (typeof value === "string" || typeof value === "number") {
+    return `The ${key.replace(/_/g, ' ')} is ${value}.`;
+  }
+  if (Array.isArray(value)) {
+    return `The ${key.replace(/_/g, ' ')} values are: ${value.join(", ")}.`;
+  }
+  if (typeof value === "object" && value !== null) {
+    return `The ${key.replace(/_/g, ' ')} findings are: ${Object.entries(value).map(([k, v]) => `${k}: ${v}`).join(", ")}.`;
+  }
+  return String(value);
+}
 
 const openai = new OpenAi({
   apiKey: process.env.OPENAI_API_KEY,
@@ -747,7 +747,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     }
 
     // Inject authoritative patient facts from case record
-    // These override any information the AI might infer from case titles or descriptions
+    // These override any information the AI might infer from case titles or any other source
     if (caseRecord && typeof caseRecord === "object") {
       const patientFacts: string[] = [];
       const cr = caseRecord as Record<string, unknown>;
