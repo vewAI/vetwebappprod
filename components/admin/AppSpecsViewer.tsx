@@ -412,6 +412,9 @@ export function AppSpecsViewer({ open, onOpenChange }: AppSpecsViewerProps) {
                         <div className="text-xs text-muted-foreground">Deaf window (ms)</div>
                       </div>
                     </div>
+                    <p className="text-xs text-muted-foreground mt-3">
+                      Quick reference: <strong>Pre-delay</strong> is the pause (ms) before TTS starts so the mic can be stopped; <strong>Suppression</strong> is how long STT is held suppressed immediately around playback; <strong>STT resume</strong> is the delay before attempting to restart listening after playback ends; <strong>Deaf window</strong> is a short period after TTS where all recognition results are ignored to catch echoes.
+                    </p>
                   </div>
 
                   <div>

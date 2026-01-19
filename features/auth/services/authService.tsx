@@ -56,6 +56,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (error) {
           console.error("Error getting session:", error.message);
+          // If the stored refresh token is invalid or rotated, clear local
+          // auth storage and force a fresh sign-in to avoid repeated console
+          // errors during local development.
+          try {
+            const msg = String(error?.message || "").toLowerCase();
+            if (msg.includes("refresh token") || msg.includes("invalid grant") || msg.includes("invalid refresh")) {
+              console.warn("Clearing local auth state due to invalid refresh token");
+              try {
+                // Sign out cleanly (will clear supabase client storage)
+                await supabase.auth.signOut();
+              } catch (e) {
+                // Fallback: try to clear common localStorage keys used by Supabase
+                try {
+                  if (typeof window !== "undefined") {
+                    window.localStorage.removeItem("supabase.auth.token");
+                    window.localStorage.removeItem("sb-access-token");
+                    window.localStorage.removeItem("sb-refresh-token");
+                    window.localStorage.removeItem("supabase.auth");
+                  }
+                } catch (__) {
+                  /* ignore */
+                }
+              }
+              // Redirect to login so the developer can sign in again
+              try {
+                router.push("/login");
+              } catch (__) {}
+            }
+          } catch (__) {}
         } else {
           setSession(data.session);
         }

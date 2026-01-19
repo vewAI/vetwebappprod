@@ -1424,6 +1424,7 @@ export function ChatInterface({
   // When TTS plays we may want to temporarily stop STT so the assistant voice
   // is not transcribed. Use a ref to remember whether we should resume.
   const resumeListeningRef = useRef<boolean>(false);
+  const voiceTemporarilyDisabledRef = useRef<boolean>(false);
   const pendingFlushIntervalRef = useRef<number | null>(null);
 
   // Helper to play TTS while ensuring STT is paused during playback so the
@@ -1474,6 +1475,15 @@ export function ChatInterface({
       // mic is restarted while assistant audio is playing and picked up.
       if (isSuppressingSttRef.current) {
         console.debug("attemptStartListening aborted: STT is suppressed (TTS active)");
+        return;
+      }
+      // If voice mode is temporarily disabled for an assistant intro or
+      // other forced TTS playback, do not start listening until that
+      // temporary disable is cleared. This is a stronger guard than the
+      // STT suppression flag and prevents retries from re-enabling the mic
+      // while we are guaranteeing the mic stays off for TTS.
+      if (tempVoiceDisabledRef.current) {
+        console.debug("attemptStartListening aborted: temp voice disable active (waiting for TTS)");
         return;
       }
       if (userToggledOffRef.current) {
@@ -2763,6 +2773,8 @@ export function ChatInterface({
   // Declared here before any handlers that reference it (toggleVoiceMode,
   // initialization effects) so it's available when used.
   const userToggledOffRef = useRef(false);
+  // Temporarily record if we disabled voice mode for an assistant intro
+  const tempVoiceDisabledRef = useRef<boolean>(false);
 
   const setVoiceModeEnabled = useCallback(
     (next: boolean) => {
@@ -2778,7 +2790,12 @@ export function ChatInterface({
           baseInputRef.current = "";
           // Also enable TTS (speaker) when voice mode is turned on
           setTtsEnabledState(true);
-          if (!isPlayingAudioRef.current) {
+          // If STT is currently suppressed (TTS playback), do not call
+          // start() immediately — instead mark for resume so the STT
+          // service restarts when suppression clears.
+          if (isSuppressingSttRef.current) {
+            resumeListeningRef.current = true;
+          } else if (!isPlayingAudioRef.current) {
             start();
           }
         } else {
@@ -3410,19 +3427,30 @@ export function ChatInterface({
     // Append assistant message immediately so user sees it
     appendAssistantMessage(assistantMsg);
 
-    // Speak if tts enabled; stop listening first so the assistant audio
-    // isn't picked up by STT, then resume listening after TTS completes.
+    // Speak if tts enabled; ensure the mic is fully stopped while the
+    // assistant speaks so STT does not capture its audio, then restore
+    // listening after playback completes.
     if (ttsEnabled && introText) {
       try {
-        // If currently listening, stop and remember to resume. Wait a
-        // short moment to ensure the mic stream is stopped before playback.
-        if (isListening) {
-          resumeListeningRef.current = true;
+        // If currently listening, stop immediately and also update the
+        // UI to show voice mode as disabled so nothing will restart it
+        // while the assistant speaks. We'll restore voice mode afterward.
+        const wasListening = !!isListening;
+        if (wasListening) {
+          // prevent auto-restart by clearing resume flag and stopping
+          resumeListeningRef.current = false;
           try {
             stop();
           } catch (e) {
             /* ignore */
           }
+          // reflect UI state without marking this as a user toggle-off
+            try {
+            // update state directly so userToggledOffRef isn't set
+            setVoiceMode(false);
+            tempVoiceDisabledRef.current = true;
+          } catch (e) {}
+          // small delay to ensure HW fully releases
           await new Promise((res) => setTimeout(res, 150));
         }
 
@@ -3437,10 +3465,13 @@ export function ChatInterface({
             stageIntro: true,
           },
         } satisfies Omit<TtsEventDetail, "audio">;
+        // Use skipResume=true so playTtsAndPauseStt does not auto-restart STT.
         await playTtsAndPauseStt(
           introText,
           assistantMsg.voiceId ?? voiceForRole,
-          introMeta
+          introMeta,
+          personaMeta?.sex as any,
+          true
         );
       } catch (e) {
         try {
@@ -3453,9 +3484,48 @@ export function ChatInterface({
           console.error("Intro TTS failed:", err);
         }
         } finally {
-        if (resumeListeningRef.current) {
-          resumeListeningRef.current = false;
-          attemptStartListening(900);
+        // Restore voice mode only if we temporarily disabled it above.
+        if (tempVoiceDisabledRef.current) {
+          // Wait for TTS playback to be fully finished before re-enabling
+          // voice mode. Keep the temporary-disable flag set while waiting
+          // so no other code path will attempt to start STT prematurely.
+          const waitForTtsToFinish = async (timeoutMs = 15000, pollMs = 100) => {
+            const start = Date.now();
+            return new Promise<void>((resolve) => {
+              const check = () => {
+                const audioPlaying = !!(isPlayingAudioRef.current);
+                const lastEnd = lastTtsEndRef.current || 0;
+                const timeSinceEnd = Date.now() - lastEnd;
+                // Consider playback finished only when no audio is playing
+                // and suppression has been cleared (or the end time is slightly older).
+                if (!audioPlaying && (!isSuppressingSttRef.current || timeSinceEnd > 400)) {
+                  resolve();
+                  return;
+                }
+                if (Date.now() - start >= timeoutMs) {
+                  // Timeout: give up and resolve so we don't block forever.
+                  resolve();
+                  return;
+                }
+                setTimeout(check, pollMs);
+              };
+              check();
+            });
+          };
+
+          try {
+            await waitForTtsToFinish(15000, 100);
+          } catch (err) {
+            // ignore - we'll still attempt to restore voice mode below
+          } finally {
+            // Clear the temporary-disable flag only after playback is done
+            tempVoiceDisabledRef.current = false;
+            try {
+              setVoiceModeEnabled(true);
+            } catch (err) {
+              console.warn("Failed to restore voice mode after TTS", err);
+            }
+          }
         }
       }
     }
