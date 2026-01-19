@@ -288,6 +288,22 @@ export async function POST(request: NextRequest) {
     personaRoleKey = resolveChatPersonaRoleKey(stageDescriptor?.title ?? stageRole, displayRole);
     console.log(`[chat] Persona resolution: stageRole="${stageRole}" displayRole="${displayRole}" → personaRoleKey="${personaRoleKey}"`);
 
+    // Inject the role-specific prompt only when the answering persona is the
+    // one that should hold the clipboard (nurse / lab) AND the student has
+    // explicitly requested findings/results. This prevents unsolicited
+    // dumping of the full physical/diagnostic record by the nurse.
+    if (roleInfoPromptContent) {
+      const userQ = String(lastUserMessage?.content ?? "");
+      const looksLikeFindingsRequest = /\b(findings|vitals|results|diagnostic results|test results|what\b.*\b(vitals|findings|results)|show\b.*\b(findings|results|vitals))\b/i.test(userQ);
+      const personaEligible = personaRoleKey === "veterinary-nurse" || /nurse|lab|laboratory/i.test(String(stageRole ?? ""));
+      if (personaEligible && looksLikeFindingsRequest) {
+        enhancedMessages.unshift({ role: "system", content: roleInfoPromptContent });
+        console.log(`[chat] Injected roleInfoPrompt for personaRoleKey="${personaRoleKey}" due to explicit findings request.`);
+      } else {
+        console.log(`[chat] Skipped roleInfoPrompt injection for personaRoleKey="${personaRoleKey}" looksLikeFindingsRequest=${looksLikeFindingsRequest}`);
+      }
+    }
+
     // Enforce on_demand findings release after persona resolution so we know
     // which persona is answering. If the case is configured for 'on_demand'
     // release and the student asked a general findings/results question,
@@ -422,9 +438,11 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       enhancedMessages.unshift({ role: "system", content: timepointPrompt });
     }
 
-    if (roleInfoPromptContent) {
-      enhancedMessages.unshift({ role: "system", content: roleInfoPromptContent });
-    }
+    // NOTE: Do NOT inject the role-specific prompt (which may include full
+    // case findings) here. We will inject it later only after the answering
+    // persona has been resolved and only when the student explicitly asked
+    // for findings. This prevents non-prompted disclosure of the entire
+    // physical/diagnostic record by nurse personas.
 
     // NOTE: ownerBackground is intentionally NOT added here; it will be
     // injected later only if the resolved answering persona is the `owner`.
