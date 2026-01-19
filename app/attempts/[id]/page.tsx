@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -25,6 +25,7 @@ import type { Stage } from "@/features/stages/types";
 import { ChatInterface } from "@/features/chat/components/chat-interface";
 import { CaseTimeline } from "@/features/cases/components/case-timeline";
 import { supabase } from "@/lib/supabase";
+import { buildAuthHeaders } from "@/lib/auth-headers";
 
 export default function ViewAttemptPage() {
   const params = useParams();
@@ -69,14 +70,24 @@ export default function ViewAttemptPage() {
       setIsLoading(true);
 
       try {
-        const res = await fetch(`/api/attempts/${attemptId}/view`);
+        const headers = await buildAuthHeaders({
+          "Content-Type": "application/json",
+        });
+        const res = await fetch(`/api/attempts/${attemptId}/view`, {
+          headers,
+        });
         const payload = await res.json();
+
         if (!res.ok || !payload.attempt) {
           router.push("/attempts");
           return;
         }
 
-        const { attempt: serverAttempt, messages: serverMessages, feedback: serverFeedback } = payload;
+        const {
+          attempt: serverAttempt,
+          messages: serverMessages,
+          feedback: serverFeedback,
+        } = payload;
         setAttempt(serverAttempt);
         setMessages(serverMessages || []);
         setFeedback(serverFeedback || []);
@@ -84,6 +95,7 @@ export default function ViewAttemptPage() {
         const caseStages = await (async () => {
           try {
             const mod = await import("@/features/stages/services/stageService");
+
             if (mod.getActiveStagesForCase) {
               return await mod.getActiveStagesForCase(serverAttempt.caseId);
             }
@@ -95,8 +107,8 @@ export default function ViewAttemptPage() {
         })();
         setStages(caseStages);
       } catch (e) {
-        console.error('Failed to load attempt view', e);
-        router.push('/attempts');
+        console.error("Failed to load attempt view", e);
+        router.push("/attempts");
         return;
       } finally {
         setIsLoading(false);
@@ -124,10 +136,13 @@ export default function ViewAttemptPage() {
     // mark as read (best-effort)
     (async () => {
       try {
-        const res = await fetch(`/api/attempts/${attempt.id}/feedback/mark-read`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        });
+        const res = await fetch(
+          `/api/attempts/${attempt.id}/feedback/mark-read`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          }
+        );
         if (res.ok) {
           // locally reflect change to avoid extra fetch
           setAttempt({ ...attempt, feedbackReadAt: new Date().toISOString() });
@@ -291,7 +306,10 @@ export default function ViewAttemptPage() {
                   const unreadCount = feedback.filter((f) => {
                     if (!attempt?.feedbackReadAt) return true;
                     try {
-                      return new Date(f.createdAt) > new Date(attempt.feedbackReadAt!);
+                      return (
+                        new Date(f.createdAt) >
+                        new Date(attempt.feedbackReadAt!)
+                      );
                     } catch {
                       return true;
                     }
@@ -335,58 +353,62 @@ export default function ViewAttemptPage() {
                   <div className="flex flex-col lg:flex-row gap-4 items-start">
                     <div className="flex-1 w-full">
                       <ChatInterface
-                    caseId={attempt.caseId}
-                    attemptId={attempt.id}
-                    initialMessages={messages}
-                    currentStageIndex={attempt.lastStageIndex}
-                    stages={stages}
-                    initialTimeSpentSeconds={attempt.timeSpentSeconds}
-                    onProceedToNextStage={async (
-                      msgs?: Message[],
-                      timeSpentSeconds = 0
-                    ) => {
-                      try {
-                        const currentIndex = attempt.lastStageIndex ?? 0;
-                        // If not at final stage, advance
-                        if (currentIndex < stages.length - 1) {
-                          const nextIndex = currentIndex + 1;
-                          // Save progress (updates last_stage_index and messages)
-                          await saveAttemptProgress(
-                            attempt.id,
-                            nextIndex,
-                            msgs ?? messages,
-                            timeSpentSeconds
-                          );
-                          // Refresh attempt and messages
-                          const {
-                            attempt: refreshedAttempt,
-                            messages: refreshedMessages,
-                          } = await getAttemptById(attempt.id);
-                          if (refreshedAttempt) setAttempt(refreshedAttempt);
-                          if (refreshedMessages) setMessages(refreshedMessages);
-                        } else {
-                          // Final stage -> mark completed
-                          await completeAttempt(
-                            attempt.id,
-                            "Examination completed!"
-                          );
-                          const {
-                            attempt: refreshedAttempt,
-                            messages: refreshedMessages,
-                          } = await getAttemptById(attempt.id);
-                          if (refreshedAttempt) setAttempt(refreshedAttempt);
-                          if (refreshedMessages) setMessages(refreshedMessages);
-                        }
-                      } catch (err) {
-                        console.error(
-                          "Error advancing stage for attempt:",
-                          err
-                        );
-                        // Fallback: reload to ensure UI sync
-                        // window.location.reload();
-                      }
-                    }}
-                  />
+                        caseId={attempt.caseId}
+                        attemptId={attempt.id}
+                        initialMessages={messages}
+                        currentStageIndex={attempt.lastStageIndex}
+                        stages={stages}
+                        initialTimeSpentSeconds={attempt.timeSpentSeconds}
+                        onProceedToNextStage={async (
+                          msgs?: Message[],
+                          timeSpentSeconds = 0
+                        ) => {
+                          try {
+                            const currentIndex = attempt.lastStageIndex ?? 0;
+                            // If not at final stage, advance
+                            if (currentIndex < stages.length - 1) {
+                              const nextIndex = currentIndex + 1;
+                              // Save progress (updates last_stage_index and messages)
+                              await saveAttemptProgress(
+                                attempt.id,
+                                nextIndex,
+                                msgs ?? messages,
+                                timeSpentSeconds
+                              );
+                              // Refresh attempt and messages
+                              const {
+                                attempt: refreshedAttempt,
+                                messages: refreshedMessages,
+                              } = await getAttemptById(attempt.id);
+                              if (refreshedAttempt)
+                                setAttempt(refreshedAttempt);
+                              if (refreshedMessages)
+                                setMessages(refreshedMessages);
+                            } else {
+                              // Final stage -> mark completed
+                              await completeAttempt(
+                                attempt.id,
+                                "Examination completed!"
+                              );
+                              const {
+                                attempt: refreshedAttempt,
+                                messages: refreshedMessages,
+                              } = await getAttemptById(attempt.id);
+                              if (refreshedAttempt)
+                                setAttempt(refreshedAttempt);
+                              if (refreshedMessages)
+                                setMessages(refreshedMessages);
+                            }
+                          } catch (err) {
+                            console.error(
+                              "Error advancing stage for attempt:",
+                              err
+                            );
+                            // Fallback: reload to ensure UI sync
+                            // window.location.reload();
+                          }
+                        }}
+                      />
                     </div>
                     <div className="w-full lg:w-64 shrink-0">
                       <CaseTimeline
@@ -394,10 +416,15 @@ export default function ViewAttemptPage() {
                         elapsedSeconds={attempt.timeSpentSeconds}
                         onFastForward={async (targetSeconds) => {
                           if (targetSeconds <= attempt.timeSpentSeconds) return;
-                          const success = await updateAttemptTime(attempt.id, targetSeconds);
+                          const success = await updateAttemptTime(
+                            attempt.id,
+                            targetSeconds
+                          );
                           if (success) {
                             // Refresh attempt to update UI
-                            const { attempt: updated } = await getAttemptById(attempt.id);
+                            const { attempt: updated } = await getAttemptById(
+                              attempt.id
+                            );
                             if (updated) setAttempt(updated);
                           }
                         }}
@@ -518,7 +545,8 @@ export default function ViewAttemptPage() {
                       Generating Overall Assessment...
                     </h3>
                     <p className="text-muted-foreground">
-                      The AI is analyzing your performance across all stages. This may take a moment.
+                      The AI is analyzing your performance across all stages.
+                      This may take a moment.
                     </p>
                   </div>
                 </div>
@@ -538,7 +566,9 @@ export default function ViewAttemptPage() {
             {/* Professor Feedback */}
             {attempt.professorFeedback && (
               <div className="mt-8">
-                <h2 className="text-2xl font-bold mb-4 text-purple-700">Professor Feedback</h2>
+                <h2 className="text-2xl font-bold mb-4 text-purple-700">
+                  Professor Feedback
+                </h2>
                 <div className="border rounded-lg p-6 bg-purple-50 border-purple-200">
                   <div className="prose prose-sm dark:prose-invert max-w-none text-purple-900">
                     {attempt.professorFeedback}
@@ -556,7 +586,8 @@ export default function ViewAttemptPage() {
             <div>
               <h3 className="font-bold text-lg mb-1">Missing Configuration</h3>
               <p className="text-sm opacity-90">
-                This case is missing: <strong>{missingPersonas.join(" & ")}</strong>.
+                This case is missing:{" "}
+                <strong>{missingPersonas.join(" & ")}</strong>.
                 <br />
                 Please contact an administrator to assign personas.
               </p>
