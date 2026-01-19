@@ -1469,6 +1469,13 @@ export function ChatInterface({
     // schedule the initial attempt after the given delay
     window.setTimeout(() => {
       console.debug("attemptStartListening scheduled", { initialDelay });
+      // If STT is currently suppressed (e.g., we're about to play TTS),
+      // do not attempt to start listening. This avoids races where the
+      // mic is restarted while assistant audio is playing and picked up.
+      if (isSuppressingSttRef.current) {
+        console.debug("attemptStartListening aborted: STT is suppressed (TTS active)");
+        return;
+      }
       if (userToggledOffRef.current) {
         console.debug("attemptStartListening aborted: user toggled mic off");
         return;
