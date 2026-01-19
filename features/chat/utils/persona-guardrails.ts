@@ -54,9 +54,31 @@ export function resolveChatPersonaRoleKey(
   stageRole?: string | null,
   displayRole?: string | null
 ): AllowedChatPersonaKey {
+  // Enforce strict stage-to-persona mapping when the stage title clearly
+  // indicates which participant should answer. This prevents accidental
+  // classification when stage names include participant words.
+  const s = stageRole ?? "";
+  const lower = s.toLowerCase();
+
+  // Stage -> persona mapping based on the workflow:
+  // - History Taking -> owner
+  // - Physical Examination -> veterinary-nurse
+  // - Diagnostic Planning -> owner
+  // - Laboratory & Tests -> veterinary-nurse
+  // - Treatment Plan -> veterinary-nurse
+  // - Client Communication -> owner
+  if (/history/i.test(s) || /history taking/i.test(s)) return "owner";
+  if (/physical/i.test(s) || /physical examination/i.test(s)) return "veterinary-nurse";
+  if (/diagnostic/i.test(s) && /planning/i.test(s)) return "owner";
+  if (/laboratory|lab|tests|test/i.test(s)) return "veterinary-nurse";
+  if (/treatment/i.test(s) && /plan/i.test(s)) return "veterinary-nurse";
+  if (/client communication/i.test(s) || /client communication/i.test(lower) || /communication/i.test(s)) return "owner";
+
+  // Fallbacks: prefer an explicit persona display name when available,
+  // otherwise classify from the stageRole or default to nurse.
   return (
-    classifyChatPersonaLabel(stageRole) ??
     classifyChatPersonaLabel(displayRole) ??
+    classifyChatPersonaLabel(stageRole) ??
     "veterinary-nurse"
   );
 }

@@ -20,6 +20,12 @@ const ALIAS_MAP: Record<string, string[]> = {
   blood_pressure: ["bp", "blood pressure"],
 };
 
+// Group tokens map to multiple canonical keys
+const GROUP_MAP: Record<string, string[]> = {
+  vitals: ["heart_rate", "respiratory_rate", "temperature", "blood_pressure"],
+  vital: ["heart_rate", "respiratory_rate", "temperature", "blood_pressure"],
+};
+
 const TOKEN_TO_CANONICAL: Record<string, string> = (() => {
   const out: Record<string, string> = {};
   for (const [canon, aliases] of Object.entries(ALIAS_MAP)) {
@@ -60,6 +66,13 @@ export function parseRequestedKeys(text: string): RequestedKeys {
   for (const tok of tokens) {
     // Trim unit-like suffixes such as mmhg or /min
     const plain = tok.replace(/mmhg$/i, "").replace(/\/.*/g, "");
+    // Expand group tokens (e.g., 'vitals')
+    if (GROUP_MAP[plain]) {
+      for (const g of GROUP_MAP[plain]) {
+        if (!canonical.includes(g)) canonical.push(g);
+      }
+      continue;
+    }
     if (TOKEN_TO_CANONICAL[plain]) {
       const c = TOKEN_TO_CANONICAL[plain];
       if (!canonical.includes(c)) canonical.push(c);
