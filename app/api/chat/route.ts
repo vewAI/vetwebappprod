@@ -21,6 +21,20 @@ import {
 import { searchMerckManual } from "@/features/external-resources/services/merckService";
 import { debugEventBus } from "@/lib/debug-events-fixed";
 
+// Helper: Format diagnostic findings as conversational text
+function formatDiagnosticFinding(key: string, value: any): string {
+  if (typeof value === "string" || typeof value === "number") {
+    return `The ${key.replace(/_/g, ' ')} is ${value}.`;
+  }
+  if (Array.isArray(value)) {
+    return `The ${key.replace(/_/g, ' ')} values are: ${value.join(", ")}.`;
+  }
+  if (typeof value === "object" && value !== null) {
+    return `The ${key.replace(/_/g, ' ')} findings are: ${Object.entries(value).map(([k, v]) => `${k}: ${v}`).join(", ")}.`;
+  }
+  return String(value);
+}
+
 const openai = new OpenAi({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -732,6 +746,41 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       });
     }
 
+    // Inject authoritative patient facts from case record
+    // These override any information the AI might infer from case titles or any other source
+    if (caseRecord && typeof caseRecord === "object") {
+      const patientFacts: string[] = [];
+      const cr = caseRecord as Record<string, unknown>;
+      
+      if (cr.patient_name && typeof cr.patient_name === "string") {
+        patientFacts.push(`Patient Name: ${cr.patient_name}`);
+      }
+      if (cr.species && typeof cr.species === "string") {
+        patientFacts.push(`Species: ${cr.species}`);
+      }
+      if (cr.breed && typeof cr.breed === "string") {
+        patientFacts.push(`Breed: ${cr.breed}`);
+      }
+      if (cr.patient_age && typeof cr.patient_age === "string") {
+        patientFacts.push(`Age: ${cr.patient_age}`);
+      }
+      if (cr.patient_sex && typeof cr.patient_sex === "string") {
+        patientFacts.push(`Sex: ${cr.patient_sex}`);
+      }
+
+      if (patientFacts.length > 0) {
+        const patientFactsPrompt = `AUTHORITATIVE PATIENT INFORMATION (from case database - use these exact values):
+${patientFacts.join("\n")}
+
+CRITICAL: Always use the patient name "${cr.patient_name || "the patient"}" exactly as specified above. Do not infer the patient's name from the case title or any other source.`;
+
+        enhancedMessages.unshift({
+          role: "system",
+          content: patientFactsPrompt,
+        });
+      }
+    }
+
     // Short-circuit rules before calling the LLM:
     // 1) During Physical Examination stage: if student asks for lab tests or imaging,
     //    instruct them that those results are available in the Laboratory & Tests stage
@@ -952,179 +1001,96 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
     // physical findings (e.g. 'rumen turnover') from being detected when
     // the user asked directly. Process physical-stage requests here.
     if (isPhysicalStage) {
-      const matchedKeyword = matchedDiagKeyInUser;
-      try {
-        debugEventBus.emitEvent('info', 'ChatDBMatch', 'Physical stage query', { userText, stageTitle, matchedDiagKeyInUser });
-      } catch {}
-      // If diagnostic_findings contains the requested item, be explicit that it exists
-      const diagField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["diagnostic_findings"] : null;
+      // Block lab findings requests in physical exam stage
+      if (matchedDiagKeyInUser) {
+        return NextResponse.json({
+          content: "Laboratory results are not available during the physical examination. Please proceed to the Laboratory & Tests stage to view these findings.",
+          displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex
+        });
+      }
+
+      // Multi-parameter physical findings support
       const physField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["physical_exam_findings"] : null;
-      const diagText = typeof diagField === "string" ? diagField : "";
       const physText = typeof physField === "string" ? physField : "";
-
-      // If user actually asked about something recorded in the physical exam, allow returning that.
-      const matchedPhysicalKey = findSynonymKey(userText, PHYS_SYNONYMS);
-      if (matchedPhysicalKey && physText) {
-        const lines = physText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-        // first try exact line contains the user phrase tokens
-        const syns = PHYS_SYNONYMS[matchedPhysicalKey] ?? [];
-        const matchingLines = lines.filter(l => lineMatchesSynonym(l, syns));
-        if (matchingLines.length > 0) {
-          try { debugEventBus.emitEvent('info','ChatDBMatch','line-match',{ matchedKey: matchedPhysicalKey, lines: matchingLines.length }); } catch {}
-          const out = convertCelsiusToFahrenheitInText(matchingLines.join("\n"));
-          return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-        }
-        
-        // Additional robust checks: try JSON key/value lookup and fuzzy line matching
-        try {
-          const parsed = JSON.parse(physText);
-          if (parsed && typeof parsed === 'object') {
-            const normQuery = normalizeForMatching(userText);
-            const hits: string[] = [];
-            const visit = (obj: any, prefix = '') => {
-              if (!obj || typeof obj !== 'object') return;
-              for (const key of Object.keys(obj)) {
-                const value = obj[key];
-                const lcKey = (prefix ? `${prefix}.${key}` : key);
-                const lcKeyNorm = normalizeForMatching(lcKey);
-                const valueNorm = typeof value === 'string' ? normalizeForMatching(value) : '';
-                if (lcKeyNorm.includes(normQuery) || valueNorm.includes(normQuery)) {
-                  hits.push(`${prefix ? `${prefix}.` : ''}${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`);
-                }
-                if (typeof value === 'object') visit(value, prefix ? `${prefix}.${key}` : key);
-              }
-            };
-            visit(parsed);
-            if (hits.length > 0) {
-              try { debugEventBus.emitEvent('info','ChatDBMatch','json-key-match',{ query: userText, hits: hits.length }); } catch {}
-              const out = convertCelsiusToFahrenheitInText(hits.join('\n'));
-              return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-            }
-          }
-        } catch (e) {
-          // not JSON, continue
-        }
-
-        // Fuzzy line match: require all query tokens to appear in a line
-        const normQueryTokens = normalizeForMatching(userText).split(/\s+/).filter(Boolean);
-        if (normQueryTokens.length > 0) {
-          const fuzzyMatches = lines.filter(l => {
-            const llNorm = normalizeForMatching(l.toLowerCase());
-            return normQueryTokens.every((t: string) => llNorm.includes(t));
-          });
-          if (fuzzyMatches.length > 0) {
-            try { debugEventBus.emitEvent('info','ChatDBMatch','fuzzy-line-match',{ tokens: normQueryTokens, matches: fuzzyMatches.length }); } catch {}
-            const out = convertCelsiusToFahrenheitInText(fuzzyMatches.join('\n'));
-            return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-          }
-        }
-
-        // if no match in the physical-exam block, try searching the rest of the case
-        const caseWideHits = searchCaseRecordForQuery(userText, caseRecord as Record<string, unknown> | null);
-        if (caseWideHits.length > 0) {
-          try { debugEventBus.emitEvent('info','ChatDBMatch','case-wide-hits',{ query: userText, hits: caseWideHits.length }); } catch {}
-          const out = convertCelsiusToFahrenheitInText(caseWideHits.join('\n'));
-          return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-        }
-
-        // Next, try synonyms across the whole case record
-        const synHits: string[] = [];
-        for (const syns of Object.values(PHYS_SYNONYMS)) {
+      if (physText) {
+        // Find all requested physical parameters
+        const requestedKeys: string[] = [];
+        const tNorm = normalizeForMatching(userText);
+        for (const [key, syns] of Object.entries(PHYS_SYNONYMS)) {
           for (const s of syns) {
             if (!s) continue;
-            const h = searchCaseRecordForQuery(s, caseRecord as Record<string, unknown> | null);
-            if (h.length > 0) synHits.push(...h);
+            const sNorm = normalizeForMatching(s);
+            if (sNorm && tNorm.includes(sNorm)) {
+              requestedKeys.push(key);
+              break;
+            }
           }
-          if (synHits.length > 0) break;
         }
-        if (synHits.length > 0) {
-          try { debugEventBus.emitEvent('info','ChatDBMatch','synonym-case-hits',{ query: userText, hits: synHits.length }); } catch {}
-          const out = convertCelsiusToFahrenheitInText(synHits.join('\n'));
-          return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-        }
-
-        // Finally, consult the RAG/LLM context for a cautious, evidence-backed statement
-        try {
-          const fallback = await llmCautiousFallback(ragContext, userText);
-          if (fallback) {
-            try { debugEventBus.emitEvent('info','ChatDBMatch','llm-fallback-used',{ query: userText }); } catch {}
-            return NextResponse.json({ content: fallback, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+        if (requestedKeys.length > 0) {
+          // Try to match each requested parameter in the findings text
+          const lines = physText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+          const found: string[] = [];
+          for (const key of requestedKeys) {
+            const syns = PHYS_SYNONYMS[key] ?? [];
+            const matchingLines = lines.filter(l => lineMatchesSynonym(l, syns));
+            found.push(...matchingLines);
           }
-        } catch (e) {
-          // ignore and fall through to return raw physText
-          console.warn('LLM cautious fallback failed', e);
+          if (found.length > 0) {
+            const out = convertCelsiusToFahrenheitInText(found.join("\n"));
+            return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+          } else {
+            return NextResponse.json({ content: `No matching physical exam findings were recorded for your request.`, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+          }
         }
-
-        // As last resort, return the full phys text so the student sees what's recorded
-        try { debugEventBus.emitEvent('info','ChatDBMatch','return-full-phys-text',{ length: physText.length }); } catch {}
-        const out = convertCelsiusToFahrenheitInText(physText);
-        return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
       }
+      // If no specific parameters requested, ask for clarification
+      return NextResponse.json({ content: `Which parameters of the physical exam do you request?`, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
 
-      if (matchedKeyword && diagText) {
-        // If diag text contains any synonym for the matched diagnostic key, fall through
-        // to the default diagnostic-stage response below rather than returning the
-        // previous specialized message.
-        const syns = DIAG_SYNONYMS[matchedKeyword] ?? [];
-      }
-
-      // Fall through to general LLM logic instead of suppressing
-      // This ensures general conversation (Greetings, help, etc) is not silenced
-      // and unmapped physical exam queries get a polite response.
-    }
 
     if (isLabStage && caseRecord && typeof caseRecord === "object") {
       const diag = (caseRecord as Record<string, unknown>)["diagnostic_findings"];
+      let diagObj: any = undefined;
       if (typeof diag === "string" && diag.trim().length > 0) {
-        // If user asked specifically for a test or value, try to return the matching lines
-        const diagText = diag as string;
-        // Find diagnostic canonical key from user text
-        const matchedDiagKey = findSynonymKey(userText, DIAG_SYNONYMS);
-        if (matchedDiagKey) {
-          const lines = diagText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-          const syns = DIAG_SYNONYMS[matchedDiagKey] ?? [];
-          const matchingLines = lines.filter(l => lineMatchesSynonym(l, syns));
-          if (matchingLines.length > 0) {
-            const reply = convertCelsiusToFahrenheitInText(matchingLines.join("\n"));
-            return NextResponse.json({ content: reply, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-          }
-          // fallback: if diag text contains any synonym, return full diag text
-          if (syns.some(s => s && diagText.toLowerCase().includes(s))) {
-            return NextResponse.json({ content: convertCelsiusToFahrenheitInText(diagText), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-          }
-          // no matching data recorded in diagnostics -> search rest of case fields
-          const caseWideHits = searchCaseRecordForQuery(userText, caseRecord as Record<string, unknown> | null);
-          if (caseWideHits.length > 0) {
-            return NextResponse.json({ content: caseWideHits.join('\n'), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-          }
+        try {
+          diagObj = JSON.parse(diag);
+        } catch {
+          diagObj = undefined;
+        }
+      } else if (typeof diag === "object" && diag !== null) {
+        diagObj = diag;
+      }
 
-          // Try synonyms across all case fields for diagnostics
-          const synHits: string[] = [];
-          for (const syns of Object.values(DIAG_SYNONYMS)) {
-            for (const s of syns) {
-              if (!s) continue;
-              const h = searchCaseRecordForQuery(s, caseRecord as Record<string, unknown> | null);
-              if (h.length > 0) synHits.push(...h);
-            }
-            if (synHits.length > 0) break;
+      // Find diagnostic canonical key from user text
+      const matchedDiagKey = findSynonymKey(userText, DIAG_SYNONYMS);
+      if (matchedDiagKey && diagObj && typeof diagObj === "object") {
+        // Only return the requested test(s)
+        const syns = DIAG_SYNONYMS[matchedDiagKey] ?? [];
+        const found: string[] = [];
+        for (const [key, value] of Object.entries(diagObj)) {
+          if (syns.some(s => key.toLowerCase().includes(s))) {
+            found.push(formatDiagnosticFinding(key, value));
           }
-          if (synHits.length > 0) {
-            return NextResponse.json({ content: synHits.join('\n'), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-          }
-
-          // LLM cautious fallback using RAG context
-          try {
-            const fallback = await llmCautiousFallback(ragContext, userText);
-            if (fallback) {
-              return NextResponse.json({ content: fallback, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
-            }
-          } catch (e) {
-            console.warn('LLM cautious fallback failed', e);
-          }
-
-          return NextResponse.json({ content: `That result is not available in the record.`, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+        }
+        if (found.length > 0) {
+          return NextResponse.json({ content: found.join(' '), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+        } else {
+          return NextResponse.json({ content: `There is no recorded result for that test.`, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
         }
       }
+      // fallback: if diagObj exists, but no specific test requested, ask for clarification
+      if (diagObj && typeof diagObj === "object") {
+        return NextResponse.json({ content: `Please specify which test or result you are interested in (e.g., "biochemistry", "bloodwork", "ultrasound").`, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+      }
+      // fallback: LLM cautious fallback using RAG context
+      try {
+        const fallback = await llmCautiousFallback(ragContext, userText);
+        if (fallback) {
+          return NextResponse.json({ content: fallback, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+        }
+      } catch (e) {
+        console.warn('LLM cautious fallback failed', e);
+      }
+      return NextResponse.json({ content: `That result is not available in the record.`, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
     }
 
     // High-priority system guideline to shape assistant tone and avoid

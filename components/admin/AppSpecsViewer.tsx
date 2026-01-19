@@ -412,6 +412,12 @@ export function AppSpecsViewer({ open, onOpenChange }: AppSpecsViewerProps) {
                         <div className="text-xs text-muted-foreground">Deaf window (ms)</div>
                       </div>
                     </div>
+                    <ul className="text-xs text-muted-foreground mt-2 list-decimal list-inside">
+                      <li><b>Pre-delay (ms):</b> Pause before TTS starts speaking after a message is ready. Ensures the system is ready and avoids cutting off the start of the audio.</li>
+                      <li><b>Suppression (ms):</b> Period after TTS starts during which STT (microphone input) is ignored. Prevents the system from transcribing its own TTS output as user speech.</li>
+                      <li><b>STT resume (ms):</b> Delay after TTS finishes before STT resumes listening. Ensures any lingering TTS audio or echoes are not picked up by the mic.</li>
+                      <li><b>Deaf window (ms):</b> "Deaf" period after TTS playback during which the mic is completely blocked, even if STT is technically resumed. Provides extra protection against feedback loops.</li>
+                    </ul>
                   </div>
 
                   <div>
