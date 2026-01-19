@@ -14,6 +14,7 @@ import type {
 import { CHAT_SYSTEM_GUIDELINE } from "@/features/chat/prompts/systemGuideline";
 import { resolvePromptValue } from "@/features/prompts/services/promptService";
 import { requireUser } from "@/app/api/_lib/auth";
+import { parseRequestedKeys, matchPhysicalFindings } from "@/features/chat/services/physFinder";
 import {
   normalizeCaseMedia,
   type CaseMediaItem,
@@ -963,7 +964,35 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
       const physText = typeof physField === "string" ? physField : "";
 
       // If user actually asked about something recorded in the physical exam, allow returning that.
+      // Support multi-parameter physical requests (e.g., "hr, rr, temp")
+      const requested = parseRequestedKeys(lastUserMessage?.content ?? userText);
       const matchedPhysicalKey = findSynonymKey(userText, PHYS_SYNONYMS);
+
+      // If parseRequestedKeys returned multiple canonical keys, try to match them
+      if (requested?.canonical?.length > 1 && physText) {
+        try { debugEventBus.emitEvent('info','ChatDBMatch','multi-phys-request',{ requested: requested.canonical }); } catch {}
+
+        const matches = matchPhysicalFindings(requested, physText);
+        // Build assistant-friendly output listing each requested param
+        const displayNames: Record<string,string> = {
+          heart_rate: 'Heart rate',
+          respiratory_rate: 'Respiratory rate',
+          temperature: 'Temperature',
+          blood_pressure: 'Blood pressure',
+        };
+        const pieces: string[] = [];
+        for (const m of matches) {
+          const name = displayNames[m.canonicalKey] ?? m.canonicalKey;
+          if (m.lines && m.lines.length > 0) {
+            pieces.push(`${name}: ${m.lines.join(' | ')}`);
+          } else {
+            pieces.push(`${name}: not documented in the physical exam.`);
+          }
+        }
+        const out = convertCelsiusToFahrenheitInText(pieces.join('\n'));
+        return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+      }
+
       if (matchedPhysicalKey && physText) {
         const lines = physText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
         // first try exact line contains the user phrase tokens
