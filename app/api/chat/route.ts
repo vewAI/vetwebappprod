@@ -288,6 +288,18 @@ export async function POST(request: NextRequest) {
     personaRoleKey = resolveChatPersonaRoleKey(stageDescriptor?.title ?? stageRole, displayRole);
     console.log(`[chat] Persona resolution: stageRole="${stageRole}" displayRole="${displayRole}" → personaRoleKey="${personaRoleKey}"`);
 
+    // Enforce strict persona mapping for sensitive stages: only the
+    // veterinary nurse may answer in Physical Examination, Laboratory & Tests,
+    // and Treatment Plan stages. Force the persona to `veterinary-nurse` when
+    // the stage title/role indicates one of these stages.
+    const stageTitleLower = String(stageDescriptor?.title ?? stageRole ?? "").toLowerCase();
+    if (/physical/.test(stageTitleLower) || /laboratory|\blab\b|tests/.test(stageTitleLower) || (/treatment/.test(stageTitleLower) && /plan/.test(stageTitleLower))) {
+      if (personaRoleKey !== "veterinary-nurse") {
+        console.log(`[chat] Overriding personaRoleKey (${personaRoleKey}) → veterinary-nurse due to stage "${stageDescriptor?.title ?? stageRole}"`);
+        personaRoleKey = "veterinary-nurse";
+      }
+    }
+
     // Inject the role-specific prompt only when the answering persona is the
     // one that should hold the clipboard (nurse / lab) AND the student has
     // explicitly requested findings/results. This prevents unsolicited
@@ -463,12 +475,9 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     let personaBehaviorPrompt: string | undefined = undefined;
     let personaSeeds: PersonaSeed[] | null = null;
 
-    const useCasePersona =
-      personaRoleKey &&
-      typeof caseId === "string" &&
-      (personaRoleKey === "owner" || personaRoleKey === "veterinary-nurse");
-
-    if (useCasePersona && caseId) {
+    
+    // Fetch the persona row for the resolved answering persona (if any).
+    if (caseId && personaRoleKey) {
       try {
         const { data: row, error } = await supabase
           .from("case_personas")
@@ -486,29 +495,14 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
           console.log(`[chat] Persona DB lookup success: case_id="${caseId}" role_key="${personaRoleKey}" → display_name="${row.display_name}" image_url="${row.image_url?.substring(0, 50)}..."`);
         }
 
-        // If no persona row exists, the case is misconfigured
-        // Personas are created only when a case is first saved
         if (!personaRow) {
-          console.warn(
-            `No persona found for case=${caseId} role=${personaRoleKey}. Case may need re-saving.`
-          );
+          console.warn(`No persona found for case=${caseId} role=${personaRoleKey}. Persona will use default behavior.`);
         }
       } catch (personaErr) {
         console.warn("Failed to ensure persona row for chat", personaErr);
       }
-
-      // Log warning if persona still not found after case-level lookup
-      if (!personaRow && personaRoleKey) {
-        console.warn(
-          `[chat] No case persona found for role_key "${personaRoleKey}" in case "${caseId}". ` +
-          `Persona will use default behavior.`
-        );
-      }
     } else if (personaRoleKey) {
-      // No case context - persona behavior will rely on seed templates only
-      console.warn(
-        `[chat] Chat request without caseId - persona "${personaRoleKey}" will use default seed behavior`
-      );
+      console.warn(`[chat] Chat request without caseId - persona "${personaRoleKey}" will use default seed behavior`);
     }
 
     if (personaRow?.display_name) {
