@@ -787,6 +787,53 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       }
     }
 
+    const stripLeadingPersonaIntro = (
+      text: string | null | undefined,
+      labels: Array<string | undefined>
+    ): string => {
+      if (!text) return "";
+
+      const uniqueLabels = Array.from(
+        new Set(
+          labels
+            .map((label) => (label ? label.trim() : ""))
+            .filter((label) => label.length > 0)
+        )
+      );
+
+      let output: string = text ?? "";
+
+      // Remove any leading label like "Nurse: " or the persona display name
+      for (const label of uniqueLabels) {
+        if (!label) continue;
+        const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const pattern = new RegExp(`^\\s*(?:${escaped})(?:\\s*\\([^)]*\\))?\\s*[:\-–—]?\\s*`, "i");
+        if (pattern.test(output)) {
+          output = output.replace(pattern, "");
+          break;
+        }
+      }
+
+      // Drop a single leading line if it mostly repeats the persona name/introduction
+      const lines = output.split(/\r?\n/);
+      if (lines.length > 1) {
+        const first = lines[0].trim();
+        for (const label of uniqueLabels) {
+          if (!label) continue;
+          if (first.toLowerCase().includes(label.toLowerCase())) {
+            lines.shift();
+            output = lines.join("\n").trimStart();
+            break;
+          }
+        }
+      }
+
+      // General cleanup of obvious prefixes
+      output = output.replace(/^(assistant|nurse|doctor|lab|veterinary nurse)[:\s\-]+/i, "").trimStart();
+
+      return output.trimStart();
+    };
+
     function findSynonymKey(text: string, groups: Record<string, string[]>): string | null {
       const tNorm = normalizeForMatching(text);
       for (const [key, syns] of Object.entries(groups)) {
