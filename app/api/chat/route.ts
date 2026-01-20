@@ -25,55 +25,7 @@ import { debugEventBus } from "@/lib/debug-events-fixed";
 const openai = new OpenAi({
   apiKey: process.env.OPENAI_API_KEY,
 });
-          try { debugEventBus.emitEvent('info','ChatShortCircuit','returned-phys',{ requested: requestedEarly.canonical, count: phrases.length }); } catch {}
-          // Build structured findings map for client consumption
-          const structured: Record<string, string | null> = {};
-          for (const m of matches) {
-            const vals = Array.isArray(m.lines) ? Array.from(new Set(m.lines.map(l => {
-              let s = String(l || "").replace(/^['"`]+/, "").replace(/['"`]+$/, "").trim();
-              s = s.replace(/,$/, '').trim();
-              if (s.includes(':')) {
-                const parts = s.split(':');
-                parts.shift();
-                s = parts.join(':').trim();
-              }
-              return convertCelsiusToFahrenheitInText(s);
-            }).filter(Boolean))) : [];
-            structured[m.canonicalKey] = vals.length > 0 ? vals.join(' | ') : null;
-          }
-
-          return NextResponse.json({ content: out, structuredFindings: structured, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-  text: string | null | undefined,
-  labels: Array<string | undefined>
-): string => {
-  if (!text) {
-    return "";
-  }
-
-  const uniqueLabels = Array.from(
-    new Set(
-      labels
-        .map((label) => (label ? label.trim() : ""))
-        .filter((label) => label.length > 0)
-    )
-  );
-
-  let output = text;
-
-  for (const label of uniqueLabels) {
-    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const pattern = new RegExp(
-      `^\\s*(?:${escaped})(?:\\s*\\([^)]*\\))?\\s*:\\s*`,
-      "i"
-    );
-    if (pattern.test(output)) {
-      output = output.replace(pattern, "");
-      break;
-    }
-  }
-
-  return output.trimStart();
-};
+ 
 
 export async function POST(request: NextRequest) {
   const auth = await requireUser(request);

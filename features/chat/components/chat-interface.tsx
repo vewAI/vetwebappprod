@@ -1702,6 +1702,10 @@ export function ChatInterface({
   };
 
   const [showProceedHint, setShowProceedHint] = useState(false);
+  // Debug tracing: last LLM payload and response for admin debug window
+  const [lastLlmPayload, setLastLlmPayload] = useState<any | null>(null);
+  const [lastLlmResponse, setLastLlmResponse] = useState<any | null>(null);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
 
   const emitStageReadinessPrompt = useCallback(
     async (stageIndex: number, result: StageCompletionResult) => {
@@ -2210,12 +2214,15 @@ export function ChatInterface({
         }
       }
 
+      // Capture payload for debug tracing (admin panel)
+      try { setLastLlmPayload(snapshot.map(m => ({ role: m.role, content: m.content }))); } catch {}
       const response = await chatService.sendMessage(
         snapshot,
         currentStageIndex,
         caseId,
         { attemptId }
       );
+      try { setLastLlmResponse(response); } catch {}
 
       // Mark user message as sent immediately upon server receipt
       if (userMessage) {
@@ -2231,6 +2238,8 @@ export function ChatInterface({
       if ((response as any)?.suppress) {
         return;
       }
+        // If server returned structuredFindings but no content, ensure lastLlmResponse still set
+        try { if (!lastLlmResponse) setLastLlmResponse(response); } catch {}
       const stage = stages[currentStageIndex] ?? stages[0];
       const roleName = response.displayRole ?? stage?.role ?? "assistant";
       const safePersonaRoleKey =
@@ -2271,8 +2280,27 @@ export function ChatInterface({
       const existingPersona = normalizedPersonaKey ? personaDirectoryRef.current[normalizedPersonaKey] : undefined;
       const finalDisplayName = existingPersona?.displayName ?? roleName;
 
+      // Prefer structuredFindings from the server if present (authoritative)
+      const structured = (response as any)?.structuredFindings as Record<string, string | null> | undefined;
+      const displayNames: Record<string,string> = {
+        heart_rate: 'Heart rate',
+        respiratory_rate: 'Respiratory rate',
+        temperature: 'Temperature',
+        blood_pressure: 'Blood pressure',
+      };
+      let finalContent = response.content;
+      if (structured && Object.keys(structured).length > 0) {
+        const parts: string[] = [];
+        for (const k of Object.keys(structured)) {
+          const val = structured[k];
+          const name = displayNames[k] ?? k;
+          parts.push(`${name}: ${val ?? 'not documented'}`);
+        }
+        finalContent = parts.join(', ');
+      }
+
       let aiMessage = chatService.createAssistantMessage(
-        response.content,
+        finalContent,
         currentStageIndex,
         finalDisplayName,
         portraitUrl,
@@ -2750,8 +2778,27 @@ export function ChatInterface({
           }
         );
         const assistantVoiceId = serverVoiceId ?? resolvedVoiceForRole;
+        // Prefer structuredFindings from server for pending flush
+        const structured = (response as any)?.structuredFindings as Record<string,string|null> | undefined;
+        const displayNames: Record<string,string> = {
+          heart_rate: 'Heart rate',
+          respiratory_rate: 'Respiratory rate',
+          temperature: 'Temperature',
+          blood_pressure: 'Blood pressure',
+        };
+        let finalContent = response.content;
+        if (structured && Object.keys(structured).length > 0) {
+          const parts: string[] = [];
+          for (const k of Object.keys(structured)) {
+            const val = structured[k];
+            const name = displayNames[k] ?? k;
+            parts.push(`${name}: ${val ?? 'not documented'}`);
+          }
+          finalContent = parts.join(', ');
+        }
+
         let aiMessage = chatService.createAssistantMessage(
-          response.content,
+          finalContent,
           p.stageIndex,
           String(roleName ?? "assistant"),
           portraitUrl,
