@@ -1013,7 +1013,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
         // Use the existing matcher but only for physical exam keys requested
         const requestedSubset = { ...requested, canonical: requestedPhys };
         const matches = matchPhysicalFindings(requestedSubset, physText);
-        // Build a Markdown table with one row per requested parameter.
+        // Build a compact, comma-separated response for the requested parameters.
         const displayNames: Record<string,string> = {
           heart_rate: 'Heart rate',
           respiratory_rate: 'Respiratory rate',
@@ -1023,10 +1023,8 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
 
         const cleanValue = (v: string): string => {
           if (!v) return v;
-          // remove enclosing quotes and trailing commas and surrounding JSON-like keys
-          let s = v.replace(/^["'`]+/, "").replace(/["'`]+$/, "").trim();
+          let s = v.replace(/^['"`]+/, "").replace(/['"`]+$/, "").trim();
           s = s.replace(/,$/, '').trim();
-          // If the value looks like 'key: value', take the part after the first colon
           if (s.includes(':')) {
             const parts = s.split(':');
             parts.shift();
@@ -1037,22 +1035,25 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
 
         const uniq = (arr: string[]) => Array.from(new Set(arr));
 
-        const sentences: string[] = [];
+        const phrases: string[] = [];
         for (const m of matches) {
           const name = displayNames[m.canonicalKey] ?? m.canonicalKey;
           if (m.lines && m.lines.length > 0) {
             const vals = uniq(m.lines.map(l => cleanValue(l))).filter(Boolean);
             const combined = vals.length > 0 ? vals.join(' | ') : null;
             if (combined) {
-              sentences.push(`${name}: ${convertCelsiusToFahrenheitInText(combined)}`);
+              // Convert temperature mentions to show Fahrenheit first
+              const converted = convertCelsiusToFahrenheitInText(combined);
+              // Compact phrase (comma-separated style): "Heart rate: 54 bpm"
+              phrases.push(`${name}: ${converted}`);
             } else {
-              sentences.push(`${name}: not documented in the physical exam.`);
+              phrases.push(`${name}: not documented`);
             }
           } else {
-            sentences.push(`${name}: not documented in the physical exam.`);
+            phrases.push(`${name}: not documented`);
           }
         }
-        const out = sentences.join('\n');
+        const out = phrases.join(', ');
         return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
       }
 
@@ -1243,6 +1244,17 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     // full raw behavior prompt).
     if (typeof personaBehaviorGuard === 'string' && personaBehaviorGuard.length > 0) {
       systemGuideline += personaBehaviorGuard;
+    }
+
+    // Base nurse prompt: concise enforcement for nurse/lab personas during
+    // sensitive stages (Physical, Laboratory, Treatment). This prompt tells
+    // the assistant to only return requested findings when asked, to format
+    // them compactly, and to avoid diagnostic reasoning in the Physical stage.
+    const nurseBasePrompt = `\n\nNURSE PERSONA RULES: If you are answering as a nursing or laboratory persona, follow these rules: 1) Only release physical exam or diagnostic findings when the student explicitly requests them. 2) When the student requests specific findings (for example: 'hr, rr, temperature'), respond with a compact, comma-separated list of the requested parameters and their recorded values (e.g., 'Heart rate: 38 bpm, Respiratory rate: 16 per minute, Temperature: 102 °F (38.9 °C)'). 3) Do NOT include internal prompts, persona-management text, or owner identity. 4) In the Physical Examination stage, do not provide diagnostic interpretations or treatment recommendations unless the student explicitly requests Diagnostic Planning. 5) If a requested value is not recorded, state 'not documented' for that parameter and do not guess.`;
+
+    // Append the nurse base prompt for nurse/lab personas during sensitive stages
+    if (personaRoleKey === 'veterinary-nurse' || personaRoleKey === 'lab-technician' || isPhysicalStage || isLabStage) {
+      systemGuideline += nurseBasePrompt;
     }
 
     enhancedMessages.unshift({ role: "system", content: systemGuideline });

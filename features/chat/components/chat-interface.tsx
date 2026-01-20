@@ -2775,6 +2775,10 @@ export function ChatInterface({
   const userToggledOffRef = useRef(false);
   // Temporarily record if we disabled voice mode for an assistant intro
   const tempVoiceDisabledRef = useRef<boolean>(false);
+  // Record whether voice mode was enabled immediately before a temporary disable
+  const prevVoiceWasOnRef = useRef<boolean>(false);
+  // Timer ref for forced restore (used for fixed-length intros)
+  const forceRestoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const setVoiceModeEnabled = useCallback(
     (next: boolean) => {
@@ -3445,8 +3449,10 @@ export function ChatInterface({
             /* ignore */
           }
           // reflect UI state without marking this as a user toggle-off
-            try {
-            // update state directly so userToggledOffRef isn't set
+          try {
+            // remember whether voice mode was on so we can restore it later
+            prevVoiceWasOnRef.current = !!voiceModeRef.current;
+            // update state directly so this is treated as a temporary disable
             setVoiceMode(false);
             tempVoiceDisabledRef.current = true;
           } catch (e) {}
@@ -3513,6 +3519,35 @@ export function ChatInterface({
             });
           };
 
+          // Special-case: the nurse intro is a fixed short phrase (~9s). If
+          // this is that intro and voice mode was enabled before the temp
+          // disable, schedule a forced restore after 9s so the mic is toggled
+          // back on for the student even if TTS events are delayed.
+          try {
+            const nurseIntroMarker = "I'm the veterinary nurse supporting this case";
+            if (introText && introText.includes(nurseIntroMarker) && prevVoiceWasOnRef.current) {
+              // Clear any previous timer
+              if (forceRestoreTimerRef.current) {
+                clearTimeout(forceRestoreTimerRef.current);
+              }
+              forceRestoreTimerRef.current = setTimeout(() => {
+                // Only restore if still temporarily disabled and user didn't
+                // explicitly toggle mic off in the meantime.
+                if (tempVoiceDisabledRef.current && !userToggledOffRef.current) {
+                  tempVoiceDisabledRef.current = false;
+                  try {
+                    setVoiceModeEnabled(true);
+                  } catch (err) {
+                    console.warn("Forced restore of voice mode failed:", err);
+                  }
+                }
+                forceRestoreTimerRef.current = null;
+              }, 9000);
+            }
+          } catch (e) {
+            // ignore timer setup errors
+          }
+
           try {
             await waitForTtsToFinish(15000, 100);
           } catch (err) {
@@ -3521,9 +3556,19 @@ export function ChatInterface({
             // Clear the temporary-disable flag only after playback is done
             tempVoiceDisabledRef.current = false;
             try {
-              setVoiceModeEnabled(true);
+              // Restore voice mode only if the user didn't explicitly turn it off
+              // while the intro played. Also ensure we don't double-toggle if the
+              // forced timer already restored it.
+              if (!userToggledOffRef.current) {
+                setVoiceModeEnabled(true);
+              }
             } catch (err) {
               console.warn("Failed to restore voice mode after TTS", err);
+            }
+            // Clean up any pending forced restore timer
+            if (forceRestoreTimerRef.current) {
+              clearTimeout(forceRestoreTimerRef.current);
+              forceRestoreTimerRef.current = null;
             }
           }
         }
