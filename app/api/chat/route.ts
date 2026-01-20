@@ -972,6 +972,68 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
     // Exclude "Diagnostic Planning" which is an owner stage despite having "diagnostic" in the name
     const isLabStage = !isOwnerPersona && /laboratory|lab/i.test(stageTitle) && !/planning/i.test(stageTitle);
 
+    // EARLY SHORT-CIRCUIT: If the student explicitly requested specific
+    // physical parameters (e.g., "hr, rr, temp") then return the compact
+    // values directly from the `physical_exam_findings` DB field BEFORE any
+    // role-prompt or RAG/system injection occurs. This is authoritative and
+    // prevents the LLM from being asked to dump the entire findings block.
+    try {
+      const requestedEarly = parseRequestedKeys(lastUserMessage?.content ?? userText);
+      try {
+        debugEventBus.emitEvent('info','ChatShortCircuit','parseRequestedKeys',{ tokens: requestedEarly.tokens, canonical: requestedEarly.canonical });
+      } catch {}
+
+      if (isPhysicalStage && requestedEarly && Array.isArray(requestedEarly.canonical) && requestedEarly.canonical.length > 0) {
+        const physField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["physical_exam_findings"] : null;
+        const physText = typeof physField === "string" ? physField : "";
+        if (physText) {
+          const matches = matchPhysicalFindings(requestedEarly, physText);
+
+          const displayNames: Record<string,string> = {
+            heart_rate: 'Heart rate',
+            respiratory_rate: 'Respiratory rate',
+            temperature: 'Temperature',
+            blood_pressure: 'Blood pressure',
+          };
+
+          const cleanValue = (v: string): string => {
+            if (!v) return v;
+            let s = v.replace(/^['"`]+/, "").replace(/['"`]+$/, "").trim();
+            s = s.replace(/,$/, '').trim();
+            if (s.includes(':')) {
+              const parts = s.split(':');
+              parts.shift();
+              s = parts.join(':').trim();
+            }
+            return s;
+          };
+
+          const uniq = (arr: string[]) => Array.from(new Set(arr));
+          const phrases: string[] = [];
+          for (const m of matches) {
+            const name = displayNames[m.canonicalKey] ?? m.canonicalKey;
+            if (m.lines && m.lines.length > 0) {
+              const vals = uniq(m.lines.map(l => cleanValue(l))).filter(Boolean);
+              const combined = vals.length > 0 ? vals.join(' | ') : null;
+              if (combined) {
+                const converted = convertCelsiusToFahrenheitInText(combined);
+                phrases.push(`${name}: ${converted}`);
+              } else {
+                phrases.push(`${name}: not documented`);
+              }
+            } else {
+              phrases.push(`${name}: not documented`);
+            }
+          }
+          const out = phrases.join(', ');
+          try { debugEventBus.emitEvent('info','ChatShortCircuit','returned-phys',{ requested: requestedEarly.canonical, count: phrases.length }); } catch {}
+          return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex, suppress: true });
+        }
+      }
+    } catch (e) {
+      console.warn('Early physical short-circuit failed', e);
+    }
+
     const matchedDiagKeyInUser = findSynonymKey(userText, DIAG_SYNONYMS);
     // Handle physical-stage queries regardless of diagnostic-key matches.
     // Previously this branch required a diagnostic synonym which prevented
