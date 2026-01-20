@@ -25,6 +25,8 @@ import { debugEventBus } from "@/lib/debug-events-fixed";
 const openai = new OpenAi({
   apiKey: process.env.OPENAI_API_KEY,
 });
+// Preferred chat model. Set `OPENAI_CHAT_MODEL` in env to override.
+const LLM_MODEL = process.env.OPENAI_CHAT_MODEL ?? process.env.PREFERRED_CHAT_MODEL ?? "chatgpt-5.1o-mini";
  
 
 export async function POST(request: NextRequest) {
@@ -955,29 +957,8 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       return results;
     }
 
-    async function llmCautiousFallback(ragContext: string, userQuery: string): Promise<string | null> {
-      if (!ragContext || !ragContext.trim()) return null;
-      try {
-        const prompt = `You are an assistant that should not hallucinate medical facts. Using ONLY the following reference context, provide a short, cautious reply to the student's request. If the requested test/result is not recorded, say so first, then if the references provide a clear, evidence-backed statement about typical/expected findings, include a single concise, hedged sentence such as "We didn't run that test but available references suggest it is within normal limits." If no evidence exists, say that no inference can be made.
-
-REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
-
-        const resp = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [
-            { role: "system", content: "You are a cautious clinical assistant. Answer concisely and hedge clearly; do not invent tests or values." },
-            { role: "user", content: prompt }
-          ],
-          temperature: 0.0,
-          max_tokens: 150,
-        });
-        const msg = resp?.choices?.[0]?.message?.content;
-        return typeof msg === "string" ? msg.trim() : null;
-      } catch (e) {
-        console.warn("LLM fallback failed:", e);
-        return null;
-      }
-    }
+    // NOTE: Removed llmCautiousFallback — fallback LLM synthesis disabled to
+    // enforce deterministic, DB/RAG-only responses for missing results.
 
     const stageTitle = stageDescriptor?.title ?? "";
     // IMPORTANT: Only allow data retrieval for nurse/tech personas, NOT owners
@@ -1341,7 +1322,7 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     enhancedMessages.unshift({ role: "system", content: systemGuideline });
 
     let response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: LLM_MODEL,
       messages: enhancedMessages as any[],
       temperature: 0.7,
       max_tokens: 1000,
