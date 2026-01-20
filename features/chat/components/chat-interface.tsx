@@ -55,6 +55,7 @@ import {
   detectStageIntentPhase3,
   type StageIntentContext,
 } from "@/features/chat/utils/stage-intent-detector";
+import { parseRequestedKeys } from "@/features/chat/services/physFinder";
 import axios from "axios";
 import {
   detectStageReadinessIntent,
@@ -308,6 +309,50 @@ export function ChatInterface({
       }
       return [...prev, msg];
     });
+  };
+
+  // Transform or suppress nurse/lab assistant messages on the client as a
+  // secondary guardrail: if the assistant is a nurse and the current stage
+  // is Physical/Laboratory/Treatment and the student did NOT explicitly
+  // request specific findings, replace the long findings dump with a
+  // clarifying prompt. Also disable TTS for suppressed messages to avoid
+  // accidental self-capture or leakage.
+  const transformNurseAssistantMessage = (
+    aiMessage: Message,
+    stage: Stage | undefined,
+    lastUserText?: string
+  ): { message: Message; allowTts: boolean } => {
+    try {
+      const personaKey = aiMessage.personaRoleKey ?? "";
+      const roleLower = (stage?.role ?? "").toLowerCase();
+      const stageTitle = (stage?.title ?? "").toLowerCase();
+      const isSensitiveStage = /physical|laboratory|lab|treatment/.test(stageTitle) || /nurse|lab|laboratory/.test(roleLower);
+      const isNursePersona = personaKey === "veterinary-nurse" || /nurse|lab/.test(personaKey || roleLower);
+      if (!isSensitiveStage || !isNursePersona) return { message: aiMessage, allowTts: true };
+
+      const lastUser = String(lastUserText ?? "");
+      const requested = parseRequestedKeys(lastUser || "");
+      // If the user explicitly requested specific canonical keys, allow normal flow
+      if (requested && Array.isArray(requested.canonical) && requested.canonical.length > 0) {
+        return { message: aiMessage, allowTts: true };
+      }
+
+      // If the assistant content is short/simple, allow it
+      const content = String(aiMessage.content ?? "").trim();
+      if (!content || content.length < 180) return { message: aiMessage, allowTts: true };
+
+      // Heuristics: if content contains multiple parameter indicators or pipe separators,
+      // treat as a findings dump and suppress it in favor of a clarifying prompt.
+      const findingsIndicators = /(temperature|temp\b|heart rate|pulse|respiratory rate|rr\b|hr\b|blood pressure|vitals|respirations)/i;
+      const looksLikeDump = (content.match(/\|/g) || []).length >= 2 || findingsIndicators.test(content);
+      if (!looksLikeDump) return { message: aiMessage, allowTts: true };
+
+      const clarifying = "I can provide specific physical findings if you request them. Which parameters would you like (for example: 'hr, rr, temperature')?";
+      const replaced: Message = { ...aiMessage, content: clarifying };
+      return { message: replaced, allowTts: false };
+    } catch (e) {
+      return { message: aiMessage, allowTts: true };
+    }
   };
   const { timepoints } = useCaseTimepoints(caseId);
   const latestInitialMessagesRef = useRef<Message[]>(initialMessages ?? []);
@@ -2226,7 +2271,7 @@ export function ChatInterface({
       const existingPersona = normalizedPersonaKey ? personaDirectoryRef.current[normalizedPersonaKey] : undefined;
       const finalDisplayName = existingPersona?.displayName ?? roleName;
 
-      const aiMessage = chatService.createAssistantMessage(
+      let aiMessage = chatService.createAssistantMessage(
         response.content,
         currentStageIndex,
         finalDisplayName,
@@ -2237,6 +2282,11 @@ export function ChatInterface({
         safePersonaRoleKey,
         response.media
       );
+      // Client-side guard: suppress long nurse findings dumps unless user requested specific params
+      const lastUser = [...messages].reverse().find((m) => m.role === "user");
+      const transformed = transformNurseAssistantMessage(aiMessage, stage, lastUser?.content);
+      aiMessage = transformed.message;
+      const allowTtsForThisMessage = transformed.allowTts;
       const finalAssistantContent = aiMessage.content;
       upsertPersonaDirectory(normalizedPersonaKey, {
         displayName: aiMessage.displayRole,
@@ -2295,13 +2345,17 @@ export function ChatInterface({
             try {
               // Wait for TTS to actually complete playing before showing text
               // No timeout race - we want to wait for the full audio
-              await playTtsAndPauseStt(
-                response.content,
-                finalVoiceForRole,
-                ttsMeta,
-                responseVoiceSex === "male" || responseVoiceSex === "female" ? responseVoiceSex : undefined,
-                false // Let playTtsAndPauseStt handle mic resume when audio actually ends
-              );
+              if (allowTtsForThisMessage) {
+                await playTtsAndPauseStt(
+                  aiMessage.content,
+                  finalVoiceForRole,
+                  ttsMeta,
+                  responseVoiceSex === "male" || responseVoiceSex === "female" ? responseVoiceSex : undefined,
+                  false // Let playTtsAndPauseStt handle mic resume when audio actually ends
+                );
+              } else {
+                console.debug("Skipping TTS for suppressed nurse message (voice-first)");
+              }
               ttsCompleted = true;
             } catch (streamErr) {
               playbackError = streamErr;
@@ -2332,13 +2386,17 @@ export function ChatInterface({
             // Default behavior: show the text immediately, then play audio
             appendAssistantMessage(aiMessage);
             try {
-              await playTtsAndPauseStt(
-                response.content,
-                finalVoiceForRole,
-                ttsMeta,
-                responseVoiceSex === "male" || responseVoiceSex === "female" ? responseVoiceSex : undefined,
-                true // skip internal resume; let sendUserMessage handle it
-              );
+              if (allowTtsForThisMessage) {
+                await playTtsAndPauseStt(
+                  aiMessage.content,
+                  finalVoiceForRole,
+                  ttsMeta,
+                  responseVoiceSex === "male" || responseVoiceSex === "female" ? responseVoiceSex : undefined,
+                  true // skip internal resume; let sendUserMessage handle it
+                );
+              } else {
+                console.debug("Skipping TTS for suppressed nurse message (default)");
+              }
             } catch (err) {
               console.error("TTS failed:", err);
             }
@@ -2692,7 +2750,7 @@ export function ChatInterface({
           }
         );
         const assistantVoiceId = serverVoiceId ?? resolvedVoiceForRole;
-        const aiMessage = chatService.createAssistantMessage(
+        let aiMessage = chatService.createAssistantMessage(
           response.content,
           p.stageIndex,
           String(roleName ?? "assistant"),
@@ -2703,6 +2761,10 @@ export function ChatInterface({
           safePersonaRoleKey,
           response.media
         );
+        // Client-side nurse transform for pending flush responses
+        const lastUser = [...messages].reverse().find((m) => m.role === "user");
+        const transformed = transformNurseAssistantMessage(aiMessage, stage, lastUser?.content);
+        aiMessage = transformed.message;
         upsertPersonaDirectory(normalizedPersonaKey, {
           displayName: aiMessage.displayRole,
           portraitUrl,
