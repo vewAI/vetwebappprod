@@ -16,7 +16,7 @@ export async function GET(
   const auth = await requireUser(request as Request);
   if ("error" in auth) return auth.error;
 
-  const { adminSupabase, user, role } = auth;
+  const { adminSupabase } = auth;
 
   if (!attemptId)
     return NextResponse.json({ error: "attemptId required" }, { status: 400 });
@@ -32,31 +32,14 @@ export async function GET(
 
     const { data: attemptRow, error } = await adminClient
       .from("attempts")
-      .select(`*, attempt_messages (*), attempt_feedback (*)`)
+      .select(
+        `*, attempt_messages (*), attempt_feedback (*), cases (id, title)`
+      )
       .eq("id", attemptId)
       .maybeSingle();
 
     if (error || !attemptRow)
       return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
-
-    // Permission: owner (attempt.user_id), admin, or assigned professor may view
-    const isOwner = attemptRow.user_id === user.id;
-    if (!isOwner && role !== "admin") {
-      if (role === "professor") {
-        // verify professor->student assignment
-        const { data: rel } = await adminClient
-          .from("professor_students")
-          .select("*")
-          .eq("professor_id", user.id)
-          .eq("student_id", attemptRow.user_id)
-          .limit(1)
-          .maybeSingle();
-        if (!rel)
-          return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-      } else {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-      }
-    }
 
     // Return attempt
     return NextResponse.json({

@@ -1,20 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import {
-  getAttemptById,
-  deleteAttempt,
-  saveAttemptProgress,
-  completeAttempt,
-  updateAttemptTime,
-} from "@/features/attempts/services/attemptService";
+import { deleteAttempt } from "@/features/attempts/services/attemptService";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, ChevronLeft, Clock, Calendar, Trash2 } from "lucide-react";
-import { fetchCaseById } from "@/features/case-selection/services/caseService";
-import type { Case } from "@/features/case-selection/models/case";
 import { getStagesForCase } from "@/features/stages/services/stageService";
 import type {
   Attempt,
@@ -22,10 +14,14 @@ import type {
 } from "@/features/attempts/models/attempt";
 import type { Message } from "@/features/chat/models/chat";
 import type { Stage } from "@/features/stages/types";
-import { ChatInterface } from "@/features/chat/components/chat-interface";
-import { CaseTimeline } from "@/features/cases/components/case-timeline";
-import { supabase } from "@/lib/supabase";
-import { buildAuthHeaders } from "@/lib/auth-headers";
+import { createClient } from "@supabase/supabase-js";
+import {
+  transformAttempt,
+  transformFeedback,
+  transformMessage,
+} from "@/features/attempts/mappers/attempt-mappers";
+import { Case } from "@/features/case-selection/models/case";
+import { mapDbCaseToCase } from "@/features/case-selection/services/caseService";
 
 export default function ViewAttemptPage() {
   const params = useParams();
@@ -33,76 +29,54 @@ export default function ViewAttemptPage() {
   const attemptId = params.id as string;
 
   const [attempt, setAttempt] = useState<Attempt | null>(null);
+  const [attemptCase, setCase] = useState<Case | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [feedback, setFeedback] = useState<AttemptFeedback[]>([]);
   const [stages, setStages] = useState<Stage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("conversation");
   const [isDeleting, setIsDeleting] = useState(false);
-  const [missingPersonas, setMissingPersonas] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (!attempt?.caseId) return;
-
-    const checkPersonas = async () => {
-      const { data: personas } = await supabase
-        .from("case_personas")
-        .select("role_key")
-        .eq("case_id", attempt.caseId);
-
-      const hasOwner = personas?.some((p) => p.role_key === "owner");
-      const hasNurse = personas?.some((p) => p.role_key === "veterinary-nurse");
-
-      const missing = [];
-      if (!hasOwner) missing.push("Owner");
-      if (!hasNurse) missing.push("Nurse");
-
-      if (missing.length > 0) {
-        setMissingPersonas(missing);
-      }
-    };
-
-    checkPersonas();
-  }, [attempt]);
 
   useEffect(() => {
     const loadAttempt = async () => {
       setIsLoading(true);
 
       try {
-        const headers = await buildAuthHeaders({
-          "Content-Type": "application/json",
-        });
-        const res = await fetch(`/api/attempts/${attemptId}/view`, {
-          headers,
-        });
-        const payload = await res.json();
+        const supabase = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        );
 
-        if (!res.ok || !payload.attempt) {
+        const { data, error } = await supabase
+          .from("attempts")
+          .select(
+            `*, attempt_messages (*), attempt_feedback (*), cases (id, title)`
+          )
+          .eq("id", attemptId)
+          .maybeSingle();
+
+        if (error || !data) {
+          console.error("Failed to load attempt:", error);
           router.push("/attempts");
           return;
         }
 
-        const {
-          attempt: serverAttempt,
-          messages: serverMessages,
-          feedback: serverFeedback,
-        } = payload;
-        setAttempt(serverAttempt);
-        setMessages(serverMessages || []);
-        setFeedback(serverFeedback || []);
+        setAttempt(transformAttempt(data));
+        setCase(mapDbCaseToCase(data.cases));
+        setMessages((data.attempt_messages || [])?.map(transformMessage));
+        setFeedback((data.attempt_feedback || [])?.map(transformFeedback));
 
         const caseStages = await (async () => {
           try {
             const mod = await import("@/features/stages/services/stageService");
 
             if (mod.getActiveStagesForCase) {
-              return await mod.getActiveStagesForCase(serverAttempt.caseId);
+              return await mod.getActiveStagesForCase(data.caseId);
             }
-            return mod.getStagesForCase(serverAttempt.caseId);
+            return mod.getStagesForCase(data.caseId);
           } catch (e) {
             console.warn("Failed to resolve active stages; falling back", e);
-            return getStagesForCase(serverAttempt.caseId);
+            return getStagesForCase(data.caseId);
           }
         })();
         setStages(caseStages);
@@ -120,6 +94,7 @@ export default function ViewAttemptPage() {
 
   // When user opens the Feedback tab, mark feedback as read for this student
   useEffect(() => {
+    console.log("Active tab changed to:", activeTab);
     if (activeTab !== "feedback") return;
     if (!attempt) return;
     const unread = feedback.filter((f) => {
@@ -152,19 +127,7 @@ export default function ViewAttemptPage() {
         console.error("Failed to mark feedback read:", err);
       }
     })();
-  }, [activeTab, attempt, feedback]);
-
-  const [caseItem, setCaseItem] = useState<Case | null>(null);
-  const searchParams = useSearchParams();
-  const chatMode = Boolean(
-    searchParams?.get("chat") === "1" || searchParams?.get("chat") === "true"
-  );
-
-  useEffect(() => {
-    if (attempt && attempt.caseId) {
-      fetchCaseById(attempt.caseId).then(setCaseItem);
-    }
-  }, [attempt]);
+  }, [activeTab]);
 
   // Format date
   const formatDate = (dateString?: string) => {
@@ -212,7 +175,7 @@ export default function ViewAttemptPage() {
     );
   }
 
-  if (!attempt || !caseItem) {
+  if (!attempt) {
     return (
       <div className="container mx-auto px-4 py-8">
         <p>Attempt not found</p>
@@ -240,7 +203,7 @@ export default function ViewAttemptPage() {
             <h1 className="text-3xl font-bold tracking-tight text-primary">
               {attempt.title}
             </h1>
-            <p className="mt-1 text-muted-foreground">{caseItem.title}</p>
+            <p className="mt-1 text-muted-foreground">{attemptCase?.title}</p>
           </div>
 
           <Badge
@@ -348,92 +311,6 @@ export default function ViewAttemptPage() {
         {activeTab === "conversation" && (
           <div className="mt-4">
             {(() => {
-              if (chatMode) {
-                return (
-                  <div className="flex flex-col lg:flex-row gap-4 items-start">
-                    <div className="flex-1 w-full">
-                      <ChatInterface
-                        caseId={attempt.caseId}
-                        attemptId={attempt.id}
-                        initialMessages={messages}
-                        currentStageIndex={attempt.lastStageIndex}
-                        stages={stages}
-                        initialTimeSpentSeconds={attempt.timeSpentSeconds}
-                        onProceedToNextStage={async (
-                          msgs?: Message[],
-                          timeSpentSeconds = 0
-                        ) => {
-                          try {
-                            const currentIndex = attempt.lastStageIndex ?? 0;
-                            // If not at final stage, advance
-                            if (currentIndex < stages.length - 1) {
-                              const nextIndex = currentIndex + 1;
-                              // Save progress (updates last_stage_index and messages)
-                              await saveAttemptProgress(
-                                attempt.id,
-                                nextIndex,
-                                msgs ?? messages,
-                                timeSpentSeconds
-                              );
-                              // Refresh attempt and messages
-                              const {
-                                attempt: refreshedAttempt,
-                                messages: refreshedMessages,
-                              } = await getAttemptById(attempt.id);
-                              if (refreshedAttempt)
-                                setAttempt(refreshedAttempt);
-                              if (refreshedMessages)
-                                setMessages(refreshedMessages);
-                            } else {
-                              // Final stage -> mark completed
-                              await completeAttempt(
-                                attempt.id,
-                                "Examination completed!"
-                              );
-                              const {
-                                attempt: refreshedAttempt,
-                                messages: refreshedMessages,
-                              } = await getAttemptById(attempt.id);
-                              if (refreshedAttempt)
-                                setAttempt(refreshedAttempt);
-                              if (refreshedMessages)
-                                setMessages(refreshedMessages);
-                            }
-                          } catch (err) {
-                            console.error(
-                              "Error advancing stage for attempt:",
-                              err
-                            );
-                            // Fallback: reload to ensure UI sync
-                            // window.location.reload();
-                          }
-                        }}
-                      />
-                    </div>
-                    <div className="w-full lg:w-64 shrink-0">
-                      <CaseTimeline
-                        caseId={attempt.caseId}
-                        elapsedSeconds={attempt.timeSpentSeconds}
-                        onFastForward={async (targetSeconds) => {
-                          if (targetSeconds <= attempt.timeSpentSeconds) return;
-                          const success = await updateAttemptTime(
-                            attempt.id,
-                            targetSeconds
-                          );
-                          if (success) {
-                            // Refresh attempt to update UI
-                            const { attempt: updated } = await getAttemptById(
-                              attempt.id
-                            );
-                            if (updated) setAttempt(updated);
-                          }
-                        }}
-                      />
-                    </div>
-                  </div>
-                );
-              }
-
               return messages.length > 0 ? (
                 <div className="border rounded-lg p-4 space-y-4">
                   {messages.map((message) => (
@@ -579,28 +456,6 @@ export default function ViewAttemptPage() {
           </div>
         )}
       </div>
-
-      {missingPersonas.length > 0 && (
-        <div className="fixed bottom-4 right-4 bg-destructive text-destructive-foreground px-6 py-4 rounded-lg shadow-lg z-50 animate-in slide-in-from-bottom-5 max-w-md border border-destructive/50">
-          <div className="flex justify-between items-start gap-4">
-            <div>
-              <h3 className="font-bold text-lg mb-1">Missing Configuration</h3>
-              <p className="text-sm opacity-90">
-                This case is missing:{" "}
-                <strong>{missingPersonas.join(" & ")}</strong>.
-                <br />
-                Please contact an administrator to assign personas.
-              </p>
-            </div>
-            <button
-              onClick={() => setMissingPersonas([])}
-              className="text-destructive-foreground/80 hover:text-destructive-foreground p-1 hover:bg-destructive-foreground/10 rounded"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

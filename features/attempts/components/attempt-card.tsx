@@ -155,16 +155,17 @@ export function AttemptCard({ attempt, onDelete }: AttemptCardProps) {
             </Button>
 
             <div className="flex items-center gap-2">
-              {attempt.completionStatus === "completed" ? (
-                <Link href={`/attempts/${attempt.id}?chat=1`}>
-                  <Button size="sm" className="shadow-sm" variant="ghost">
-                    Open in Chat
+              {attempt.completionStatus !== "completed" ? (
+                <Link href={`/${attempt.caseId}?attempt=${attempt.id}`}>
+                  <Button size="sm" className="shadow-sm" variant="default">
+                    Continue
+                    <ChevronRight className="ml-1 h-4 w-4" />
                   </Button>
                 </Link>
               ) : (
                 <Link href={`/attempts/${attempt.id}`}>
                   <Button size="sm" variant="ghost">
-                    Continue
+                    View
                     <ChevronRight className="ml-1 h-4 w-4" />
                   </Button>
                 </Link>

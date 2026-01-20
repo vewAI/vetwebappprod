@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   Card,
   CardContent,
@@ -23,11 +24,12 @@ export function CaseCard({ caseItem }: CaseCardProps) {
   const [isHovered, setIsHovered] = useState(false);
 
   // Use gifUrl if available and hovered, otherwise fallback to imageUrl
-  const displayImage = (isHovered && caseItem.gifUrl) ? caseItem.gifUrl : caseItem.imageUrl;
+  const displayImage =
+    isHovered && caseItem.gifUrl ? caseItem.gifUrl : caseItem.imageUrl;
 
   return (
     <Card
-      className="overflow-hidden transition-all duration-300 hover:shadow-lg"
+      className="pt-0 overflow-hidden transition-all duration-300 hover:shadow-lg"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       // Mobile focus handling
@@ -46,6 +48,14 @@ export function CaseCard({ caseItem }: CaseCardProps) {
           className={`w-full h-full object-contain object-center transition-transform duration-500 ${
             isHovered ? "scale-105" : "scale-100"
           }`}
+        />
+        <Image
+          src={displayImage}
+          alt={caseItem.title}
+          fill
+          className={" object-cover " + (isHovered ? "scale-105" : "scale-100")}
+          sizes="500px"
+          priority={false}
         />
         {caseItem.difficulty && (
           <div className="absolute right-3 top-3">
