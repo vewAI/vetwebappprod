@@ -25,8 +25,24 @@ import { debugEventBus } from "@/lib/debug-events-fixed";
 const openai = new OpenAi({
   apiKey: process.env.OPENAI_API_KEY,
 });
+          try { debugEventBus.emitEvent('info','ChatShortCircuit','returned-phys',{ requested: requestedEarly.canonical, count: phrases.length }); } catch {}
+          // Build structured findings map for client consumption
+          const structured: Record<string, string | null> = {};
+          for (const m of matches) {
+            const vals = Array.isArray(m.lines) ? Array.from(new Set(m.lines.map(l => {
+              let s = String(l || "").replace(/^['"`]+/, "").replace(/['"`]+$/, "").trim();
+              s = s.replace(/,$/, '').trim();
+              if (s.includes(':')) {
+                const parts = s.split(':');
+                parts.shift();
+                s = parts.join(':').trim();
+              }
+              return convertCelsiusToFahrenheitInText(s);
+            }).filter(Boolean))) : [];
+            structured[m.canonicalKey] = vals.length > 0 ? vals.join(' | ') : null;
+          }
 
-const stripLeadingPersonaIntro = (
+          return NextResponse.json({ content: out, structuredFindings: structured, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
   text: string | null | undefined,
   labels: Array<string | undefined>
 ): string => {
@@ -1027,7 +1043,11 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
           }
           const out = phrases.join(', ');
           try { debugEventBus.emitEvent('info','ChatShortCircuit','returned-phys',{ requested: requestedEarly.canonical, count: phrases.length }); } catch {}
-          return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex, suppress: true });
+          // Return the compact findings to the client. Do NOT set a `suppress` flag
+          // when returning valid content, because the client treats `suppress` as
+          // an instruction to not append or display the response. The presence
+          // of `content` is authoritative here.
+          return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
         }
       }
     } catch (e) {
