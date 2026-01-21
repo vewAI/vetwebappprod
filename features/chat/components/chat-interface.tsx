@@ -3671,21 +3671,13 @@ export function ChatInterface({
         // while the assistant speaks. We'll restore voice mode afterward.
         const wasListening = !!isListening;
         if (wasListening) {
-          // prevent auto-restart by clearing resume flag and stopping
-          resumeListeningRef.current = false;
-          try {
-            stop();
-          } catch (e) {
-            /* ignore */
-          }
-          // remember whether voice mode was on so we can restore it later
+          // Do NOT stop the mic or toggle the visible mic UI here. The
+          // `playTtsAndPauseStt` helper will handle suppression/abort and
+          // prevent self-capture while preserving the voice-mode UI state.
           try {
             prevVoiceWasOnRef.current = !!voiceModeRef.current;
-            // Do NOT toggle the visible voice mode UI off here. We only need
-            // to stop/suppress STT during playback; toggling the UI confuses
-            // users who expect the mic to remain enabled when advancing stages.
           } catch (e) {}
-          // small delay to ensure HW fully releases
+          // small delay to reduce race conditions before starting TTS
           await new Promise((res) => setTimeout(res, 150));
         }
 
