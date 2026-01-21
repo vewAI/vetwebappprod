@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-
 import { requireUser } from "@/app/api/_lib/auth";
 
 // Delete an attempt by id (query param ?id=...)
@@ -17,23 +16,6 @@ export async function DELETE(req: Request) {
         { error: "id query param is required" },
         { status: 400 }
       );
-    }
-
-    // Delete dependent rows first (attempt_messages, attempt_feedback) to avoid FK issues
-    const { error: msgErr } = await supabase
-      .from("attempt_messages")
-      .delete()
-      .eq("attempt_id", id);
-    if (msgErr) {
-      // log but continue to attempt to delete attempt row
-      console.error("Error deleting attempt_messages for attempt", id, msgErr);
-    }
-    const { error: fbErr } = await supabase
-      .from("attempt_feedback")
-      .delete()
-      .eq("attempt_id", id);
-    if (fbErr) {
-      console.error("Error deleting attempt_feedback for attempt", id, fbErr);
     }
 
     const { error } = await supabase.from("attempts").delete().eq("id", id);

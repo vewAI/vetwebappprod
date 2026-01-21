@@ -17,6 +17,7 @@ import type { AttemptSummary } from "../models/attempt";
 
 import type { Case } from "@/features/case-selection/models/case";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 
 type AttemptCardProps = {
   attempt: AttemptSummary;
@@ -60,15 +61,15 @@ export function AttemptCard({ attempt, onDelete }: AttemptCardProps) {
   return (
     <Card
       className={cn(
-        "overflow-hidden transition-all duration-300 ease-out",
+        "pt-4 pb-3 overflow-hidden transition-all duration-300 ease-out",
         "hover:-translate-y-0.5 hover:shadow-lg",
         "hover:bg-muted/40 dark:hover:bg-muted/60",
         "focus-within:ring-2 focus-within:ring-primary/30",
 
         attempt.completionStatus === "completed" &&
-          "border-l-4 border-l-rose-500/60",
+          "border-l-4 border-l-teal-500/60",
         attempt.completionStatus === "in_progress" &&
-          "border-l-4 border-l-teal-700/50",
+          "border-l-4 border-l-amber-700/50",
         attempt.completionStatus === "abandoned" &&
           "border-l-4 border-l-rose-500/60"
       )}
@@ -76,15 +77,39 @@ export function AttemptCard({ attempt, onDelete }: AttemptCardProps) {
       <div className="flex gap-4 px-4 h-full">
         {/* Case Image */}
         {attempt?.caseImageUrl && (
-          <div className="relative w-24 h-24 flex-shrink-0">
-            <Image
-              src={attempt?.caseImageUrl}
-              alt={attempt?.caseTitle}
-              fill
-              className="object-cover border p-1"
-              sizes="96px"
-              priority={false}
-            />
+          <div>
+            <div className="relative w-24 h-24 flex-shrink-0">
+              <Image
+                src={attempt?.caseImageUrl}
+                alt={attempt?.caseTitle}
+                fill
+                className="object-cover border p-1"
+                sizes="96px"
+                priority={false}
+              />
+            </div>
+            <div className="text-center">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="
+              text-muted-foreground
+              hover:text-destructive
+              transition-colors
+            "
+                onClick={handleDeleteClick}
+                disabled={isDeleting}
+              >
+                {isDeleting ? (
+                  "Deleting..."
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    <span className="sr-only">Delete</span>
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         )}
 
@@ -118,11 +143,21 @@ export function AttemptCard({ attempt, onDelete }: AttemptCardProps) {
                   : "text-destructive"
               )}
             >
-              {attempt.completionStatus === "completed"
-                ? "Completed"
-                : attempt.completionStatus === "in_progress"
-                ? "In Progress"
-                : "Abandoned"}
+              <Badge
+                className={`text-xs py-1 px-3 tracking-wide ${
+                  attempt.completionStatus === "completed"
+                    ? "bg-emerald-500 text-white"
+                    : attempt.completionStatus === "in_progress"
+                    ? "bg-amber-500 text-white"
+                    : "bg-red-500 text-white"
+                }`}
+              >
+                {attempt.completionStatus === "completed"
+                  ? "Completed"
+                  : attempt.completionStatus === "in_progress"
+                  ? "In Progress"
+                  : "Abandoned"}
+              </Badge>
             </p>
           </CardHeader>
 
@@ -132,39 +167,19 @@ export function AttemptCard({ attempt, onDelete }: AttemptCardProps) {
             </CardDescription>
           </CardContent>
 
-          <CardFooter className="flex justify-between px-0">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="
-              text-muted-foreground
-              hover:text-destructive
-              transition-colors
-            "
-              onClick={handleDeleteClick}
-              disabled={isDeleting}
-            >
-              {isDeleting ? (
-                "Deleting..."
-              ) : (
-                <>
-                  <Trash2 className="h-4 w-4 mr-1" />
-                  <span className="sr-only">Delete</span>
-                </>
-              )}
-            </Button>
-
+          <CardFooter className="flex justify-end px-0">
             <div className="flex items-center gap-2">
-              {attempt.completionStatus === "completed" ? (
-                <Link href={`/attempts/${attempt.id}?chat=1`}>
-                  <Button size="sm" className="shadow-sm" variant="ghost">
-                    Open in Chat
+              {attempt.completionStatus !== "completed" ? (
+                <Link href={`/${attempt.caseId}?attempt=${attempt.id}`}>
+                  <Button size="sm" variant="ghost">
+                    Continue
+                    <ChevronRight className="ml-1 h-4 w-4" />
                   </Button>
                 </Link>
               ) : (
                 <Link href={`/attempts/${attempt.id}`}>
                   <Button size="sm" variant="ghost">
-                    Continue
+                    View
                     <ChevronRight className="ml-1 h-4 w-4" />
                   </Button>
                 </Link>

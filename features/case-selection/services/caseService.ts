@@ -31,7 +31,9 @@ export type FetchCasesOptions = {
   includeUnpublished?: boolean;
 };
 
-export async function fetchCases(options: FetchCasesOptions = {}): Promise<Case[]> {
+export async function fetchCases(
+  options: FetchCasesOptions = {}
+): Promise<Case[]> {
   let query = supabase
     .from("cases")
     .select("*")
@@ -48,7 +50,7 @@ export async function fetchCases(options: FetchCasesOptions = {}): Promise<Case[
   if (options.limit) {
     query = query.limit(options.limit);
   }
-  
+
   if (options.offset) {
     const from = options.offset;
     const to = from + (options.limit || 10) - 1;
@@ -68,7 +70,9 @@ export async function fetchCases(options: FetchCasesOptions = {}): Promise<Case[
   }
 
   if (options.search) {
-    query = query.or(`title.ilike.%${options.search}%,description.ilike.%${options.search}%`);
+    query = query.or(
+      `title.ilike.%${options.search}%,description.ilike.%${options.search}%`
+    );
   }
 
   const { data, error } = await query;
@@ -118,11 +122,11 @@ export async function fetchDisciplines(): Promise<string[]> {
     if (!error && data) {
       return data.map((d) => d.name).sort();
     }
-    
+
     // Fallback: fetch distinct categories from cases
     const { data: cases } = await supabase.from("cases").select("category");
     if (cases) {
-      const categories = new Set(cases.map(c => c.category).filter(Boolean));
+      const categories = new Set(cases.map((c) => c.category).filter(Boolean));
       return Array.from(categories).sort() as string[];
     }
     return [];
@@ -141,7 +145,7 @@ export async function fetchAssignedCases(userId: string): Promise<Case[]> {
 
   if (!professors || professors.length === 0) return [];
 
-  const professorIds = professors.map(p => p.professor_id);
+  const professorIds = professors.map((p) => p.professor_id);
 
   // 2. Get cases assigned by these professors
   const { data: assignedCases } = await supabase
@@ -151,7 +155,7 @@ export async function fetchAssignedCases(userId: string): Promise<Case[]> {
 
   if (!assignedCases || assignedCases.length === 0) return [];
 
-  const caseIds = assignedCases.map(c => c.case_id);
+  const caseIds = assignedCases.map((c) => c.case_id);
 
   // 3. Fetch case details
   const { data: cases } = await supabase
@@ -162,7 +166,7 @@ export async function fetchAssignedCases(userId: string): Promise<Case[]> {
   return (cases ?? []).map(mapDbCaseToCase);
 }
 
-function mapDbCaseToCase(dbCase: DbCase): Case {
+export function mapDbCaseToCase(dbCase: DbCase): Case {
   return {
     id: dbCase.id ?? "",
     title: dbCase.title ?? "",
