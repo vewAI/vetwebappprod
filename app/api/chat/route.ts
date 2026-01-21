@@ -104,12 +104,14 @@ export async function POST(request: NextRequest) {
 
             // Build context with clear separation
             if (caseDataChunks.length > 0) {
-              const caseDataList = caseDataChunks
+              // Ensure CASE_DATA chunks actually belong to the requested case
+              const filteredCaseDataChunks = caseDataChunks.filter((k: any) => String(k.metadata?.case_id) === String(caseId));
+              const caseDataList = filteredCaseDataChunks
                 .map((k: any) => k.content)
                 .join("\n\n");
 
               // keep a copy of the raw case_data chunks for server-side extraction
-              ragCaseDataChunks = caseDataChunks;
+              ragCaseDataChunks = filteredCaseDataChunks;
 
               ragContext += `CASE FACTS (from database):\nThe following information is stored in the case database. Use this as definitive facts about the patient and case:\n\n${caseDataList}\n\n`;
             }
