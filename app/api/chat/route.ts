@@ -433,6 +433,19 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       console.log(`[chat] No persona row found for roleKey="${personaRoleKey}" caseId="${caseId}". displayRole remains "${displayRole}"`);
     }
 
+    // Inject a concise persona identity message for the answering persona so the LLM
+    // is explicitly informed of who it should speak as on every request. This
+    // prevents stale or prior-stage identities from influencing the assistant.
+    if (personaRoleKey) {
+      try {
+        const personaIdentityMsg = `PERSONA IDENTITY: You will answer as "${displayRole ?? personaRoleKey}" (role: ${personaRoleKey}). Do NOT impersonate or claim to be any other persona. Use the display name "${displayRole ?? personaRoleKey}" when asked for your name.`;
+        enhancedMessages.unshift({ role: "system", content: personaIdentityMsg });
+        console.log(`[chat] Injected persona identity system message for roleKey="${personaRoleKey}" displayRole="${displayRole}"`);
+      } catch (e) {
+        console.warn('Failed to inject persona identity system message', e);
+      }
+    }
+
     if (
       personaRow?.metadata &&
       typeof personaRow.metadata === "object" &&

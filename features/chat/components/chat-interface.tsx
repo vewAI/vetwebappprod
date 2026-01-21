@@ -3798,6 +3798,16 @@ export function ChatInterface({
           try {
             console.debug("Skipping intro TTS for nurse in sensitive stage", { targetIndex, introStageTitleLower });
           } catch (e) {}
+
+          // Ensure voice mode is available after the intro when TTS is intentionally skipped.
+          // Activate voice mode unless the user explicitly toggled it off previously.
+          try {
+            if (!userToggledOffRef.current) {
+              setVoiceModeEnabled(true);
+            }
+          } catch (e) {
+            console.warn('Failed to enable voice mode after skipped intro TTS', e);
+          }
         }
       }
       }
