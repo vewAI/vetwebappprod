@@ -47,7 +47,11 @@ export async function POST(request: NextRequest) {
     const lastUserMessage = [...messages]
       .reverse()
       .find((msg) => msg.role === "user");
-    const enhancedMessages = [...messages];
+    // Sanitize incoming message array by removing any prior system messages
+    // injected during earlier turns. This prevents stale persona-specific
+    // system instructions (like a previously set canonical persona name)
+    // from leaking into subsequent stage responses.
+    const enhancedMessages = (messages || []).filter((m: any) => m.role !== "system");
 
     // Parallel Fetching: RAG is intentionally disabled. All case information
     // must be retrieved directly via Supabase DB queries to avoid external
