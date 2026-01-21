@@ -1191,8 +1191,8 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     let content = deduplicateConsecutiveBlocks(assistantRawContent);
 
     // Sanitize assistant content by removing any verbatim occurrences of
-    // internal prompts (personaBehaviorPrompt) or ownerBackground unless the
-    // answering persona is the owner. Also strip obvious internal-instruction
+    // internal prompts (personaBehaviorPrompt, roleInfoPromptContent) or ownerBackground
+    // unless the answering persona is the owner. Also strip obvious internal-instruction
     // lines (e.g., starting with "You are" or containing "MUST" in uppercase).
     const sanitizeAssistantContent = (txt: string): string => {
       if (!txt) return txt;
@@ -1203,6 +1203,20 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
           if (safe.length > 0) {
             // remove exact verbatim occurrences and long substrings
             out = out.split(safe).join("[redacted]");
+            try { debugEventBus.emitEvent('warning','ChatRedaction','redactedPersonaBehavior',{len: safe.length}); } catch {}
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+      try {
+        // Redact role-specific prompt content injected earlier so the assistant
+        // cannot accidentally echo it back to the user as a chat message.
+        if (roleInfoPromptContent) {
+          const safeRolePrompt = String(roleInfoPromptContent).trim();
+          if (safeRolePrompt.length > 0) {
+            out = out.split(safeRolePrompt).join("[redacted]");
+            try { debugEventBus.emitEvent('warning','ChatRedaction','redactedRoleInfo',{len: safeRolePrompt.length}); } catch {}
           }
         }
       } catch (e) {
@@ -1213,6 +1227,7 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
           const safeOwner = String(ownerBackground).trim();
           if (safeOwner.length > 0) {
             out = out.split(safeOwner).join("[redacted]");
+            try { debugEventBus.emitEvent('warning','ChatRedaction','redactedOwner',{len: safeOwner.length}); } catch {}
           }
         }
       } catch (e) {}
