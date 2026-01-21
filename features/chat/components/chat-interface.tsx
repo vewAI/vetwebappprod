@@ -2143,6 +2143,20 @@ export function ChatInterface({
     let userMessage = null as Message | null;
     let snapshot: Message[] = [];
 
+    // Guard: avoid double-user messages. If the last message in the history
+    // is already from the user, do not append another consecutive user message.
+    // This prevents accidental duplicate sends or repeated STT auto-sends from
+    // creating back-to-back student messages in the chat.
+    const lastMsg = messages[messages.length - 1];
+    if (!existingMessageId && lastMsg && lastMsg.role === "user") {
+      try {
+        console.warn("Suppressed consecutive user message to avoid duplicates", { lastId: lastMsg.id, newText: trimmed });
+      } catch (e) {}
+      // Optionally, we could replace the previous user message or merge; currently
+      // the requirement is to omit the latter message, so we simply return silently.
+      return;
+    }
+
     if (existingMessageId) {
       // Mark existing message as pending and reuse it
       snapshot = messages.map((m) =>
