@@ -1762,18 +1762,27 @@ export function ChatInterface({
       }, 600); // Increased from 500ms to 600ms (+20%) for better TTS/STT separation
 
       // Decide whether to resume listening. Prefer resuming when the mic was
-      // actively paused for TTS playback (wasMicPausedForTtsRef). This ensures
-      // that if the mic was turned off *because* TTS started, it is reliably
-      // turned back on when playback finishes — unless the user explicitly
-      // toggled the mic off while TTS was playing.
+      // actively paused for TTS playback (wasMicPausedForTtsRef). Additionally,
+      // if voice mode is enabled but the mic was not actively listening when
+      // playback started (e.g., brief suppression or race), we should also
+      // restart STT so the user can continue speaking immediately after the
+      // intro. Always avoid resuming if the user explicitly toggled the mic off.
       if (!skipResume) {
         const shouldResumeDueToTts = wasMicPausedForTtsRef.current && !userToggledOffRef.current;
+        const shouldResumeDueToVoiceMode = !wasMicPausedForTtsRef.current && voiceModeRef.current && !userToggledOffRef.current && !isListening;
         if (shouldResumeDueToTts) {
           // Clear TTS-paused marker and request restart
           wasMicPausedForTtsRef.current = false;
           resumeListeningRef.current = false;
           try {
             console.debug("playTtsAndPauseStt: resuming STT due to TTS-paused mic", { delay: 720 });
+          } catch (e) {}
+          attemptStartListening(720);
+        } else if (shouldResumeDueToVoiceMode) {
+          // Case: voice mode is on, mic wasn't actively listening at TTS start,
+          // but user expects the app to listen after intro. Attempt restart.
+          try {
+            console.debug("playTtsAndPauseStt: resuming STT because voice mode is enabled and mic is currently idle", { delay: 720, voiceMode: !!voiceModeRef.current });
           } catch (e) {}
           attemptStartListening(720);
         } else if (resumeListeningRef.current) {
