@@ -740,7 +740,7 @@ export function ChatInterface({
   const autoSendPendingTextRef = useRef<string | null>(null);
   // Mic inactivity timer (used to stop mic after long silence). Only
   // applied during nurse-sensitive stages (Physical, Laboratory, Treatment).
-  const micInactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const micInactivityTimerRef = useRef<number | null>(null);
   // Track the last final transcript that onFinal handled so we don't
   // duplicate it when the `transcript` state also updates.
   const lastFinalHandledRef = useRef<string | null>(null);
@@ -1132,6 +1132,22 @@ export function ChatInterface({
     }
   }, [sttError]);
 
+  // Debug tracing: last LLM payload and response for admin debug window
+  const [lastLlmPayload, setLastLlmPayload] = useState<any | null>(null);
+  const [lastLlmResponse, setLastLlmResponse] = useState<any | null>(null);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
+  // Admin-only debug toast controls
+  const [debugEnabled, setDebugEnabled] = useState<boolean>(() => {
+    try {
+      return typeof window !== "undefined" && window.localStorage.getItem("vw_debug") === "true";
+    } catch (e) {
+      return false;
+    }
+  });
+  const [debugToastVisible, setDebugToastVisible] = useState(false);
+  const [debugToastText, setDebugToastText] = useState<string | null>(null);
+  const debugToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Show a 10s debug toast when last LLM payload/response updates and
   // debug mode is enabled for an admin user.
   useEffect(() => {
@@ -1163,6 +1179,7 @@ export function ChatInterface({
       // ignore
     }
   }, [lastLlmPayload, lastLlmResponse, debugEnabled, role]);
+  
 
   // Noise detection effect - monitors ambient sound when voice mode is on
   // Placed after useSTT so that isListening is available
@@ -1752,21 +1769,6 @@ export function ChatInterface({
   };
 
   const [showProceedHint, setShowProceedHint] = useState(false);
-  // Debug tracing: last LLM payload and response for admin debug window
-  const [lastLlmPayload, setLastLlmPayload] = useState<any | null>(null);
-  const [lastLlmResponse, setLastLlmResponse] = useState<any | null>(null);
-  const [showDebugPanel, setShowDebugPanel] = useState(false);
-  // Admin-only debug toast controls
-  const [debugEnabled, setDebugEnabled] = useState<boolean>(() => {
-    try {
-      return typeof window !== "undefined" && window.localStorage.getItem("vw_debug") === "true";
-    } catch (e) {
-      return false;
-    }
-  });
-  const [debugToastVisible, setDebugToastVisible] = useState(false);
-  const [debugToastText, setDebugToastText] = useState<string | null>(null);
-  const debugToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const emitStageReadinessPrompt = useCallback(
     async (stageIndex: number, result: StageCompletionResult) => {
