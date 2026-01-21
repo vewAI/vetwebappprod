@@ -3710,6 +3710,14 @@ export function ChatInterface({
         // while the assistant speaks. We'll restore voice mode afterward.
         const wasListening = !!isListening;
         if (wasListening) {
+          // Record that the mic was actively listening when we initiated intro TTS
+          // so that the resume logic knows this was a TTS-paused mic and will
+          // deterministically attempt to restart it after playback completes.
+          wasMicPausedForTtsRef.current = !userToggledOffRef.current && wasListening;
+          try {
+            console.debug("Intro TTS: marking wasMicPausedForTts", { wasListening, userToggledOff: userToggledOffRef.current });
+          } catch (e) {}
+
           // Do NOT stop the mic or toggle the visible mic UI here. The
           // `playTtsAndPauseStt` helper will handle suppression/abort and
           // prevent self-capture while preserving the voice-mode UI state.
