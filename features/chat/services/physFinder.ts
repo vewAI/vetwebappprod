@@ -46,7 +46,8 @@ function splitTokens(input: string): string[] {
   // Remove filler words and punctuation then split on comma/and/whitespace
   const cleaned = input
     .toLowerCase()
-    .replace(/\b(please|give|values|value|show|what is|what's)\b/g, " ")
+    // Strip common filler/request phrases so tokens focus on parameters
+    .replace(/\b(please|please\s+tell|give|give\s+me|show|show\s+me|what is|what's|tell|tell\s+me|ok|okay|could you|can you|would you)\b/g, " ")
     .replace(/[()]/g, " ")
     .replace(/[^a-z0-9,\s/\-]/g, " ")
     .replace(/\band\b/g, ",");

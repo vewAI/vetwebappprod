@@ -330,7 +330,17 @@ export function ChatInterface({
       const isNursePersona = personaKey === "veterinary-nurse" || /nurse|lab/.test(personaKey || roleLower);
       if (!isSensitiveStage || !isNursePersona) return { message: aiMessage, allowTts: true };
 
-      const lastUser = String(lastUserText ?? "");
+      // Prefer explicit lastUserText, but fall back to the most recent
+      // user message from conversation state if not provided.
+      let lastUser = String(lastUserText ?? "").trim();
+      if (!lastUser) {
+        try {
+          const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+          lastUser = String(lastUserMsg?.content ?? "").trim();
+        } catch (e) {
+          lastUser = "";
+        }
+      }
       const requested = parseRequestedKeys(lastUser || "");
       // If the user explicitly requested specific canonical keys, allow normal flow
       if (requested && Array.isArray(requested.canonical) && requested.canonical.length > 0) {
@@ -728,6 +738,9 @@ export function ChatInterface({
   // we always auto-send after a true final transcript arrives.
   const autoSendFinalTimerRef = useRef<number | null>(null);
   const autoSendPendingTextRef = useRef<string | null>(null);
+  // Mic inactivity timer (used to stop mic after long silence). Only
+  // applied during nurse-sensitive stages (Physical, Laboratory, Treatment).
+  const micInactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Track the last final transcript that onFinal handled so we don't
   // duplicate it when the `transcript` state also updates.
   const lastFinalHandledRef = useRef<string | null>(null);
@@ -992,8 +1005,13 @@ export function ChatInterface({
                 // least 3 words to reduce accidental sends from ambient noise
                 const textToSend = baseInputRef.current?.trim() || "";
                 const wordCount = textToSend.split(/\s+/).filter(Boolean).length;
-                if (noiseSuppressionRef.current && wordCount < 3) {
-                  console.debug("Auto-send skipped: too short during noise suppression", { wordCount, text: textToSend });
+                // Allow single-word requests during nurse-sensitive stages.
+                const stage = stages?.[currentStageIndex];
+                const stageTitle = (stage?.title ?? "").toLowerCase();
+                const isSensitiveStage = /physical|laboratory|lab|treatment/.test(stageTitle);
+                const minWordsWhenSuppressed = isSensitiveStage ? 1 : 3;
+                if (noiseSuppressionRef.current && wordCount < minWordsWhenSuppressed) {
+                  console.debug("Auto-send skipped: too short during noise suppression", { wordCount, minWordsWhenSuppressed, text: textToSend });
                   return;
                 }
                 
@@ -1113,6 +1131,38 @@ export function ChatInterface({
       }, 1000);
     }
   }, [sttError]);
+
+  // Show a 10s debug toast when last LLM payload/response updates and
+  // debug mode is enabled for an admin user.
+  useEffect(() => {
+    try {
+      const isAdmin = role === "admin";
+      if (!isAdmin || !debugEnabled) return;
+      if (!lastLlmPayload && !lastLlmResponse) return;
+
+      // Build a compact display string
+      const prettyPayload = Array.isArray(lastLlmPayload)
+        ? lastLlmPayload.map((p: any) => `${p.role}: ${String(p.content).slice(0, 240)}`).join(" \n")
+        : String(JSON.stringify(lastLlmPayload || "")).slice(0, 800);
+      const prettyResp = String(JSON.stringify(lastLlmResponse || "")).slice(0, 800);
+      const text = `LLM Prompt:\n${prettyPayload}\n\nLLM Response:\n${prettyResp}`;
+      setDebugToastText(text);
+      setDebugToastVisible(true);
+
+      // Clear any previous timer
+      if (debugToastTimerRef.current) {
+        window.clearTimeout(debugToastTimerRef.current);
+        debugToastTimerRef.current = null;
+      }
+      debugToastTimerRef.current = setTimeout(() => {
+        setDebugToastVisible(false);
+        setDebugToastText(null);
+        debugToastTimerRef.current = null;
+      }, 10000);
+    } catch (e) {
+      // ignore
+    }
+  }, [lastLlmPayload, lastLlmResponse, debugEnabled, role]);
 
   // Noise detection effect - monitors ambient sound when voice mode is on
   // Placed after useSTT so that isListening is available
@@ -1706,6 +1756,17 @@ export function ChatInterface({
   const [lastLlmPayload, setLastLlmPayload] = useState<any | null>(null);
   const [lastLlmResponse, setLastLlmResponse] = useState<any | null>(null);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
+  // Admin-only debug toast controls
+  const [debugEnabled, setDebugEnabled] = useState<boolean>(() => {
+    try {
+      return typeof window !== "undefined" && window.localStorage.getItem("vw_debug") === "true";
+    } catch (e) {
+      return false;
+    }
+  });
+  const [debugToastVisible, setDebugToastVisible] = useState(false);
+  const [debugToastText, setDebugToastText] = useState<string | null>(null);
+  const debugToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const emitStageReadinessPrompt = useCallback(
     async (stageIndex: number, result: StageCompletionResult) => {
@@ -3123,6 +3184,54 @@ export function ChatInterface({
     }
   }, [interimTranscript, transcript, isListening]);
 
+  // Mic inactivity watchdog: during nurse-sensitive stages, if the mic is
+  // listening and no interim/final transcripts are observed for 90s, stop
+  // the mic and auto-send any pending text. This prevents the mic from
+  // auto-stopping earlier while allowing long pauses during nurse stages.
+  useEffect(() => {
+    try {
+      const stage = stages?.[currentStageIndex];
+      const stageTitle = (stage?.title ?? "").toLowerCase();
+      const isSensitiveStage = /physical|laboratory|lab|treatment/.test(stageTitle);
+
+      // Clear timer if not applicable
+      if (!isListening || !isSensitiveStage) {
+        if (micInactivityTimerRef.current) {
+          window.clearTimeout(micInactivityTimerRef.current);
+          micInactivityTimerRef.current = null;
+        }
+        return;
+      }
+
+      // Reset timer on each transcript/interim update
+      if (micInactivityTimerRef.current) {
+        window.clearTimeout(micInactivityTimerRef.current);
+        micInactivityTimerRef.current = null;
+      }
+
+      micInactivityTimerRef.current = window.setTimeout(() => {
+        try {
+          // Send any pending text then stop listening
+          stopAndMaybeSend();
+          stop();
+          showMicToast("Microphone stopped due to inactivity", 2000);
+        } catch (e) {
+          // ignore
+        }
+        micInactivityTimerRef.current = null;
+      }, 90000);
+
+      return () => {
+        if (micInactivityTimerRef.current) {
+          window.clearTimeout(micInactivityTimerRef.current);
+          micInactivityTimerRef.current = null;
+        }
+      };
+    } catch (e) {
+      // ignore
+    }
+  }, [isListening, transcript, interimTranscript, currentStageIndex, stages, stopAndMaybeSend, stop]);
+
   // Adjust STT debounce adaptively based on ambient noise level to reduce
   // false positives in noisy environments.
   useEffect(() => {
@@ -3725,7 +3834,25 @@ export function ChatInterface({
   return (
     <div className="relative flex h-full flex-col">
       <div className="absolute top-16 right-4 z-50">
-        <GuidedTour steps={tourSteps} tourId="chat-interface" autoStart={true} />
+        <div className="flex items-center gap-2">
+          <GuidedTour steps={tourSteps} tourId="chat-interface" autoStart={true} />
+          {role === "admin" && (
+            <label className="flex items-center space-x-2 text-xs text-gray-200">
+              <input
+                type="checkbox"
+                checked={debugEnabled}
+                onChange={(e) => {
+                  try {
+                    const v = Boolean(e.target.checked);
+                    setDebugEnabled(v);
+                    if (typeof window !== "undefined") window.localStorage.setItem("vw_debug", v ? "true" : "false");
+                  } catch {}
+                }}
+              />
+              <span className="select-none">Debug</span>
+            </label>
+          )}
+        </div>
       </div>
       {/* Connection notice banner */}
       {connectionNotice && (
@@ -3744,6 +3871,15 @@ export function ChatInterface({
         <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none">
           <div className="bg-gray-900/90 text-white text-xs px-3 py-1.5 rounded-full shadow-lg backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2 duration-200">
             {micToast}
+          </div>
+        </div>
+      )}
+
+      {/* Admin debug toast (shows last LLM prompt + response for 10s when enabled) */}
+      {debugToastVisible && debugToastText && role === "admin" && debugEnabled && (
+        <div className="fixed bottom-36 left-1/2 transform -translate-x-1/2 z-50 pointer-events-auto">
+          <div className="bg-black/90 text-white text-xs px-4 py-2 rounded-lg shadow-lg backdrop-blur-sm whitespace-pre-wrap max-w-2xl">
+            {debugToastText}
           </div>
         </div>
       )}
