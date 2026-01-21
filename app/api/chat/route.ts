@@ -957,14 +957,65 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
       const diagText = typeof diagField === 'string' ? diagField : "";
       const physText = typeof physField === 'string' ? physField : "";
 
-      // If the answering persona is a nurse/lab, inject the physical exam findings
-      // into the LLM system context so the LLM can use the factual DB values when
-      // composing its response. Also add a guard instructing the LLM not to provide
-      // diagnostic/lab results during the Physical Examination stage.
+      // If the answering persona is a nurse/lab, consider injecting the physical exam findings
+      // into the LLM system context so the LLM can use factual DB values when composing its response.
+      // However, when the case's findings_release_strategy is 'on_demand', do NOT inject the full
+      // dataset unless the student explicitly requested specific parameters. Instead return a
+      // clarifying prompt for general requests.
+      const strategy = caseRecord && typeof caseRecord === 'object' ? (caseRecord as any)["findings_release_strategy"] : undefined;
+      const isOnDemand = strategy === 'on_demand';
       const personaIsNurseOrLab = Boolean(personaRoleKey && (personaRoleKey === 'veterinary-nurse' || personaRoleKey === 'lab-technician')) || Boolean(stageDescriptor && /nurse|laboratory|lab/i.test(String(stageDescriptor.role ?? '')));
-      if (personaIsNurseOrLab && physText) {
-        enhancedMessages.unshift({ role: "system", content: `PHYSICAL_EXAM_FINDINGS (from DB):\n${physText}` });
-        try { debugEventBus.emitEvent('info','ChatDBMatch','inject-phys-text',{ len: physText.length }); } catch {}
+
+      // If on-demand and the user asked generally for findings earlier, the request
+      // should have been handled above. As an additional safeguard, do not inject
+      // full findings here when strategy is on_demand unless specific keys were requested.
+      const requested = parseRequestedKeys(lastUserMessage?.content ?? userText);
+      const allowedPhysKeys = new Set(Object.keys(PHYS_SYNONYMS));
+      const requestedPhys = (requested?.canonical ?? []).filter((k: string) => allowedPhysKeys.has(k));
+      const matchedPhysicalKey = findSynonymKey(userText, PHYS_SYNONYMS);
+
+      if (personaIsNurseOrLab) {
+        if (physText && (!isOnDemand || (isOnDemand && (requestedPhys.length > 0 || matchedPhysicalKey)))) {
+          if (isOnDemand && (requestedPhys.length > 0 || matchedPhysicalKey)) {
+            const subsetKeys = requestedPhys.length > 0 ? requestedPhys : (matchedPhysicalKey ? [matchedPhysicalKey] : []);
+            const subset = matchPhysicalFindings({ ...requested, canonical: subsetKeys }, physText);
+            const displayNames: Record<string,string> = { heart_rate: 'Heart rate', respiratory_rate: 'Respiratory rate', temperature: 'Temperature', blood_pressure: 'Blood pressure' };
+            const cleanValue = (v: string): string => {
+              if (!v) return v;
+              let s = v.replace(/^['"`]+/, "").replace(/['"`]+$/, "").trim();
+              s = s.replace(/,$/, '').trim();
+              if (s.includes(':')) {
+                const parts = s.split(':');
+                parts.shift();
+                s = parts.join(':').trim();
+              }
+              return s;
+            };
+            const uniq = (arr: string[]) => Array.from(new Set(arr));
+            const phrases: string[] = [];
+            for (const m of subset) {
+              const name = displayNames[m.canonicalKey] ?? m.canonicalKey;
+              if (m.lines && m.lines.length > 0) {
+                const vals = uniq(m.lines.map(l => cleanValue(l))).filter(Boolean);
+                const combined = vals.length > 0 ? vals.join(' | ') : null;
+                if (combined) {
+                  const converted = convertCelsiusToFahrenheitInText(combined);
+                  phrases.push(`${name}: ${converted}`);
+                } else {
+                  phrases.push(`${name}: not documented`);
+                }
+              } else {
+                phrases.push(`${name}: not documented`);
+              }
+            }
+            const snippet = phrases.join(', ');
+            enhancedMessages.unshift({ role: "system", content: `PHYSICAL_EXAM_FINDINGS (requested subset):\n${snippet}` });
+            try { debugEventBus.emitEvent('info','ChatDBMatch','inject-phys-snippet',{ len: snippet.length, keys: subsetKeys }); } catch {}
+          } else if (physText && !isOnDemand) {
+            enhancedMessages.unshift({ role: "system", content: `PHYSICAL_EXAM_FINDINGS (from DB):\n${physText}` });
+            try { debugEventBus.emitEvent('info','ChatDBMatch','inject-phys-text',{ len: physText.length }); } catch {}
+          }
+        }
       }
 
       // Guard: prevent the LLM from providing diagnostic/lab results in the
