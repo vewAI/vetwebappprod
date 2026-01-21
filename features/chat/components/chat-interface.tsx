@@ -2023,6 +2023,14 @@ export function ChatInterface({
           normalizedRoleKey
         );
         appendAssistantMessage(assistantMsg);
+        // If the mic is currently listening, mark it so the TTS helper knows
+        // to resume it when playback finishes. This is a defensive set in case
+        // the helper runs slightly later.
+        try {
+          wasMicPausedForTtsRef.current = !!isListening && !userToggledOffRef.current;
+          console.debug("physical-stage: wasMicPausedForTts set", { wasListening: isListening, marker: wasMicPausedForTtsRef.current });
+        } catch (e) {}
+
         if (ttsEnabled && brief) {
           try {
             await playTtsAndPauseStt(brief, voiceForRole, { roleKey: normalizedRoleKey, displayRole: assistantMsg.displayRole, role: stage?.role ?? roleLabel, caseId } as any, personaMeta?.sex as any);
@@ -2030,6 +2038,27 @@ export function ChatInterface({
             /* ignore TTS errors for this brief prompt */
           }
         }
+
+        // Ensure voice-mode is re-enabled after this brief assistant message
+        // unless the user explicitly toggled voice off. We schedule a short
+        // delayed check so it doesn't race with playTtsAndPauseStt's resume.
+        try {
+          if (!userToggledOffRef.current) {
+            setTimeout(() => {
+              try {
+                if (!userToggledOffRef.current && !isListening && voiceModeRef.current) {
+                  console.debug("physical-stage: forcing voice mode enable after brief assistant message");
+                  setVoiceModeEnabled(true);
+                }
+              } catch (e) {
+                console.warn("Failed to force voice mode enable after assistant brief", e);
+              }
+            }, 800);
+          }
+        } catch (e) {
+          // ignore
+        }
+
         // Mark base input empty and return without sending to server
         baseInputRef.current = "";
         setInput("");
