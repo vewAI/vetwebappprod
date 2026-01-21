@@ -3731,13 +3731,18 @@ export function ChatInterface({
             stageIntro: true,
           },
         } satisfies Omit<TtsEventDetail, "audio">;
-        // Use skipResume=true so playTtsAndPauseStt does not auto-restart STT.
+        // For non-sensitive intros allow auto-resume so the mic is
+        // reliably restarted after playback when it was previously listening.
+        // Use skipResume=false (explicit) to avoid leaving the mic disabled.
+        try {
+          console.debug("Intro TTS: allowing playTtsAndPauseStt to auto-resume STT for non-sensitive intro", { targetIndex });
+        } catch (e) {}
         await playTtsAndPauseStt(
           introText,
           assistantMsg.voiceId ?? voiceForRole,
           introMeta,
           personaMeta?.sex as any,
-          true
+          false
         );
         } catch (e) {
           try {
