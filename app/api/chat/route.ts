@@ -72,72 +72,13 @@ export async function POST(request: NextRequest) {
     // Will collect CASE_DATA chunks (if any) for authoritative extraction
     let ragCaseDataChunks: any[] = [];
 
+    // RAG operations are temporarily suspended per operator request.
+    // Returning an empty context and clearing any collected case-data chunks
+    // ensures the assistant operates solely from LLM/system messages and DB rows
+    // (no vector search, no embeddings, no supabase.rpc calls).
     const ragPromise = (async () => {
-      let ragContext = "";
-      if (caseId && lastUserMessage) {
-        try {
-          // Generate embedding
-          const embeddingResp = await openai.embeddings.create({
-            model: "text-embedding-3-small",
-            input: lastUserMessage.content.replace(/\n/g, " "),
-          });
-          const embedding = embeddingResp.data[0].embedding;
-
-          // Search knowledge
-          const { data: knowledgeChunks, error: ragError } = await supabase.rpc("match_case_knowledge", {
-            query_embedding: embedding,
-            match_threshold: 0.75,
-            match_count: 5, // Increased to accommodate both case data and papers
-            filter_case_id: caseId,
-          });
-
-          if (ragError) {
-            console.warn("RAG RPC failed:", ragError);
-          } else if (knowledgeChunks && knowledgeChunks.length > 0) {
-            // Separate case data from scientific papers
-            const caseDataChunks = knowledgeChunks.filter(
-              (k: any) => k.metadata?.source === "CASE_DATA"
-            );
-            const paperChunks = knowledgeChunks.filter(
-              (k: any) => k.metadata?.source !== "CASE_DATA"
-            );
-
-            // Build context with clear separation
-            if (caseDataChunks.length > 0) {
-              // Ensure CASE_DATA chunks actually belong to the requested case
-              const filteredCaseDataChunks = caseDataChunks.filter((k: any) => String(k.metadata?.case_id) === String(caseId));
-              const caseDataList = filteredCaseDataChunks
-                .map((k: any) => k.content)
-                .join("\n\n");
-
-              // keep a copy of the raw case_data chunks for server-side extraction
-              ragCaseDataChunks = filteredCaseDataChunks;
-
-              ragContext += `CASE FACTS (from database):\nThe following information is stored in the case database. Use this as definitive facts about the patient and case:\n\n${caseDataList}\n\n`;
-            }
-
-            if (paperChunks.length > 0) {
-              const paperList = paperChunks
-                .map((k: any) => `[Source: ${k.metadata?.source ?? "Unknown"}]\n${k.content}`)
-                .join("\n\n");
-
-              ragContext += `SCIENTIFIC REFERENCES (uploaded papers):\nThe following materials have been uploaded specifically for this case. Use these for deep scientific knowledge, research protocols, and specific medical reference values:\n\n${paperList}`;
-            }
-
-            // Debug event
-            try {
-              debugEventBus.emitEvent('info', 'RAG', 'Knowledge retrieved', {
-                caseDataChunks: caseDataChunks.length,
-                paperChunks: paperChunks.length,
-                total: knowledgeChunks.length,
-              });
-            } catch { }
-          }
-        } catch (err) {
-          console.warn("RAG logic error:", err);
-        }
-      }
-      return ragContext;
+      ragCaseDataChunks = [];
+      return "";
     })();
 
     const dbPromise = (async () => {
