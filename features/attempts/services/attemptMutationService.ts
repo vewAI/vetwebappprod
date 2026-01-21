@@ -2,7 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
 import type { Attempt } from "../models/attempt";
 import type { Message } from "@/features/chat/models/chat";
-import { transformAttempt } from "./attemptQueryService";
+import { transformAttempt } from "../mappers/attempt-mappers";
 
 // Create a new attempt
 export async function createAttempt(caseId: string): Promise<Attempt | null> {
@@ -126,7 +126,9 @@ export async function createFollowup(
   notes?: string
 ): Promise<{ success: boolean; followup?: any } | null> {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (!user) {
       console.error("createFollowup: no authenticated user");
       return null;
@@ -144,13 +146,17 @@ export async function createFollowup(
       return null;
     }
 
-    const { data, error } = await supabase.from("followups").insert({
-      attempt_id: attemptId,
-      case_id: attemptData.case_id,
-      followup_day: followupDay,
-      notes: notes ?? null,
-      created_by: user.id,
-    }).select().single();
+    const { data, error } = await supabase
+      .from("followups")
+      .insert({
+        attempt_id: attemptId,
+        case_id: attemptData.case_id,
+        followup_day: followupDay,
+        notes: notes ?? null,
+        created_by: user.id,
+      })
+      .select()
+      .single();
 
     if (error) {
       console.error("createFollowup insert error:", error);
@@ -176,7 +182,10 @@ export async function updateAttemptTime(
     const response = await fetch("/api/attempts/progress", {
       method: "POST",
       headers: {
-        ...(await buildAuthHeaders({ "Content-Type": "application/json" }, token)),
+        ...(await buildAuthHeaders(
+          { "Content-Type": "application/json" },
+          token
+        )),
       },
       body: JSON.stringify({
         attemptId,
@@ -213,7 +222,10 @@ export async function saveAttemptProgress(
     const response = await fetch("/api/attempts/progress", {
       method: "POST",
       headers: {
-        ...(await buildAuthHeaders({ "Content-Type": "application/json" }, token)),
+        ...(await buildAuthHeaders(
+          { "Content-Type": "application/json" },
+          token
+        )),
       },
       body: JSON.stringify({
         attemptId,
@@ -260,7 +272,10 @@ export async function saveAttemptProgress(
   }
 }
 
-export async function updateProfessorFeedback(attemptId: string, feedback: string): Promise<boolean> {
+export async function updateProfessorFeedback(
+  attemptId: string,
+  feedback: string
+): Promise<boolean> {
   const { error } = await supabase
     .from("attempts")
     .update({ professor_feedback: feedback })

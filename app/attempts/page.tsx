@@ -11,9 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, Search, Filter, Home } from "lucide-react";
 import Link from "next/link";
-import type { Attempt } from "@/features/attempts/models/attempt";
-import { fetchCases } from "@/features/case-selection/services/caseService";
-import type { Case } from "@/features/case-selection/models/case";
+import type { AttemptSummary } from "@/features/attempts/models/attempt";
 
 // Temporary UI components until we create the actual ones
 const Select = ({
@@ -65,26 +63,23 @@ const SelectItem = ({
 
 export default function AttemptsPage() {
   const { user } = useAuth();
-  const [attempts, setAttempts] = useState<Attempt[]>([]);
-  const [filteredAttempts, setFilteredAttempts] = useState<Attempt[]>([]);
+  const [attempts, setAttempts] = useState<AttemptSummary[]>([]);
+  const [filteredAttempts, setFilteredAttempts] = useState<AttemptSummary[]>(
+    []
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
   const attemptsPerPage = 9; // 3x3 grid on desktop
-  const [cases, setCases] = useState<Case[]>([]);
 
   useEffect(() => {
     const loadAttemptsAndCases = async () => {
       if (!user) return;
       setIsLoading(true);
-      const [userAttempts, fetchedCases] = await Promise.all([
-        getUserAttempts(),
-        fetchCases(),
-      ]);
+      const userAttempts = await getUserAttempts();
       setAttempts(userAttempts);
       setFilteredAttempts(userAttempts);
-      setCases(fetchedCases);
       setIsLoading(false);
     };
     loadAttemptsAndCases();
@@ -99,10 +94,7 @@ export default function AttemptsPage() {
       filtered = filtered.filter(
         (attempt) =>
           attempt.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          cases
-            .find((c) => c.id === attempt.caseId)
-            ?.title.toLowerCase()
-            .includes(searchQuery.toLowerCase())
+          attempt.caseTitle.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
 
@@ -115,7 +107,7 @@ export default function AttemptsPage() {
 
     setFilteredAttempts(filtered);
     setCurrentPage(1); // Reset to first page when filters change
-  }, [attempts, searchQuery, statusFilter, cases]);
+  }, [attempts, searchQuery, statusFilter]);
 
   const handleDeleteAttempt = async (attemptId: string) => {
     const success = await deleteAttempt(attemptId);
@@ -188,12 +180,10 @@ export default function AttemptsPage() {
         <>
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {currentAttempts.map((attempt) => {
-              const caseItem = cases.find((c) => c.id === attempt.caseId);
               return (
                 <AttemptCard
                   key={attempt.id}
                   attempt={attempt}
-                  caseItem={caseItem}
                   onDelete={() => handleDeleteAttempt(attempt.id)}
                 />
               );

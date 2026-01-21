@@ -194,7 +194,7 @@ export default function CaseInstructionsPage() {
 
               <h2 className="text-xl font-semibold mt-6 mb-2">Instructions</h2>
               <p>
-                In this OSCE case, you will interact with a simulated client and
+                In this clinical case, you will interact with a simulated client and
                 patient. Work through the case by taking a history, performing a
                 physical examination, and recommending diagnostic tests as
                 appropriate.
