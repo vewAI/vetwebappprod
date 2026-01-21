@@ -3656,7 +3656,15 @@ export function ChatInterface({
     // Speak if tts enabled; ensure the mic is fully stopped while the
     // assistant speaks so STT does not capture its audio, then restore
     // listening after playback completes.
-    if (ttsEnabled && introText) {
+    // However, for nurse intros in sensitive stages (Physical, Laboratory,
+    // Treatment) we intentionally skip TTS to avoid self-capture and leaking
+    // persona prompts. Respect that policy here on the client when
+    // determining whether to play the intro audio.
+    const introStageTitleLower = (stages[targetIndex]?.title ?? "").toLowerCase();
+    const introIsSensitive = /physical|laboratory|lab|treatment/.test(introStageTitleLower);
+    const skipIntroTts = introIsSensitive && normalizedRoleKey === "veterinary-nurse";
+
+    if (ttsEnabled && introText && !skipIntroTts) {
       try {
         // If currently listening, stop immediately and also update the
         // UI to show voice mode as disabled so nothing will restart it
@@ -3670,13 +3678,12 @@ export function ChatInterface({
           } catch (e) {
             /* ignore */
           }
-          // reflect UI state without marking this as a user toggle-off
+          // remember whether voice mode was on so we can restore it later
           try {
-            // remember whether voice mode was on so we can restore it later
             prevVoiceWasOnRef.current = !!voiceModeRef.current;
-            // update state directly so this is treated as a temporary disable
-            setVoiceMode(false);
-            tempVoiceDisabledRef.current = true;
+            // Do NOT toggle the visible voice mode UI off here. We only need
+            // to stop/suppress STT during playback; toggling the UI confuses
+            // users who expect the mic to remain enabled when advancing stages.
           } catch (e) {}
           // small delay to ensure HW fully releases
           await new Promise((res) => setTimeout(res, 150));
@@ -3701,16 +3708,16 @@ export function ChatInterface({
           personaMeta?.sex as any,
           true
         );
-      } catch (e) {
-        try {
-          if (ttsAvailable && speakAsync) {
-            await speakAsync(introText);
-          } else if (ttsAvailable) {
-            speak(introText);
+        } catch (e) {
+          try {
+            if (ttsAvailable && speakAsync) {
+              await speakAsync(introText);
+            } else if (ttsAvailable) {
+              speak(introText);
+            }
+          } catch (err) {
+            console.error("Intro TTS failed:", err);
           }
-        } catch (err) {
-          console.error("Intro TTS failed:", err);
-        }
         } finally {
         // Restore voice mode only if we temporarily disabled it above.
         if (tempVoiceDisabledRef.current) {
@@ -3793,7 +3800,14 @@ export function ChatInterface({
               forceRestoreTimerRef.current = null;
             }
           }
+      } else {
+        // If we intentionally skipped TTS for this intro, log for diagnostics.
+        if (skipIntroTts) {
+          try {
+            console.debug("Skipping intro TTS for nurse in sensitive stage", { targetIndex, introStageTitleLower });
+          } catch (e) {}
         }
+      }
       }
     }
 
