@@ -1517,10 +1517,16 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     });
   } catch (error) {
     console.error("Error in chat API:", error);
-    try { debugEventBus.emitEvent('error','ChatAPI','exception',{ message: String(error?.message ?? error), stack: error?.stack?.substring?.(0,2000) }); } catch {}
+    try {
+      const errAny = error as any;
+      debugEventBus.emitEvent('error', 'ChatAPI', 'exception', {
+        message: String(errAny?.message ?? errAny),
+        stack: typeof errAny?.stack === 'string' ? errAny.stack.substring(0, 2000) : undefined,
+      });
+    } catch {}
     if (process.env.NODE_ENV !== 'production') {
-      // In development, return sanitized stack for easier debugging
-      return NextResponse.json({ error: String(error?.message ?? "Internal server error"), stack: error?.stack }, { status: 500 });
+      const errAny = error as any;
+      return NextResponse.json({ error: String(errAny?.message ?? "Internal server error"), stack: errAny?.stack }, { status: 500 });
     }
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
