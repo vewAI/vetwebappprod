@@ -2889,6 +2889,23 @@ export function ChatInterface({
   // Timer ref for forced restore (used for fixed-length intros)
   const forceRestoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Cleanup timers on unmount to avoid leaking forced restore timers
+  useEffect(() => {
+    return () => {
+      try {
+        if (forceRestoreTimerRef.current) {
+          clearTimeout(forceRestoreTimerRef.current);
+          forceRestoreTimerRef.current = null;
+        }
+      } catch (e) {
+        // ignore
+      }
+      try {
+        tempVoiceDisabledRef.current = false;
+      } catch (e) {}
+    };
+  }, []);
+
   const setVoiceModeEnabled = useCallback(
     (next: boolean) => {
       setVoiceMode((current) => {
@@ -3633,15 +3650,15 @@ export function ChatInterface({
           // disable, schedule a forced restore after 9s so the mic is toggled
           // back on for the student even if TTS events are delayed.
           try {
-            // Force a restore of voice mode after a bounded timeout in case
-            // TTS events or platform callbacks are delayed. Do this whenever
-            // we temporarily disabled voice mode for the intro so the student
-            // isn't left with the mic off unintentionally.
-            if (tempVoiceDisabledRef.current) {
+            const nurseIntroMarker = "I'm the veterinary nurse supporting this case";
+            if (introText && introText.includes(nurseIntroMarker) && prevVoiceWasOnRef.current) {
+              // Clear any previous timer
               if (forceRestoreTimerRef.current) {
                 clearTimeout(forceRestoreTimerRef.current);
               }
               forceRestoreTimerRef.current = setTimeout(() => {
+                // Only restore if still temporarily disabled and user didn't
+                // explicitly toggle mic off in the meantime.
                 if (tempVoiceDisabledRef.current && !userToggledOffRef.current) {
                   tempVoiceDisabledRef.current = false;
                   try {
@@ -3673,28 +3690,6 @@ export function ChatInterface({
               }
             } catch (err) {
               console.warn("Failed to restore voice mode after TTS", err);
-            }
-            // Ensure STT actually starts — some platforms may not auto-start on
-            // setState calls. If voice mode is enabled but `isListening` is
-            // false and the user didn't explicitly toggle off, attempt to
-            // start listening programmatically after a short delay.
-            try {
-              setTimeout(() => {
-                try {
-                  // Ensure suppression and deaf mode are cleared before attempting to start
-                  try { setSttSuppressed(false, true); } catch {}
-                  try { exitDeafMode(); } catch {}
-                } catch {}
-                if (!userToggledOffRef.current && !isListening) {
-                  try {
-                    start();
-                  } catch (e) {
-                    console.warn("Forced STT start failed after intro TTS:", e);
-                  }
-                }
-              }, 200);
-            } catch (e) {
-              // ignore scheduling errors
             }
             // Clean up any pending forced restore timer
             if (forceRestoreTimerRef.current) {
