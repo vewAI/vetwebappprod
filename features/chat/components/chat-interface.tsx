@@ -2314,7 +2314,9 @@ export function ChatInterface({
       const lastUser = [...messages].reverse().find((m) => m.role === "user");
       const transformed = transformNurseAssistantMessage(aiMessage, stage, lastUser?.content);
       aiMessage = transformed.message;
-      const allowTtsForThisMessage = transformed.allowTts;
+      // Respect server-side skipTts flag for stage-entry greetings.
+      const serverSkipTts = Boolean((response as any)?.skipTts);
+      const allowTtsForThisMessage = transformed.allowTts && !serverSkipTts;
       const finalAssistantContent = aiMessage.content;
       upsertPersonaDirectory(normalizedPersonaKey, {
         displayName: aiMessage.displayRole,
@@ -2888,23 +2890,6 @@ export function ChatInterface({
   const prevVoiceWasOnRef = useRef<boolean>(false);
   // Timer ref for forced restore (used for fixed-length intros)
   const forceRestoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Cleanup timers on unmount to avoid leaking forced restore timers
-  useEffect(() => {
-    return () => {
-      try {
-        if (forceRestoreTimerRef.current) {
-          clearTimeout(forceRestoreTimerRef.current);
-          forceRestoreTimerRef.current = null;
-        }
-      } catch (e) {
-        // ignore
-      }
-      try {
-        tempVoiceDisabledRef.current = false;
-      } catch (e) {}
-    };
-  }, []);
 
   const setVoiceModeEnabled = useCallback(
     (next: boolean) => {
