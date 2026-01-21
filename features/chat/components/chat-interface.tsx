@@ -1677,10 +1677,16 @@ export function ChatInterface({
     } catch {}
     isSuppressingSttRef.current = true;
     
-    // Check if we should resume after playback
-    if (isListening || voiceMode || voiceModeRef.current) {
-      resumeListeningRef.current = true;
-    }
+    // Track whether the mic was actively listening *before* we started TTS
+    // so we can deterministically restore it when playback ends. We consider
+    // a mic 'paused for TTS' only if it was actively listening and the user
+    // hadn't explicitly toggled it off.
+    wasMicPausedForTtsRef.current = Boolean(isListening && !userToggledOffRef.current);
+    // Only mark for resume if we actually paused the mic due to TTS.
+    // This avoids accidental restarts when voice-mode is enabled but mic
+    // wasn't actively listening (edge conditions, paused state, etc.).
+    resumeListeningRef.current = Boolean(wasMicPausedForTtsRef.current);
+
     
     // Use abort() for immediate stop - stop() may allow some processing to continue
     try {
@@ -1755,15 +1761,30 @@ export function ChatInterface({
         } catch {}
       }, 600); // Increased from 500ms to 600ms (+20%) for better TTS/STT separation
 
-      // Resume listening if we previously stopped for playback and voiceMode
-      // is still enabled, UNLESS the caller explicitly requested to handle resumption.
-      if (resumeListeningRef.current && !skipResume) {
-        resumeListeningRef.current = false;
-        // Schedule start slightly after suppression clears (600ms + 120ms buffer = 720ms)
-        try {
-          console.debug("playTtsAndPauseStt: resuming STT", { delay: 720 });
-        } catch (e) {}
-        attemptStartListening(720); // Increased from 600ms to 720ms (+20%)
+      // Decide whether to resume listening. Prefer resuming when the mic was
+      // actively paused for TTS playback (wasMicPausedForTtsRef). This ensures
+      // that if the mic was turned off *because* TTS started, it is reliably
+      // turned back on when playback finishes — unless the user explicitly
+      // toggled the mic off while TTS was playing.
+      if (!skipResume) {
+        const shouldResumeDueToTts = wasMicPausedForTtsRef.current && !userToggledOffRef.current;
+        if (shouldResumeDueToTts) {
+          // Clear TTS-paused marker and request restart
+          wasMicPausedForTtsRef.current = false;
+          resumeListeningRef.current = false;
+          try {
+            console.debug("playTtsAndPauseStt: resuming STT due to TTS-paused mic", { delay: 720 });
+          } catch (e) {}
+          attemptStartListening(720);
+        } else if (resumeListeningRef.current) {
+          // Fallback: existing behavior for cases where we wanted to resume
+          // due to voiceMode being enabled or other prior state.
+          resumeListeningRef.current = false;
+          try {
+            console.debug("playTtsAndPauseStt: resuming STT (fallback)", { delay: 720 });
+          } catch (e) {}
+          attemptStartListening(720);
+        }
       }
     }
   };
@@ -2967,6 +2988,10 @@ export function ChatInterface({
   const prevVoiceWasOnRef = useRef<boolean>(false);
   // Timer ref for forced restore (used for fixed-length intros)
   const forceRestoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Record whether the mic was actively listening when we started TTS.
+  // If true, the mic was paused because TTS started and should be resumed
+  // once playback finishes (unless the user explicitly disabled the mic).
+  const wasMicPausedForTtsRef = useRef<boolean>(false);
 
   const setVoiceModeEnabled = useCallback(
     (next: boolean) => {
