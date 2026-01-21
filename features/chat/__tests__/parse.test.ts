@@ -1,18 +1,20 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import { parseRequestedKeys } from "../services/physFinder";
 
 describe("parseRequestedKeys", () => {
-  test("parses comma-separated tokens", () => {
+  it("parses comma-separated tokens", () => {
     const r = parseRequestedKeys("hr, rr, temp");
-    expect(r.canonical).toEqual(["heart_rate", "respiratory_rate", "temperature"]);
+    assert.deepEqual(r.canonical, ["heart_rate", "respiratory_rate", "temperature"]);
   });
 
-  test("parses 'and' separated tokens and aliases", () => {
+  it("parses 'and' separated tokens and aliases", () => {
     const r = parseRequestedKeys("pulse and temp");
-    expect(r.canonical).toEqual(["heart_rate", "temperature"]);
+    assert.deepEqual(r.canonical, ["heart_rate", "temperature"]);
   });
 
-  test("parses space separated tokens", () => {
+  it("parses space separated tokens", () => {
     const r = parseRequestedKeys("hr rr temp");
-    expect(r.canonical).toEqual(["heart_rate", "respiratory_rate", "temperature"]);
+    assert.deepEqual(r.canonical, ["heart_rate", "respiratory_rate", "temperature"]);
   });
 });

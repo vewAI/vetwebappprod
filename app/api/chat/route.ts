@@ -705,41 +705,6 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       enhancedMessages.unshift({ role: "system", content: ownerBackground });
     }
 
-    // Inject authoritative patient facts from case record
-    // These override any information the AI might infer from case titles or descriptions
-    if (caseRecord && typeof caseRecord === "object") {
-      const patientFacts: string[] = [];
-      const cr = caseRecord as Record<string, unknown>;
-      
-      if (cr.patient_name && typeof cr.patient_name === "string") {
-        patientFacts.push(`Patient Name: ${cr.patient_name}`);
-      }
-      if (cr.species && typeof cr.species === "string") {
-        patientFacts.push(`Species: ${cr.species}`);
-      }
-      if (cr.breed && typeof cr.breed === "string") {
-        patientFacts.push(`Breed: ${cr.breed}`);
-      }
-      if (cr.patient_age && typeof cr.patient_age === "string") {
-        patientFacts.push(`Age: ${cr.patient_age}`);
-      }
-      if (cr.patient_sex && typeof cr.patient_sex === "string") {
-        patientFacts.push(`Sex: ${cr.patient_sex}`);
-      }
-
-      if (patientFacts.length > 0) {
-        const patientFactsPrompt = `AUTHORITATIVE PATIENT INFORMATION (from case database - use these exact values):
-${patientFacts.join("\n")}
-
-CRITICAL: Always use the patient name "${cr.patient_name || "the patient"}" exactly as specified above. Do not infer the patient's name from the case title or any other source.`;
-
-        enhancedMessages.unshift({
-          role: "system",
-          content: patientFactsPrompt,
-        });
-      }
-    }
-
     // Short-circuit rules before calling the LLM:
     // 1) During Physical Examination stage: if student asks for lab tests or imaging,
     //    instruct them that those results are available in the Laboratory & Tests stage
@@ -1018,14 +983,6 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
     // physical findings (e.g. 'rumen turnover') from being detected when
     // the user asked directly. Process physical-stage requests here.
     if (isPhysicalStage) {
-<<<<<<< HEAD
-      // Block lab findings requests in physical exam stage
-      if (matchedDiagKeyInUser) {
-        return NextResponse.json({
-          content: "Laboratory results are not available during the physical examination. Please proceed to the Laboratory & Tests stage to view these findings.",
-          displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex
-        });
-=======
       try { debugEventBus.emitEvent('info', 'ChatDBMatch', 'Physical stage - forwarding to LLM', { userText, stageTitle, matchedDiagKeyInUser }); } catch {}
       const diagField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["diagnostic_findings"] : null;
       const physField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["physical_exam_findings"] : null;
@@ -1091,12 +1048,8 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
             try { debugEventBus.emitEvent('info','ChatDBMatch','inject-phys-text',{ len: physText.length }); } catch {}
           }
         }
->>>>>>> dev
       }
-      // ...existing code for physical findings only...
 
-<<<<<<< HEAD
-=======
       // Guard: prevent the LLM from providing diagnostic/lab results in the
       // Physical Examination stage; instruct it to ask the student to request
       // the Laboratory & Tests stage if such results are requested.
@@ -1105,38 +1058,10 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
       // No DB short-circuits or direct returns here; let the LLM generate the reply
       // while honoring the injected persona behavior prompt and the factual findings.
     }
->>>>>>> dev
 
     if (isLabStage && caseRecord && typeof caseRecord === "object") {
       const diag = (caseRecord as Record<string, unknown>)["diagnostic_findings"];
-      let diagObj: any = undefined;
       if (typeof diag === "string" && diag.trim().length > 0) {
-<<<<<<< HEAD
-        try {
-          diagObj = JSON.parse(diag);
-        } catch {
-          diagObj = undefined;
-        }
-      } else if (typeof diag === "object" && diag !== null) {
-        diagObj = diag;
-      }
-
-      // Find diagnostic canonical key from user text
-      const matchedDiagKey = findSynonymKey(userText, DIAG_SYNONYMS);
-      if (matchedDiagKey && diagObj && typeof diagObj === "object") {
-        // Only return the requested test(s)
-        const syns = DIAG_SYNONYMS[matchedDiagKey] ?? [];
-        const found: string[] = [];
-        for (const [key, value] of Object.entries(diagObj)) {
-          if (syns.some(s => key.toLowerCase().includes(s))) {
-            found.push(formatDiagnosticFinding(key, value));
-          }
-        }
-        if (found.length > 0) {
-          return NextResponse.json({ content: found.join(' '), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-        } else {
-          return NextResponse.json({ content: `There is no recorded result for that test.`, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-=======
         // If user asked specifically for a test or value, try to return the matching lines
         const diagText = diag as string;
         // Find diagnostic canonical key from user text
@@ -1230,23 +1155,8 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
 
           // Fallback: report as not recorded with no available tests
           return NextResponse.json({ content: `${requestedDisplay} is not recorded in the Laboratory & Tests section.`, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
->>>>>>> dev
         }
       }
-      // fallback: if diagObj exists, but no specific test requested, ask for clarification
-      if (diagObj && typeof diagObj === "object") {
-        return NextResponse.json({ content: `Please specify which test or result you are interested in (e.g., "biochemistry", "bloodwork", "ultrasound").`, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-      }
-      // fallback: LLM cautious fallback using RAG context
-      try {
-        const fallback = await llmCautiousFallback(ragContext, userText);
-        if (fallback) {
-          return NextResponse.json({ content: fallback, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
-        }
-      } catch (e) {
-        console.warn('LLM cautious fallback failed', e);
-      }
-      return NextResponse.json({ content: `That result is not available in the record.`, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
     }
 
     // High-priority system guideline to shape assistant tone and avoid
