@@ -3680,7 +3680,12 @@ export function ChatInterface({
             // start listening programmatically after a short delay.
             try {
               setTimeout(() => {
-                if (!userToggledOffRef.current && voiceModeRef.current && !isListening) {
+                try {
+                  // Ensure suppression and deaf mode are cleared before attempting to start
+                  try { setSttSuppressed(false, true); } catch {}
+                  try { exitDeafMode(); } catch {}
+                } catch {}
+                if (!userToggledOffRef.current && !isListening) {
                   try {
                     start();
                   } catch (e) {
