@@ -18,6 +18,9 @@ const ALIAS_MAP: Record<string, string[]> = {
   respiratory_rate: ["rr", "respiratory rate"],
   temperature: ["temp", "temperature", "t"],
   blood_pressure: ["bp", "blood pressure"],
+  // Add auscultation aliases; 'was quotation' is a common mis-transcription
+  // that should map to auscultation.
+  auscultation: ["auscultation", "ausc", "stethoscope", "was quotation", "quotation"],
 };
 
 // Group tokens map to multiple canonical keys

@@ -230,6 +230,7 @@ export async function POST(request: NextRequest) {
       if (personaEligible && (looksLikeFindingsRequest || /physical|laboratory|lab|treatment/i.test(String(stageRole ?? "")))) {
         enhancedMessages.unshift({ role: "system", content: roleInfoPromptContent });
         console.log(`[chat] Injected roleInfoPrompt for personaRoleKey="${personaRoleKey}" due to persona and stage or explicit request.`);
+        try { debugEventBus.emitEvent('info','ChatInjection','roleInfoInjected',{ caseId, personaRoleKey, snippet: String(roleInfoPromptContent).substring(0,200) }); } catch {}
       } else {
         console.log(`[chat] Skipped roleInfoPrompt injection for personaRoleKey="${personaRoleKey}" looksLikeFindingsRequest=${looksLikeFindingsRequest}`);
       }
@@ -1247,7 +1248,19 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
         .filter(Boolean)
         .join('\n');
 
-      return out;
+      // Guard: remove lines that inappropriately instruct the student or
+      // suggest actions (e.g., "The student should..." or "You should...").
+      const lines = out.split(/\r?\n/);
+      let removedCount = 0;
+      const cleaned = lines
+        .map((l) => ( /^\s*(the student\b|you should\b|you must\b)/i.test(l) || /\bthe student should\b/i.test(l) ? (removedCount++, "") : l ))
+        .filter(Boolean)
+        .join('\n');
+      if (removedCount > 0) {
+        try { debugEventBus.emitEvent('warning','ChatAudit','removedStudentInstructions',{ caseId, personaRoleKey, removedCount }); } catch {}
+      }
+
+      return cleaned;
     };
 
     content = sanitizeAssistantContent(content);
