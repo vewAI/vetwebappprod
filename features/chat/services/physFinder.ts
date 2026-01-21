@@ -14,7 +14,7 @@ export type PhysMatchResult = {
 };
 
 const ALIAS_MAP: Record<string, string[]> = {
-  heart_rate: ["hr", "heart rate", "pulse", "heartbreak"],
+  heart_rate: ["hr", "heart rate", "pulse", "heartbreak", "how great"],
   respiratory_rate: ["rr", "respiratory rate"],
   temperature: ["temp", "temperature", "t"],
   blood_pressure: ["bp", "blood pressure"],

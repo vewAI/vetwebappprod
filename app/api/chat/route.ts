@@ -220,9 +220,12 @@ export async function POST(request: NextRequest) {
       const userQ = String(lastUserMessage?.content ?? "");
       const looksLikeFindingsRequest = /\b(findings|vitals|results|diagnostic results|test results|what\b.*\b(vitals|findings|results)|show\b.*\b(findings|results|vitals))\b/i.test(userQ);
       const personaEligible = personaRoleKey === "veterinary-nurse" || /nurse|lab|laboratory/i.test(String(stageRole ?? ""));
-      if (personaEligible && looksLikeFindingsRequest) {
+      // Inject role behavior prompt for nurse/lab personas when either the user explicitly requested
+      // findings OR the current stage/role indicates Physical/Laboratory/Treatment context. This
+      // guarantees the LLM will always have persona-specific instructions when generating nurse replies.
+      if (personaEligible && (looksLikeFindingsRequest || /physical|laboratory|lab|treatment/i.test(String(stageRole ?? "")))) {
         enhancedMessages.unshift({ role: "system", content: roleInfoPromptContent });
-        console.log(`[chat] Injected roleInfoPrompt for personaRoleKey="${personaRoleKey}" due to explicit findings request.`);
+        console.log(`[chat] Injected roleInfoPrompt for personaRoleKey="${personaRoleKey}" due to persona and stage or explicit request.`);
       } else {
         console.log(`[chat] Skipped roleInfoPrompt injection for personaRoleKey="${personaRoleKey}" looksLikeFindingsRequest=${looksLikeFindingsRequest}`);
       }
@@ -931,70 +934,15 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
     // Exclude "Diagnostic Planning" which is an owner stage despite having "diagnostic" in the name
     const isLabStage = !isOwnerPersona && /laboratory|lab/i.test(stageTitle) && !/planning/i.test(stageTitle);
 
-    // EARLY SHORT-CIRCUIT: If the student explicitly requested specific
-    // physical parameters (e.g., "hr, rr, temp") then return the compact
-    // values directly from the `physical_exam_findings` DB field BEFORE any
-    // role-prompt or RAG/system injection occurs. This is authoritative and
-    // prevents the LLM from being asked to dump the entire findings block.
+    // NOTE: Early short-circuit removed: forward physical-stage queries to the LLM
+    // so the nurse persona's behavior prompt and instructions are applied. If the
+    // answering persona is a nurse/lab and physical exam findings exist, those
+    // findings will be injected as a system message when handling the Physical stage
+    // below. (This replaces the previous direct DB-return short-circuit.)
     try {
-      const requestedEarly = parseRequestedKeys(lastUserMessage?.content ?? userText);
-      try {
-        debugEventBus.emitEvent('info','ChatShortCircuit','parseRequestedKeys',{ tokens: requestedEarly.tokens, canonical: requestedEarly.canonical });
-      } catch {}
-
-      if (isPhysicalStage && requestedEarly && Array.isArray(requestedEarly.canonical) && requestedEarly.canonical.length > 0) {
-        const physField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["physical_exam_findings"] : null;
-        const physText = typeof physField === "string" ? physField : "";
-        if (physText) {
-          const matches = matchPhysicalFindings(requestedEarly, physText);
-
-          const displayNames: Record<string,string> = {
-            heart_rate: 'Heart rate',
-            respiratory_rate: 'Respiratory rate',
-            temperature: 'Temperature',
-            blood_pressure: 'Blood pressure',
-          };
-
-          const cleanValue = (v: string): string => {
-            if (!v) return v;
-            let s = v.replace(/^['"`]+/, "").replace(/['"`]+$/, "").trim();
-            s = s.replace(/,$/, '').trim();
-            if (s.includes(':')) {
-              const parts = s.split(':');
-              parts.shift();
-              s = parts.join(':').trim();
-            }
-            return s;
-          };
-
-          const uniq = (arr: string[]) => Array.from(new Set(arr));
-          const phrases: string[] = [];
-          for (const m of matches) {
-            const name = displayNames[m.canonicalKey] ?? m.canonicalKey;
-            if (m.lines && m.lines.length > 0) {
-              const vals = uniq(m.lines.map(l => cleanValue(l))).filter(Boolean);
-              const combined = vals.length > 0 ? vals.join(' | ') : null;
-              if (combined) {
-                const converted = convertCelsiusToFahrenheitInText(combined);
-                phrases.push(`${name}: ${converted}`);
-              } else {
-                phrases.push(`${name}: not documented`);
-              }
-            } else {
-              phrases.push(`${name}: not documented`);
-            }
-          }
-          const out = phrases.join(', ');
-          try { debugEventBus.emitEvent('info','ChatShortCircuit','returned-phys',{ requested: requestedEarly.canonical, count: phrases.length }); } catch {}
-          // Return the compact findings to the client. Do NOT set a `suppress` flag
-          // when returning valid content, because the client treats `suppress` as
-          // an instruction to not append or display the response. The presence
-          // of `content` is authoritative here.
-          return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-        }
-      }
+      // intentionally left blank - direct DB short-circuit disabled
     } catch (e) {
-      console.warn('Early physical short-circuit failed', e);
+      console.warn('Early physical short-circuit disabled', e);
     }
 
     const matchedDiagKeyInUser = findSynonymKey(userText, DIAG_SYNONYMS);
@@ -1003,179 +951,29 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
     // physical findings (e.g. 'rumen turnover') from being detected when
     // the user asked directly. Process physical-stage requests here.
     if (isPhysicalStage) {
-      const matchedKeyword = matchedDiagKeyInUser;
-      try {
-        debugEventBus.emitEvent('info', 'ChatDBMatch', 'Physical stage query', { userText, stageTitle, matchedDiagKeyInUser });
-      } catch {}
-      // If diagnostic_findings contains the requested item, be explicit that it exists
+      try { debugEventBus.emitEvent('info', 'ChatDBMatch', 'Physical stage - forwarding to LLM', { userText, stageTitle, matchedDiagKeyInUser }); } catch {}
       const diagField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["diagnostic_findings"] : null;
       const physField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["physical_exam_findings"] : null;
-      const diagText = typeof diagField === "string" ? diagField : "";
-      const physText = typeof physField === "string" ? physField : "";
+      const diagText = typeof diagField === 'string' ? diagField : "";
+      const physText = typeof physField === 'string' ? physField : "";
 
-      // If user actually asked about something recorded in the physical exam, allow returning that.
-      // Support multi-parameter physical requests (e.g., "hr, rr, temp")
-      const requested = parseRequestedKeys(lastUserMessage?.content ?? userText);
-      const matchedPhysicalKey = findSynonymKey(userText, PHYS_SYNONYMS);
-
-      // If the student asked about diagnostics while in the Physical stage,
-      // the nurse must not provide diagnostic results. Instruct the student
-      // to request those results during the Laboratory & Tests stage.
-      if (matchedDiagKeyInUser) {
-        const advise = "Those diagnostic results are available during the Laboratory & Tests stage. Please request that stage to see lab or imaging results.";
-        try { debugEventBus.emitEvent('info','ChatDBMatch','physical-asked-diagnostics',{ query: userText }); } catch {}
-        return NextResponse.json({ content: advise, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+      // If the answering persona is a nurse/lab, inject the physical exam findings
+      // into the LLM system context so the LLM can use the factual DB values when
+      // composing its response. Also add a guard instructing the LLM not to provide
+      // diagnostic/lab results during the Physical Examination stage.
+      const personaIsNurseOrLab = Boolean(personaRoleKey && (personaRoleKey === 'veterinary-nurse' || personaRoleKey === 'lab-technician')) || Boolean(stageDescriptor && /nurse|laboratory|lab/i.test(String(stageDescriptor.role ?? '')));
+      if (personaIsNurseOrLab && physText) {
+        enhancedMessages.unshift({ role: "system", content: `PHYSICAL_EXAM_FINDINGS (from DB):\n${physText}` });
+        try { debugEventBus.emitEvent('info','ChatDBMatch','inject-phys-text',{ len: physText.length }); } catch {}
       }
 
-      // If parseRequestedKeys returned multiple canonical keys, try to match them
-      // Only consider canonical keys that are part of the physical exam synonyms
-      const allowedPhysKeys = new Set(Object.keys(PHYS_SYNONYMS));
-      const requestedPhys = (requested?.canonical ?? []).filter(k => allowedPhysKeys.has(k));
+      // Guard: prevent the LLM from providing diagnostic/lab results in the
+      // Physical Examination stage; instruct it to ask the student to request
+      // the Laboratory & Tests stage if such results are requested.
+      enhancedMessages.unshift({ role: "system", content: "IMPORTANT: You are answering as the nurse during the Physical Examination stage. Do NOT provide diagnostic or laboratory test results here; ask the student to request the Laboratory & Tests stage for those results." });
 
-      if ((requestedPhys?.length ?? 0) > 0 && physText) {
-        try { debugEventBus.emitEvent('info','ChatDBMatch','multi-phys-request',{ requested: requestedPhys }); } catch {}
-
-        // Use the existing matcher but only for physical exam keys requested
-        const requestedSubset = { ...requested, canonical: requestedPhys };
-        const matches = matchPhysicalFindings(requestedSubset, physText);
-        // Build a compact, comma-separated response for the requested parameters.
-        const displayNames: Record<string,string> = {
-          heart_rate: 'Heart rate',
-          respiratory_rate: 'Respiratory rate',
-          temperature: 'Temperature',
-          blood_pressure: 'Blood pressure',
-        };
-
-        const cleanValue = (v: string): string => {
-          if (!v) return v;
-          let s = v.replace(/^['"`]+/, "").replace(/['"`]+$/, "").trim();
-          s = s.replace(/,$/, '').trim();
-          if (s.includes(':')) {
-            const parts = s.split(':');
-            parts.shift();
-            s = parts.join(':').trim();
-          }
-          return s;
-        };
-
-        const uniq = (arr: string[]) => Array.from(new Set(arr));
-
-        const phrases: string[] = [];
-        for (const m of matches) {
-          const name = displayNames[m.canonicalKey] ?? m.canonicalKey;
-          if (m.lines && m.lines.length > 0) {
-            const vals = uniq(m.lines.map(l => cleanValue(l))).filter(Boolean);
-            const combined = vals.length > 0 ? vals.join(' | ') : null;
-            if (combined) {
-              // Convert temperature mentions to show Fahrenheit first
-              const converted = convertCelsiusToFahrenheitInText(combined);
-              // Compact phrase (comma-separated style): "Heart rate: 54 bpm"
-              phrases.push(`${name}: ${converted}`);
-            } else {
-              phrases.push(`${name}: not documented`);
-            }
-          } else {
-            phrases.push(`${name}: not documented`);
-          }
-        }
-        const out = phrases.join(', ');
-        return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-      }
-
-      if (matchedPhysicalKey && physText) {
-        const lines = physText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-        // first try exact line contains the user phrase tokens
-        const syns = PHYS_SYNONYMS[matchedPhysicalKey] ?? [];
-        const matchingLines = lines.filter(l => lineMatchesSynonym(l, syns));
-        if (matchingLines.length > 0) {
-          try { debugEventBus.emitEvent('info','ChatDBMatch','line-match',{ matchedKey: matchedPhysicalKey, lines: matchingLines.length }); } catch {}
-          const uniqLines = Array.from(new Set(matchingLines));
-          const clean = uniqLines.map(l => {
-            const v = l.replace(/^[^:\n]+:\s*/, '');
-            return v.replace(/,$/, '').trim();
-          }).filter(Boolean);
-          const displayNamesSingle: Record<string,string> = {
-            heart_rate: 'Heart rate',
-            respiratory_rate: 'Respiratory rate',
-            temperature: 'Temperature',
-            blood_pressure: 'Blood pressure',
-          };
-          const paramName = displayNamesSingle[matchedPhysicalKey ?? ''] ?? (matchedPhysicalKey ?? 'Requested parameter');
-          const sentence = `${paramName}: ${convertCelsiusToFahrenheitInText(clean.join(' | '))}`;
-          return NextResponse.json({ content: sentence, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-        }
-        
-        // Additional robust checks: try JSON key/value lookup and fuzzy line matching
-        try {
-          const parsed = JSON.parse(physText);
-          if (parsed && typeof parsed === 'object') {
-            const normQuery = normalizeForMatching(userText);
-            const hits: string[] = [];
-            const visit = (obj: any, prefix = '') => {
-              if (!obj || typeof obj !== 'object') return;
-              for (const key of Object.keys(obj)) {
-                const value = obj[key];
-                const lcKey = (prefix ? `${prefix}.${key}` : key);
-                const lcKeyNorm = normalizeForMatching(lcKey);
-                const valueNorm = typeof value === 'string' ? normalizeForMatching(value) : '';
-                if (lcKeyNorm.includes(normQuery) || valueNorm.includes(normQuery)) {
-                  hits.push(`${prefix ? `${prefix}.` : ''}${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`);
-                }
-                if (typeof value === 'object') visit(value, prefix ? `${prefix}.${key}` : key);
-              }
-            };
-            visit(parsed);
-            if (hits.length > 0) {
-              try { debugEventBus.emitEvent('info','ChatDBMatch','json-key-match',{ query: userText, hits: hits.length }); } catch {}
-              const out = convertCelsiusToFahrenheitInText(hits.join('\n'));
-              return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-            }
-          }
-        } catch (e) {
-          // not JSON, continue
-        }
-
-        // Fuzzy line match: require all query tokens to appear in a line
-        const normQueryTokens = normalizeForMatching(userText).split(/\s+/).filter(Boolean);
-        if (normQueryTokens.length > 0) {
-          const fuzzyMatches = lines.filter(l => {
-            const llNorm = normalizeForMatching(l.toLowerCase());
-            return normQueryTokens.every((t: string) => llNorm.includes(t));
-          });
-          if (fuzzyMatches.length > 0) {
-            try { debugEventBus.emitEvent('info','ChatDBMatch','fuzzy-line-match',{ tokens: normQueryTokens, matches: fuzzyMatches.length }); } catch {}
-            const out = convertCelsiusToFahrenheitInText(fuzzyMatches.join('\n'));
-            return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-          }
-        }
-
-        // No match found within the physical-exam block.
-        // IMPORTANT: For the Physical Examination stage we must NOT search across
-        // other case fields (diagnostics/biochemistry) or consult LLM fallbacks
-        // that might produce diagnostic interpretation. Return a concise, factual
-        // statement limited to the requested physical parameter.
-        try { debugEventBus.emitEvent('info','ChatDBMatch','no-phys-match',{ query: userText }); } catch {}
-        const displayNamesSingle: Record<string,string> = {
-          heart_rate: 'Heart rate',
-          respiratory_rate: 'Respiratory rate',
-          temperature: 'Temperature',
-          blood_pressure: 'Blood pressure',
-        };
-        const dispName = displayNamesSingle[matchedPhysicalKey ?? ''] ?? (matchedPhysicalKey ?? 'Requested parameter');
-        const msg = `${dispName}: not documented in the physical exam.`;
-        return NextResponse.json({ content: msg, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
-      }
-
-      if (matchedKeyword && diagText) {
-        // If diag text contains any synonym for the matched diagnostic key, fall through
-        // to the default diagnostic-stage response below rather than returning the
-        // previous specialized message.
-        const syns = DIAG_SYNONYMS[matchedKeyword] ?? [];
-      }
-
-      // Fall through to general LLM logic instead of suppressing
-      // This ensures general conversation (Greetings, help, etc) is not silenced
-      // and unmapped physical exam queries get a polite response.
+      // No DB short-circuits or direct returns here; let the LLM generate the reply
+      // while honoring the injected persona behavior prompt and the factual findings.
     }
 
     if (isLabStage && caseRecord && typeof caseRecord === "object") {
