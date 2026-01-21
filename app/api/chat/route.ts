@@ -26,7 +26,11 @@ const openai = new OpenAi({
   apiKey: process.env.OPENAI_API_KEY,
 });
 // Preferred chat model. Set `OPENAI_CHAT_MODEL` in env to override.
-const LLM_MODEL = process.env.OPENAI_CHAT_MODEL ?? process.env.PREFERRED_CHAT_MODEL ?? "chatgpt-5.1o-mini";
+// If the configured model is unavailable, we'll attempt a small fallback
+// sequence including `gpt-realtime` which is preferred for conversational realtime use.
+const DEFAULT_CHAT_MODEL = process.env.PREFERRED_CHAT_MODEL ?? "gpt-realtime";
+const LLM_MODEL = process.env.OPENAI_CHAT_MODEL ?? DEFAULT_CHAT_MODEL;
+const CHAT_MODEL_FALLBACKS = ["gpt-realtime", "gpt-4o-mini"];
  
 
 export async function POST(request: NextRequest) {
@@ -36,7 +40,20 @@ export async function POST(request: NextRequest) {
   }
   const { supabase } = auth;
   try {
-    const { messages, stageIndex, caseId, attemptId } = await request.json();
+    const parsedBody = await request.json();
+    try {
+      const preview = {
+        caseId: parsedBody?.caseId,
+        stageIndex: parsedBody?.stageIndex,
+        attemptId: parsedBody?.attemptId,
+        lastMessage: Array.isArray(parsedBody?.messages) && parsedBody.messages.length > 0 ? parsedBody.messages[parsedBody.messages.length - 1] : null,
+      };
+      console.log('[chat] Incoming request body preview:', JSON.stringify(preview));
+      try { debugEventBus.emitEvent('info','ChatAPI','incoming-request', preview); } catch {}
+    } catch (e) {
+      // swallow preview logging errors
+    }
+    const { messages, stageIndex, caseId, attemptId } = parsedBody;
 
     // Validate that messages is an array
     if (!messages || !Array.isArray(messages)) {
@@ -52,6 +69,9 @@ export async function POST(request: NextRequest) {
     const enhancedMessages = [...messages];
 
     // Parallel Fetching: Start both RAG and DB lookups immediately
+    // Will collect CASE_DATA chunks (if any) for authoritative extraction
+    let ragCaseDataChunks: any[] = [];
+
     const ragPromise = (async () => {
       let ragContext = "";
       if (caseId && lastUserMessage) {
@@ -87,6 +107,9 @@ export async function POST(request: NextRequest) {
               const caseDataList = caseDataChunks
                 .map((k: any) => k.content)
                 .join("\n\n");
+
+              // keep a copy of the raw case_data chunks for server-side extraction
+              ragCaseDataChunks = caseDataChunks;
 
               ragContext += `CASE FACTS (from database):\nThe following information is stored in the case database. Use this as definitive facts about the patient and case:\n\n${caseDataList}\n\n`;
             }
@@ -268,6 +291,21 @@ export async function POST(request: NextRequest) {
         console.log(`[chat] Overriding personaRoleKey (${personaRoleKey}) → veterinary-nurse due to stage "${stageDescriptor?.title ?? stageRole}"`);
         personaRoleKey = "veterinary-nurse";
       }
+    }
+
+    // Prevent the `owner` persona from being selected during History Taking.
+    // History Taking should not present the owner as the active assistant.
+    // If `personaRoleKey` resolved to `owner` here, clear it so the
+    // persona manager falls back to the appropriate seed/default.
+    try {
+      const isHistoryStage = /history/i.test(String(stageDescriptor?.title ?? stageRole ?? ""));
+      if (isHistoryStage && personaRoleKey === "owner") {
+        console.log(`[chat] Clearing personaRoleKey 'owner' for History Taking stage to avoid owner appearing`);
+        personaRoleKey = undefined;
+      }
+    } catch (e) {
+      // don't block the flow for unexpected errors
+      console.warn('Error applying history-stage owner guard', e);
     }
 
     // Inject the role-specific prompt only when the answering persona is the
@@ -981,7 +1019,12 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
 
       if (isPhysicalStage && requestedEarly && Array.isArray(requestedEarly.canonical) && requestedEarly.canonical.length > 0) {
         const physField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["physical_exam_findings"] : null;
-        const physText = typeof physField === "string" ? physField : "";
+        let physText = typeof physField === "string" ? physField : "";
+        // If no DB physical text, attempt authoritative extraction from RAG CASE_DATA chunks
+        if (!physText && Array.isArray(ragCaseDataChunks) && ragCaseDataChunks.length > 0) {
+          physText = ragCaseDataChunks.map((c: any) => (c && c.content) ? String(c.content) : "").filter(Boolean).join('\n\n');
+          try { debugEventBus.emitEvent('info','ChatDBMatch','using-rag-case-data',{ caseId, chunkCount: ragCaseDataChunks.length }); } catch {}
+        }
         if (physText) {
           const matches = matchPhysicalFindings(requestedEarly, physText);
 
@@ -1026,8 +1069,10 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
           // Return the compact findings to the client. Do NOT set a `suppress` flag
           // when returning valid content, because the client treats `suppress` as
           // an instruction to not append or display the response. The presence
-          // of `content` is authoritative here.
-          return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+          // of `content` is authoritative here. Include `role: "assistant"` so
+          // the client TTS/STT orchestrator recognizes this as an assistant reply
+          // and can re-enable the microphone after speech.
+          return NextResponse.json({ role: "assistant", content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
         }
       }
     } catch (e) {
@@ -1061,7 +1106,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       if (matchedDiagKeyInUser) {
         const advise = "Those diagnostic results are available during the Laboratory & Tests stage. Please request that stage to see lab or imaging results.";
         try { debugEventBus.emitEvent('info','ChatDBMatch','physical-asked-diagnostics',{ query: userText }); } catch {}
-        return NextResponse.json({ content: advise, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+        return NextResponse.json({ role: "assistant", content: advise, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
       }
 
       // If parseRequestedKeys returned multiple canonical keys, try to match them
@@ -1116,7 +1161,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
           }
         }
         const out = phrases.join(', ');
-        return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+        return NextResponse.json({ role: "assistant", content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
       }
 
       if (matchedPhysicalKey && physText) {
@@ -1139,7 +1184,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
           };
           const paramName = displayNamesSingle[matchedPhysicalKey ?? ''] ?? (matchedPhysicalKey ?? 'Requested parameter');
           const sentence = `${paramName}: ${convertCelsiusToFahrenheitInText(clean.join(' | '))}`;
-          return NextResponse.json({ content: sentence, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+          return NextResponse.json({ role: "assistant", content: sentence, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
         }
         
         // Additional robust checks: try JSON key/value lookup and fuzzy line matching
@@ -1165,7 +1210,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
             if (hits.length > 0) {
               try { debugEventBus.emitEvent('info','ChatDBMatch','json-key-match',{ query: userText, hits: hits.length }); } catch {}
               const out = convertCelsiusToFahrenheitInText(hits.join('\n'));
-              return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+              return NextResponse.json({ role: "assistant", content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
             }
           }
         } catch (e) {
@@ -1182,7 +1227,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
           if (fuzzyMatches.length > 0) {
             try { debugEventBus.emitEvent('info','ChatDBMatch','fuzzy-line-match',{ tokens: normQueryTokens, matches: fuzzyMatches.length }); } catch {}
             const out = convertCelsiusToFahrenheitInText(fuzzyMatches.join('\n'));
-            return NextResponse.json({ content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+            return NextResponse.json({ role: "assistant", content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
           }
         }
 
@@ -1200,7 +1245,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
         };
         const dispName = displayNamesSingle[matchedPhysicalKey ?? ''] ?? (matchedPhysicalKey ?? 'Requested parameter');
         const msg = `${dispName}: not documented in the physical exam.`;
-        return NextResponse.json({ content: msg, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+        return NextResponse.json({ role: "assistant", content: msg, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
       }
 
       if (matchedKeyword && diagText) {
@@ -1231,7 +1276,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
             const uniqLines = Array.from(new Set(matchingLines));
             const cleaned = uniqLines.map(l => l.replace(/^[^:\n]+:\s*/, '').replace(/,$/, '').trim()).filter(Boolean);
             const reply = convertCelsiusToFahrenheitInText(cleaned.join(' | '));
-            return NextResponse.json({ content: reply, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+            return NextResponse.json({ role: "assistant", content: reply, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
           }
           // If diag text appears to include the requested synonym anywhere,
           // try to parse JSON and extract matching keys rather than dumping
@@ -1253,14 +1298,14 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
               if (results.length > 0) {
                 const uniqResults = Array.from(new Set(results));
                 const cleaned = uniqResults.map(r => r.replace(/^[^:\n]+:\s*/, '').trim()).filter(Boolean);
-                return NextResponse.json({ content: convertCelsiusToFahrenheitInText(cleaned.join(' | ')), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+                return NextResponse.json({ role: "assistant", content: convertCelsiusToFahrenheitInText(cleaned.join(' | ')), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
               }
             }
           } catch (e) {
             // not JSON, continue
           }
           // If no fine-grained match, respond that the specific result isn't recorded
-          return NextResponse.json({ content: `That specific diagnostic result is not recorded in the Laboratory & Tests section.`, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+          return NextResponse.json({ role: "assistant", content: `That specific diagnostic result is not recorded in the Laboratory & Tests section.`, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
         }
       }
     }
@@ -1321,14 +1366,49 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
 
     enhancedMessages.unshift({ role: "system", content: systemGuideline });
 
-    let response = await openai.chat.completions.create({
-      model: LLM_MODEL,
-      messages: enhancedMessages as any[],
-      temperature: 0.7,
-      max_tokens: 1000,
-    });
+    // Attempt chat completion with the configured model; if the model is
+    // unavailable, retry using `CHAT_MODEL_FALLBACKS` before returning a 502.
+    let response: any;
+    const triedModels: string[] = [];
+    const modelsToTry = [LLM_MODEL, ...CHAT_MODEL_FALLBACKS.filter(m => m !== LLM_MODEL)];
+    for (const modelId of modelsToTry) {
+      try {
+        triedModels.push(modelId);
+        response = await openai.chat.completions.create({
+          model: modelId,
+          messages: enhancedMessages as any[],
+          temperature: 0.7,
+          max_tokens: 1000,
+        });
+        // success
+        if (modelId !== LLM_MODEL) {
+          console.log(`[chat] Fallback to model ${modelId} succeeded.`);
+          try { debugEventBus.emitEvent('info','OpenAI','fallbackModelUsed',{ tried: triedModels, used: modelId }); } catch {}
+        }
+        break;
+      } catch (err: any) {
+        console.error(`OpenAI chat completion failed for model ${modelId}:`, err?.message ?? err);
+        try { debugEventBus.emitEvent('error','OpenAI','chatCompletionFailed',{ model: modelId, message: String(err?.message ?? err), code: err?.code, status: err?.status }); } catch {}
+        const modelNotFound = err?.code === 'model_not_found' || err?.status === 404 || err?.code === 'model_access_error';
+        if (!modelNotFound) {
+          // Non-model access errors should be returned to caller (502)
+          if (process.env.NODE_ENV !== 'production') {
+            return NextResponse.json({ error: String(err?.message ?? 'OpenAI error'), details: err }, { status: 502 });
+          }
+          return NextResponse.json({ error: 'AI provider error' }, { status: 502 });
+        }
+        // otherwise, try next candidate
+      }
+    }
 
-    let message = response.choices[0].message;
+    if (!response) {
+      // None of the candidate models worked
+      console.error('[chat] All candidate chat models failed:', triedModels);
+      try { debugEventBus.emitEvent('error','OpenAI','allModelsFailed',{ tried: triedModels }); } catch {}
+      return NextResponse.json({ error: 'AI model unavailable. Check OPENAI_CHAT_MODEL and server API key access.' }, { status: 502 });
+    }
+
+    let message = response.choices?.[0]?.message;
 
     const assistantRawContent = message.content ?? "";
 
@@ -1437,9 +1517,11 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     });
   } catch (error) {
     console.error("Error in chat API:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    try { debugEventBus.emitEvent('error','ChatAPI','exception',{ message: String(error?.message ?? error), stack: error?.stack?.substring?.(0,2000) }); } catch {}
+    if (process.env.NODE_ENV !== 'production') {
+      // In development, return sanitized stack for easier debugging
+      return NextResponse.json({ error: String(error?.message ?? "Internal server error"), stack: error?.stack }, { status: 500 });
+    }
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
