@@ -1063,6 +1063,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
             const reply = convertCelsiusToFahrenheitInText(cleaned.join(' | '));
             return NextResponse.json({ content: reply, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
           }
+
           // If diag text appears to include the requested synonym anywhere,
           // try to parse JSON and extract matching keys rather than dumping
           // the entire diagnostics block.
@@ -1089,8 +1090,57 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
           } catch (e) {
             // not JSON, continue
           }
-          // If no fine-grained match, respond that the specific result isn't recorded
-          return NextResponse.json({ content: `That specific diagnostic result is not recorded in the Laboratory & Tests section.`, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+
+          // No fine-grained match. Instead of a generic line, return a precise
+          // not-recorded response for the requested test and list available
+          // recorded test categories to help the student and debug missing data.
+          const DIAG_DISPLAY: Record<string,string> = {
+            cbc: 'Haematology (CBC)',
+            chem: 'Biochemistry panel',
+            bhb: 'BHB/ketones',
+            glucose: 'Glucose',
+            urinalysis: 'Urinalysis',
+            xray: 'Radiographs',
+            ultrasound: 'Ultrasound',
+            ecg: 'ECG',
+            calcium: 'Calcium'
+          };
+
+          const requestedDisplay = DIAG_DISPLAY[matchedDiagKey] ?? matchedDiagKey;
+
+          const available: string[] = [];
+          try {
+            // Check for obvious test names in the diagText
+            for (const [k, syns2] of Object.entries(DIAG_SYNONYMS)) {
+              for (const s of syns2) {
+                if (s && diagText.toLowerCase().includes(s.toLowerCase())) {
+                  const label = DIAG_DISPLAY[k] ?? k;
+                  if (!available.includes(label)) available.push(label);
+                  break;
+                }
+              }
+            }
+            // Try JSON keys if present
+            const parsed2 = (() => {
+              try { return JSON.parse(diagText); } catch { return null; }
+            })();
+            if (parsed2 && typeof parsed2 === 'object') {
+              for (const k of Object.keys(parsed2)) {
+                const label = DIAG_DISPLAY[k] ?? k;
+                if (!available.includes(label)) available.push(label);
+              }
+            }
+          } catch (e) {
+            // ignore detection errors
+          }
+
+          if (available.length > 0) {
+            const availList = available.join(', ');
+            return NextResponse.json({ content: `${requestedDisplay} is not recorded in the Laboratory & Tests section. Recorded tests include: ${availList}.`, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+          }
+
+          // Fallback: report as not recorded with no available tests
+          return NextResponse.json({ content: `${requestedDisplay} is not recorded in the Laboratory & Tests section.`, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
         }
       }
     }
