@@ -510,8 +510,12 @@ export function ChatInterface({
   const lastSavedSnapshotRef = useRef<string>("");
 
   const [isPaused, setIsPaused] = useState(false);
-  // Show a small inline Start banner in the composer area (non-blocking) to help users discover voice/write modes.
-  const [showStartSpeakingPrompt, setShowStartSpeakingPrompt] = useState(true);
+  // Feature flag: enable sandbox voice UI experiments (SPEAK/WRITE prompt and single mic UI 🔧)
+  // Controlled by NEXT_PUBLIC_SANDBOX_VOICE_UI (default: false)
+  const SANDBOX_VOICE_UI_ENABLED = process.env.NEXT_PUBLIC_SANDBOX_VOICE_UI === "true";
+  const [showStartSpeakingPrompt, setShowStartSpeakingPrompt] = useState<boolean>(() =>
+    SANDBOX_VOICE_UI_ENABLED ? true : false
+  );
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
   // Lightweight toast for mic/noise status
   const [micToast, setMicToast] = useState<string | null>(null);
@@ -1217,7 +1221,9 @@ export function ChatInterface({
                 const stage = stages?.[currentStageIndex];
                 const stageTitle = (stage?.title ?? "").toLowerCase();
                 const isSensitiveStage = /physical|laboratory|lab|treatment/.test(stageTitle);
-                const minWordsWhenSuppressed = isSensitiveStage ? 1 : 3;
+                // Minimum words required to auto-send during noise suppression.
+                // Lowered to 2 to allow concise two-word queries (e.g., "respiratory exam").
+                const minWordsWhenSuppressed = isSensitiveStage ? 1 : 2;
                 if (noiseSuppressionRef.current && wordCount < minWordsWhenSuppressed) {
                   console.debug("Auto-send skipped: too short during noise suppression", { wordCount, minWordsWhenSuppressed, text: textToSend });
                   return;
@@ -4027,6 +4033,17 @@ export function ChatInterface({
     }
   }, [startSequenceActive, setVoiceModeEnabled, setTtsEnabledState, isListening, start, sendOwnerGreetingIfNeeded]);
 
+  const handleStartWritePrompt = useCallback(() => {
+    try {
+      // Explicitly ensure voice mode and TTS are OFF for text-first flow.
+      setTtsEnabledState(false);
+      setVoiceModeEnabled(false);
+      setShowStartSpeakingPrompt(false);
+    } catch (err) {
+      console.warn("Failed to initialize write controls:", err);
+    }
+  }, [setVoiceModeEnabled, setTtsEnabledState]);
+
   // Update input when transcript changes
   // Update input when interim or final transcripts arrive. When listening,
   // show the live interim transcript in the textarea so users see dictation
@@ -5074,68 +5091,103 @@ export function ChatInterface({
       {showStartSpeakingPrompt && (
         <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center">
           <div className="relative pointer-events-auto">
-            <div className="flex gap-4">
-              <Button
-                type="button"
-                size="lg"
-                className="px-8 py-6 text-lg font-semibold text-white shadow-2xl bg-gradient-to-r from-rose-500 via-orange-500 to-amber-500 hover:from-rose-600 hover:to-amber-600"
-                onClick={handleStartSpeakingPrompt}
-                disabled={startSequenceActive}
-              >
-                {startSequenceActive ? "Starting voice..." : "SPEAK"}
-              </Button>
+            {SANDBOX_VOICE_UI_ENABLED ? (
+              <div className="flex flex-col items-center space-y-4">
+                <div className="text-center mb-2 font-semibold">How would you like to begin?</div>
+                <div className="flex space-x-4">
+                  <Button
+                    type="button"
+                    size="lg"
+                    className="px-8 py-6 text-lg font-semibold text-white shadow-2xl bg-gradient-to-r from-rose-500 via-orange-500 to-amber-500 hover:from-rose-600 hover:to-amber-600"
+                    onClick={handleStartSpeakingPrompt}
+                    disabled={startSequenceActive}
+                  >
+                    {startSequenceActive ? "Starting voice..." : "Speak"}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="lg"
+                    variant="outline"
+                    className="px-6 py-6 text-lg font-semibold"
+                    onClick={handleStartWritePrompt}
+                    disabled={startSequenceActive}
+                  >
+                    Write
+                  </Button>
+                </div>
+                <div className="text-xs text-muted-foreground mt-2">You can toggle voice mode and mic later using the mic button.</div>
 
-              <Button
-                type="button"
-                size="lg"
-                variant="secondary"
-                className="px-8 py-6 text-lg font-semibold"
-                onClick={() => {
-                  setShowStartSpeakingPrompt(false);
-                  try { setVoiceModeEnabled(false); } catch (e) { /* ignore */ }
-                  try { textareaRef.current?.focus(); } catch (e) {}
-                  try { void sendOwnerGreetingIfNeeded(); } catch (e) {}
-                }}
-              >
-                WRITE
-              </Button>
-            </div>
-
-            {/* LEARN HOW TO USE (overlay) - shows below the big SPEAK / WRITE buttons */}
-            <div className="mt-4 flex justify-center">
-              <button
-                id="learn-how-to-use-overlay"
-                type="button"
-                onClick={() => {
-                  try {
-                    const btn = document.getElementById('start-tour-chat-interface') as HTMLButtonElement | null;
-                    if (btn) btn.click();
-                    // keep the start overlay visible so the user can choose SPEAK/WRITE after tour
-                    // but allow tour to run while overlay is present
-                  } catch (e) {
-                    // ignore
+                {/* Auto-send toggle button (student control) */}
+                <Button
+                  type="button"
+                  size="icon"
+                  title={autoSendStt
+                    ? "Auto-send is ON — spoken messages will be sent automatically"
+                    : "Auto-send is OFF — click the arrow to send after speaking"
                   }
-                }}
-                className="w-56 rounded-md bg-white/90 text-slate-800 text-sm px-4 py-3 shadow-md hover:shadow-lg transition"
-                aria-label="Learn how to use"
-              >
-                LEARN HOW TO USE
-              </button>
-            </div>
-
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="absolute -top-3 -right-3 bg-muted/90 text-foreground"
-              onClick={() => {
-                setShowStartSpeakingPrompt(false);
-                try { setVoiceModeEnabled(false); } catch (e) { /* ignore */ }
-              }}
-              title="Close"
-            >
-              ×
-            </Button>
+                  aria-pressed={autoSendStt}
+                  onClick={() => setAutoSendStt((v) => !v)}
+                  className={`absolute bottom-2 right-6 ${autoSendStt ? "bg-emerald-500 hover:bg-emerald-600 text-white" : "bg-muted text-white/90 hover:bg-muted/80"}`}
+                >
+                  {autoSendStt ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="absolute -top-3 -right-3 bg-muted/90 text-foreground"
+                  onClick={() => {
+                    setShowStartSpeakingPrompt(false);
+                    try { setVoiceModeEnabled(false); } catch (e) { /* ignore */ }
+                  }}
+                  title="Close"
+                >
+                  ×
+                </Button>
+              </div>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  size="lg"
+                  className="px-8 py-6 text-lg font-semibold text-white shadow-2xl bg-gradient-to-r from-rose-500 via-orange-500 to-amber-500 hover:from-rose-600 hover:to-amber-600"
+                  onClick={handleStartSpeakingPrompt}
+                  disabled={startSequenceActive}
+                >
+                  {startSequenceActive ? "Starting voice..." : "Click Here to START Speaking"}
+                </Button>
+                {/* Auto-send toggle button (student control) */}
+                <Button
+                  type="button"
+                  size="icon"
+                  title={autoSendStt
+                    ? "Auto-send is ON — spoken messages will be sent automatically"
+                    : "Auto-send is OFF — click the arrow to send after speaking"
+                  }
+                  aria-pressed={autoSendStt}
+                  onClick={() => setAutoSendStt((v) => !v)}
+                  className={`absolute bottom-2 right-6 ${autoSendStt ? "bg-emerald-500 hover:bg-emerald-600 text-white" : "bg-muted text-white/90 hover:bg-muted/80"}`}
+                >
+                  {autoSendStt ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="absolute -top-3 -right-3 bg-muted/90 text-foreground"
+                  onClick={() => {
+                    setShowStartSpeakingPrompt(false);
+                    try { setVoiceModeEnabled(false); } catch (e) { /* ignore */ }
+                  }}
+                  title="Close"
+                >
+                  ×
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
           </div>
         </div>
       )}
