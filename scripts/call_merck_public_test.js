@@ -1,5 +1,12 @@
 const http = require('http');
 
+// Disabled by default — skip execution when SKIP_CALL_MERCK=1 or when running inside CI.
+// To run this test manually, set SKIP_CALL_MERCK=0 in your environment and execute the script.
+if (process.env.SKIP_CALL_MERCK === '1' || process.env.CI) {
+  console.log('Skipping call_merck_public_test.js (SKIP_CALL_MERCK or CI environment)');
+  process.exit(0);
+}
+
 function postOnce(host='localhost', port=3000, path='/api/merck-public-test', query='mastitis in cattle'){
   return new Promise((resolve, reject)=>{
     const data = JSON.stringify({query});
