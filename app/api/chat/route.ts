@@ -14,7 +14,10 @@ import type {
 import { CHAT_SYSTEM_GUIDELINE } from "@/features/chat/prompts/systemGuideline";
 import { resolvePromptValue } from "@/features/prompts/services/promptService";
 import { requireUser } from "@/app/api/_lib/auth";
-import { parseRequestedKeys, matchPhysicalFindings } from "@/features/chat/services/physFinder";
+import {
+  parseRequestedKeys,
+  matchPhysicalFindings,
+} from "@/features/chat/services/physFinder";
 import {
   normalizeCaseMedia,
   type CaseMediaItem,
@@ -31,7 +34,6 @@ const openai = new OpenAi({
 const DEFAULT_CHAT_MODEL = process.env.PREFERRED_CHAT_MODEL ?? "gpt-realtime";
 const LLM_MODEL = process.env.OPENAI_CHAT_MODEL ?? DEFAULT_CHAT_MODEL;
 const CHAT_MODEL_FALLBACKS = ["gpt-realtime", "gpt-4o-mini"];
- 
 
 export async function POST(request: NextRequest) {
   const auth = await requireUser(request);
@@ -46,10 +48,18 @@ export async function POST(request: NextRequest) {
         caseId: parsedBody?.caseId,
         stageIndex: parsedBody?.stageIndex,
         attemptId: parsedBody?.attemptId,
-        lastMessage: Array.isArray(parsedBody?.messages) && parsedBody.messages.length > 0 ? parsedBody.messages[parsedBody.messages.length - 1] : null,
+        lastMessage:
+          Array.isArray(parsedBody?.messages) && parsedBody.messages.length > 0
+            ? parsedBody.messages[parsedBody.messages.length - 1]
+            : null,
       };
-      console.log('[chat] Incoming request body preview:', JSON.stringify(preview));
-      try { debugEventBus.emitEvent('info','ChatAPI','incoming-request', preview); } catch {}
+      console.log(
+        "[chat] Incoming request body preview:",
+        JSON.stringify(preview),
+      );
+      try {
+        debugEventBus.emitEvent("info", "ChatAPI", "incoming-request", preview);
+      } catch {}
     } catch (e) {
       // swallow preview logging errors
     }
@@ -59,7 +69,7 @@ export async function POST(request: NextRequest) {
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json(
         { error: "Messages array is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -84,22 +94,28 @@ export async function POST(request: NextRequest) {
           const embedding = embeddingResp.data[0].embedding;
 
           // Search knowledge
-          const { data: knowledgeChunks, error: ragError } = await supabase.rpc("match_case_knowledge", {
-            query_embedding: embedding,
-            match_threshold: 0.75,
-            match_count: 5, // Increased to accommodate both case data and papers
-            filter_case_id: caseId,
-          });
+          const { data: knowledgeChunks, error: ragError } = await supabase.rpc(
+            "match_case_knowledge",
+            {
+              query_embedding: embedding,
+              match_threshold: 0.75,
+              match_count: 5, // Increased to accommodate both case data and papers
+              filter_case_id: caseId,
+            },
+          );
+          console.log(
+            `[chat][RAG] Retrieved ${knowledgeChunks ? knowledgeChunks.length : 0} knowledge chunks for caseId=${caseId}`,
+          );
 
           if (ragError) {
             console.warn("RAG RPC failed:", ragError);
           } else if (knowledgeChunks && knowledgeChunks.length > 0) {
             // Separate case data from scientific papers
             const caseDataChunks = knowledgeChunks.filter(
-              (k: any) => k.metadata?.source === "CASE_DATA"
+              (k: any) => k.metadata?.source === "CASE_DATA",
             );
             const paperChunks = knowledgeChunks.filter(
-              (k: any) => k.metadata?.source !== "CASE_DATA"
+              (k: any) => k.metadata?.source !== "CASE_DATA",
             );
 
             // Build context with clear separation
@@ -116,7 +132,10 @@ export async function POST(request: NextRequest) {
 
             if (paperChunks.length > 0) {
               const paperList = paperChunks
-                .map((k: any) => `[Source: ${k.metadata?.source ?? "Unknown"}]\n${k.content}`)
+                .map(
+                  (k: any) =>
+                    `[Source: ${k.metadata?.source ?? "Unknown"}]\n${k.content}`,
+                )
                 .join("\n\n");
 
               ragContext += `SCIENTIFIC REFERENCES (uploaded papers):\nThe following materials have been uploaded specifically for this case. Use these for deep scientific knowledge, research protocols, and specific medical reference values:\n\n${paperList}`;
@@ -124,12 +143,12 @@ export async function POST(request: NextRequest) {
 
             // Debug event
             try {
-              debugEventBus.emitEvent('info', 'RAG', 'Knowledge retrieved', {
+              debugEventBus.emitEvent("info", "RAG", "Knowledge retrieved", {
                 caseDataChunks: caseDataChunks.length,
                 paperChunks: paperChunks.length,
                 total: knowledgeChunks.length,
               });
-            } catch { }
+            } catch {}
           }
         } catch (err) {
           console.warn("RAG logic error:", err);
@@ -164,13 +183,19 @@ export async function POST(request: NextRequest) {
               // Strip all owner naming - persona display_name from case_personas is the source of truth
               const ownerPlaceholder = "the owner";
               ownerInfo = ownerInfo.replace(/\[Your Name\]/g, ownerPlaceholder);
-              ownerInfo = ownerInfo.replace(/\{owner_name\}/g, ownerPlaceholder);
+              ownerInfo = ownerInfo.replace(
+                /\{owner_name\}/g,
+                ownerPlaceholder,
+              );
               // Remove "Role: <Name>" lines - will be replaced by persona display_name
               ownerInfo = ownerInfo.replace(/^Role:\s*.+$/gim, "");
               // Remove "Name: <Name>" lines
               ownerInfo = ownerInfo.replace(/^Name:\s*.+$/gim, "");
               // Remove common name patterns like "I am <Name>" or "My name is <Name>"
-              ownerInfo = ownerInfo.replace(/\b(I am|I'm|My name is|Call me)\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*/gi, "I am the owner");
+              ownerInfo = ownerInfo.replace(
+                /\b(I am|I'm|My name is|Call me)\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*/gi,
+                "I am the owner",
+              );
               // Clean up extra blank lines
               ownerInfo = ownerInfo.replace(/\n{3,}/g, "\n\n").trim();
             }
@@ -199,7 +224,12 @@ export async function POST(request: NextRequest) {
     const [ragContext, dbResult] = await Promise.all([ragPromise, dbPromise]);
 
     // Deconstruct DB results.
-    let { ownerInfo: ownerBackground, timepointInfo: timepointPrompt, dbRecord: caseRecord, mediaItems: caseMedia } = dbResult;
+    let {
+      ownerInfo: ownerBackground,
+      timepointInfo: timepointPrompt,
+      dbRecord: caseRecord,
+      mediaItems: caseMedia,
+    } = dbResult;
 
     // Normalize patient sex from the case record so the client can prefer
     // patient sex (for pronouns/voice) when present.
@@ -208,16 +238,36 @@ export async function POST(request: NextRequest) {
       try {
         const s = String(raw).toLowerCase().trim();
         if (!s) return undefined;
-        if (s.includes("gelding") || s.includes("stallion") || s.includes("male")) return "male";
-        if (s.includes("mare") || s.includes("filly") || s.includes("cow") || s.includes("female")) return "female";
-        if (s.includes("unknown") || s.includes("other") || s.includes("neutral")) return "neutral";
+        if (
+          s.includes("gelding") ||
+          s.includes("stallion") ||
+          s.includes("male")
+        )
+          return "male";
+        if (
+          s.includes("mare") ||
+          s.includes("filly") ||
+          s.includes("cow") ||
+          s.includes("female")
+        )
+          return "female";
+        if (
+          s.includes("unknown") ||
+          s.includes("other") ||
+          s.includes("neutral")
+        )
+          return "neutral";
       } catch (e) {
         // ignore and fall through
       }
       return undefined;
     };
 
-    const patientSex = normalizePatientSex(caseRecord && typeof caseRecord === "object" ? (caseRecord as any)["patient_sex"] : undefined);
+    const patientSex = normalizePatientSex(
+      caseRecord && typeof caseRecord === "object"
+        ? (caseRecord as any)["patient_sex"]
+        : undefined,
+    );
 
     if (!caseId) {
       console.warn("No caseId provided");
@@ -232,7 +282,7 @@ export async function POST(request: NextRequest) {
       const roleInfoPrompt = await getRoleInfoPrompt(
         caseId,
         stageIndex,
-        lastUserMessage.content
+        lastUserMessage.content,
       );
 
       if (roleInfoPrompt) {
@@ -240,11 +290,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-
-
     let displayRole: string | undefined = undefined;
     let stageRole: string | undefined = undefined;
-    let stageDescriptor: { id?: string; title?: string; role?: string } | null = null;
+    let stageDescriptor: { id?: string; title?: string; role?: string } | null =
+      null;
     let personaRoleKey: string | undefined = undefined;
     let personaIdentity: PersonaIdentity | undefined = undefined;
     if (caseId && typeof stageIndex === "number") {
@@ -264,7 +313,9 @@ export async function POST(request: NextRequest) {
           // The persona display_name from case_personas is the source of truth
           // Just use the stage role as a fallback; persona will override if found
           displayRole = stage.role;
-          console.log(`[chat] Initial displayRole from stage.role: "${displayRole}"`);
+          console.log(
+            `[chat] Initial displayRole from stage.role: "${displayRole}"`,
+          );
         }
       } catch (stageErr) {
         console.warn("Failed to resolve stage role for case", caseId, stageErr);
@@ -278,17 +329,30 @@ export async function POST(request: NextRequest) {
       console.log(`[chat] Fallback displayRole: "${displayRole}"`);
     }
 
-    personaRoleKey = resolveChatPersonaRoleKey(stageDescriptor?.title ?? stageRole, displayRole);
-    console.log(`[chat] Persona resolution: stageRole="${stageRole}" displayRole="${displayRole}" → personaRoleKey="${personaRoleKey}"`);
+    personaRoleKey = resolveChatPersonaRoleKey(
+      stageDescriptor?.title ?? stageRole,
+      displayRole,
+    );
+    console.log(
+      `[chat] Persona resolution: stageRole="${stageRole}" displayRole="${displayRole}" → personaRoleKey="${personaRoleKey}"`,
+    );
 
     // Enforce strict persona mapping for sensitive stages: only the
     // veterinary nurse may answer in Physical Examination, Laboratory & Tests,
     // and Treatment Plan stages. Force the persona to `veterinary-nurse` when
     // the stage title/role indicates one of these stages.
-    const stageTitleLower = String(stageDescriptor?.title ?? stageRole ?? "").toLowerCase();
-    if (/physical/.test(stageTitleLower) || /laboratory|\blab\b|tests/.test(stageTitleLower) || (/treatment/.test(stageTitleLower) && /plan/.test(stageTitleLower))) {
+    const stageTitleLower = String(
+      stageDescriptor?.title ?? stageRole ?? "",
+    ).toLowerCase();
+    if (
+      /physical/.test(stageTitleLower) ||
+      /laboratory|\blab\b|tests/.test(stageTitleLower) ||
+      (/treatment/.test(stageTitleLower) && /plan/.test(stageTitleLower))
+    ) {
       if (personaRoleKey !== "veterinary-nurse") {
-        console.log(`[chat] Overriding personaRoleKey (${personaRoleKey}) → veterinary-nurse due to stage "${stageDescriptor?.title ?? stageRole}"`);
+        console.log(
+          `[chat] Overriding personaRoleKey (${personaRoleKey}) → veterinary-nurse due to stage "${stageDescriptor?.title ?? stageRole}"`,
+        );
         personaRoleKey = "veterinary-nurse";
       }
     }
@@ -298,14 +362,18 @@ export async function POST(request: NextRequest) {
     // If `personaRoleKey` resolved to `owner` here, clear it so the
     // persona manager falls back to the appropriate seed/default.
     try {
-      const isHistoryStage = /history/i.test(String(stageDescriptor?.title ?? stageRole ?? ""));
+      const isHistoryStage = /history/i.test(
+        String(stageDescriptor?.title ?? stageRole ?? ""),
+      );
       if (isHistoryStage && personaRoleKey === "owner") {
-        console.log(`[chat] Clearing personaRoleKey 'owner' for History Taking stage to avoid owner appearing`);
+        console.log(
+          `[chat] Clearing personaRoleKey 'owner' for History Taking stage to avoid owner appearing`,
+        );
         personaRoleKey = undefined;
       }
     } catch (e) {
       // don't block the flow for unexpected errors
-      console.warn('Error applying history-stage owner guard', e);
+      console.warn("Error applying history-stage owner guard", e);
     }
 
     // Inject the role-specific prompt only when the answering persona is the
@@ -314,13 +382,25 @@ export async function POST(request: NextRequest) {
     // dumping of the full physical/diagnostic record by the nurse.
     if (roleInfoPromptContent) {
       const userQ = String(lastUserMessage?.content ?? "");
-      const looksLikeFindingsRequest = /\b(findings|vitals|results|diagnostic results|test results|what\b.*\b(vitals|findings|results)|show\b.*\b(findings|results|vitals))\b/i.test(userQ);
-      const personaEligible = personaRoleKey === "veterinary-nurse" || /nurse|lab|laboratory/i.test(String(stageRole ?? ""));
+      const looksLikeFindingsRequest =
+        /\b(findings|vitals|results|diagnostic results|test results|what\b.*\b(vitals|findings|results)|show\b.*\b(findings|results|vitals))\b/i.test(
+          userQ,
+        );
+      const personaEligible =
+        personaRoleKey === "veterinary-nurse" ||
+        /nurse|lab|laboratory/i.test(String(stageRole ?? ""));
       if (personaEligible && looksLikeFindingsRequest) {
-        enhancedMessages.unshift({ role: "system", content: roleInfoPromptContent });
-        console.log(`[chat] Injected roleInfoPrompt for personaRoleKey="${personaRoleKey}" due to explicit findings request.`);
+        enhancedMessages.unshift({
+          role: "system",
+          content: roleInfoPromptContent,
+        });
+        console.log(
+          `[chat] Injected roleInfoPrompt for personaRoleKey="${personaRoleKey}" due to explicit findings request.`,
+        );
       } else {
-        console.log(`[chat] Skipped roleInfoPrompt injection for personaRoleKey="${personaRoleKey}" looksLikeFindingsRequest=${looksLikeFindingsRequest}`);
+        console.log(
+          `[chat] Skipped roleInfoPrompt injection for personaRoleKey="${personaRoleKey}" looksLikeFindingsRequest=${looksLikeFindingsRequest}`,
+        );
       }
     }
 
@@ -329,17 +409,44 @@ export async function POST(request: NextRequest) {
     // release and the student asked a general findings/results question,
     // return a clarifying prompt instead of releasing all findings.
     try {
-      const strategy = caseRecord && typeof caseRecord === 'object' ? (caseRecord as any)["findings_release_strategy"] : undefined;
-      const isOnDemand = strategy === 'on_demand';
+      const strategy =
+        caseRecord && typeof caseRecord === "object"
+          ? (caseRecord as any)["findings_release_strategy"]
+          : undefined;
+      const isOnDemand = strategy === "on_demand";
       const q = lastUserMessage?.content ?? "";
-      const looksLikeGeneralFindingsRequest = /\b(findings|vitals|results|diagnostic results|test results)\b/i.test(q) || /what\b.*\b(findings|results|vitals)\b/i.test(q) || /show\b.*\b(findings|results|vitals)\b/i.test(q);
-      const personaIsNurseOrLab = Boolean(personaRoleKey && (personaRoleKey === 'veterinary-nurse' || personaRoleKey === 'lab-technician')) || Boolean(stageDescriptor && /nurse|laboratory|lab/i.test(String(stageDescriptor.role ?? '')));
-      if (isOnDemand && looksLikeGeneralFindingsRequest && personaIsNurseOrLab) {
-        const clarifying = "Please request a specific finding or system (for example: 'vitals', 'cardiovascular exam', 'CBC'). Which would you like to see?";
-        try { debugEventBus.emitEvent('info','ChatDBMatch','on_demand-clarify',{ caseId, q }); } catch {}
+      const looksLikeGeneralFindingsRequest =
+        /\b(findings|vitals|results|diagnostic results|test results)\b/i.test(
+          q,
+        ) ||
+        /what\b.*\b(findings|results|vitals)\b/i.test(q) ||
+        /show\b.*\b(findings|results|vitals)\b/i.test(q);
+      const personaIsNurseOrLab =
+        Boolean(
+          personaRoleKey &&
+          (personaRoleKey === "veterinary-nurse" ||
+            personaRoleKey === "lab-technician"),
+        ) ||
+        Boolean(
+          stageDescriptor &&
+          /nurse|laboratory|lab/i.test(String(stageDescriptor.role ?? "")),
+        );
+      if (
+        isOnDemand &&
+        looksLikeGeneralFindingsRequest &&
+        personaIsNurseOrLab
+      ) {
+        const clarifying =
+          "Please request a specific finding or system (for example: 'vitals', 'cardiovascular exam', 'CBC'). Which would you like to see?";
+        try {
+          debugEventBus.emitEvent("info", "ChatDBMatch", "on_demand-clarify", {
+            caseId,
+            q,
+          });
+        } catch {}
         // Must match the standard response shape (including 'role')
         return NextResponse.json({
-          role: "assistant", 
+          role: "assistant",
           content: clarifying,
           displayRole: displayRole,
           roleKey: personaRoleKey,
@@ -350,7 +457,7 @@ export async function POST(request: NextRequest) {
         });
       }
     } catch (e) {
-      console.warn('Error enforcing on_demand findings guard', e);
+      console.warn("Error enforcing on_demand findings guard", e);
     }
 
     // Filter media relevant to the current stage
@@ -374,27 +481,32 @@ export async function POST(request: NextRequest) {
 
     // GUARDRAIL: RAG context injection - filter CASE_DATA for owner personas
     // Owner personas must NEVER receive case facts (diagnosis, lab results, etc.)
-    const isOwnerForRag = personaRoleKey === "owner" || /owner|client/i.test(stageRole ?? "");
+    const isOwnerForRag =
+      personaRoleKey === "owner" || /owner|client/i.test(stageRole ?? "");
     if (ragContext && !isOwnerForRag) {
       // Non-owner personas get full RAG context including case data
       enhancedMessages.unshift({
         role: "system",
-        content: ragContext
+        content: ragContext,
       });
     } else if (ragContext && isOwnerForRag) {
       // Owner personas only get scientific references, NOT case facts
       // The ragContext may contain both - we need to strip CASE FACTS section
-      const caseFactsMatch = ragContext.match(/^CASE FACTS \(from database\):[\s\S]*?(?=SCIENTIFIC REFERENCES|$)/);
-      const sanitizedRagContext = caseFactsMatch 
+      const caseFactsMatch = ragContext.match(
+        /^CASE FACTS \(from database\):[\s\S]*?(?=SCIENTIFIC REFERENCES|$)/,
+      );
+      const sanitizedRagContext = caseFactsMatch
         ? ragContext.replace(caseFactsMatch[0], "").trim()
         : ragContext;
-      
+
       if (sanitizedRagContext) {
         enhancedMessages.unshift({
           role: "system",
-          content: sanitizedRagContext
+          content: sanitizedRagContext,
         });
-        console.log(`[chat] RAG: Owner persona - stripped CASE FACTS, retained scientific refs only`);
+        console.log(
+          `[chat] RAG: Owner persona - stripped CASE FACTS, retained scientific refs only`,
+        );
       }
     }
 
@@ -423,8 +535,9 @@ export async function POST(request: NextRequest) {
       const mediaList = relevantMedia
         .map(
           (m) =>
-            `- [MEDIA:${m.id}] ${m.type.toUpperCase()} [${m.trigger === "auto" ? "AUTO-SHOW" : "ON-DEMAND"
-            }]: ${m.caption || "No description"}`
+            `- [MEDIA:${m.id}] ${m.type.toUpperCase()} [${
+              m.trigger === "auto" ? "AUTO-SHOW" : "ON-DEMAND"
+            }]: ${m.caption || "No description"}`,
         )
         .join("\n");
 
@@ -483,14 +596,13 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     let personaBehaviorPrompt: string | undefined = undefined;
     let personaSeeds: PersonaSeed[] | null = null;
 
-    
     // Fetch the persona row for the resolved answering persona (if any).
     if (caseId && personaRoleKey) {
       try {
         const { data: row, error } = await supabase
           .from("case_personas")
           .select(
-            "role_key, display_name, behavior_prompt, metadata, image_url, status, sex"
+            "role_key, display_name, behavior_prompt, metadata, image_url, status, sex",
           )
           .eq("case_id", caseId)
           .eq("role_key", personaRoleKey)
@@ -500,26 +612,39 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
           console.warn("Failed to read persona row for chat", error);
         } else if (row) {
           personaRow = row as PersonaTableRow;
-          console.log(`[chat] Persona DB lookup success: case_id="${caseId}" role_key="${personaRoleKey}" → display_name="${row.display_name}" image_url="${row.image_url?.substring(0, 50)}..."`);
+          console.log(
+            `[chat] Persona DB lookup success: case_id="${caseId}" role_key="${personaRoleKey}" → display_name="${row.display_name}" image_url="${row.image_url?.substring(0, 50)}..."`,
+          );
         }
 
         if (!personaRow) {
-          console.warn(`No persona found for case=${caseId} role=${personaRoleKey}. Persona will use default behavior.`);
+          console.warn(
+            `No persona found for case=${caseId} role=${personaRoleKey}. Persona will use default behavior.`,
+          );
         }
       } catch (personaErr) {
         console.warn("Failed to ensure persona row for chat", personaErr);
       }
     } else if (personaRoleKey) {
-      console.warn(`[chat] Chat request without caseId - persona "${personaRoleKey}" will use default seed behavior`);
+      console.warn(
+        `[chat] Chat request without caseId - persona "${personaRoleKey}" will use default seed behavior`,
+      );
     }
 
     if (personaRow?.display_name) {
-      console.log(`[chat] Overriding displayRole with persona display_name: "${personaRow.display_name}" (was "${displayRole}")`);
+      console.log(
+        `[chat] Overriding displayRole with persona display_name: "${personaRow.display_name}" (was "${displayRole}")`,
+      );
       displayRole = personaRow.display_name;
     } else if (personaRow) {
-      console.log(`[chat] Persona row found but display_name is empty. personaRow:`, JSON.stringify(personaRow));
+      console.log(
+        `[chat] Persona row found but display_name is empty. personaRow:`,
+        JSON.stringify(personaRow),
+      );
     } else {
-      console.log(`[chat] No persona row found for roleKey="${personaRoleKey}" caseId="${caseId}". displayRole remains "${displayRole}"`);
+      console.log(
+        `[chat] No persona row found for roleKey="${personaRoleKey}" caseId="${caseId}". displayRole remains "${displayRole}"`,
+      );
     }
 
     if (
@@ -552,7 +677,10 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     }
 
     personaImageUrl = personaRow?.image_url ?? undefined;
-    if (personaRow?.behavior_prompt && typeof personaRow.behavior_prompt === "string") {
+    if (
+      personaRow?.behavior_prompt &&
+      typeof personaRow.behavior_prompt === "string"
+    ) {
       const trimmedBehavior = personaRow.behavior_prompt.trim();
       if (trimmedBehavior) {
         personaBehaviorPrompt = trimmedBehavior;
@@ -566,17 +694,17 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       // Replace "You are <Name>," patterns at the start
       personaBehaviorPrompt = personaBehaviorPrompt.replace(
         /^You are [A-Z][a-z]+(\s+[A-Z][a-z]+)*,/i,
-        `You are ${personaDisplayName},`
+        `You are ${personaDisplayName},`,
       );
       // Replace "I am <Name>" patterns
       personaBehaviorPrompt = personaBehaviorPrompt.replace(
         /\bI am [A-Z][a-z]+(\s+[A-Z][a-z]+)*/gi,
-        `I am ${personaDisplayName}`
+        `I am ${personaDisplayName}`,
       );
       // Replace "My name is <Name>" patterns
       personaBehaviorPrompt = personaBehaviorPrompt.replace(
         /\bMy name is [A-Z][a-z]+(\s+[A-Z][a-z]+)*/gi,
-        `My name is ${personaDisplayName}`
+        `My name is ${personaDisplayName}`,
       );
     }
 
@@ -584,14 +712,14 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     let personaSex: string | undefined = undefined;
 
     const resolveVoiceFromMetadata = (
-      metadata: Record<string, unknown>
+      metadata: Record<string, unknown>,
     ): string | undefined => {
       const direct = metadata["voiceId"];
       if (typeof direct === "string" && direct.trim()) return direct;
       const identityVoice =
         metadata["identity"] &&
-          typeof metadata["identity"] === "object" &&
-          metadata["identity"] !== null
+        typeof metadata["identity"] === "object" &&
+        metadata["identity"] !== null
           ? (metadata["identity"] as { voiceId?: unknown }).voiceId
           : undefined;
       if (typeof identityVoice === "string" && identityVoice.trim()) {
@@ -601,7 +729,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     };
 
     const resolveSexFromMetadata = (
-      metadata: Record<string, unknown>
+      metadata: Record<string, unknown>,
     ): string | undefined => {
       const direct = metadata["sex"];
       if (direct === "male" || direct === "female" || direct === "neutral") {
@@ -609,11 +737,15 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       }
       const identitySex =
         metadata["identity"] &&
-          typeof metadata["identity"] === "object" &&
-          metadata["identity"] !== null
+        typeof metadata["identity"] === "object" &&
+        metadata["identity"] !== null
           ? (metadata["identity"] as { sex?: unknown }).sex
           : undefined;
-      if (identitySex === "male" || identitySex === "female" || identitySex === "neutral") {
+      if (
+        identitySex === "male" ||
+        identitySex === "female" ||
+        identitySex === "neutral"
+      ) {
         return identitySex;
       }
       return undefined;
@@ -621,11 +753,16 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
 
     // PRIMARY: Read voice and sex from persona row (case_personas table is the source of truth)
     // First check the direct sex column on the row
-    if (personaRow?.sex && (personaRow.sex === "male" || personaRow.sex === "female" || personaRow.sex === "neutral")) {
+    if (
+      personaRow?.sex &&
+      (personaRow.sex === "male" ||
+        personaRow.sex === "female" ||
+        personaRow.sex === "neutral")
+    ) {
       personaSex = personaRow.sex;
       console.log(`[chat] personaSex from row.sex: "${personaSex}"`);
     }
-    
+
     // Then check metadata for voiceId and sex (if not found in direct column)
     if (personaMetadata) {
       const metaVoice = resolveVoiceFromMetadata(personaMetadata);
@@ -645,13 +782,21 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     // FALLBACK: Only use seeds if no persona row data was found
     // Seeds are legacy and should not override case-viewer persona manager settings
     if (personaRoleKey && !personaRow) {
-      console.log(`[chat] No persona row found, falling back to seeds for roleKey="${personaRoleKey}"`);
+      console.log(
+        `[chat] No persona row found, falling back to seeds for roleKey="${personaRoleKey}"`,
+      );
       try {
-        const seeds = personaRoleKey === "owner" && caseId && typeof caseId === "string"
-          ? buildPersonaSeeds(caseId, (caseRecord ?? {}) as Record<string, unknown>)
-          : buildSharedPersonaSeeds();
-        
-        const matchedSeed = seeds.find((seed) => seed.roleKey === personaRoleKey);
+        const seeds =
+          personaRoleKey === "owner" && caseId && typeof caseId === "string"
+            ? buildPersonaSeeds(
+                caseId,
+                (caseRecord ?? {}) as Record<string, unknown>,
+              )
+            : buildSharedPersonaSeeds();
+
+        const matchedSeed = seeds.find(
+          (seed) => seed.roleKey === personaRoleKey,
+        );
 
         if (!personaBehaviorPrompt && matchedSeed?.behaviorPrompt) {
           const trimmedBehavior = matchedSeed.behaviorPrompt.trim();
@@ -661,29 +806,47 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
         }
 
         if (!personaIdentity && matchedSeed?.metadata) {
-          const identityCandidate = (matchedSeed.metadata as { identity?: unknown }).identity;
-          if (identityCandidate && typeof identityCandidate === "object" && identityCandidate !== null) {
+          const identityCandidate = (
+            matchedSeed.metadata as { identity?: unknown }
+          ).identity;
+          if (
+            identityCandidate &&
+            typeof identityCandidate === "object" &&
+            identityCandidate !== null
+          ) {
             personaIdentity = identityCandidate as PersonaIdentity;
             if (!personaVoiceId) {
-              const candidateVoice = (identityCandidate as { voiceId?: unknown }).voiceId;
+              const candidateVoice = (
+                identityCandidate as { voiceId?: unknown }
+              ).voiceId;
               if (typeof candidateVoice === "string") {
                 personaVoiceId = candidateVoice;
               }
             }
             if (!personaSex) {
               const candidateSex = (identityCandidate as { sex?: unknown }).sex;
-              if (candidateSex === "male" || candidateSex === "female" || candidateSex === "neutral") {
+              if (
+                candidateSex === "male" ||
+                candidateSex === "female" ||
+                candidateSex === "neutral"
+              ) {
                 personaSex = candidateSex;
               }
             }
           }
         }
       } catch (seedErr) {
-        console.warn("Failed to resolve persona seed data", { caseId, personaRoleKey }, seedErr);
+        console.warn(
+          "Failed to resolve persona seed data",
+          { caseId, personaRoleKey },
+          seedErr,
+        );
       }
     }
 
-    console.log(`[chat] Final persona resolution: displayRole="${displayRole}", voiceId="${personaVoiceId}", sex="${personaSex}", imageUrl="${personaImageUrl?.substring(0, 50)}..."`);
+    console.log(
+      `[chat] Final persona resolution: displayRole="${displayRole}", voiceId="${personaVoiceId}", sex="${personaSex}", imageUrl="${personaImageUrl?.substring(0, 50)}..."`,
+    );
 
     // Reuse stageTokens and pushToken from earlier
     const matchingMedia = caseMedia.filter((item) => {
@@ -774,7 +937,11 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     //    case record and the student requests a specific test/value, return the
     //    recorded value directly from the DB to avoid hallucination.
     const userText = (lastUserMessage?.content ?? "").toLowerCase();
-    const physicalStageKeywords = ["physical", "physical exam", "physical examination"];
+    const physicalStageKeywords = [
+      "physical",
+      "physical exam",
+      "physical examination",
+    ];
 
     // Synonym maps for diagnostic and physical queries. Keys are canonical tokens.
     const DIAG_SYNONYMS: Record<string, string[]> = {
@@ -792,14 +959,24 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     const PHYS_SYNONYMS: Record<string, string[]> = {
       rumen_turnover: ["rumen turnover", "rumen_turnover", "rumen_turnover"],
       // include dash/underscore variants and common phrase forms
-      rumen_turnover_alt: ["rumen-turnover", "rumen turnover", "rumen_turnover"],
+      rumen_turnover_alt: [
+        "rumen-turnover",
+        "rumen turnover",
+        "rumen_turnover",
+      ],
       ballottement: ["ballottement", "ballottement was", "ballott"],
       temperature: ["temp", "temperature"],
       heart_rate: ["heart", "heart rate", "pulse"],
-      respiratory_rate: ["respiratory", "respirations", "resp rate", "resp"] ,
-      mucous_membranes: ["mucous", "mucous membrane", "mm", "mm color", "mm colour"],
+      respiratory_rate: ["respiratory", "respirations", "resp rate", "resp"],
+      mucous_membranes: [
+        "mucous",
+        "mucous membrane",
+        "mm",
+        "mm color",
+        "mm colour",
+      ],
       hydration: ["hydration"],
-      abdomen: ["abdomen", "abdominal", "rumen"]
+      abdomen: ["abdomen", "abdominal", "rumen"],
     };
 
     function normalizeForMatching(s: string): string {
@@ -813,7 +990,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     // Convert Celsius temperature mentions in free text to Fahrenheit.
     // Replace occurrences like '38.7 °C' or '38.7°C' with '101.7 °F (38.7 °C)'.
     function convertCelsiusToFahrenheitInText(s: string): string {
-      if (!s || typeof s !== 'string') return s;
+      if (!s || typeof s !== "string") return s;
       try {
         return s.replace(/([-+]?\d+(?:\.\d+)?)\s*°?\s*C\b/gi, (_m, cstr) => {
           const c = parseFloat(cstr);
@@ -829,7 +1006,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
 
     const stripLeadingPersonaIntro = (
       text: string | null | undefined,
-      labels: Array<string | undefined>
+      labels: Array<string | undefined>,
     ): string => {
       if (!text) return "";
 
@@ -837,8 +1014,8 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
         new Set(
           labels
             .map((label) => (label ? label.trim() : ""))
-            .filter((label) => label.length > 0)
-        )
+            .filter((label) => label.length > 0),
+        ),
       );
 
       let output: string = text ?? "";
@@ -847,7 +1024,10 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       for (const label of uniqueLabels) {
         if (!label) continue;
         const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const pattern = new RegExp(`^\\s*(?:${escaped})(?:\\s*\\([^)]*\\))?\\s*[:\-–—]?\\s*`, "i");
+        const pattern = new RegExp(
+          `^\\s*(?:${escaped})(?:\\s*\\([^)]*\\))?\\s*[:\-–—]?\\s*`,
+          "i",
+        );
         if (pattern.test(output)) {
           output = output.replace(pattern, "");
           break;
@@ -869,12 +1049,17 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       }
 
       // General cleanup of obvious prefixes
-      output = output.replace(/^(assistant|nurse|doctor|lab|veterinary nurse)[:\s\-]+/i, "").trimStart();
+      output = output
+        .replace(/^(assistant|nurse|doctor|lab|veterinary nurse)[:\s\-]+/i, "")
+        .trimStart();
 
       return output.trimStart();
     };
 
-    function findSynonymKey(text: string, groups: Record<string, string[]>): string | null {
+    function findSynonymKey(
+      text: string,
+      groups: Record<string, string[]>,
+    ): string | null {
       const tNorm = normalizeForMatching(text);
       for (const [key, syns] of Object.entries(groups)) {
         for (const s of syns) {
@@ -888,7 +1073,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
 
     function lineMatchesSynonym(line: string, syns: string[]): boolean {
       const lNorm = normalizeForMatching(line);
-      return syns.some(s => {
+      return syns.some((s) => {
         if (!s) return false;
         const sNorm = normalizeForMatching(s);
         return sNorm && lNorm.includes(sNorm);
@@ -899,7 +1084,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     const INTERNAL_FIELD_BLOCKLIST = new Set([
       // Prompt fields - contain AI instructions
       "get_owner_prompt",
-      "get_physical_exam_prompt", 
+      "get_physical_exam_prompt",
       "get_diagnostic_prompt",
       "get_owner_follow_up_prompt",
       "get_owner_diagnosis_prompt",
@@ -928,7 +1113,11 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       const pathLower = path.toLowerCase();
       // Check exact match or if path starts with a blocked field
       for (const blocked of INTERNAL_FIELD_BLOCKLIST) {
-        if (pathLower === blocked || pathLower.startsWith(blocked + ".") || pathLower.startsWith(blocked + "[")) {
+        if (
+          pathLower === blocked ||
+          pathLower.startsWith(blocked + ".") ||
+          pathLower.startsWith(blocked + "[")
+        ) {
           return true;
         }
       }
@@ -941,7 +1130,10 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
 
     // Search across all fields of the case record (recursively) for any matches
     // IMPORTANT: Excludes internal fields like prompts and feedback instructions
-    function searchCaseRecordForQuery(query: string, record: Record<string, unknown> | null): string[] {
+    function searchCaseRecordForQuery(
+      query: string,
+      record: Record<string, unknown> | null,
+    ): string[] {
       const results: string[] = [];
       if (!record) return results;
       const qNorm = normalizeForMatching(query);
@@ -981,7 +1173,9 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
             }
             const keyNorm = normalizeForMatching(keyPath);
             if (qNorm && keyNorm.includes(qNorm)) {
-              results.push(`${keyPath}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`);
+              results.push(
+                `${keyPath}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`,
+              );
             }
             visit(v, keyPath);
           }
@@ -1001,10 +1195,19 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     const stageTitle = stageDescriptor?.title ?? "";
     // IMPORTANT: Only allow data retrieval for nurse/tech personas, NOT owners
     // The owner should NEVER see diagnostic data, physical exam findings, or lab results
-    const isOwnerPersona = personaRoleKey === "owner" || /owner|client/i.test(stageRole ?? "");
-    const isPhysicalStage = !isOwnerPersona && (/physical/i.test(stageTitle) || physicalStageKeywords.some(k=>stageTitle.toLowerCase().includes(k)));
+    const isOwnerPersona =
+      personaRoleKey === "owner" || /owner|client/i.test(stageRole ?? "");
+    const isPhysicalStage =
+      !isOwnerPersona &&
+      (/physical/i.test(stageTitle) ||
+        physicalStageKeywords.some((k) =>
+          stageTitle.toLowerCase().includes(k),
+        ));
     // Exclude "Diagnostic Planning" which is an owner stage despite having "diagnostic" in the name
-    const isLabStage = !isOwnerPersona && /laboratory|lab/i.test(stageTitle) && !/planning/i.test(stageTitle);
+    const isLabStage =
+      !isOwnerPersona &&
+      /laboratory|lab/i.test(stageTitle) &&
+      !/planning/i.test(stageTitle);
 
     // EARLY SHORT-CIRCUIT: If the student explicitly requested specific
     // physical parameters (e.g., "hr, rr, temp") then return the compact
@@ -1012,37 +1215,72 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     // role-prompt or RAG/system injection occurs. This is authoritative and
     // prevents the LLM from being asked to dump the entire findings block.
     try {
-      const requestedEarly = parseRequestedKeys(lastUserMessage?.content ?? userText);
+      const requestedEarly = parseRequestedKeys(
+        lastUserMessage?.content ?? userText,
+      );
       try {
-        debugEventBus.emitEvent('info','ChatShortCircuit','parseRequestedKeys',{ tokens: requestedEarly.tokens, canonical: requestedEarly.canonical });
+        debugEventBus.emitEvent(
+          "info",
+          "ChatShortCircuit",
+          "parseRequestedKeys",
+          {
+            tokens: requestedEarly.tokens,
+            canonical: requestedEarly.canonical,
+          },
+        );
       } catch {}
 
-      if (isPhysicalStage && requestedEarly && Array.isArray(requestedEarly.canonical) && requestedEarly.canonical.length > 0) {
-        const physField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["physical_exam_findings"] : null;
+      if (
+        isPhysicalStage &&
+        requestedEarly &&
+        Array.isArray(requestedEarly.canonical) &&
+        requestedEarly.canonical.length > 0
+      ) {
+        const physField =
+          caseRecord && typeof caseRecord === "object"
+            ? (caseRecord as Record<string, unknown>)["physical_exam_findings"]
+            : null;
         let physText = typeof physField === "string" ? physField : "";
         // If no DB physical text, attempt authoritative extraction from RAG CASE_DATA chunks
-        if (!physText && Array.isArray(ragCaseDataChunks) && ragCaseDataChunks.length > 0) {
-          physText = ragCaseDataChunks.map((c: any) => (c && c.content) ? String(c.content) : "").filter(Boolean).join('\n\n');
-          try { debugEventBus.emitEvent('info','ChatDBMatch','using-rag-case-data',{ caseId, chunkCount: ragCaseDataChunks.length }); } catch {}
+        if (
+          !physText &&
+          Array.isArray(ragCaseDataChunks) &&
+          ragCaseDataChunks.length > 0
+        ) {
+          physText = ragCaseDataChunks
+            .map((c: any) => (c && c.content ? String(c.content) : ""))
+            .filter(Boolean)
+            .join("\n\n");
+          try {
+            debugEventBus.emitEvent(
+              "info",
+              "ChatDBMatch",
+              "using-rag-case-data",
+              { caseId, chunkCount: ragCaseDataChunks.length },
+            );
+          } catch {}
         }
         if (physText) {
           const matches = matchPhysicalFindings(requestedEarly, physText);
 
-          const displayNames: Record<string,string> = {
-            heart_rate: 'Heart rate',
-            respiratory_rate: 'Respiratory rate',
-            temperature: 'Temperature',
-            blood_pressure: 'Blood pressure',
+          const displayNames: Record<string, string> = {
+            heart_rate: "Heart rate",
+            respiratory_rate: "Respiratory rate",
+            temperature: "Temperature",
+            blood_pressure: "Blood pressure",
           };
 
           const cleanValue = (v: string): string => {
             if (!v) return v;
-            let s = v.replace(/^['"`]+/, "").replace(/['"`]+$/, "").trim();
-            s = s.replace(/,$/, '').trim();
-            if (s.includes(':')) {
-              const parts = s.split(':');
+            let s = v
+              .replace(/^['"`]+/, "")
+              .replace(/['"`]+$/, "")
+              .trim();
+            s = s.replace(/,$/, "").trim();
+            if (s.includes(":")) {
+              const parts = s.split(":");
               parts.shift();
-              s = parts.join(':').trim();
+              s = parts.join(":").trim();
             }
             return s;
           };
@@ -1052,8 +1290,10 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
           for (const m of matches) {
             const name = displayNames[m.canonicalKey] ?? m.canonicalKey;
             if (m.lines && m.lines.length > 0) {
-              const vals = uniq(m.lines.map(l => cleanValue(l))).filter(Boolean);
-              const combined = vals.length > 0 ? vals.join(' | ') : null;
+              const vals = uniq(m.lines.map((l) => cleanValue(l))).filter(
+                Boolean,
+              );
+              const combined = vals.length > 0 ? vals.join(" | ") : null;
               if (combined) {
                 const converted = convertCelsiusToFahrenheitInText(combined);
                 phrases.push(`${name}: ${converted}`);
@@ -1064,19 +1304,36 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
               phrases.push(`${name}: not documented`);
             }
           }
-          const out = phrases.join(', ');
-          try { debugEventBus.emitEvent('info','ChatShortCircuit','returned-phys',{ requested: requestedEarly.canonical, count: phrases.length }); } catch {}
+          const out = phrases.join(", ");
+          try {
+            debugEventBus.emitEvent(
+              "info",
+              "ChatShortCircuit",
+              "returned-phys",
+              { requested: requestedEarly.canonical, count: phrases.length },
+            );
+          } catch {}
           // Return the compact findings to the client. Do NOT set a `suppress` flag
           // when returning valid content, because the client treats `suppress` as
           // an instruction to not append or display the response. The presence
           // of `content` is authoritative here. Include `role: "assistant"` so
           // the client TTS/STT orchestrator recognizes this as an assistant reply
           // and can re-enable the microphone after speech.
-          return NextResponse.json({ role: "assistant", content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+          return NextResponse.json({
+            role: "assistant",
+            content: out,
+            displayRole,
+            portraitUrl: personaImageUrl,
+            voiceId: personaVoiceId,
+            personaSex,
+            personaRoleKey,
+            media: [],
+            patientSex,
+          });
         }
       }
     } catch (e) {
-      console.warn('Early physical short-circuit failed', e);
+      console.warn("Early physical short-circuit failed", e);
     }
 
     const matchedDiagKeyInUser = findSynonymKey(userText, DIAG_SYNONYMS);
@@ -1087,55 +1344,93 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     if (isPhysicalStage) {
       const matchedKeyword = matchedDiagKeyInUser;
       try {
-        debugEventBus.emitEvent('info', 'ChatDBMatch', 'Physical stage query', { userText, stageTitle, matchedDiagKeyInUser });
+        debugEventBus.emitEvent("info", "ChatDBMatch", "Physical stage query", {
+          userText,
+          stageTitle,
+          matchedDiagKeyInUser,
+        });
       } catch {}
       // If diagnostic_findings contains the requested item, be explicit that it exists
-      const diagField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["diagnostic_findings"] : null;
-      const physField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["physical_exam_findings"] : null;
+      const diagField =
+        caseRecord && typeof caseRecord === "object"
+          ? (caseRecord as Record<string, unknown>)["diagnostic_findings"]
+          : null;
+      const physField =
+        caseRecord && typeof caseRecord === "object"
+          ? (caseRecord as Record<string, unknown>)["physical_exam_findings"]
+          : null;
       const diagText = typeof diagField === "string" ? diagField : "";
       const physText = typeof physField === "string" ? physField : "";
 
       // If user actually asked about something recorded in the physical exam, allow returning that.
       // Support multi-parameter physical requests (e.g., "hr, rr, temp")
-      const requested = parseRequestedKeys(lastUserMessage?.content ?? userText);
+      const requested = parseRequestedKeys(
+        lastUserMessage?.content ?? userText,
+      );
       const matchedPhysicalKey = findSynonymKey(userText, PHYS_SYNONYMS);
 
       // If the student asked about diagnostics while in the Physical stage,
       // the nurse must not provide diagnostic results. Instruct the student
       // to request those results during the Laboratory & Tests stage.
       if (matchedDiagKeyInUser) {
-        const advise = "Those diagnostic results are available during the Laboratory & Tests stage. Please request that stage to see lab or imaging results.";
-        try { debugEventBus.emitEvent('info','ChatDBMatch','physical-asked-diagnostics',{ query: userText }); } catch {}
-        return NextResponse.json({ role: "assistant", content: advise, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [] });
+        const advise =
+          "Those diagnostic results are available during the Laboratory & Tests stage. Please request that stage to see lab or imaging results.";
+        try {
+          debugEventBus.emitEvent(
+            "info",
+            "ChatDBMatch",
+            "physical-asked-diagnostics",
+            { query: userText },
+          );
+        } catch {}
+        return NextResponse.json({
+          role: "assistant",
+          content: advise,
+          displayRole,
+          portraitUrl: personaImageUrl,
+          voiceId: personaVoiceId,
+          personaSex,
+          personaRoleKey,
+          media: [],
+        });
       }
 
       // If parseRequestedKeys returned multiple canonical keys, try to match them
       // Only consider canonical keys that are part of the physical exam synonyms
       const allowedPhysKeys = new Set(Object.keys(PHYS_SYNONYMS));
-      const requestedPhys = (requested?.canonical ?? []).filter(k => allowedPhysKeys.has(k));
+      const requestedPhys = (requested?.canonical ?? []).filter((k) =>
+        allowedPhysKeys.has(k),
+      );
 
       if ((requestedPhys?.length ?? 0) > 0 && physText) {
-        try { debugEventBus.emitEvent('info','ChatDBMatch','multi-phys-request',{ requested: requestedPhys }); } catch {}
+        try {
+          debugEventBus.emitEvent("info", "ChatDBMatch", "multi-phys-request", {
+            requested: requestedPhys,
+          });
+        } catch {}
 
         // Use the existing matcher but only for physical exam keys requested
         const requestedSubset = { ...requested, canonical: requestedPhys };
         const matches = matchPhysicalFindings(requestedSubset, physText);
         // Build a compact, comma-separated response for the requested parameters.
-        const displayNames: Record<string,string> = {
-          heart_rate: 'Heart rate',
-          respiratory_rate: 'Respiratory rate',
-          temperature: 'Temperature',
-          blood_pressure: 'Blood pressure',
+        const displayNames: Record<string, string> = {
+          heart_rate: "Heart rate",
+          respiratory_rate: "Respiratory rate",
+          temperature: "Temperature",
+          blood_pressure: "Blood pressure",
         };
 
         const cleanValue = (v: string): string => {
           if (!v) return v;
-          let s = v.replace(/^['"`]+/, "").replace(/['"`]+$/, "").trim();
-          s = s.replace(/,$/, '').trim();
-          if (s.includes(':')) {
-            const parts = s.split(':');
+          let s = v
+            .replace(/^['"`]+/, "")
+            .replace(/['"`]+$/, "")
+            .trim();
+          s = s.replace(/,$/, "").trim();
+          if (s.includes(":")) {
+            const parts = s.split(":");
             parts.shift();
-            s = parts.join(':').trim();
+            s = parts.join(":").trim();
           }
           return s;
         };
@@ -1146,8 +1441,10 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
         for (const m of matches) {
           const name = displayNames[m.canonicalKey] ?? m.canonicalKey;
           if (m.lines && m.lines.length > 0) {
-            const vals = uniq(m.lines.map(l => cleanValue(l))).filter(Boolean);
-            const combined = vals.length > 0 ? vals.join(' | ') : null;
+            const vals = uniq(m.lines.map((l) => cleanValue(l))).filter(
+              Boolean,
+            );
+            const combined = vals.length > 0 ? vals.join(" | ") : null;
             if (combined) {
               // Convert temperature mentions to show Fahrenheit first
               const converted = convertCelsiusToFahrenheitInText(combined);
@@ -1160,57 +1457,114 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
             phrases.push(`${name}: not documented`);
           }
         }
-        const out = phrases.join(', ');
-        return NextResponse.json({ role: "assistant", content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+        const out = phrases.join(", ");
+        return NextResponse.json({
+          role: "assistant",
+          content: out,
+          displayRole,
+          portraitUrl: personaImageUrl,
+          voiceId: personaVoiceId,
+          personaSex,
+          personaRoleKey,
+          media: [],
+          patientSex,
+        });
       }
 
       if (matchedPhysicalKey && physText) {
-        const lines = physText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        const lines = physText
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter(Boolean);
         // first try exact line contains the user phrase tokens
         const syns = PHYS_SYNONYMS[matchedPhysicalKey] ?? [];
-        const matchingLines = lines.filter(l => lineMatchesSynonym(l, syns));
+        const matchingLines = lines.filter((l) => lineMatchesSynonym(l, syns));
         if (matchingLines.length > 0) {
-          try { debugEventBus.emitEvent('info','ChatDBMatch','line-match',{ matchedKey: matchedPhysicalKey, lines: matchingLines.length }); } catch {}
+          try {
+            debugEventBus.emitEvent("info", "ChatDBMatch", "line-match", {
+              matchedKey: matchedPhysicalKey,
+              lines: matchingLines.length,
+            });
+          } catch {}
           const uniqLines = Array.from(new Set(matchingLines));
-          const clean = uniqLines.map(l => {
-            const v = l.replace(/^[^:\n]+:\s*/, '');
-            return v.replace(/,$/, '').trim();
-          }).filter(Boolean);
-          const displayNamesSingle: Record<string,string> = {
-            heart_rate: 'Heart rate',
-            respiratory_rate: 'Respiratory rate',
-            temperature: 'Temperature',
-            blood_pressure: 'Blood pressure',
+          const clean = uniqLines
+            .map((l) => {
+              const v = l.replace(/^[^:\n]+:\s*/, "");
+              return v.replace(/,$/, "").trim();
+            })
+            .filter(Boolean);
+          const displayNamesSingle: Record<string, string> = {
+            heart_rate: "Heart rate",
+            respiratory_rate: "Respiratory rate",
+            temperature: "Temperature",
+            blood_pressure: "Blood pressure",
           };
-          const paramName = displayNamesSingle[matchedPhysicalKey ?? ''] ?? (matchedPhysicalKey ?? 'Requested parameter');
-          const sentence = `${paramName}: ${convertCelsiusToFahrenheitInText(clean.join(' | '))}`;
-          return NextResponse.json({ role: "assistant", content: sentence, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+          const paramName =
+            displayNamesSingle[matchedPhysicalKey ?? ""] ??
+            matchedPhysicalKey ??
+            "Requested parameter";
+          const sentence = `${paramName}: ${convertCelsiusToFahrenheitInText(clean.join(" | "))}`;
+          return NextResponse.json({
+            role: "assistant",
+            content: sentence,
+            displayRole,
+            portraitUrl: personaImageUrl,
+            voiceId: personaVoiceId,
+            personaSex,
+            personaRoleKey,
+            media: [],
+            patientSex,
+          });
         }
-        
+
         // Additional robust checks: try JSON key/value lookup and fuzzy line matching
         try {
           const parsed = JSON.parse(physText);
-          if (parsed && typeof parsed === 'object') {
+          if (parsed && typeof parsed === "object") {
             const normQuery = normalizeForMatching(userText);
             const hits: string[] = [];
-            const visit = (obj: any, prefix = '') => {
-              if (!obj || typeof obj !== 'object') return;
+            const visit = (obj: any, prefix = "") => {
+              if (!obj || typeof obj !== "object") return;
               for (const key of Object.keys(obj)) {
                 const value = obj[key];
-                const lcKey = (prefix ? `${prefix}.${key}` : key);
+                const lcKey = prefix ? `${prefix}.${key}` : key;
                 const lcKeyNorm = normalizeForMatching(lcKey);
-                const valueNorm = typeof value === 'string' ? normalizeForMatching(value) : '';
-                if (lcKeyNorm.includes(normQuery) || valueNorm.includes(normQuery)) {
-                  hits.push(`${prefix ? `${prefix}.` : ''}${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`);
+                const valueNorm =
+                  typeof value === "string" ? normalizeForMatching(value) : "";
+                if (
+                  lcKeyNorm.includes(normQuery) ||
+                  valueNorm.includes(normQuery)
+                ) {
+                  hits.push(
+                    `${prefix ? `${prefix}.` : ""}${key}: ${typeof value === "object" ? JSON.stringify(value) : String(value)}`,
+                  );
                 }
-                if (typeof value === 'object') visit(value, prefix ? `${prefix}.${key}` : key);
+                if (typeof value === "object")
+                  visit(value, prefix ? `${prefix}.${key}` : key);
               }
             };
             visit(parsed);
             if (hits.length > 0) {
-              try { debugEventBus.emitEvent('info','ChatDBMatch','json-key-match',{ query: userText, hits: hits.length }); } catch {}
-              const out = convertCelsiusToFahrenheitInText(hits.join('\n'));
-              return NextResponse.json({ role: "assistant", content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+              try {
+                debugEventBus.emitEvent(
+                  "info",
+                  "ChatDBMatch",
+                  "json-key-match",
+                  { query: userText, hits: hits.length },
+                );
+              } catch {}
+              const out = convertCelsiusToFahrenheitInText(hits.join("\n"));
+              return NextResponse.json({
+                role: "assistant",
+                content: out,
+                displayRole,
+                portraitUrl: personaImageUrl,
+                voiceId: personaVoiceId,
+                personaSex,
+                personaRoleKey,
+                media: [],
+                patientSex,
+              });
             }
           }
         } catch (e) {
@@ -1218,16 +1572,37 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
         }
 
         // Fuzzy line match: require all query tokens to appear in a line
-        const normQueryTokens = normalizeForMatching(userText).split(/\s+/).filter(Boolean);
+        const normQueryTokens = normalizeForMatching(userText)
+          .split(/\s+/)
+          .filter(Boolean);
         if (normQueryTokens.length > 0) {
-          const fuzzyMatches = lines.filter(l => {
+          const fuzzyMatches = lines.filter((l) => {
             const llNorm = normalizeForMatching(l.toLowerCase());
             return normQueryTokens.every((t: string) => llNorm.includes(t));
           });
           if (fuzzyMatches.length > 0) {
-            try { debugEventBus.emitEvent('info','ChatDBMatch','fuzzy-line-match',{ tokens: normQueryTokens, matches: fuzzyMatches.length }); } catch {}
-            const out = convertCelsiusToFahrenheitInText(fuzzyMatches.join('\n'));
-            return NextResponse.json({ role: "assistant", content: out, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+            try {
+              debugEventBus.emitEvent(
+                "info",
+                "ChatDBMatch",
+                "fuzzy-line-match",
+                { tokens: normQueryTokens, matches: fuzzyMatches.length },
+              );
+            } catch {}
+            const out = convertCelsiusToFahrenheitInText(
+              fuzzyMatches.join("\n"),
+            );
+            return NextResponse.json({
+              role: "assistant",
+              content: out,
+              displayRole,
+              portraitUrl: personaImageUrl,
+              voiceId: personaVoiceId,
+              personaSex,
+              personaRoleKey,
+              media: [],
+              patientSex,
+            });
           }
         }
 
@@ -1236,16 +1611,33 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
         // other case fields (diagnostics/biochemistry) or consult LLM fallbacks
         // that might produce diagnostic interpretation. Return a concise, factual
         // statement limited to the requested physical parameter.
-        try { debugEventBus.emitEvent('info','ChatDBMatch','no-phys-match',{ query: userText }); } catch {}
-        const displayNamesSingle: Record<string,string> = {
-          heart_rate: 'Heart rate',
-          respiratory_rate: 'Respiratory rate',
-          temperature: 'Temperature',
-          blood_pressure: 'Blood pressure',
+        try {
+          debugEventBus.emitEvent("info", "ChatDBMatch", "no-phys-match", {
+            query: userText,
+          });
+        } catch {}
+        const displayNamesSingle: Record<string, string> = {
+          heart_rate: "Heart rate",
+          respiratory_rate: "Respiratory rate",
+          temperature: "Temperature",
+          blood_pressure: "Blood pressure",
         };
-        const dispName = displayNamesSingle[matchedPhysicalKey ?? ''] ?? (matchedPhysicalKey ?? 'Requested parameter');
+        const dispName =
+          displayNamesSingle[matchedPhysicalKey ?? ""] ??
+          matchedPhysicalKey ??
+          "Requested parameter";
         const msg = `${dispName}: not documented in the physical exam.`;
-        return NextResponse.json({ role: "assistant", content: msg, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+        return NextResponse.json({
+          role: "assistant",
+          content: msg,
+          displayRole,
+          portraitUrl: personaImageUrl,
+          voiceId: personaVoiceId,
+          personaSex,
+          personaRoleKey,
+          media: [],
+          patientSex,
+        });
       }
 
       if (matchedKeyword && diagText) {
@@ -1261,51 +1653,103 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     }
 
     if (isLabStage && caseRecord && typeof caseRecord === "object") {
-      const diag = (caseRecord as Record<string, unknown>)["diagnostic_findings"];
+      const diag = (caseRecord as Record<string, unknown>)[
+        "diagnostic_findings"
+      ];
       if (typeof diag === "string" && diag.trim().length > 0) {
         // If user asked specifically for a test or value, try to return the matching lines
         const diagText = diag as string;
         // Find diagnostic canonical key from user text
         const matchedDiagKey = findSynonymKey(userText, DIAG_SYNONYMS);
         if (matchedDiagKey) {
-          const lines = diagText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+          const lines = diagText
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter(Boolean);
           const syns = DIAG_SYNONYMS[matchedDiagKey] ?? [];
-          const matchingLines = lines.filter(l => lineMatchesSynonym(l, syns));
+          const matchingLines = lines.filter((l) =>
+            lineMatchesSynonym(l, syns),
+          );
           if (matchingLines.length > 0) {
             // Deduplicate and return only requested matching lines
             const uniqLines = Array.from(new Set(matchingLines));
-            const cleaned = uniqLines.map(l => l.replace(/^[^:\n]+:\s*/, '').replace(/,$/, '').trim()).filter(Boolean);
-            const reply = convertCelsiusToFahrenheitInText(cleaned.join(' | '));
-            return NextResponse.json({ role: "assistant", content: reply, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+            const cleaned = uniqLines
+              .map((l) =>
+                l
+                  .replace(/^[^:\n]+:\s*/, "")
+                  .replace(/,$/, "")
+                  .trim(),
+              )
+              .filter(Boolean);
+            const reply = convertCelsiusToFahrenheitInText(cleaned.join(" | "));
+            return NextResponse.json({
+              role: "assistant",
+              content: reply,
+              displayRole,
+              portraitUrl: personaImageUrl,
+              voiceId: personaVoiceId,
+              personaSex,
+              personaRoleKey,
+              media: [],
+              patientSex,
+            });
           }
           // If diag text appears to include the requested synonym anywhere,
           // try to parse JSON and extract matching keys rather than dumping
           // the entire diagnostics block.
           try {
             const parsed = JSON.parse(diagText);
-            if (parsed && typeof parsed === 'object') {
+            if (parsed && typeof parsed === "object") {
               const results: string[] = [];
               // search for keys matching synonyms
               for (const s of syns) {
                 if (!s) continue;
                 for (const k of Object.keys(parsed)) {
-                  if (normalizeForMatching(k).includes(normalizeForMatching(s))) {
+                  if (
+                    normalizeForMatching(k).includes(normalizeForMatching(s))
+                  ) {
                     const v = (parsed as any)[k];
-                    results.push(`${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`);
+                    results.push(
+                      `${k}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`,
+                    );
                   }
                 }
               }
               if (results.length > 0) {
                 const uniqResults = Array.from(new Set(results));
-                const cleaned = uniqResults.map(r => r.replace(/^[^:\n]+:\s*/, '').trim()).filter(Boolean);
-                return NextResponse.json({ role: "assistant", content: convertCelsiusToFahrenheitInText(cleaned.join(' | ')), displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+                const cleaned = uniqResults
+                  .map((r) => r.replace(/^[^:\n]+:\s*/, "").trim())
+                  .filter(Boolean);
+                return NextResponse.json({
+                  role: "assistant",
+                  content: convertCelsiusToFahrenheitInText(
+                    cleaned.join(" | "),
+                  ),
+                  displayRole,
+                  portraitUrl: personaImageUrl,
+                  voiceId: personaVoiceId,
+                  personaSex,
+                  personaRoleKey,
+                  media: [],
+                  patientSex,
+                });
               }
             }
           } catch (e) {
             // not JSON, continue
           }
           // If no fine-grained match, respond that the specific result isn't recorded
-          return NextResponse.json({ role: "assistant", content: `That specific diagnostic result is not recorded in the Laboratory & Tests section.`, displayRole, portraitUrl: personaImageUrl, voiceId: personaVoiceId, personaSex, personaRoleKey, media: [], patientSex });
+          return NextResponse.json({
+            role: "assistant",
+            content: `That specific diagnostic result is not recorded in the Laboratory & Tests section.`,
+            displayRole,
+            portraitUrl: personaImageUrl,
+            voiceId: personaVoiceId,
+            personaSex,
+            personaRoleKey,
+            media: [],
+            patientSex,
+          });
         }
       }
     }
@@ -1320,7 +1764,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     let systemGuideline = await resolvePromptValue(
       supabase,
       "chat.system.guideline",
-      CHAT_SYSTEM_GUIDELINE
+      CHAT_SYSTEM_GUIDELINE,
     );
 
     const candidatePersonaName =
@@ -1331,7 +1775,8 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     // Only expose a canonical persona name to the assistant when the
     // resolved answering persona is the `owner`. This prevents non-owner
     // personas (e.g., nurse) from being instructed to use the owner's name.
-    const personaNameForChat = personaRoleKey === "owner" ? candidatePersonaName : undefined;
+    const personaNameForChat =
+      personaRoleKey === "owner" ? candidatePersonaName : undefined;
 
     if (personaNameForChat) {
       const pronounSubject = personaIdentity?.pronouns?.subject ?? "they";
@@ -1349,7 +1794,10 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     // If we prepared a behavior guard earlier, append it here so the system
     // guideline contains the non-revealing instruction (without exposing the
     // full raw behavior prompt).
-    if (typeof personaBehaviorGuard === 'string' && personaBehaviorGuard.length > 0) {
+    if (
+      typeof personaBehaviorGuard === "string" &&
+      personaBehaviorGuard.length > 0
+    ) {
       systemGuideline += personaBehaviorGuard;
     }
 
@@ -1360,7 +1808,12 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     const nurseBasePrompt = `\n\nNURSE PERSONA RULES: If you are answering as a nursing or laboratory persona, follow these rules: 1) Only release physical exam or diagnostic findings when the student explicitly requests them. 2) When the student requests specific findings (for example: 'hr, rr, temperature'), respond with a compact, comma-separated list of the requested parameters and their recorded values (e.g., 'Heart rate: 38 bpm, Respiratory rate: 16 per minute, Temperature: 102 °F (38.9 °C)'). 3) Do NOT include internal prompts, persona-management text, or owner identity. 4) In the Physical Examination stage, do not provide diagnostic interpretations or treatment recommendations unless the student explicitly requests Diagnostic Planning. 5) If a requested value is not recorded, state 'not documented' for that parameter and do not guess.`;
 
     // Append the nurse base prompt for nurse/lab personas during sensitive stages
-    if (personaRoleKey === 'veterinary-nurse' || personaRoleKey === 'lab-technician' || isPhysicalStage || isLabStage) {
+    if (
+      personaRoleKey === "veterinary-nurse" ||
+      personaRoleKey === "lab-technician" ||
+      isPhysicalStage ||
+      isLabStage
+    ) {
       systemGuideline += nurseBasePrompt;
     }
 
@@ -1370,7 +1823,10 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     // unavailable, retry using `CHAT_MODEL_FALLBACKS` before returning a 502.
     let response: any;
     const triedModels: string[] = [];
-    const modelsToTry = [LLM_MODEL, ...CHAT_MODEL_FALLBACKS.filter(m => m !== LLM_MODEL)];
+    const modelsToTry = [
+      LLM_MODEL,
+      ...CHAT_MODEL_FALLBACKS.filter((m) => m !== LLM_MODEL),
+    ];
     for (const modelId of modelsToTry) {
       try {
         triedModels.push(modelId);
@@ -1383,19 +1839,43 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
         // success
         if (modelId !== LLM_MODEL) {
           console.log(`[chat] Fallback to model ${modelId} succeeded.`);
-          try { debugEventBus.emitEvent('info','OpenAI','fallbackModelUsed',{ tried: triedModels, used: modelId }); } catch {}
+          try {
+            debugEventBus.emitEvent("info", "OpenAI", "fallbackModelUsed", {
+              tried: triedModels,
+              used: modelId,
+            });
+          } catch {}
         }
         break;
       } catch (err: any) {
-        console.error(`OpenAI chat completion failed for model ${modelId}:`, err?.message ?? err);
-        try { debugEventBus.emitEvent('error','OpenAI','chatCompletionFailed',{ model: modelId, message: String(err?.message ?? err), code: err?.code, status: err?.status }); } catch {}
-        const modelNotFound = err?.code === 'model_not_found' || err?.status === 404 || err?.code === 'model_access_error';
+        console.error(
+          `OpenAI chat completion failed for model ${modelId}:`,
+          err?.message ?? err,
+        );
+        try {
+          debugEventBus.emitEvent("error", "OpenAI", "chatCompletionFailed", {
+            model: modelId,
+            message: String(err?.message ?? err),
+            code: err?.code,
+            status: err?.status,
+          });
+        } catch {}
+        const modelNotFound =
+          err?.code === "model_not_found" ||
+          err?.status === 404 ||
+          err?.code === "model_access_error";
         if (!modelNotFound) {
           // Non-model access errors should be returned to caller (502)
-          if (process.env.NODE_ENV !== 'production') {
-            return NextResponse.json({ error: String(err?.message ?? 'OpenAI error'), details: err }, { status: 502 });
+          if (process.env.NODE_ENV !== "production") {
+            return NextResponse.json(
+              { error: String(err?.message ?? "OpenAI error"), details: err },
+              { status: 502 },
+            );
           }
-          return NextResponse.json({ error: 'AI provider error' }, { status: 502 });
+          return NextResponse.json(
+            { error: "AI provider error" },
+            { status: 502 },
+          );
         }
         // otherwise, try next candidate
       }
@@ -1403,9 +1883,19 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
 
     if (!response) {
       // None of the candidate models worked
-      console.error('[chat] All candidate chat models failed:', triedModels);
-      try { debugEventBus.emitEvent('error','OpenAI','allModelsFailed',{ tried: triedModels }); } catch {}
-      return NextResponse.json({ error: 'AI model unavailable. Check OPENAI_CHAT_MODEL and server API key access.' }, { status: 502 });
+      console.error("[chat] All candidate chat models failed:", triedModels);
+      try {
+        debugEventBus.emitEvent("error", "OpenAI", "allModelsFailed", {
+          tried: triedModels,
+        });
+      } catch {}
+      return NextResponse.json(
+        {
+          error:
+            "AI model unavailable. Check OPENAI_CHAT_MODEL and server API key access.",
+        },
+        { status: 502 },
+      );
     }
 
     let message = response.choices?.[0]?.message;
@@ -1416,24 +1906,31 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     // This detects when the same paragraph/block is repeated back-to-back and dedupes it.
     const deduplicateConsecutiveBlocks = (text: string): string => {
       // Split into blocks by double newlines or single newlines
-      const blocks = text.split(/\n{2,}/).map(b => b.trim()).filter(Boolean);
+      const blocks = text
+        .split(/\n{2,}/)
+        .map((b) => b.trim())
+        .filter(Boolean);
       if (blocks.length < 2) return text;
-      
+
       const deduped: string[] = [];
       for (let i = 0; i < blocks.length; i++) {
         // Normalize for comparison (lowercase, collapse whitespace)
-        const normalized = blocks[i].toLowerCase().replace(/\s+/g, ' ').trim();
-        const prevNormalized = deduped.length > 0 
-          ? deduped[deduped.length - 1].toLowerCase().replace(/\s+/g, ' ').trim()
-          : '';
-        
+        const normalized = blocks[i].toLowerCase().replace(/\s+/g, " ").trim();
+        const prevNormalized =
+          deduped.length > 0
+            ? deduped[deduped.length - 1]
+                .toLowerCase()
+                .replace(/\s+/g, " ")
+                .trim()
+            : "";
+
         // Skip if this block is identical to the previous one
         if (normalized && normalized === prevNormalized) {
           continue;
         }
         deduped.push(blocks[i]);
       }
-      return deduped.join('\n\n');
+      return deduped.join("\n\n");
     };
 
     // Parse on-demand media tags
@@ -1481,7 +1978,7 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
           return line;
         })
         .filter(Boolean)
-        .join('\n');
+        .join("\n");
 
       return out;
     };
@@ -1496,7 +1993,7 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     // Remove tags from content
     content = content.replace(mediaRegex, "").trim();
 
-    const requestedMedia = caseMedia.filter(m => mediaIds.includes(m.id));
+    const requestedMedia = caseMedia.filter((m) => mediaIds.includes(m.id));
 
     const assistantContent = stripLeadingPersonaIntro(content, [
       personaNameForChat,
@@ -1517,11 +2014,25 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     });
   } catch (error) {
     console.error("Error in chat API:", error);
-    try { debugEventBus.emitEvent('error','ChatAPI','exception',{ message: String(error?.message ?? error), stack: error?.stack?.substring?.(0,2000) }); } catch {}
-    if (process.env.NODE_ENV !== 'production') {
+    try {
+      debugEventBus.emitEvent("error", "ChatAPI", "exception", {
+        message: String(error?.message ?? error),
+        stack: error?.stack?.substring?.(0, 2000),
+      });
+    } catch {}
+    if (process.env.NODE_ENV !== "production") {
       // In development, return sanitized stack for easier debugging
-      return NextResponse.json({ error: String(error?.message ?? "Internal server error"), stack: error?.stack }, { status: 500 });
+      return NextResponse.json(
+        {
+          error: String(error?.message ?? "Internal server error"),
+          stack: error?.stack,
+        },
+        { status: 500 },
+      );
     }
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }
