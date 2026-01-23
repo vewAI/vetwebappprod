@@ -1692,20 +1692,6 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
         )
         .filter(Boolean)
         .join("\n");
-
-      // Guard: remove lines that inappropriately instruct the student or
-      // suggest actions (e.g., "The student should..." or "You should...").
-      const lines = out.split(/\r?\n/);
-      let removedCount = 0;
-      const cleaned = lines
-        .map((l) =>
-          /^\s*(the student\b|you should\b|you must\b)/i.test(l) ||
-          /\bthe student should\b/i.test(l)
-            ? (removedCount++, "")
-            : l,
-        )
-        .filter(Boolean)
-        .join("\n");
       if (removedCount > 0) {
         try {
           debugEventBus.emitEvent(
