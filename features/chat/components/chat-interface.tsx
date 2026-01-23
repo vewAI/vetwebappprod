@@ -330,7 +330,17 @@ export function ChatInterface({
       const isNursePersona = personaKey === "veterinary-nurse" || /nurse|lab/.test(personaKey || roleLower);
       if (!isSensitiveStage || !isNursePersona) return { message: aiMessage, allowTts: true };
 
-      const lastUser = String(lastUserText ?? "");
+      // Prefer explicit lastUserText, but fall back to the most recent
+      // user message from conversation state if not provided.
+      let lastUser = String(lastUserText ?? "").trim();
+      if (!lastUser) {
+        try {
+          const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+          lastUser = String(lastUserMsg?.content ?? "").trim();
+        } catch (e) {
+          lastUser = "";
+        }
+      }
       const requested = parseRequestedKeys(lastUser || "");
       // If the user explicitly requested specific canonical keys, allow normal flow
       if (requested && Array.isArray(requested.canonical) && requested.canonical.length > 0) {
@@ -728,6 +738,9 @@ export function ChatInterface({
   // we always auto-send after a true final transcript arrives.
   const autoSendFinalTimerRef = useRef<number | null>(null);
   const autoSendPendingTextRef = useRef<string | null>(null);
+  // Mic inactivity timer (used to stop mic after long silence). Only
+  // applied during nurse-sensitive stages (Physical, Laboratory, Treatment).
+  const micInactivityTimerRef = useRef<number | null>(null);
   // Track the last final transcript that onFinal handled so we don't
   // duplicate it when the `transcript` state also updates.
   const lastFinalHandledRef = useRef<string | null>(null);
@@ -992,8 +1005,13 @@ export function ChatInterface({
                 // least 3 words to reduce accidental sends from ambient noise
                 const textToSend = baseInputRef.current?.trim() || "";
                 const wordCount = textToSend.split(/\s+/).filter(Boolean).length;
-                if (noiseSuppressionRef.current && wordCount < 3) {
-                  console.debug("Auto-send skipped: too short during noise suppression", { wordCount, text: textToSend });
+                // Allow single-word requests during nurse-sensitive stages.
+                const stage = stages?.[currentStageIndex];
+                const stageTitle = (stage?.title ?? "").toLowerCase();
+                const isSensitiveStage = /physical|laboratory|lab|treatment/.test(stageTitle);
+                const minWordsWhenSuppressed = isSensitiveStage ? 1 : 3;
+                if (noiseSuppressionRef.current && wordCount < minWordsWhenSuppressed) {
+                  console.debug("Auto-send skipped: too short during noise suppression", { wordCount, minWordsWhenSuppressed, text: textToSend });
                   return;
                 }
                 
@@ -1113,6 +1131,55 @@ export function ChatInterface({
       }, 1000);
     }
   }, [sttError]);
+
+  // Debug tracing: last LLM payload and response for admin debug window
+  const [lastLlmPayload, setLastLlmPayload] = useState<any | null>(null);
+  const [lastLlmResponse, setLastLlmResponse] = useState<any | null>(null);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
+  // Admin-only debug toast controls
+  const [debugEnabled, setDebugEnabled] = useState<boolean>(() => {
+    try {
+      return typeof window !== "undefined" && window.localStorage.getItem("vw_debug") === "true";
+    } catch (e) {
+      return false;
+    }
+  });
+  const [debugToastVisible, setDebugToastVisible] = useState(false);
+  const [debugToastText, setDebugToastText] = useState<string | null>(null);
+  const debugToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Show a 10s debug toast when last LLM payload/response updates and
+  // debug mode is enabled for an admin user.
+  useEffect(() => {
+    try {
+      const isAdmin = role === "admin";
+      if (!isAdmin || !debugEnabled) return;
+      if (!lastLlmPayload && !lastLlmResponse) return;
+
+      // Build a compact display string
+      const prettyPayload = Array.isArray(lastLlmPayload)
+        ? lastLlmPayload.map((p: any) => `${p.role}: ${String(p.content).slice(0, 240)}`).join(" \n")
+        : String(JSON.stringify(lastLlmPayload || "")).slice(0, 800);
+      const prettyResp = String(JSON.stringify(lastLlmResponse || "")).slice(0, 800);
+      const text = `LLM Prompt:\n${prettyPayload}\n\nLLM Response:\n${prettyResp}`;
+      setDebugToastText(text);
+      setDebugToastVisible(true);
+
+      // Clear any previous timer
+      if (debugToastTimerRef.current) {
+        window.clearTimeout(debugToastTimerRef.current);
+        debugToastTimerRef.current = null;
+      }
+      debugToastTimerRef.current = setTimeout(() => {
+        setDebugToastVisible(false);
+        setDebugToastText(null);
+        debugToastTimerRef.current = null;
+      }, 10000);
+    } catch (e) {
+      // ignore
+    }
+  }, [lastLlmPayload, lastLlmResponse, debugEnabled, role]);
+  
 
   // Noise detection effect - monitors ambient sound when voice mode is on
   // Placed after useSTT so that isListening is available
@@ -1610,10 +1677,16 @@ export function ChatInterface({
     } catch {}
     isSuppressingSttRef.current = true;
     
-    // Check if we should resume after playback
-    if (isListening || voiceMode || voiceModeRef.current) {
-      resumeListeningRef.current = true;
-    }
+    // Track whether the mic was actively listening *before* we started TTS
+    // so we can deterministically restore it when playback ends. We consider
+    // a mic 'paused for TTS' only if it was actively listening and the user
+    // hadn't explicitly toggled it off.
+    wasMicPausedForTtsRef.current = Boolean(isListening && !userToggledOffRef.current);
+    // Only mark for resume if we actually paused the mic due to TTS.
+    // This avoids accidental restarts when voice-mode is enabled but mic
+    // wasn't actively listening (edge conditions, paused state, etc.).
+    resumeListeningRef.current = Boolean(wasMicPausedForTtsRef.current);
+
     
     // Use abort() for immediate stop - stop() may allow some processing to continue
     try {
@@ -1688,24 +1761,44 @@ export function ChatInterface({
         } catch {}
       }, 600); // Increased from 500ms to 600ms (+20%) for better TTS/STT separation
 
-      // Resume listening if we previously stopped for playback and voiceMode
-      // is still enabled, UNLESS the caller explicitly requested to handle resumption.
-      if (resumeListeningRef.current && !skipResume) {
-        resumeListeningRef.current = false;
-        // Schedule start slightly after suppression clears (600ms + 120ms buffer = 720ms)
-        try {
-          console.debug("playTtsAndPauseStt: resuming STT", { delay: 720 });
-        } catch (e) {}
-        attemptStartListening(720); // Increased from 600ms to 720ms (+20%)
+      // Decide whether to resume listening. Prefer resuming when the mic was
+      // actively paused for TTS playback (wasMicPausedForTtsRef). Additionally,
+      // if voice mode is enabled but the mic was not actively listening when
+      // playback started (e.g., brief suppression or race), we should also
+      // restart STT so the user can continue speaking immediately after the
+      // intro. Always avoid resuming if the user explicitly toggled the mic off.
+      if (!skipResume) {
+        const shouldResumeDueToTts = wasMicPausedForTtsRef.current && !userToggledOffRef.current;
+        const shouldResumeDueToVoiceMode = !wasMicPausedForTtsRef.current && voiceModeRef.current && !userToggledOffRef.current && !isListening;
+        if (shouldResumeDueToTts) {
+          // Clear TTS-paused marker and request restart
+          wasMicPausedForTtsRef.current = false;
+          resumeListeningRef.current = false;
+          try {
+            console.debug("playTtsAndPauseStt: resuming STT due to TTS-paused mic", { delay: 720 });
+          } catch (e) {}
+          attemptStartListening(720);
+        } else if (shouldResumeDueToVoiceMode) {
+          // Case: voice mode is on, mic wasn't actively listening at TTS start,
+          // but user expects the app to listen after intro. Attempt restart.
+          try {
+            console.debug("playTtsAndPauseStt: resuming STT because voice mode is enabled and mic is currently idle", { delay: 720, voiceMode: !!voiceModeRef.current });
+          } catch (e) {}
+          attemptStartListening(720);
+        } else if (resumeListeningRef.current) {
+          // Fallback: existing behavior for cases where we wanted to resume
+          // due to voiceMode being enabled or other prior state.
+          resumeListeningRef.current = false;
+          try {
+            console.debug("playTtsAndPauseStt: resuming STT (fallback)", { delay: 720 });
+          } catch (e) {}
+          attemptStartListening(720);
+        }
       }
     }
   };
 
   const [showProceedHint, setShowProceedHint] = useState(false);
-  // Debug tracing: last LLM payload and response for admin debug window
-  const [lastLlmPayload, setLastLlmPayload] = useState<any | null>(null);
-  const [lastLlmResponse, setLastLlmResponse] = useState<any | null>(null);
-  const [showDebugPanel, setShowDebugPanel] = useState(false);
 
   const emitStageReadinessPrompt = useCallback(
     async (stageIndex: number, result: StageCompletionResult) => {
@@ -1930,6 +2023,14 @@ export function ChatInterface({
           normalizedRoleKey
         );
         appendAssistantMessage(assistantMsg);
+        // If the mic is currently listening, mark it so the TTS helper knows
+        // to resume it when playback finishes. This is a defensive set in case
+        // the helper runs slightly later.
+        try {
+          wasMicPausedForTtsRef.current = !!isListening && !userToggledOffRef.current;
+          console.debug("physical-stage: wasMicPausedForTts set", { wasListening: isListening, marker: wasMicPausedForTtsRef.current });
+        } catch (e) {}
+
         if (ttsEnabled && brief) {
           try {
             await playTtsAndPauseStt(brief, voiceForRole, { roleKey: normalizedRoleKey, displayRole: assistantMsg.displayRole, role: stage?.role ?? roleLabel, caseId } as any, personaMeta?.sex as any);
@@ -1937,6 +2038,27 @@ export function ChatInterface({
             /* ignore TTS errors for this brief prompt */
           }
         }
+
+        // Ensure voice-mode is re-enabled after this brief assistant message
+        // unless the user explicitly toggled voice off. We schedule a short
+        // delayed check so it doesn't race with playTtsAndPauseStt's resume.
+        try {
+          if (!userToggledOffRef.current) {
+            setTimeout(() => {
+              try {
+                if (!userToggledOffRef.current && !isListening && voiceModeRef.current) {
+                  console.debug("physical-stage: forcing voice mode enable after brief assistant message");
+                  setVoiceModeEnabled(true);
+                }
+              } catch (e) {
+                console.warn("Failed to force voice mode enable after assistant brief", e);
+              }
+            }, 800);
+          }
+        } catch (e) {
+          // ignore
+        }
+
         // Mark base input empty and return without sending to server
         baseInputRef.current = "";
         setInput("");
@@ -2079,6 +2201,20 @@ export function ChatInterface({
 
     let userMessage = null as Message | null;
     let snapshot: Message[] = [];
+
+    // Guard: avoid double-user messages. If the last message in the history
+    // is already from the user, do not append another consecutive user message.
+    // This prevents accidental duplicate sends or repeated STT auto-sends from
+    // creating back-to-back student messages in the chat.
+    const lastMsg = messages[messages.length - 1];
+    if (!existingMessageId && lastMsg && lastMsg.role === "user") {
+      try {
+        console.warn("Suppressed consecutive user message to avoid duplicates", { lastId: lastMsg.id, newText: trimmed });
+      } catch (e) {}
+      // Optionally, we could replace the previous user message or merge; currently
+      // the requirement is to omit the latter message, so we simply return silently.
+      return;
+    }
 
     if (existingMessageId) {
       // Mark existing message as pending and reuse it
@@ -2314,7 +2450,9 @@ export function ChatInterface({
       const lastUser = [...messages].reverse().find((m) => m.role === "user");
       const transformed = transformNurseAssistantMessage(aiMessage, stage, lastUser?.content);
       aiMessage = transformed.message;
-      const allowTtsForThisMessage = transformed.allowTts;
+      // Respect server-side skipTts flag for stage-entry greetings.
+      const serverSkipTts = Boolean((response as any)?.skipTts);
+      const allowTtsForThisMessage = transformed.allowTts && !serverSkipTts;
       const finalAssistantContent = aiMessage.content;
       upsertPersonaDirectory(normalizedPersonaKey, {
         displayName: aiMessage.displayRole,
@@ -2888,6 +3026,10 @@ export function ChatInterface({
   const prevVoiceWasOnRef = useRef<boolean>(false);
   // Timer ref for forced restore (used for fixed-length intros)
   const forceRestoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Record whether the mic was actively listening when we started TTS.
+  // If true, the mic was paused because TTS started and should be resumed
+  // once playback finishes (unless the user explicitly disabled the mic).
+  const wasMicPausedForTtsRef = useRef<boolean>(false);
 
   const setVoiceModeEnabled = useCallback(
     (next: boolean) => {
@@ -3120,6 +3262,54 @@ export function ChatInterface({
       }
     }
   }, [interimTranscript, transcript, isListening]);
+
+  // Mic inactivity watchdog: during nurse-sensitive stages, if the mic is
+  // listening and no interim/final transcripts are observed for 90s, stop
+  // the mic and auto-send any pending text. This prevents the mic from
+  // auto-stopping earlier while allowing long pauses during nurse stages.
+  useEffect(() => {
+    try {
+      const stage = stages?.[currentStageIndex];
+      const stageTitle = (stage?.title ?? "").toLowerCase();
+      const isSensitiveStage = /physical|laboratory|lab|treatment/.test(stageTitle);
+
+      // Clear timer if not applicable
+      if (!isListening || !isSensitiveStage) {
+        if (micInactivityTimerRef.current) {
+          window.clearTimeout(micInactivityTimerRef.current);
+          micInactivityTimerRef.current = null;
+        }
+        return;
+      }
+
+      // Reset timer on each transcript/interim update
+      if (micInactivityTimerRef.current) {
+        window.clearTimeout(micInactivityTimerRef.current);
+        micInactivityTimerRef.current = null;
+      }
+
+      micInactivityTimerRef.current = window.setTimeout(() => {
+        try {
+          // Send any pending text then stop listening
+          stopAndMaybeSend();
+          stop();
+          showMicToast("Microphone stopped due to inactivity", 2000);
+        } catch (e) {
+          // ignore
+        }
+        micInactivityTimerRef.current = null;
+      }, 90000);
+
+      return () => {
+        if (micInactivityTimerRef.current) {
+          window.clearTimeout(micInactivityTimerRef.current);
+          micInactivityTimerRef.current = null;
+        }
+      };
+    } catch (e) {
+      // ignore
+    }
+  }, [isListening, transcript, interimTranscript, currentStageIndex, stages, stopAndMaybeSend, stop]);
 
   // Adjust STT debounce adaptively based on ambient noise level to reduce
   // false positives in noisy environments.
@@ -3543,29 +3733,36 @@ export function ChatInterface({
     // Speak if tts enabled; ensure the mic is fully stopped while the
     // assistant speaks so STT does not capture its audio, then restore
     // listening after playback completes.
-    if (ttsEnabled && introText) {
+    // However, for nurse intros in sensitive stages (Physical, Laboratory,
+    // Treatment) we intentionally skip TTS to avoid self-capture and leaking
+    // persona prompts. Respect that policy here on the client when
+    // determining whether to play the intro audio.
+    const introStageTitleLower = (stages[targetIndex]?.title ?? "").toLowerCase();
+    const introIsSensitive = /physical|laboratory|lab|treatment/.test(introStageTitleLower);
+    const skipIntroTts = introIsSensitive && normalizedRoleKey === "veterinary-nurse";
+
+    if (ttsEnabled && introText && !skipIntroTts) {
       try {
         // If currently listening, stop immediately and also update the
         // UI to show voice mode as disabled so nothing will restart it
         // while the assistant speaks. We'll restore voice mode afterward.
         const wasListening = !!isListening;
         if (wasListening) {
-          // prevent auto-restart by clearing resume flag and stopping
-          resumeListeningRef.current = false;
+          // Record that the mic was actively listening when we initiated intro TTS
+          // so that the resume logic knows this was a TTS-paused mic and will
+          // deterministically attempt to restart it after playback completes.
+          wasMicPausedForTtsRef.current = !userToggledOffRef.current && wasListening;
           try {
-            stop();
-          } catch (e) {
-            /* ignore */
-          }
-          // reflect UI state without marking this as a user toggle-off
-          try {
-            // remember whether voice mode was on so we can restore it later
-            prevVoiceWasOnRef.current = !!voiceModeRef.current;
-            // update state directly so this is treated as a temporary disable
-            setVoiceMode(false);
-            tempVoiceDisabledRef.current = true;
+            console.debug("Intro TTS: marking wasMicPausedForTts", { wasListening, userToggledOff: userToggledOffRef.current });
           } catch (e) {}
-          // small delay to ensure HW fully releases
+
+          // Do NOT stop the mic or toggle the visible mic UI here. The
+          // `playTtsAndPauseStt` helper will handle suppression/abort and
+          // prevent self-capture while preserving the voice-mode UI state.
+          try {
+            prevVoiceWasOnRef.current = !!voiceModeRef.current;
+          } catch (e) {}
+          // small delay to reduce race conditions before starting TTS
           await new Promise((res) => setTimeout(res, 150));
         }
 
@@ -3580,24 +3777,29 @@ export function ChatInterface({
             stageIntro: true,
           },
         } satisfies Omit<TtsEventDetail, "audio">;
-        // Use skipResume=true so playTtsAndPauseStt does not auto-restart STT.
+        // For non-sensitive intros allow auto-resume so the mic is
+        // reliably restarted after playback when it was previously listening.
+        // Use skipResume=false (explicit) to avoid leaving the mic disabled.
+        try {
+          console.debug("Intro TTS: allowing playTtsAndPauseStt to auto-resume STT for non-sensitive intro", { targetIndex });
+        } catch (e) {}
         await playTtsAndPauseStt(
           introText,
           assistantMsg.voiceId ?? voiceForRole,
           introMeta,
           personaMeta?.sex as any,
-          true
+          false
         );
-      } catch (e) {
-        try {
-          if (ttsAvailable && speakAsync) {
-            await speakAsync(introText);
-          } else if (ttsAvailable) {
-            speak(introText);
+        } catch (e) {
+          try {
+            if (ttsAvailable && speakAsync) {
+              await speakAsync(introText);
+            } else if (ttsAvailable) {
+              speak(introText);
+            }
+          } catch (err) {
+            console.error("Intro TTS failed:", err);
           }
-        } catch (err) {
-          console.error("Intro TTS failed:", err);
-        }
         } finally {
         // Restore voice mode only if we temporarily disabled it above.
         if (tempVoiceDisabledRef.current) {
@@ -3633,15 +3835,15 @@ export function ChatInterface({
           // disable, schedule a forced restore after 9s so the mic is toggled
           // back on for the student even if TTS events are delayed.
           try {
-            // Force a restore of voice mode after a bounded timeout in case
-            // TTS events or platform callbacks are delayed. Do this whenever
-            // we temporarily disabled voice mode for the intro so the student
-            // isn't left with the mic off unintentionally.
-            if (tempVoiceDisabledRef.current) {
+            const nurseIntroMarker = "I'm the veterinary nurse supporting this case";
+            if (introText && introText.includes(nurseIntroMarker) && prevVoiceWasOnRef.current) {
+              // Clear any previous timer
               if (forceRestoreTimerRef.current) {
                 clearTimeout(forceRestoreTimerRef.current);
               }
               forceRestoreTimerRef.current = setTimeout(() => {
+                // Only restore if still temporarily disabled and user didn't
+                // explicitly toggle mic off in the meantime.
                 if (tempVoiceDisabledRef.current && !userToggledOffRef.current) {
                   tempVoiceDisabledRef.current = false;
                   try {
@@ -3674,30 +3876,30 @@ export function ChatInterface({
             } catch (err) {
               console.warn("Failed to restore voice mode after TTS", err);
             }
-            // Ensure STT actually starts — some platforms may not auto-start on
-            // setState calls. If voice mode is enabled but `isListening` is
-            // false and the user didn't explicitly toggle off, attempt to
-            // start listening programmatically after a short delay.
-            try {
-              setTimeout(() => {
-                if (!userToggledOffRef.current && voiceModeRef.current && !isListening) {
-                  try {
-                    start();
-                  } catch (e) {
-                    console.warn("Forced STT start failed after intro TTS:", e);
-                  }
-                }
-              }, 200);
-            } catch (e) {
-              // ignore scheduling errors
-            }
             // Clean up any pending forced restore timer
             if (forceRestoreTimerRef.current) {
               clearTimeout(forceRestoreTimerRef.current);
               forceRestoreTimerRef.current = null;
             }
           }
+      } else {
+        // If we intentionally skipped TTS for this intro, log for diagnostics.
+        if (skipIntroTts) {
+          try {
+            console.debug("Skipping intro TTS for nurse in sensitive stage", { targetIndex, introStageTitleLower });
+          } catch (e) {}
+
+          // Ensure voice mode is available after the intro when TTS is intentionally skipped.
+          // Activate voice mode unless the user explicitly toggled it off previously.
+          try {
+            if (!userToggledOffRef.current) {
+              setVoiceModeEnabled(true);
+            }
+          } catch (e) {
+            console.warn('Failed to enable voice mode after skipped intro TTS', e);
+          }
         }
+      }
       }
     }
 
@@ -3740,7 +3942,25 @@ export function ChatInterface({
   return (
     <div className="relative flex h-full flex-col">
       <div className="absolute top-16 right-4 z-50">
-        <GuidedTour steps={tourSteps} tourId="chat-interface" autoStart={true} />
+        <div className="flex items-center gap-2">
+          <GuidedTour steps={tourSteps} tourId="chat-interface" autoStart={true} />
+          {role === "admin" && (
+            <label className="flex items-center space-x-2 text-xs text-gray-200">
+              <input
+                type="checkbox"
+                checked={debugEnabled}
+                onChange={(e) => {
+                  try {
+                    const v = Boolean(e.target.checked);
+                    setDebugEnabled(v);
+                    if (typeof window !== "undefined") window.localStorage.setItem("vw_debug", v ? "true" : "false");
+                  } catch {}
+                }}
+              />
+              <span className="select-none">Debug</span>
+            </label>
+          )}
+        </div>
       </div>
       {/* Connection notice banner */}
       {connectionNotice && (
@@ -3759,6 +3979,15 @@ export function ChatInterface({
         <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none">
           <div className="bg-gray-900/90 text-white text-xs px-3 py-1.5 rounded-full shadow-lg backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2 duration-200">
             {micToast}
+          </div>
+        </div>
+      )}
+
+      {/* Admin debug toast (shows last LLM prompt + response for 10s when enabled) */}
+      {debugToastVisible && debugToastText && role === "admin" && debugEnabled && (
+        <div className="fixed bottom-36 left-1/2 transform -translate-x-1/2 z-50 pointer-events-auto">
+          <div className="bg-black/90 text-white text-xs px-4 py-2 rounded-lg shadow-lg backdrop-blur-sm whitespace-pre-wrap max-w-2xl">
+            {debugToastText}
           </div>
         </div>
       )}

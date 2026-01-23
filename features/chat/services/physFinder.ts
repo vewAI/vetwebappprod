@@ -14,10 +14,13 @@ export type PhysMatchResult = {
 };
 
 const ALIAS_MAP: Record<string, string[]> = {
-  heart_rate: ["hr", "heart rate", "pulse", "heartbreak"],
+  heart_rate: ["hr", "heart rate", "pulse", "heartbreak", "how great"],
   respiratory_rate: ["rr", "respiratory rate"],
   temperature: ["temp", "temperature", "t"],
   blood_pressure: ["bp", "blood pressure"],
+  // Add auscultation aliases; 'was quotation' is a common mis-transcription
+  // that should map to auscultation.
+  auscultation: ["auscultation", "ausc", "stethoscope", "was quotation", "quotation"],
 };
 
 // Group tokens map to multiple canonical keys
@@ -46,7 +49,8 @@ function splitTokens(input: string): string[] {
   // Remove filler words and punctuation then split on comma/and/whitespace
   const cleaned = input
     .toLowerCase()
-    .replace(/\b(please|give|values|value|show|what is|what's)\b/g, " ")
+    // Strip common filler/request phrases so tokens focus on parameters
+    .replace(/\b(please|please\s+tell|give|give\s+me|show|show\s+me|what is|what's|tell|tell\s+me|ok|okay|could you|can you|would you)\b/g, " ")
     .replace(/[()]/g, " ")
     .replace(/[^a-z0-9,\s/\-]/g, " ")
     .replace(/\band\b/g, ",");
