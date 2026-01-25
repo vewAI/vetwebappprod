@@ -3,7 +3,8 @@
 import type React from "react";
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { SendIcon, PenLine, Mic, MicOff, Volume2, VolumeX, Pause, Play, SkipForward } from "lucide-react";
+
+import { SendIcon, PenLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,6 +25,11 @@ import {
 import { useSTT } from "@/features/speech/hooks/useSTT";
 import { useMicButton } from "@/features/speech/hooks/useMicButton";
 import { useTTS } from "@/features/speech/hooks/useTTS";
+
+// Nurse acknowledgement phrase used for immediate client-side ack
+export const NURSE_ACK = "Let me check that Doc...";
+export const NURSE_ACK_TEXT = NURSE_ACK; // Deprecated alias kept for tests backwards-compat
+
 import {
   speakRemote,
   speakRemoteStream,
@@ -48,7 +54,10 @@ import {
   isAllowedChatPersonaKey,
   resolveChatPersonaRoleKey,
 } from "@/features/chat/utils/persona-guardrails";
+import type { AllowedChatPersonaKey } from "@/features/chat/utils/persona-guardrails";
 import { useSpeechDevices } from "@/features/speech/context/audio-device-context";
+import PersonaTabs from "@/features/chat/components/PersonaTabs";
+import VoiceModeControl from "@/features/chat/components/VoiceModeControl";
 import { AudioDeviceSelector } from "@/features/speech/components/audio-device-selector";
 import {
   detectStageIntentLegacy,
@@ -283,6 +292,26 @@ export function ChatInterface({
   };
 
   const [messages, setMessages] = useState<Message[]>(initialMessages);
+  // Active persona tab shown in the UI (owner | veterinary-nurse). Default to nurse to match prior UX.
+  const [activePersona, setActivePersona] = useState<AllowedChatPersonaKey>("veterinary-nurse");
+  // Per-persona draft persistence (in-memory + localStorage per attempt)
+  const [personaDrafts, setPersonaDrafts] = useState<Record<AllowedChatPersonaKey, string>>({
+    owner: "",
+    "veterinary-nurse": "",
+  });
+
+  const draftLocalStorageKey = (persona: AllowedChatPersonaKey) => `chat-draft-${attemptId ?? 'noattempt'}-${persona}`;
+
+  // Load persisted drafts when the attemptId changes
+  useEffect(() => {
+    try {
+      const ownerDraft = attemptId ? window.localStorage.getItem(draftLocalStorageKey("owner")) : null;
+      const nurseDraft = attemptId ? window.localStorage.getItem(draftLocalStorageKey("veterinary-nurse")) : null;
+      setPersonaDrafts({ owner: ownerDraft ?? "", "veterinary-nurse": nurseDraft ?? "" });
+    } catch (e) {
+      // ignore localStorage failures
+    }
+  }, [attemptId]);
   // Helper to avoid appending duplicate assistant messages in the recent history
   const normalizeForDedupe = (s?: string | null) =>
     String(s ?? "")
@@ -310,6 +339,17 @@ export function ChatInterface({
       return [...prev, msg];
     });
   };
+
+  // Initialize active persona from the current stage role when stages change
+  useEffect(() => {
+    const stage = stages?.[currentStageIndex];
+    try {
+      const normalized = resolveChatPersonaRoleKey(stage?.role, stage?.role ?? "");
+      setActivePersona(normalized);
+    } catch (e) {
+      // ignore
+    }
+  }, [currentStageIndex, stages]);
 
   // Transform or suppress nurse/lab assistant messages on the client as a
   // secondary guardrail: if the assistant is a nurse and the current stage
@@ -370,7 +410,8 @@ export function ChatInterface({
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [connectionNotice, setConnectionNotice] = useState<string | null>(null);
-  const [showNotepad, setShowNotepad] = useState(false);
+  // Notepad visibility tracked per persona so dialogs are independent per active persona
+  const [showNotepadByPersona, setShowNotepadByPersona] = useState<Record<AllowedChatPersonaKey, boolean>>({ owner: false, "veterinary-nurse": false });
   const [timeSpentSeconds, setTimeSpentSeconds] = useState(initialTimeSpentSeconds);
   const [ttsEnabled, setTtsEnabled] = useState<boolean>(
     () => Boolean(attemptId) || true
@@ -750,6 +791,14 @@ export function ChatInterface({
   // Timers for STT error toast fade and voice-mode restart
   const sttErrorToastTimerRef = useRef<number | null>(null);
   const sttErrorRestartTimerRef = useRef<number | null>(null);
+  // Suppress immediate "Microphone Blocked" toasts triggered by the user clicking SPEAK.
+  // When the user clicks SPEAK we set a short suppression window. If a "not-allowed"
+  // error arrives during that window (browser permission prompt flow) we delay showing
+  // the toast until the window ends so the permission prompt isn't immediately
+  // overwhelmed by an error toast.
+  const sttBlockedSuppressUntilRef = useRef<number | null>(null);
+  const sttBlockedDelayedToastTimerRef = useRef<number | null>(null);
+  const latestSttErrorRef = useRef<string | null>(null);
   // Timer for auto-sending when a '...' placeholder is left waiting
   const placeholderAutoSendTimerRef = useRef<number | null>(null);
   // Ref for noise suppression to avoid stale closures
@@ -1049,11 +1098,53 @@ export function ChatInterface({
       }
     );
 
+  // Keep a reference to the latest error string for delayed checks
+  useEffect(() => {
+    latestSttErrorRef.current = sttError ?? null;
+  }, [sttError]);
+
+  // Helper to actually show the STT error toast and manage restart timers
+  const emitSttErrorToast = (title: string, body: string) => {
+    setTimepointToast({ title, body });
+
+    // Stop listening momentarily (voice mode remains enabled)
+    try {
+      stop();
+    } catch (e) {
+      // ignore
+    }
+
+    if (sttErrorToastTimerRef.current) {
+      window.clearTimeout(sttErrorToastTimerRef.current);
+      sttErrorToastTimerRef.current = null;
+    }
+    if (sttErrorRestartTimerRef.current) {
+      window.clearTimeout(sttErrorRestartTimerRef.current);
+      sttErrorRestartTimerRef.current = null;
+    }
+
+    sttErrorToastTimerRef.current = window.setTimeout(() => {
+      hideTimepointToastWithFade(300);
+      sttErrorToastTimerRef.current = null;
+      // restart voice mode 2s after fade completes
+      sttErrorRestartTimerRef.current = window.setTimeout(() => {
+        if (voiceModeRef.current && !isListening && !userToggledOffRef.current && !isPaused && !isPlayingAudioRef.current) {
+          try {
+            start();
+          } catch (e) {
+            console.warn("Failed to restart STT after error:", e);
+          }
+        }
+        sttErrorRestartTimerRef.current = null;
+      }, 2000);
+    }, 1000);
+  };
+
   // Handle STT Errors (e.g. network error on Chromium)
   useEffect(() => {
     if (sttError) {
       console.warn("ChatInterface received STT error:", sttError);
-      
+
       // Only show toast for serious errors that require user attention
       // Ignore transient errors that are normal during voice mode operation:
       // - "no-speech": No speech detected (normal when user pauses)
@@ -1061,7 +1152,7 @@ export function ChatInterface({
       // - "audio-capture": Brief audio capture issues (usually recovers)
       const transientErrors = ["no-speech", "aborted", "audio-capture"];
       const isTransient = transientErrors.some(e => sttError.toLowerCase().includes(e));
-      
+
       if (isTransient) {
         console.debug("STT transient error (not showing toast):", sttError);
         // Still try to restart for transient errors, but silently
@@ -1080,7 +1171,29 @@ export function ChatInterface({
         }, 1000);
         return; // Don't show toast for transient errors
       }
-      
+
+      // If microphone permission was just requested by the user, suppress the
+      // immediate blocked toast until the permission prompt resolves. If it
+      // remains blocked after the suppression window, schedule the toast.
+      const now = Date.now();
+      if (sttError.includes("not-allowed")) {
+        const suppressUntil = sttBlockedSuppressUntilRef.current;
+        if (suppressUntil && now < suppressUntil) {
+          console.debug("Suppressing immediate 'Microphone Blocked' toast until", suppressUntil);
+          if (sttBlockedDelayedToastTimerRef.current) {
+            window.clearTimeout(sttBlockedDelayedToastTimerRef.current);
+            sttBlockedDelayedToastTimerRef.current = null;
+          }
+          sttBlockedDelayedToastTimerRef.current = window.setTimeout(() => {
+            if (latestSttErrorRef.current && latestSttErrorRef.current.includes("not-allowed")) {
+              emitSttErrorToast("Microphone Blocked", "Please allow microphone access in your browser settings.");
+            }
+            sttBlockedDelayedToastTimerRef.current = null;
+          }, Math.max(0, suppressUntil - now));
+          return;
+        }
+      }
+
       // Serious errors that warrant a toast
       let title = "Speech Recognition Error";
       let body = "An error occurred with the speech service.";
@@ -1093,42 +1206,7 @@ export function ChatInterface({
         body = "Please allow microphone access in your browser settings.";
       }
 
-      setTimepointToast({ title, body });
-      
-      // Do NOT disable voice mode on transient errors. Just stop listening momentarily.
-      // The user wants the mode to remain "On" unless they explicitly turn it off.
-      try {
-        stop();
-      } catch (e) {
-        // ignore
-      }
-
-      // fade the toast after 1s, then restart voice mode 2s after the fade
-      if (sttErrorToastTimerRef.current) {
-        window.clearTimeout(sttErrorToastTimerRef.current);
-        sttErrorToastTimerRef.current = null;
-      }
-      if (sttErrorRestartTimerRef.current) {
-        window.clearTimeout(sttErrorRestartTimerRef.current);
-        sttErrorRestartTimerRef.current = null;
-      }
-      sttErrorToastTimerRef.current = window.setTimeout(() => {
-        hideTimepointToastWithFade(300);
-        sttErrorToastTimerRef.current = null;
-        // restart voice mode 2s after fade completes
-        sttErrorRestartTimerRef.current = window.setTimeout(() => {
-          // if voice mode is intended and we're not listening, start STT
-          // Verify we are not currently playing audio (which would cause self-capture)
-          if (voiceModeRef.current && !isListening && !userToggledOffRef.current && !isPaused && !isPlayingAudioRef.current) {
-            try {
-              start();
-            } catch (e) {
-              console.warn("Failed to restart STT after error:", e);
-            }
-          }
-          sttErrorRestartTimerRef.current = null;
-        }, 2000);
-      }, 1000);
+      emitSttErrorToast(title, body);
     }
   }, [sttError]);
 
@@ -1288,12 +1366,31 @@ export function ChatInterface({
         window.clearTimeout(sttErrorRestartTimerRef.current);
         sttErrorRestartTimerRef.current = null;
       }
+      if (sttBlockedDelayedToastTimerRef.current) {
+        window.clearTimeout(sttBlockedDelayedToastTimerRef.current);
+        sttBlockedDelayedToastTimerRef.current = null;
+      }
+      if (personaToastTimerRef.current) {
+        window.clearTimeout(personaToastTimerRef.current);
+        personaToastTimerRef.current = null;
+      }
+      if (voiceModeToastTimerRef.current) {
+        window.clearTimeout(voiceModeToastTimerRef.current);
+        voiceModeToastTimerRef.current = null;
+      }
       if (placeholderAutoSendTimerRef.current) {
         window.clearTimeout(placeholderAutoSendTimerRef.current);
         placeholderAutoSendTimerRef.current = null;
       }
       autoSendPendingTextRef.current = null;
       resetNextStageIntent();
+
+      // Persist current persona draft on unmount
+      try {
+        window.localStorage.setItem(draftLocalStorageKey(activePersona), input || "");
+      } catch (e) {
+        // ignore
+      }
     };
   }, [resetNextStageIntent]);
 
@@ -1538,6 +1635,69 @@ export function ChatInterface({
   const resumeListeningRef = useRef<boolean>(false);
   const voiceTemporarilyDisabledRef = useRef<boolean>(false);
   const pendingFlushIntervalRef = useRef<number | null>(null);
+
+  const personaToastTimerRef = useRef<number | null>(null);
+  const voiceModeToastTimerRef = useRef<number | null>(null);
+
+  // Persist persona-specific input drafts to localStorage and show a brief
+  // toast when the user switches persona.
+  const handleSetActivePersona = useCallback((next: AllowedChatPersonaKey) => {
+    if (next === activePersona) return;
+    try {
+      // save current draft
+      window.localStorage.setItem(draftLocalStorageKey(activePersona), input || "");
+    } catch (e) {
+      // ignore
+    }
+    setPersonaDrafts(prev => ({ ...prev, [activePersona]: input || "" }));
+
+    // Load next draft from in-memory cache or localStorage
+    let nextDraft = personaDrafts[next] ?? "";
+    try {
+      if ((nextDraft ?? "") === "" && attemptId) {
+        nextDraft = window.localStorage.getItem(draftLocalStorageKey(next)) ?? "";
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    setInput(nextDraft);
+    baseInputRef.current = nextDraft;
+    setActivePersona(next);
+
+    // show a short toast to confirm persona switch
+    const displayName = personaDirectoryRef.current?.[next]?.displayName ?? (next === "owner" ? "OWNER" : "NURSE");
+    setTimepointToast({ title: `Talking to ${displayName}`, body: "" });
+    // Hide after 2s (clear any prior timer first)
+    if (personaToastTimerRef.current) {
+      window.clearTimeout(personaToastTimerRef.current);
+    }
+    personaToastTimerRef.current = window.setTimeout(() => {
+      hideTimepointToastWithFade(300);
+      personaToastTimerRef.current = null;
+    }, 2000);
+  }, [activePersona, input, personaDrafts, attemptId, setInput, setActivePersona]);
+
+  // Persist current draft whenever input changes
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(draftLocalStorageKey(activePersona), input || "");
+    } catch (e) {
+      // ignore
+    }
+    setPersonaDrafts(prev => ({ ...prev, [activePersona]: input || "" }));
+  }, [input, activePersona, attemptId]);
+
+  // Save current draft on unmount
+  useEffect(() => {
+    return () => {
+      try {
+        window.localStorage.setItem(draftLocalStorageKey(activePersona), input || "");
+      } catch (e) {
+        // ignore
+      }
+    };
+  }, []);
 
   // Helper to play TTS while ensuring STT is paused during playback so the
   // assistant's voice isn't captured. Resumes listening if it was active
@@ -2216,6 +2376,37 @@ export function ChatInterface({
       return;
     }
 
+    // If the current active persona is the nurse and the user is sending a message,
+    // emit a brief nurse acknowledgement message immediately so the user sees a
+    // responsive acknowledgement from the chosen persona before the server reply.
+    if (!existingMessageId && activePersona === "veterinary-nurse") {
+      (async () => {
+        try {
+          const personaMeta = await ensurePersonaMetadata("veterinary-nurse");
+          const ackText = NURSE_ACK;
+          const ackMsg = chatService.createAssistantMessage(
+            ackText,
+            currentStageIndex,
+            personaMeta?.displayName ?? "Nurse",
+            personaMeta?.portraitUrl,
+            personaMeta?.voiceId,
+            personaMeta?.sex as any,
+            "veterinary-nurse"
+          );
+          appendAssistantMessage(ackMsg);
+          if (ttsEnabled) {
+            try {
+              await playTtsAndPauseStt(ackText, personaMeta?.voiceId, { roleKey: "veterinary-nurse", displayRole: personaMeta?.displayName ?? "Nurse", role: "veterinary-nurse", caseId } as any, personaMeta?.sex as any);
+            } catch (e) {
+              /* ignore TTS errors for ack */
+            }
+          }
+        } catch (e) {
+          // ignore: non-blocking ack
+        }
+      })();
+    }
+
     if (existingMessageId) {
       // Mark existing message as pending and reuse it
       snapshot = messages.map((m) =>
@@ -2225,6 +2416,8 @@ export function ChatInterface({
       userMessage = snapshot.find((m) => m.id === existingMessageId) ?? null;
     } else {
       userMessage = chatService.createUserMessage(trimmed, currentStageIndex);
+      // Associate the outgoing user message with the currently active persona tab
+      try { (userMessage as any).personaRoleKey = activePersona; } catch (e) {}
       snapshot = [...messages, userMessage];
       setMessages(snapshot);
     }
@@ -2379,10 +2572,10 @@ export function ChatInterface({
       const stage = stages[currentStageIndex] ?? stages[0];
       const roleName = response.displayRole ?? stage?.role ?? "assistant";
       const safePersonaRoleKey =
-        (response.personaRoleKey &&
-          isAllowedChatPersonaKey(response.personaRoleKey)
+        (response.personaRoleKey && isAllowedChatPersonaKey(response.personaRoleKey)
           ? response.personaRoleKey
-          : resolveChatPersonaRoleKey(stage?.role, roleName));
+          : (isAllowedChatPersonaKey(activePersona) ? activePersona : resolveChatPersonaRoleKey(stage?.role, roleName)));
+
       const normalizedPersonaKey = safePersonaRoleKey;
       const portraitUrl = response.portraitUrl;
       const serverVoiceId = normalizeVoiceId(response.voiceId);
@@ -2885,10 +3078,10 @@ export function ChatInterface({
         const stage = stages[p.stageIndex] ?? stages[currentStageIndex];
         const roleName = response.displayRole ?? stage?.role;
         const safePersonaRoleKey =
-          (response.personaRoleKey &&
-            isAllowedChatPersonaKey(response.personaRoleKey)
+          (response.personaRoleKey && isAllowedChatPersonaKey(response.personaRoleKey)
             ? response.personaRoleKey
-            : resolveChatPersonaRoleKey(stage?.role, roleName));
+            : (isAllowedChatPersonaKey(activePersona) ? activePersona : resolveChatPersonaRoleKey(stage?.role, roleName)));
+
         const normalizedPersonaKey = safePersonaRoleKey;
         const portraitUrl = response.portraitUrl;
         const serverVoiceId = normalizeVoiceId(response.voiceId);
@@ -3031,8 +3224,10 @@ export function ChatInterface({
   // once playback finishes (unless the user explicitly disabled the mic).
   const wasMicPausedForTtsRef = useRef<boolean>(false);
 
+  const { requestPermission } = useSpeechDevices();
+
   const setVoiceModeEnabled = useCallback(
-    (next: boolean) => {
+    async (next: boolean) => {
       setVoiceMode((current) => {
         if (current === next) {
           return current;
@@ -3045,13 +3240,41 @@ export function ChatInterface({
           baseInputRef.current = "";
           // Also enable TTS (speaker) when voice mode is turned on
           setTtsEnabledState(true);
+
+          // Force a permission prompt to ensure browser asks for mic access
+          try {
+            void requestPermission();
+          } catch (e) {}
+
           // If STT is currently suppressed (TTS playback), do not call
           // start() immediately — instead mark for resume so the STT
           // service restarts when suppression clears.
           if (isSuppressingSttRef.current) {
             resumeListeningRef.current = true;
           } else if (!isPlayingAudioRef.current) {
-            start();
+            // small delay to allow permission prompt to appear
+            setTimeout(() => {
+              try {
+                start();
+              } catch (e) {
+                /* ignore start failure */
+              }
+            }, 150);
+          }
+
+          // Show short toast indicating speak mode activated
+          try {
+            setTimepointToast({ title: "SPEAK - Voice Mode Activated", body: "" });
+            if (voiceModeToastTimerRef.current) {
+              window.clearTimeout(voiceModeToastTimerRef.current);
+              voiceModeToastTimerRef.current = null;
+            }
+            voiceModeToastTimerRef.current = window.setTimeout(() => {
+              hideTimepointToastWithFade(300);
+              voiceModeToastTimerRef.current = null;
+            }, 2000);
+          } catch (e) {
+            // ignore toast errors
           }
         } else {
           // User disabled voice mode -> mark and stop any active capture
@@ -3060,6 +3283,21 @@ export function ChatInterface({
           // Explicitly stop listening to ensure mic is off
           stop();
           setTtsEnabledState(false);
+
+          // Show short toast indicating write mode activated
+          try {
+            setTimepointToast({ title: "WRITE - Write Mode Activated", body: "" });
+            if (voiceModeToastTimerRef.current) {
+              window.clearTimeout(voiceModeToastTimerRef.current);
+              voiceModeToastTimerRef.current = null;
+            }
+            voiceModeToastTimerRef.current = window.setTimeout(() => {
+              hideTimepointToastWithFade(300);
+              voiceModeToastTimerRef.current = null;
+            }, 2000);
+          } catch (e) {
+            // ignore toast errors
+          }
         }
         return next;
       });
@@ -3160,6 +3398,18 @@ export function ChatInterface({
       // The user click is a valid trusted event for starting audio contexts.
       setVoiceModeEnabled(true);
       setTtsEnabledState(true);
+
+      // Briefly suppress immediate "Microphone Blocked" toasts while the
+      // browser permission prompt may be displayed.
+      try {
+        sttBlockedSuppressUntilRef.current = Date.now() + 2000; // 2s suppression window
+        if (sttBlockedDelayedToastTimerRef.current) {
+          window.clearTimeout(sttBlockedDelayedToastTimerRef.current);
+          sttBlockedDelayedToastTimerRef.current = null;
+        }
+      } catch (e) {
+        // ignore
+      }
       
       // Ensure we start listening immediately
       userToggledOffRef.current = false; 
@@ -4027,29 +4277,32 @@ export function ChatInterface({
       {showStartSpeakingPrompt && (
         <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center">
           <div className="relative pointer-events-auto">
-            <Button
-              type="button"
-              size="lg"
-              className="px-8 py-6 text-lg font-semibold text-white shadow-2xl bg-gradient-to-r from-rose-500 via-orange-500 to-amber-500 hover:from-rose-600 hover:to-amber-600"
-              onClick={handleStartSpeakingPrompt}
-              disabled={startSequenceActive}
-            >
-              {startSequenceActive ? "Starting voice..." : "Click Here to START Speaking"}
-            </Button>
-            {/* Auto-send toggle button (student control) */}
-            <Button
-              type="button"
-              size="icon"
-              title={autoSendStt
-                ? "Auto-send is ON — spoken messages will be sent automatically"
-                : "Auto-send is OFF — click the arrow to send after speaking"
-              }
-              aria-pressed={autoSendStt}
-              onClick={() => setAutoSendStt((v) => !v)}
-              className={`absolute bottom-2 right-6 ${autoSendStt ? "bg-emerald-500 hover:bg-emerald-600 text-white" : "bg-muted text-white/90 hover:bg-muted/80"}`}
-            >
-              {autoSendStt ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-            </Button>
+            <div className="flex gap-4">
+              <Button
+                type="button"
+                size="lg"
+                className="px-8 py-6 text-lg font-semibold text-white shadow-2xl bg-gradient-to-r from-rose-500 via-orange-500 to-amber-500 hover:from-rose-600 hover:to-amber-600"
+                onClick={handleStartSpeakingPrompt}
+                disabled={startSequenceActive}
+              >
+                {startSequenceActive ? "Starting voice..." : "SPEAK"}
+              </Button>
+
+              <Button
+                type="button"
+                size="lg"
+                variant="secondary"
+                className="px-8 py-6 text-lg font-semibold"
+                onClick={() => {
+                  setShowStartSpeakingPrompt(false);
+                  try { setVoiceModeEnabled(false); } catch (e) { /* ignore */ }
+                  try { textareaRef.current?.focus(); } catch (e) {}
+                }}
+              >
+                WRITE
+              </Button>
+            </div>
+
             <Button
               type="button"
               size="sm"
@@ -4084,21 +4337,31 @@ export function ChatInterface({
 
       {/* Chat messages area */}
       <div id="chat-messages" className="flex-1 overflow-y-auto p-4">
-        <div className="mx-auto max-w-3xl space-y-4">
-          {messages.map((message) => (
-            <ChatMessage
-              key={message.id}
-              message={message}
-              stages={stages}
-              onRetry={retryUserMessage}
-            />
-          ))}
-          {isLoading && (
-            <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-              <div className="animate-pulse">Thinking...</div>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
+        <div className="mx-auto max-w-3xl">
+          {/* Persona filter is controlled by the big OWNER / VOICE MODE / NURSE controls above */}
+          <div className="space-y-4">
+            {messages
+              .filter((m) => {
+                // Determine persona for message: explicit personaRoleKey preferred,
+                // fallback to displayRole classification when available.
+                const p = m.personaRoleKey ?? (m.displayRole ? resolveChatPersonaRoleKey(m.displayRole, m.displayRole) : null);
+                return p === activePersona;
+              })
+              .map((message) => (
+                <ChatMessage
+                  key={message.id}
+                  message={message}
+                  stages={stages}
+                  onRetry={retryUserMessage}
+                />
+              ))}
+            {isLoading && (
+              <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+                <div className="animate-pulse">Thinking...</div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
         </div>
       </div>
 
@@ -4109,7 +4372,7 @@ export function ChatInterface({
             <Button
               onClick={handleProceed}
               disabled={false}
-              className={`w-full sm:flex-1 ${isLastStage
+              className={`sr-only w-full sm:flex-1 ${isLastStage
                 ? "bg-gradient-to-l from-green-500 to-teal-500 hover:from-green-600 hover:to-teal-600"
                 : "bg-gradient-to-l from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600"
                 } 
@@ -4119,55 +4382,74 @@ export function ChatInterface({
               {nextStageTitle}
             </Button>
 
-            <div className="flex gap-2 items-center w-full sm:w-auto justify-center sm:justify-end">
-              {/* Pause Button */}
-              <Button
-                type="button"
-                size="sm"
-                variant={isPaused ? "default" : "secondary"}
-                className="flex items-center gap-2 px-4"
-                onClick={togglePause}
-                title={isPaused ? "Resume case" : "Pause case"}
-              >
-                {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-                <span className="hidden sm:inline">{isPaused ? "Resume" : "Pause"}</span>
-              </Button>
+            <div className="flex gap-4 items-center w-full sm:w-auto justify-center">
+              {/* OWNER button (left) with portrait above */}
+              <div className="flex flex-col items-center gap-1">
+                <div className="h-10 w-10 rounded-full overflow-hidden border bg-muted">
+                  {personaDirectory?.owner?.portraitUrl ? (
+                    <img src={personaDirectory.owner.portraitUrl} alt="OWNER portrait" className="h-full w-full object-cover" loading="lazy" />
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">OWN</div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleSetActivePersona("owner")}
+                  className={`px-3 py-1 rounded-md ${activePersona === "owner" ? "bg-blue-600 text-white" : "bg-muted"}`}
+                  aria-pressed={activePersona === "owner"}
+                  data-testid="owner-tab"
+                >
+                  OWNER
+                </button>
+              </div>
 
-              {/* Big voice-mode toggle */}
-              <Button
-                type="button"
-                size="sm"
-                variant={voiceMode ? "destructive" : "secondary"}
-                className="flex items-center gap-2 px-4"
-                onClick={toggleVoiceMode}
-                disabled={!speechSupported}
-                title={
-                  !speechSupported
-                    ? "Speech recognition is not supported in this browser (try Chrome/Edge)"
-                    : voiceMode
-                      ? "Disable voice mode"
-                      : "Enable voice mode (toggle)"
-                }
-              >
-                <Mic className="h-4 w-4" />
-                <span className="hidden sm:inline">{voiceMode ? "Voice Mode: On" : "Voice Mode: Off"}</span>
-                <span className="sm:hidden">{voiceMode ? "On" : "Off"}</span>
-              </Button>
+              {/* Central voice control with a single status button below showing current mode */}
+              <div className="flex flex-col items-center gap-2">
+                <VoiceModeControl
+                  voiceMode={voiceMode}
+                  isListening={isListening}
+                  isSpeaking={isSpeaking}
+                  onToggle={toggleVoiceMode}
+                  disabled={!speechSupported}
+                />
+                <button
+                  id="mode-status-button"
+                  className={`px-3 py-1 rounded-md text-sm ${voiceMode ? "bg-amber-500 text-white" : "bg-muted"}`}
+                  aria-pressed={voiceMode}
+                  onClick={() => {
+                    // when toggling on, request microphone access explicitly to force permission prompt
+                    if (!voiceMode) {
+                      try {
+                        void requestPermission();
+                      } catch (e) {}
+                    }
+                    setVoiceModeEnabled(!voiceMode);
+                    textareaRef.current?.focus();
+                  }}
+                >
+                  {voiceMode ? "SPEAK" : "WRITE"}
+                </button>
+              </div> 
 
-              {/* TTS toggle */}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="flex items-center gap-1 text-xs"
-                onClick={toggleTts}
-                title={ttsEnabled ? "Disable speech" : "Enable speech"}
-              >
-                {ttsEnabled ? (
-                  <Volume2 className="h-4 w-4" />
-                ) : (
-                  <VolumeX className="h-4 w-4" />
-                )}
-              </Button>
+              {/* NURSE button (right) with portrait above */}
+              <div className="flex flex-col items-center gap-1">
+                <div className="h-10 w-10 rounded-full overflow-hidden border bg-muted">
+                  {personaDirectory?.["veterinary-nurse"]?.portraitUrl ? (
+                    <img src={personaDirectory!["veterinary-nurse"].portraitUrl} alt="NURSE portrait" className="h-full w-full object-cover" loading="lazy" />
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">NUR</div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleSetActivePersona("veterinary-nurse")}
+                  className={`px-3 py-1 rounded-md ${activePersona === "veterinary-nurse" ? "bg-blue-600 text-white" : "bg-muted"}`}
+                  aria-pressed={activePersona === "veterinary-nurse"}
+                  data-testid="nurse-tab"
+                >
+                  NURSE
+                </button>
+              </div>
             </div>
           </div>
 
@@ -4184,13 +4466,7 @@ export function ChatInterface({
 
           {/* Input area */}
           <form onSubmit={handleSubmit} className="relative">
-            {showProceedHint && (
-              <div className="absolute -top-12 left-0 right-0 flex justify-center pointer-events-none z-10">
-                <div className="bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-bounce">
-                  If you have no more questions click on the [Proceed...] button
-                </div>
-              </div>
-            )}
+            {/* Visual proceed hint hidden per UI polish (programmatic proceed remains via handleProceed) */}
             <Textarea
               id="chat-input"
               name="chat-message"
@@ -4221,42 +4497,7 @@ export function ChatInterface({
               className="min-h-[60px] w-full resize-none pr-24"
               rows={1}
             />
-            {/* Mic button */}
-            <Button
-              type="button"
-              size="icon"
-              onClick={() => {
-                if (speechSupported && voiceMode) {
-                  toggleVoiceMode();
-                }
-              }}
-              disabled={!speechSupported}
-              onMouseDown={speechSupported && !voiceMode ? handleStart : undefined}
-              onMouseUp={speechSupported && !voiceMode ? handleStop : undefined}
-              onMouseLeave={speechSupported && !voiceMode ? handleCancel : undefined}
-              // Touch support for mobile devices when not in toggle mode
-              onTouchStart={speechSupported && !voiceMode ? handleStart : undefined}
-              onTouchEnd={speechSupported && !voiceMode ? handleStop : undefined}
-              className={`absolute bottom-2 right-12 ${isListening
-                ? "bg-red-500 hover:bg-red-600 text-white"
-                : "bg-blue-400 hover:bg-blue-500 text-white"
-                } ${!speechSupported ? "opacity-50 cursor-not-allowed" : ""}`}
-              title={
-                !speechSupported
-                  ? "Speech recognition is not supported in this browser"
-                  : voiceMode
-                    ? isListening
-                      ? "Stop listening"
-                      : "Start listening"
-                    : "Hold to record, release to send"
-              }
-            >
-              {isListening ? (
-                <MicOff className="h-5 w-5" />
-              ) : (
-                <Mic className="h-5 w-5" />
-              )}
-            </Button>
+
             {/* Send button */}
             <TooltipProvider>
               <Tooltip>
@@ -4295,10 +4536,10 @@ export function ChatInterface({
                 variant="ghost"
                 size="sm"
                 className="flex items-center gap-1 text-xs"
-                onClick={() => setShowNotepad(!showNotepad)}
+                onClick={() => setShowNotepadByPersona(prev => ({ ...prev, [activePersona]: !prev[activePersona] }))}
               >
                 <PenLine className="h-3.5 w-3.5" />
-                {showNotepad ? "Hide Notepad" : "Show Notepad"}
+                {showNotepadByPersona[activePersona] ? "Hide Notepad" : "Show Notepad"}
               </Button>
               <div className="flex items-center gap-1 border rounded-md px-1 bg-background/50">
                   <FontSizeToggle />
@@ -4318,21 +4559,8 @@ export function ChatInterface({
                     </Tooltip>
                   </TooltipProvider>
                 </div>
-              {/* Developer Skip Button - Hidden by default unless needed, or we can just show it */}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="flex items-center gap-1 text-xs text-muted-foreground/50 hover:text-destructive"
-                onClick={() => {
-                  if (confirm("Force skip to next stage? This bypasses AI checks.")) {
-                    handleProceed();
-                  }
-                }}
-                title="Force Skip Stage (Dev)"
-              >
-                <SkipForward className="h-3.5 w-3.5" />
-                Skip
-              </Button>
+              {/* Developer Skip Button hidden (visual-only): kept programmatically via handleProceed() */}
+              {/* <Button hidden>Skip</Button> */}
             </div>
             <span>Press Enter to send, Shift+Enter for new line</span>
           </div>
@@ -4377,8 +4605,8 @@ export function ChatInterface({
         </DialogContent>
       </Dialog>
 
-      {/* Notepad */}
-      <Notepad isOpen={showNotepad} onClose={() => setShowNotepad(false)} />
+      {/* Notepad (per-persona) */}
+      <Notepad isOpen={Boolean(showNotepadByPersona[activePersona])} onClose={() => setShowNotepadByPersona(prev => ({ ...prev, [activePersona]: false }))} />
     </div>
   );
 }

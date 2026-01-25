@@ -49,7 +49,8 @@ export default function CaseChatPage() {
 
   // UI state
   const [isMobile, setIsMobile] = useState(false);
-  const [showSidebar, setShowSidebar] = useState(true);
+  // Hide the left-stage sidebar by default to provide a focused workspace
+  const [showSidebar, setShowSidebar] = useState(false);
 
   const tourSteps = [
     { element: '#progress-sidebar', popover: { title: 'Progress Tracker', description: 'Track your progress through the different stages of the consultation (History, Exam, etc.).' } },
@@ -234,7 +235,7 @@ export default function CaseChatPage() {
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
-      setShowSidebar(window.innerWidth >= 768);
+      // Do not auto-toggle sidebar on resize — keep it hidden by default
     };
     checkMobile();
     window.addEventListener("resize", checkMobile);

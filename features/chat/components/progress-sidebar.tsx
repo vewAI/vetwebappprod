@@ -38,7 +38,7 @@ export function ProgressSidebar({ caseItem, stages, currentStageIndex, onStageSe
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
-        <h3 className="mb-3 text-sm font-medium">OSCE Progress</h3>
+        <h3 className="mb-3 text-sm font-medium">Case Progress</h3>
         <div className="space-y-1">
           {stages.map((stage, index) => (
             <button

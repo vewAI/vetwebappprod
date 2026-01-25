@@ -112,9 +112,8 @@ Goals & constraints
 - Keep the existing Auto-send checkbox (UI/behavior unchanged) and **remove** the small green auto-send triangle micro-icon.
 
 Design decisions & UX
-- Replace the current start overlay with two prominent buttons in the composer area: **SPEAK** and **WRITE**.
-  - Clicking **SPEAK** enables voice-mode (STT active if microphone permission available) and visually emphasizes the central Voice Mode control.
-  - Clicking **WRITE** disables voice-mode and focuses the text input for typed input.
+- Replace the current start overlay with a single prominent status button in the composer area (positioned right below the central mic control): **SPEAK** or **WRITE** depending on current state.
+  - Clicking the status button toggles modes. If enabling **SPEAK**, the app should explicitly request microphone permission (force the browser prompt) before starting STT. The mic control remains visually emphasized while voice-mode is active.
 - Add persona tabs (OWNER, NURSE) above the message list. Each tab toggles a filtered view of the messages for that persona; the underlying message store keeps all messages and each message has `personaRoleKey` (existing field) to allow filtering.
   - Messages created while a persona tab is active should be saved with the corresponding `personaRoleKey` value.
   - Switching tabs should not change history; it filters the displayed messages by persona only (owner messages, nurse messages, assistant messages tied to a persona roleKey).
@@ -175,5 +174,73 @@ Acceptance checklist before merge
 
 Implementation notes — timeline & risks
 - Estimated small-medium change: 1–2 days of work + tests. The main risk is ensuring no regression in STT/TTS timing/auto-pause behavior; keep tests for the relevant hooks and add mocks to simulate TTS play/resume.
+
+Visual Design & Styles (UI polish details)
+- Layout and positioning
+  - Persona tabs: placed above the message list in a centered header row. Use `role="tablist"` and put OWNER on the left and NURSE on the right, with the active tab using `.bg-blue-600.text-white` and inactive using `.bg-muted`.
+  - Voice control: a single prominent control centered between the persona buttons in the composer header. Use an identifiable container id `#voice-mode-control` and classes: `rounded-full` with size `h-14 w-14` (`h-12 w-12` in more compact contexts), `shadow-lg`, and gradient `bg-gradient-to-r from-amber-500 via-orange-500 to-yellow-400` to maintain visual emphasis.
+  - Composer buttons: SPEAK and WRITE should be visually large and clear; adopt `px-4 py-2 rounded-md font-medium` and distinct color states (SPEAK uses amber/white when active, WRITE uses neutral/primary styles when active).
+  - Sidebar: left-stage sidebar hidden by default for a focused workspace. Keep a mobile toggle in the top-left for small screens and an aria-live region announcing state changes.
+
+- Spacing & animation
+  - Use subtle motion for activation: `transition-transform duration-150` and a slight `scale(1.05)` on active voice-control press.
+  - Use `animate-in`/`animate-out` classes for persona-switch toasts and timepoint toasts (duration ~300ms) and keep persona-switch toast visible for 2000ms.
+  - Avoid layout shift: keep voice control box reserved space so enabling/disabling voiceMode doesn’t push elements.
+
+- Colors & tokens
+  - Primary persona active: `bg-blue-600 text-white`.
+  - Voice control gradient: `from-amber-500 via-orange-500 to-yellow-400` (already in existing component).
+  - Muted/inactive: use `bg-muted` and `text-muted-foreground` tokens so theming remains consistent.
+
+Accessibility details
+- Persona tabs
+  - Must have `role="tablist"` and each tab `role="tab"`, `aria-selected` boolean, and `aria-controls` linking to the corresponding message list panel.
+  - Keyboard: allow Left/Right to navigate tabs, Enter/Space to activate.
+- Voice control & SPEAK/WRITE
+  - Provide `aria-pressed` for toggles and an accessible label that reads `Voice Mode — On`/`Voice Mode — Off` or `Enable Voice Mode` / `Disable Voice Mode` respectively.
+  - Announce to SR users when voice-mode becomes `Listening` or `Speaking` via an `aria-live="polite"` region tied to `#voice-mode-control-status`.
+- Notepad and per-persona dialogs
+  - Notepad open/close should be announced (e.g., `aria-live`) and keyboard accessible; the Notepad instance for each persona must be independently controllable.
+
+Behavioral UI details (polish)
+- Persona switch
+  - Show a short 2s timepoint toast when switching persona: title `Talking to <displayName>`; no body required. Ensure previous persona draft is persisted and next persona draft restored on switch.
+- Per-message controls
+  - Remove mic/speaker/pause icons from message chrome (visual-only removal). Keep playback and TTS hooks intact and accessible via the central Voice control and in-line media controls on media elements (audio/video tags).
+- Auto-send
+  - Remove the small auto-send micro-triangle icon from DOM and rely on the Auto-send checkbox display.
+
+Testing & Acceptance (visual and automated)
+- Unit tests
+  - `PersonaTabs` should expose correct roles/aria attributes and change `activePersona` when activated via keyboard and click.
+  - `VoiceModeControl` should render with the specified container id and classes, reflect `isListening` / `isSpeaking` state labels, and call `onToggle` when pressed.
+- Integration tests (jsdom)
+  - When switching persona: (a) current draft saved to localStorage key `chat-draft-<attemptId>-<persona>`; (b) next persona draft restored; (c) persona toast shown for ~2s.
+  - Hide sidebar by default: page should not show `#progress-sidebar` unless user toggles it.
+- E2E (Playwright)
+  - Assert the layout on desktop: `OWNER` left, `#voice-mode-control` centered, and `NURSE` right. Validate `VoiceModeControl` size in pixels (`h-14 w-14` target) and that active states animate subtly.
+  - Validate persona-switch toast appears and disappears after ~2s and that the Notepad is independent per persona.
+- Visual regression
+  - Add screenshots for: composer header (tabs + voice control), persona toast, message list filtering, and the collapsed sidebar state. Use diff thresholds appropriate for subtle transitions.
+
+Edge cases & guardrails
+- If persona directory fails to load, fallback to textual tab labels (OWNER / NURSE) and still enable per-persona drafts; log the fallback.
+- Keep voice control programmatically able to start STT even when permission prompts are pending (maintain the 2s suppression window for microphone-blocked toasts).
+
+Developer notes & implementation plan (small, reviewable commits)
+1. Update `features/chat/README.spec.md` (this document) with the above visual details and acceptance tests.
+2. Add visual classes/ids to `PersonaTabs` and `VoiceModeControl` to make tests deterministic: e.g., `id="persona-tabs"`, `id="voice-mode-control"`, `data-test-active` attributes for persona tabs.
+3. Update `features/chat/components/chat-interface.tsx` to apply the visual classes, wire per-persona Notepad state, and set the default hidden sidebar behavior (already implemented).
+4. Add Playwright visual tests under `e2e` (composer header, persona toast, Notepad persistence, sidebar hidden by default) and snapshots.
+5. Add unit tests to cover persona-switch behavior, `VoiceModeControl` accessibility, and removal of per-message mic/speaker icons from the DOM.
+6. Run `npm run test` and `npm run e2e`; iterate until green.
+
+Acceptance checklist before merge (updated)
+- [ ] Spec file updated and reviewed.
+- [ ] Unit tests for `PersonaTabs` and `VoiceModeControl` pass.
+- [ ] Integration tests for persona message assignment and draft persistence pass.
+- [ ] Playwright E2E and visual regression snapshots pass.
+- [ ] Manual test of SPEAK/WRITE flow, persona-switch toast, and TTS/STT auto-pause/resume passes.
+- [ ] UX sign-off on visual polish (alignment, spacing, animations, and color tokens).
 
 End of Chatbox Voice UI & Persona Tabs micro-spec

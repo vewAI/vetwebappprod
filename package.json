@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "test": "tsx --test",
+    "test:e2e": "playwright test",
     "seed:cases": "tsx scripts/seed-cases.ts",
     "generate:portraits": "tsx scripts/generate-persona-portraits.ts",
     "reset:portraits": "tsx scripts/reset-persona-portraits.ts",
