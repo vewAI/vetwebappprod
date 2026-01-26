@@ -2190,6 +2190,11 @@ export function ChatInterface({
       return;
     }
     
+    // Record the UI-selected persona at the moment of send to avoid race
+    // conditions where the server reply might be attributed to another role.
+    selectedPersonaAtSendRef.current = activePersona;
+    try { console.debug("sendUserMessage: selectedPersonaAtSend", { selectedPersonaAtSend: selectedPersonaAtSendRef.current, activePersona }); } catch (e) {}
+
     // Update submission tracker immediately
     lastSubmissionRef.current = { content: trimmed, timestamp: now };
 
