@@ -348,6 +348,7 @@ export default function CaseChatPage() {
     return duplicated;
   }
 
+  const SHOW_RAG = process.env.NEXT_PUBLIC_SHOW_RAG === "true";
   if (loading || isRestoring) return <div className="p-8 text-center">Loading case...</div>;
   if (!caseItem) return notFound();
 
@@ -374,7 +375,7 @@ export default function CaseChatPage() {
 
       <div id="chat-interface" className="flex-1 flex flex-col overflow-hidden">
         {/* Professor uploader + Papers list */}
-        {user && (role === "professor" || role === "admin") && caseItem?.id && (
+        {SHOW_RAG && user && (role === "professor" || role === "admin") && caseItem?.id && (
           <div className="p-3 border-b bg-gray-50 dark:bg-gray-900 flex justify-end">
             <Dialog>
               <DialogTrigger asChild>

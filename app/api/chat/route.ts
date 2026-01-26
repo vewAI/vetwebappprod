@@ -2,7 +2,7 @@ import OpenAi from "openai";
 import { NextRequest, NextResponse } from "next/server";
 import { getRoleInfoPrompt } from "@/features/role-info/services/roleInfoService";
 import { getStagesForCase } from "@/features/stages/services/stageService";
-import { resolveChatPersonaRoleKey } from "@/features/chat/utils/persona-guardrails";
+import { resolveChatPersonaRoleKey, isAllowedChatPersonaKey } from "@/features/chat/utils/persona-guardrails";
 import {
   buildPersonaSeeds,
   buildSharedPersonaSeeds,
@@ -244,6 +244,17 @@ export async function POST(request: NextRequest) {
     console.log(
       `[chat] Persona resolution: stageRole="${stageRole}" displayRole="${displayRole}" → personaRoleKey="${personaRoleKey}"`,
     );
+
+    // Prefer explicit persona selected by the client message (if present)
+    try {
+      const explicit = (lastUserMessage as any)?.personaRoleKey;
+      if (explicit && isAllowedChatPersonaKey(explicit)) {
+        personaRoleKey = explicit;
+        console.log(`[chat] personaRoleKey overridden by user-selected persona: ${personaRoleKey}`);
+      }
+    } catch (e) {
+      // non-blocking
+    }
 
     // Enforce strict persona mapping for sensitive stages: only the
     // veterinary nurse may answer in Physical Examination, Laboratory & Tests,

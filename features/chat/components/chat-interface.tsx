@@ -54,6 +54,7 @@ import {
   isAllowedChatPersonaKey,
   resolveChatPersonaRoleKey,
 } from "@/features/chat/utils/persona-guardrails";
+import { chooseSafePersonaKey } from "@/features/chat/utils/persona-selection";
 import type { AllowedChatPersonaKey } from "@/features/chat/utils/persona-guardrails";
 import { useSpeechDevices } from "@/features/speech/context/audio-device-context";
 import PersonaTabs from "@/features/chat/components/PersonaTabs";
@@ -788,6 +789,10 @@ export function ChatInterface({
   // Track which persona sent the last outgoing user message so we can
   // prefer that persona when the server doesn't explicitly direct otherwise.
   const lastSentPersonaRef = useRef<AllowedChatPersonaKey | null>(null);
+  // Track the UI-selected persona at the moment a message was sent. This
+  // helps avoid races where the server replies before the client has
+  // fully attributed the outgoing message.
+  const selectedPersonaAtSendRef = useRef<AllowedChatPersonaKey | null>(null);
   // Track last appended chunk and time to avoid rapid duplicate appends
   const lastAppendedTextRef = useRef<string | null>(null);
   const lastAppendTimeRef = useRef<number>(0);
@@ -2379,6 +2384,10 @@ export function ChatInterface({
       return;
     }
 
+    // Record the UI-selected persona at the moment of send to avoid race
+    // conditions where the server reply might be attributed to another role.
+    selectedPersonaAtSendRef.current = activePersona;
+
     // If the current active persona is the nurse and the user is sending a message,
     // emit a brief nurse acknowledgement message immediately so the user sees a
     // responsive acknowledgement from the chosen persona before the server reply.
@@ -2583,19 +2592,28 @@ export function ChatInterface({
       const userPersonaKey = userMessage && (userMessage as any).personaRoleKey && isAllowedChatPersonaKey((userMessage as any).personaRoleKey)
         ? (userMessage as any).personaRoleKey
         : null;
-      // Preference order:
-      // 1. persona used on the user message (if present)
-      // 2. persona used by lastSentPersonaRef (fallback when user message was suppressed)
-      // 3. server-provided persona
-      // 4. active UI persona
-      let safePersonaRoleKey = userPersonaKey ?? (lastSentPersonaRef.current ?? null);
-      if (!safePersonaRoleKey) {
-        safePersonaRoleKey = (response.personaRoleKey && isAllowedChatPersonaKey(response.personaRoleKey)
-          ? response.personaRoleKey
-          : (isAllowedChatPersonaKey(activePersona) ? activePersona : resolveChatPersonaRoleKey(stage?.role, roleName)));
-      }
+
+      // Choose persona in a robust order that prefers:
+      // 1. persona used on the user message
+      // 2. persona explicitly selected in the UI at send time
+      // 3. persona used by lastSentPersonaRef
+      // 4. server-provided persona
+      // 5. active UI persona / stage-derived fallback
+
+      let safePersonaRoleKey = chooseSafePersonaKey({
+        userPersonaKey,
+        selectedPersonaAtSend: selectedPersonaAtSendRef.current,
+        lastSentPersona: lastSentPersonaRef.current,
+        responsePersonaKey: response.personaRoleKey ?? null,
+        activePersona: activePersona ?? null,
+        stageRole: stage?.role ?? null,
+        roleName: roleName ?? null,
+      });
+
       // clear last sent persona marker when used
       lastSentPersonaRef.current = null;
+      // clear the transient selected-at-send marker
+      selectedPersonaAtSendRef.current = null;
       const normalizedPersonaKey = safePersonaRoleKey;
       // If we forced a persona (e.g., active persona or last-sent), prefer the persona directory
       // metadata (displayName, portrait, voice) for visual consistency.
@@ -3105,10 +3123,15 @@ export function ChatInterface({
         // Append assistant reply into chat UI
         const stage = stages[p.stageIndex] ?? stages[currentStageIndex];
         const roleName = response.displayRole ?? stage?.role;
-        const safePersonaRoleKey =
-          (response.personaRoleKey && isAllowedChatPersonaKey(response.personaRoleKey)
-            ? response.personaRoleKey
-            : (isAllowedChatPersonaKey(activePersona) ? activePersona : resolveChatPersonaRoleKey(stage?.role, roleName)));
+        const safePersonaRoleKey = chooseSafePersonaKey({
+          userPersonaKey: null,
+          selectedPersonaAtSend: null,
+          lastSentPersona: null,
+          responsePersonaKey: response.personaRoleKey ?? null,
+          activePersona: activePersona ?? null,
+          stageRole: stage?.role ?? null,
+          roleName: roleName ?? null,
+        });
 
         const normalizedPersonaKey = safePersonaRoleKey;
         const portraitUrl = response.portraitUrl;
@@ -4519,16 +4542,7 @@ export function ChatInterface({
             </div>
           </div>
 
-          {audioDevicesSupported && (
-            <div className="mb-4 space-y-2">
-              {audioNotice && (
-                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                  {audioNotice}
-                </div>
-              )}
-              <AudioDeviceSelector />
-            </div>
-          )}
+
 
           {/* Input area */}
           <form onSubmit={handleSubmit} className="relative">
@@ -4607,27 +4621,44 @@ export function ChatInterface({
                 <PenLine className="h-3.5 w-3.5" />
                 {showNotepadByPersona[activePersona] ? "Hide Notepad" : "Show Notepad"}
               </Button>
+
               <div className="flex items-center gap-1 border rounded-md px-1 bg-background/50">
-                  <FontSizeToggle />
-                </div>
-                <div className="flex items-center gap-2 px-2">
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <Checkbox checked={autoSendStt} onCheckedChange={(v) => setAutoSendStt(Boolean(v))} />
-                          <span className="text-xs">Auto-send STT</span>
-                        </label>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>When enabled, spoken messages are sent automatically; when disabled, click Send to submit.</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
+                <FontSizeToggle />
+              </div>
+
+              <div className="flex items-center gap-2 px-2">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox checked={autoSendStt} onCheckedChange={(v) => setAutoSendStt(Boolean(v))} />
+                        <span className="text-xs">Auto-send STT</span>
+                      </label>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>When enabled, spoken messages are sent automatically; when disabled, click Send to submit.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+
               {/* Developer Skip Button hidden (visual-only): kept programmatically via handleProceed() */}
               {/* <Button hidden>Skip</Button> */}
             </div>
+
+            <div className="w-full mt-3">
+              {audioDevicesSupported && (
+                <div className="mb-2 space-y-2">
+                  {audioNotice && (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      {audioNotice}
+                    </div>
+                  )}
+                  <AudioDeviceSelector />
+                </div>
+              )}
+            </div>
+
             <span>Press Enter to send, Shift+Enter for new line</span>
           </div>
         </div>

@@ -42,6 +42,8 @@ export const chatService = {
       const apiMessages = messages.map((msg) => ({
         role: msg.role as "system" | "user" | "assistant",
         content: msg.content,
+        // Preserve persona selection when present so the server can honor the UI-selected persona
+        ...(msg as any).personaRoleKey ? { personaRoleKey: (msg as any).personaRoleKey } : {},
       }));
       // If the browser is offline, throw immediately to avoid noisy network
       // errors from the XHR layer.

@@ -1,4 +1,11 @@
-import '@testing-library/jest-dom';
+// try to enable jest-dom matchers when present (optional)
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  require('@testing-library/jest-dom');
+} catch (_) {
+  // jest-dom not installed; that's fine for lightweight unit tests
+}
+
 import { beforeAll, afterEach, vi } from 'vitest';
 
 // Provide safe defaults for environment variables used in tests
