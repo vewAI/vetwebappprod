@@ -2734,7 +2734,11 @@ export function ChatInterface({
       // Use the specific persona name and portrait if available in the directory, otherwise fall back
       // to server-provided or role name to guarantee the assistant appears as the selected persona.
       const existingPersona = normalizedPersonaKey ? personaDirectoryRef.current[normalizedPersonaKey] : undefined;
-      const finalDisplayName = existingPersona?.displayName ?? roleName;
+      // Prefer persona directory displayName when available. If not available,
+      // avoid using a server-provided displayName that belongs to a different
+      // persona (e.g., owner name shown when nurse was selected). Instead
+      // fallback to a generic persona label derived from the normalized persona key.
+      const finalDisplayName = existingPersona?.displayName ?? (normalizedPersonaKey ? (normalizedPersonaKey === "owner" ? "Owner" : "Nurse") : roleName);
       const finalPortraitUrl = existingPersona?.portraitUrl ?? portraitUrl;
 
       // Prefer structuredFindings from the server if present (authoritative)
