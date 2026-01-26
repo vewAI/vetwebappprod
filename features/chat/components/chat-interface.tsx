@@ -68,6 +68,7 @@ import {
 import { parseRequestedKeys } from "@/features/chat/services/physFinder";
 import { endsWithIncompleteMarker } from "@/features/chat/utils/incomplete";
 import { detectPersonaSwitch, looksLikeLabRequest } from "@/features/chat/utils/persona-intent";
+import { emitStageEvaluation } from "@/features/chat/utils/stage-eval";
 import axios from "axios";
 import {
   detectStageReadinessIntent,
@@ -2192,6 +2193,14 @@ export function ChatInterface({
     // Update submission tracker immediately
     lastSubmissionRef.current = { content: trimmed, timestamp: now };
 
+    // Run a lightweight stage evaluation every time the user sends a message
+    try {
+      const stageEval = emitStageEvaluation(caseId, currentStageIndex, messages.concat([{ role: "user", content: trimmed, stageIndex: currentStageIndex } as any]));
+      console.debug("Stage evaluation on sendUserMessage", stageEval);
+    } catch (e) {
+      // non-blocking
+    }
+
     try {
       // Also check against React state for slightly older duplicates
       const lastUser = [...messages].reverse().find((m) => m.role === "user");
@@ -2322,9 +2331,9 @@ export function ChatInterface({
           "is", "are", "was", "were", "and", "or", "but", "that", "which",
           "my", "your", "his", "her", "its", "our", "their", "this", "these", "those",
         ];
-        const endsWithIncompleteMarker = endsWithIncompleteMarker(baseInputRef.current || "");
+        const endsIncomplete = endsWithIncompleteMarker(baseInputRef.current || "");
         
-        if (tokenCount <= 2 || endsWithIncompleteMarker) {
+        if (tokenCount <= 2 || endsIncomplete) {
           // Insert assistant placeholder '...' and keep listening for continuation
           const stage = stages?.[currentStageIndex];
           const roleLabel = stage?.role
