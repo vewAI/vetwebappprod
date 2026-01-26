@@ -7,8 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "tsx --test",
+    "test": "vitest",
+    "test:unit": "vitest",
+    "test:watch": "vitest --watch",
     "test:e2e": "playwright test",
+    "playwright:install": "npx playwright install --with-deps",
     "seed:cases": "tsx scripts/seed-cases.ts",
     "generate:portraits": "tsx scripts/generate-persona-portraits.ts",
     "reset:portraits": "tsx scripts/reset-persona-portraits.ts",
@@ -58,6 +61,11 @@
     "eslint-config-next": "^16.0.10",
     "tailwindcss": "^4.1.18",
     "tsx": "^4.21.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^1.3.9",
+    "@testing-library/react": "^14.0.0",
+    "@testing-library/jest-dom": "^6.0.0",
+    "msw": "^1.2.1",
+    "@playwright/test": "^1.35.0"
   }
 }

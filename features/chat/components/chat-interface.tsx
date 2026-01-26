@@ -785,6 +785,9 @@ export function ChatInterface({
   // Track the last final transcript that onFinal handled so we don't
   // duplicate it when the `transcript` state also updates.
   const lastFinalHandledRef = useRef<string | null>(null);
+  // Track which persona sent the last outgoing user message so we can
+  // prefer that persona when the server doesn't explicitly direct otherwise.
+  const lastSentPersonaRef = useRef<AllowedChatPersonaKey | null>(null);
   // Track last appended chunk and time to avoid rapid duplicate appends
   const lastAppendedTextRef = useRef<string | null>(null);
   const lastAppendTimeRef = useRef<number>(0);
@@ -2418,6 +2421,9 @@ export function ChatInterface({
       userMessage = chatService.createUserMessage(trimmed, currentStageIndex);
       // Associate the outgoing user message with the currently active persona tab
       try { (userMessage as any).personaRoleKey = activePersona; } catch (e) {}
+      // Remember which persona was used for this outbound message so the
+      // assistant reply can be aligned with the user's chosen persona.
+      lastSentPersonaRef.current = activePersona;
       snapshot = [...messages, userMessage];
       setMessages(snapshot);
     }
@@ -2571,12 +2577,30 @@ export function ChatInterface({
         try { if (!lastLlmResponse) setLastLlmResponse(response); } catch {}
       const stage = stages[currentStageIndex] ?? stages[0];
       const roleName = response.displayRole ?? stage?.role ?? "assistant";
-      const safePersonaRoleKey =
-        (response.personaRoleKey && isAllowedChatPersonaKey(response.personaRoleKey)
+      // Prefer the persona that sent the user message (if present) so an explicit
+      // user-selected persona is honored over server defaults. Otherwise fall back
+      // to server-specified persona or the current active persona.
+      const userPersonaKey = userMessage && (userMessage as any).personaRoleKey && isAllowedChatPersonaKey((userMessage as any).personaRoleKey)
+        ? (userMessage as any).personaRoleKey
+        : null;
+      // Preference order:
+      // 1. persona used on the user message (if present)
+      // 2. persona used by lastSentPersonaRef (fallback when user message was suppressed)
+      // 3. server-provided persona
+      // 4. active UI persona
+      let safePersonaRoleKey = userPersonaKey ?? (lastSentPersonaRef.current ?? null);
+      if (!safePersonaRoleKey) {
+        safePersonaRoleKey = (response.personaRoleKey && isAllowedChatPersonaKey(response.personaRoleKey)
           ? response.personaRoleKey
           : (isAllowedChatPersonaKey(activePersona) ? activePersona : resolveChatPersonaRoleKey(stage?.role, roleName)));
-
+      }
+      // clear last sent persona marker when used
+      lastSentPersonaRef.current = null;
       const normalizedPersonaKey = safePersonaRoleKey;
+      // If we forced a persona (e.g., active persona or last-sent), prefer the persona directory
+      // metadata (displayName, portrait, voice) for visual consistency.
+      const personaEntry = normalizedPersonaKey ? personaDirectoryRef.current?.[normalizedPersonaKey] : undefined;
+
       const portraitUrl = response.portraitUrl;
       const serverVoiceId = normalizeVoiceId(response.voiceId);
       // Prefer patientSex (if provided by server) for pronoun/voice
@@ -2595,19 +2619,23 @@ export function ChatInterface({
           ? resolvedResponseSex
           : "neutral";
 
+      // If personaEntry provides a preferred sex/voice, prefer it for TTS selection
+      if (personaEntry?.sex) responseVoiceSex = (personaEntry.sex as "male" | "female" | "neutral") ?? responseVoiceSex;
       const resolvedVoiceForRole = getOrAssignVoiceForRole(
         normalizedPersonaKey,
         attemptId,
         {
-          preferredVoice: serverVoiceId,
+          preferredVoice: personaEntry?.voiceId ?? serverVoiceId,
           sex: responseVoiceSex,
         }
       );
-      const assistantVoiceId = serverVoiceId ?? resolvedVoiceForRole;
+      const assistantVoiceId = personaEntry?.voiceId ?? serverVoiceId ?? resolvedVoiceForRole;
 
-      // Use the specific persona name if available in the directory, otherwise fall back to the role name
+      // Use the specific persona name and portrait if available in the directory, otherwise fall back
+      // to server-provided or role name to guarantee the assistant appears as the selected persona.
       const existingPersona = normalizedPersonaKey ? personaDirectoryRef.current[normalizedPersonaKey] : undefined;
       const finalDisplayName = existingPersona?.displayName ?? roleName;
+      const finalPortraitUrl = existingPersona?.portraitUrl ?? portraitUrl;
 
       // Prefer structuredFindings from the server if present (authoritative)
       const structured = (response as any)?.structuredFindings as Record<string, string | null> | undefined;
@@ -2632,10 +2660,10 @@ export function ChatInterface({
         finalContent,
         currentStageIndex,
         finalDisplayName,
-        portraitUrl,
+        finalPortraitUrl,
         assistantVoiceId,
         // pass the resolved sex (prefer patientSex)
-        resolvedResponseSex,
+        responseVoiceSex,
         safePersonaRoleKey,
         response.media
       );
@@ -3228,6 +3256,20 @@ export function ChatInterface({
 
   const setVoiceModeEnabled = useCallback(
     async (next: boolean) => {
+      // If enabling, ensure we have microphone permission first
+      if (next) {
+        try {
+          await requestPermission();
+        } catch (e) {
+          showMicToast("Microphone access required — please allow access", 4000);
+          console.warn("Microphone permission denied or failed", e);
+          // Do not proceed to start STT without permission
+          // Still toggle the UI state so the caller sees the intent
+          setVoiceMode(true);
+          return;
+        }
+      }
+
       setVoiceMode((current) => {
         if (current === next) {
           return current;
@@ -3241,18 +3283,13 @@ export function ChatInterface({
           // Also enable TTS (speaker) when voice mode is turned on
           setTtsEnabledState(true);
 
-          // Force a permission prompt to ensure browser asks for mic access
-          try {
-            void requestPermission();
-          } catch (e) {}
-
           // If STT is currently suppressed (TTS playback), do not call
           // start() immediately — instead mark for resume so the STT
           // service restarts when suppression clears.
           if (isSuppressingSttRef.current) {
             resumeListeningRef.current = true;
           } else if (!isPlayingAudioRef.current) {
-            // small delay to allow permission prompt to appear
+            // small delay to allow permission prompt to finish processing
             setTimeout(() => {
               try {
                 start();
@@ -3302,7 +3339,7 @@ export function ChatInterface({
         return next;
       });
     },
-    [reset, start, stopAndMaybeSend, stop, setTtsEnabledState]
+    [reset, start, stopAndMaybeSend, stop, setTtsEnabledState, requestPermission]
   );
 
   // Toggle voice mode (persistent listening until toggled off)
@@ -3577,9 +3614,27 @@ export function ChatInterface({
     }
   }, [ambientLevel, setDebounceMs]);
 
-  // Scroll to bottom when messages change
+  // Scroll to bottom when messages change but only if the user is already
+  // near the bottom. This prevents an aggressive page-level scroll when the
+  // user presses Enter or is inspecting earlier messages.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    try {
+      const container = document.getElementById("chat-messages");
+      if (!container) {
+        // Fallback to previous behavior
+        messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+        return;
+      }
+      const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120;
+      if (nearBottom) {
+        container.scrollTo({ top: container.scrollHeight, behavior: "auto" });
+      }
+    } catch (e) {
+      // If anything goes wrong, silently fallback to basic scrollIntoView
+      try {
+        messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+      } catch {}
+    }
   }, [messages]);
 
   // Intro toast: central, non-blocking pop-up shown when an attempt opens.
@@ -3835,9 +3890,20 @@ export function ChatInterface({
   }, [caseId, currentStageIndex, stages]);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    // Delegate to shared sendUserMessage helper
-    await sendUserMessage(input);
+    try {
+      e.preventDefault();
+      // Delegate to shared sendUserMessage helper
+      await sendUserMessage(input);
+    } finally {
+      // Ensure focus returns to the textarea without causing a page scroll
+      try {
+        (textareaRef.current as any)?.focus?.({ preventScroll: true });
+      } catch (e) {
+        try {
+          textareaRef.current?.focus();
+        } catch {}
+      }
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

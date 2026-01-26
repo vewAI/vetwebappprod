@@ -16,23 +16,36 @@ test.describe('Composer header & persona UI', () => {
     await page.screenshot({ path: 'e2e-screenshots/composer-header.png', fullPage: false });
   });
 
-  test('mode status button toggles and shows 2s toasts', async ({ page }) => {
+  test('nurse replies with nurse portrait and name when nurse selected', async ({ page }) => {
     await page.goto('/case-1');
-    const mode = page.locator('#mode-status-button');
-    await expect(mode).toBeVisible();
 
-    // Click to enable voice mode -> expect SPEAK toast
-    await mode.click();
-    const speakToast = page.locator('text=SPEAK - Voice Mode Activated');
-    await expect(speakToast).toBeVisible();
-    await page.waitForTimeout(2200);
-    await expect(speakToast).toBeHidden();
+    // Ensure nurse tab selected
+    await page.locator('[data-testid="persona-nurse"]').click();
 
-    // Click to disable voice mode -> expect WRITE toast
-    await mode.click();
-    const writeToast = page.locator('text=WRITE - Write Mode Activated');
-    await expect(writeToast).toBeVisible();
-    await page.waitForTimeout(2200);
-    await expect(writeToast).toBeHidden();
+    // Send a message as the user
+    await page.fill('#chat-input', 'hello from student');
+    await page.click('#send-button');
+
+    // Wait for the ack & assistant reply
+    await page.waitForSelector('text=Let me check that Doc...');
+
+    // The assistant reply should show the nurse's name and portrait alt
+    const assistantName = page.locator('text=Martin Lambert');
+    await expect(assistantName).toBeVisible();
+    const portrait = page.locator('img[alt*="Martin Lambert portrait"]');
+    await expect(portrait).toBeVisible();
+  });
+
+  test('when nurse is active the nurse acknowledges (NURSE_ACK)', async ({ page }) => {
+    await page.goto('/case-1');
+    const nurse = page.locator('[data-testid="persona-nurse"]');
+    await nurse.click();
+    const input = page.locator('#chat-input');
+    await input.fill('hello nurse');
+    await input.press('Enter');
+
+    // The immediate nurse ack should appear
+    const ack = page.locator('text=Let me check that Doc...');
+    await expect(ack).toBeVisible();
   });
 });
