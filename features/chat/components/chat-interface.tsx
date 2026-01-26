@@ -66,6 +66,8 @@ import {
   type StageIntentContext,
 } from "@/features/chat/utils/stage-intent-detector";
 import { parseRequestedKeys } from "@/features/chat/services/physFinder";
+import { endsWithIncompleteMarker } from "@/features/chat/utils/incomplete";
+import { detectPersonaSwitch, looksLikeLabRequest } from "@/features/chat/utils/persona-intent";
 import axios from "axios";
 import {
   detectStageReadinessIntent,
@@ -1020,22 +1022,9 @@ export function ChatInterface({
             // prepositions, conjunctions, etc.) - give more time to complete
             const textToCheck = baseInputRef.current?.trim() || "";
             const lastWord = textToCheck.split(/\s+/).pop()?.toLowerCase() || "";
-            const incompleteMarkers = [
-              // Articles
-              "the", "a", "an",
-              // Prepositions
-              "of", "at", "in", "on", "to", "for", "with", "by", "from", "about", "into", "through", "during", "before", "after", "above", "below", "between", "under", "over",
-              // Conjunctions
-              "and", "or", "but", "so", "yet", "nor",
-              // Other continuation signals
-              "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "do", "does", "did", "will", "would", "could", "should", "may", "might", "must", "shall", "can",
-              "that", "which", "who", "whom", "whose", "what", "where", "when", "why", "how",
-              "if", "then", "because", "although", "while", "unless", "until", "since",
-              "my", "your", "his", "her", "its", "our", "their", "this", "that", "these", "those",
-              "very", "really", "just", "also", "even", "still", "already", "always", "never", "often", "usually", "sometimes",
-              "not", "no", "any", "some", "all", "each", "every", "both", "either", "neither",
-            ];
-            const looksIncomplete = incompleteMarkers.includes(lastWord);
+            // Use shared helper to decide if trailing word suggests incomplete phrase
+            const looksIncomplete = endsWithIncompleteMarker(textToCheck);
+
             
             // When noise suppression is active, use a longer delay to filter
             // out ambient chatter that might be picked up as speech.
@@ -1819,6 +1808,14 @@ export function ChatInterface({
     gender?: "male" | "female",
     skipResume?: boolean
   ) => {
+    // Small helper to robustly ensure STT remains suppressed while audio is being prepared/played
+    const ensureSttSuppressedDuringPlayback = () => {
+      try {
+        setSttSuppressed(true);
+        isSuppressingSttRef.current = true;
+      } catch {}
+    };
+    ensureSttSuppressedDuringPlayback();
     if (!text) return;
     stopActiveTtsPlayback();
     isPlayingAudioRef.current = true;
@@ -1872,8 +1869,8 @@ export function ChatInterface({
     
     // Wait for mic hardware to fully release before playing audio
     // This is critical to prevent self-capture
-    // Increased from 500ms to 600ms (+20%) for better separation
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    // Increased from 500ms to 700ms (+40%) for better separation and robustness
+    await new Promise((resolve) => setTimeout(resolve, 700));
     
     try {
       // Try streaming first for low latency, fall back to buffered playback
@@ -1924,12 +1921,14 @@ export function ChatInterface({
       window.setTimeout(() => {
         isSuppressingSttRef.current = false;
         try {
-          // Pass true to skip the internal service cooldown, since we already waited 600ms
-          setSttSuppressed(false, true);
+          // Clear suppression but keep a small cooldown window to avoid immediate restarts
+          // that could capture trailing assistant audio. Use default cooldown to enforce buffer.
+          setSttSuppressed(false);
         } catch {}
-      }, 600); // Increased from 500ms to 600ms (+20%) for better TTS/STT separation
+      }, 800); // Increased buffer to 800ms to avoid residual self-capture
 
-      // Decide whether to resume listening. Prefer resuming when the mic was
+
+        // Decide whether to resume listening. Prefer resuming when the mic was
       // actively paused for TTS playback (wasMicPausedForTtsRef). Additionally,
       // if voice mode is enabled but the mic was not actively listening when
       // playback started (e.g., brief suppression or race), we should also
@@ -1943,24 +1942,24 @@ export function ChatInterface({
           wasMicPausedForTtsRef.current = false;
           resumeListeningRef.current = false;
           try {
-            console.debug("playTtsAndPauseStt: resuming STT due to TTS-paused mic", { delay: 720 });
+            console.debug("playTtsAndPauseStt: resuming STT due to TTS-paused mic", { delay: 900 });
           } catch (e) {}
-          attemptStartListening(720);
+          attemptStartListening(900);
         } else if (shouldResumeDueToVoiceMode) {
           // Case: voice mode is on, mic wasn't actively listening at TTS start,
           // but user expects the app to listen after intro. Attempt restart.
           try {
-            console.debug("playTtsAndPauseStt: resuming STT because voice mode is enabled and mic is currently idle", { delay: 720, voiceMode: !!voiceModeRef.current });
+            console.debug("playTtsAndPauseStt: resuming STT because voice mode is enabled and mic is currently idle", { delay: 900, voiceMode: !!voiceModeRef.current });
           } catch (e) {}
-          attemptStartListening(720);
+          attemptStartListening(900);
         } else if (resumeListeningRef.current) {
           // Fallback: existing behavior for cases where we wanted to resume
           // due to voiceMode being enabled or other prior state.
           resumeListeningRef.current = false;
           try {
-            console.debug("playTtsAndPauseStt: resuming STT (fallback)", { delay: 720 });
+            console.debug("playTtsAndPauseStt: resuming STT (fallback)", { delay: 900 });
           } catch (e) {}
-          attemptStartListening(720);
+          attemptStartListening(900);
         }
       }
     }
@@ -2109,6 +2108,75 @@ export function ChatInterface({
     const trimmed = text.trim();
     if (!trimmed) return;
 
+    // Detect explicit persona-switch requests (e.g., "can I talk with the owner")
+    try {
+      const personaSwitch = detectPersonaSwitch(trimmed);
+      if (personaSwitch) {
+        // Only switch if different
+        if (personaSwitch !== activePersona) {
+          handleSetActivePersona(personaSwitch);
+          // Small confirmation message from the assistant persona
+          (async () => {
+            try {
+              const personaMeta = await ensurePersonaMetadata(personaSwitch);
+              const confirm = `Now talking to ${personaMeta?.displayName ?? (personaSwitch === "owner" ? "Owner" : "Nurse")}.`;
+              const assistantMsg = chatService.createAssistantMessage(
+                confirm,
+                currentStageIndex,
+                personaMeta?.displayName ?? (personaSwitch === "owner" ? "Owner" : "Nurse"),
+                personaMeta?.portraitUrl,
+                personaMeta?.voiceId,
+                personaMeta?.sex as any,
+                personaSwitch
+              );
+              appendAssistantMessage(assistantMsg);
+              if (ttsEnabled) {
+                try {
+                  await playTtsAndPauseStt(confirm, personaMeta?.voiceId, { roleKey: personaSwitch, displayRole: assistantMsg.displayRole, role: personaSwitch, caseId } as any, personaMeta?.sex as any);
+                } catch {}
+              }
+            } catch (e) {}
+          })();
+        }
+        return;
+      }
+    } catch (e) {
+      // non-blocking
+    }
+
+    // If the user asks the nurse for lab/tests before the Laboratory stage has started,
+    // have the nurse acknowledge the request rather than forwarding to the server.
+    try {
+      const stage = stages?.[currentStageIndex];
+      const stageKey = stage?.title?.toLowerCase().trim() ?? "";
+      const isLabStage = /laboratory|lab|tests/.test(stageKey);
+      if (!isLabStage && activePersona === "veterinary-nurse" && looksLikeLabRequest(trimmed)) {
+        const personaMeta = await ensurePersonaMetadata("veterinary-nurse");
+        const ack = "All right Doc, we will request that!";
+        const assistantMsg = chatService.createAssistantMessage(
+          ack,
+          currentStageIndex,
+          personaMeta?.displayName ?? "Nurse",
+          personaMeta?.portraitUrl,
+          personaMeta?.voiceId,
+          personaMeta?.sex as any,
+          "veterinary-nurse"
+        );
+        appendAssistantMessage(assistantMsg);
+        if (ttsEnabled) {
+          try {
+            await playTtsAndPauseStt(ack, personaMeta?.voiceId, { roleKey: "veterinary-nurse", displayRole: assistantMsg.displayRole, role: "veterinary-nurse", caseId } as any, personaMeta?.sex as any);
+          } catch (e) {}
+        }
+        // do not forward this request to the server
+        baseInputRef.current = "";
+        setInput("");
+        return;
+      }
+    } catch (e) {
+      // ignore
+    }
+
     // Robust duplication check using ref (ignores slow state updates)
     // If the exact same content is submitted within 2.5 seconds, block it.
     const now = Date.now();
@@ -2254,7 +2322,7 @@ export function ChatInterface({
           "is", "are", "was", "were", "and", "or", "but", "that", "which",
           "my", "your", "his", "her", "its", "our", "their", "this", "these", "those",
         ];
-        const endsWithIncompleteMarker = incompleteMarkers.includes(lastWord);
+        const endsWithIncompleteMarker = endsWithIncompleteMarker(baseInputRef.current || "");
         
         if (tokenCount <= 2 || endsWithIncompleteMarker) {
           // Insert assistant placeholder '...' and keep listening for continuation

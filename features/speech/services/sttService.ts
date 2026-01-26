@@ -14,13 +14,13 @@ let shouldRestart = false;
 let sttSuppressed = false;
 // Timestamp (ms) until which starts are suppressed even after clearing the explicit flag.
 let sttSuppressedUntil = 0;
-const STT_SUPPRESSION_COOLDOWN_MS = 800; // cooldown after suppression is lifted
+const STT_SUPPRESSION_COOLDOWN_MS = 1000; // cooldown after suppression is lifted (increased for better separation)
 
 // DEAF WINDOW: Timestamp (ms) until which ALL recognition results are IGNORED.
 // This is the nuclear option - even if recognition is active, we discard results.
 // This prevents the mic from "hearing" TTS audio no matter what.
 let deafUntil = 0;
-const DEAF_WINDOW_AFTER_TTS_MS = 1000; // ignore all results for 1000ms after TTS ends
+const DEAF_WINDOW_AFTER_TTS_MS = 1500; // ignore all results for 1500ms after TTS ends (increased buffer)
 
 // Global pause state - when true, STT should not auto-start on visibility changes
 let globalPaused = false;
