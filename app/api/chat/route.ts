@@ -649,7 +649,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     // Sanitize persona behavior prompts to prevent fabrication instructions
     if (personaBehaviorPrompt && /(?:invent|guess|fabricat|plausibl)/i.test(personaBehaviorPrompt)) {
       console.warn("Rejected persona behavior prompt due to fabrication instructions", { caseId, personaRoleKey });
-      personaBehaviorPrompt = null;
+      personaBehaviorPrompt = undefined;
     }
 
     let personaVoiceId: string | undefined = undefined;

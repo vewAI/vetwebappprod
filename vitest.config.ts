@@ -8,7 +8,6 @@ export default defineConfig({
     setupFiles: ['test/setupTests.ts'],
     include: ['**/__tests__/**/*.test.{ts,tsx}', '**/*.{spec,test}.{ts,tsx}'],
     clearMocks: true,
-    threads: false,
     watch: false,
   },
   resolve: {

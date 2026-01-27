@@ -73,4 +73,4 @@ try {
 }
 
 // Helpful globals for tests
-globalThis.__TEST_MODE__ = true as any;
+(globalThis as any).__TEST_MODE__ = true;
