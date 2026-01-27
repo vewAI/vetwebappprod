@@ -69,4 +69,12 @@ describe("stage intent detector", () => {
     assert.equal(result.matched, true);
     assert.equal(result.confidence, "medium");
   });
+
+  it("recognizes domain-specific physical exam requests (cardiovascular)", () => {
+    const sample = "cardiovascular examine tell me";
+    const resLegacy = detectStageIntentLegacy(sample, legacyContext);
+    const resPhase3 = detectStageIntentPhase3(sample, legacyContext);
+    assert.equal(resLegacy.matched, true, "legacy should match physical exam request");
+    assert.equal(resPhase3.matched, true, "phase3 should match physical exam request");
+  });
 });

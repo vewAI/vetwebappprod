@@ -117,4 +117,27 @@ export function matchPhysicalFindings(requested: RequestedKeys, findingsText: st
   return results;
 }
 
+export const PHYS_SYNONYMS: Record<string, string[]> = {
+  rumen_turnover: ["rumen turnover", "rumen_turnover", "rumen_turnover"],
+  // include dash/underscore variants and common phrase forms
+  rumen_turnover_alt: [
+    "rumen-turnover",
+    "rumen turnover",
+    "rumen_turnover",
+  ],
+  ballottement: ["ballottement", "ballottement was", "ballott"],
+  temperature: ["temp", "temperature"],
+  heart_rate: ["heart", "heart rate", "pulse"],
+  respiratory_rate: ["respiratory", "respirations", "resp rate", "resp"],
+  mucous_membranes: [
+    "mucous",
+    "mucous membrane",
+    "mm",
+    "mm color",
+    "mm colour",
+  ],
+  hydration: ["hydration"],
+  abdomen: ["abdomen", "abdominal", "rumen"],
+};
+
 export default { parseRequestedKeys, matchPhysicalFindings };

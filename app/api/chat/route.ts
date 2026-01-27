@@ -17,6 +17,7 @@ import { requireUser } from "@/app/api/_lib/auth";
 import {
   parseRequestedKeys,
   matchPhysicalFindings,
+  PHYS_SYNONYMS,
 } from "@/features/chat/services/physFinder";
 import {
   normalizeCaseMedia,
@@ -256,24 +257,29 @@ export async function POST(request: NextRequest) {
       // non-blocking
     }
 
-    // Enforce strict persona mapping for sensitive stages: only the
-    // veterinary nurse may answer in Physical Examination, Laboratory & Tests,
-    // and Treatment Plan stages. Force the persona to `veterinary-nurse` when
-    // the stage title/role indicates one of these stages.
+    // Enforce strict persona mapping for sensitive stages only when explicitly enabled.
+    // Historically persona resolution forced the nurse for physical/lab/treatment stages.
+    // Make this behavior opt-in via server env var `FORCE_STAGE_PERSONA_OVERRIDE` to
+    // allow disabling stage-to-persona coercion during testing or configuration changes.
+    const FORCE_STAGE_PERSONA_OVERRIDE = process.env.FORCE_STAGE_PERSONA_OVERRIDE === "true";
     const stageTitleLower = String(
       stageDescriptor?.title ?? stageRole ?? "",
     ).toLowerCase();
-    if (
-      /physical/.test(stageTitleLower) ||
-      /laboratory|\blab\b|tests/.test(stageTitleLower) ||
-      (/treatment/.test(stageTitleLower) && /plan/.test(stageTitleLower))
-    ) {
-      if (personaRoleKey !== "veterinary-nurse") {
-        console.log(
-          `[chat] Overriding personaRoleKey (${personaRoleKey}) → veterinary-nurse due to stage "${stageDescriptor?.title ?? stageRole}"`,
-        );
-        personaRoleKey = "veterinary-nurse";
+    if (FORCE_STAGE_PERSONA_OVERRIDE) {
+      if (
+        /physical/.test(stageTitleLower) ||
+        /laboratory|\blab\b|tests/.test(stageTitleLower) ||
+        (/treatment/.test(stageTitleLower) && /plan/.test(stageTitleLower))
+      ) {
+        if (personaRoleKey !== "veterinary-nurse") {
+          console.log(
+            `[chat] Overriding personaRoleKey (${personaRoleKey}) → veterinary-nurse due to stage "${stageDescriptor?.title ?? stageRole}"`,
+          );
+          personaRoleKey = "veterinary-nurse";
+        }
       }
+    } else {
+      console.debug("FORCE_STAGE_PERSONA_OVERRIDE disabled - not forcing persona by stage");
     }
 
     // Inject the role-specific prompt only when the answering persona is the
@@ -640,6 +646,12 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       );
     }
 
+    // Sanitize persona behavior prompts to prevent fabrication instructions
+    if (personaBehaviorPrompt && /(?:invent|guess|fabricat|plausibl)/i.test(personaBehaviorPrompt)) {
+      console.warn("Rejected persona behavior prompt due to fabrication instructions", { caseId, personaRoleKey });
+      personaBehaviorPrompt = null;
+    }
+
     let personaVoiceId: string | undefined = undefined;
     let personaSex: string | undefined = undefined;
 
@@ -888,28 +900,8 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       calcium: ["calcium", "ca"],
     };
 
-    const PHYS_SYNONYMS: Record<string, string[]> = {
-      rumen_turnover: ["rumen turnover", "rumen_turnover", "rumen_turnover"],
-      // include dash/underscore variants and common phrase forms
-      rumen_turnover_alt: [
-        "rumen-turnover",
-        "rumen turnover",
-        "rumen_turnover",
-      ],
-      ballottement: ["ballottement", "ballottement was", "ballott"],
-      temperature: ["temp", "temperature"],
-      heart_rate: ["heart", "heart rate", "pulse"],
-      respiratory_rate: ["respiratory", "respirations", "resp rate", "resp"],
-      mucous_membranes: [
-        "mucous",
-        "mucous membrane",
-        "mm",
-        "mm color",
-        "mm colour",
-      ],
-      hydration: ["hydration"],
-      abdomen: ["abdomen", "abdominal", "rumen"],
-    };
+    // PHYS_SYNONYMS moved to services/physFinder.ts to keep a single source of truth for
+    // physical exam synonym mappings used by both the server route and client helpers.
 
     function normalizeForMatching(s: string): string {
       return String(s || "")
@@ -1291,6 +1283,16 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
                   phrases.push(`${name}: not documented`);
                 }
               } else {
+                // No matching lines found for this requested canonical key.
+                // Emit telemetry for triage so we can inspect physText and requested keys.
+                try {
+                  debugEventBus.emitEvent(
+                    "warning",
+                    "ChatDBMatch",
+                    "phys-key-no-match",
+                    { key: m.canonicalKey, physSnippet: String(physText).substring(0, 200) },
+                  );
+                } catch {}
                 phrases.push(`${name}: not documented`);
               }
             }

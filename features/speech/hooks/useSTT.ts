@@ -105,6 +105,15 @@ export function useSTT(
         return (prev + " " + next).trim();
       };
 
+      // On any result, clear the health timer and reset fail counts
+      try {
+        if (listeningHealthTimerRef.current) {
+          window.clearTimeout(listeningHealthTimerRef.current as number);
+          listeningHealthTimerRef.current = null;
+        }
+        listeningFailCountRef.current = 0;
+      } catch {}
+
       if (isFinal) {
         setTranscript((prev) => mergeAvoidOverlap(prev, text));
         setInterimTranscript("");
@@ -122,6 +131,18 @@ export function useSTT(
   );
 
   // Start speech recognition
+  const listeningHealthTimerRef = useRef<number | null>(null);
+  const listeningFailCountRef = useRef<number>(0);
+
+  const clearListeningHealthTimer = () => {
+    try {
+      if (listeningHealthTimerRef.current) {
+        window.clearTimeout(listeningHealthTimerRef.current as number);
+        listeningHealthTimerRef.current = null;
+      }
+    } catch {}
+  };
+
   const start = useCallback(() => {
     if (startInFlightRef.current) {
       return;
@@ -133,6 +154,49 @@ export function useSTT(
           deviceId: options?.inputDeviceId ?? undefined,
         });
         setIsListening(Boolean(ok));
+
+        // Start a health-check timer: if we don't see any interim/final results
+        // or ambient activity within HEALTH_TIMEOUT_MS, try to restart once.
+        try {
+          const HEALTH_TIMEOUT_MS = 2500;
+          clearListeningHealthTimer();
+          listeningHealthTimerRef.current = window.setTimeout(() => {
+            try {
+              // If we're suppressed or in deaf mode, ignore this check
+              const { isInDeafMode } = require("../services/sttService");
+              // eslint-disable-next-line @typescript-eslint/no-var-requires
+              const sttSuppressed = require("../services/sttService").isSttSuppressed();
+              if (sttSuppressed || isInDeafMode()) return;
+
+              // No results seen - attempt a soft restart up to 3 times
+              listeningFailCountRef.current += 1;
+              console.warn("STT health check: no audio results detected, attempting restart", { attempt: listeningFailCountRef.current });
+              // Try a stop/start cycle
+              try {
+                stopListening();
+              } catch {}
+              setIsListening(false);
+              window.setTimeout(() => {
+                try {
+                  // Attempt to start again
+                  start();
+                } catch (e) {
+                  console.error("STT health check restart failed", e);
+                }
+              }, 400);
+
+              if (listeningFailCountRef.current >= 3) {
+                // Escalate: set an error and give up auto-restarts until user action
+                setError("stt-unresponsive");
+                console.error("STT health check: unresponsive after 3 attempts, please check microphone settings");
+                clearListeningHealthTimer();
+              }
+            } catch (e) {
+              // ignore
+            }
+          }, HEALTH_TIMEOUT_MS) as unknown as number;
+        } catch (e) {}
+
         // If microphone stream is available, create an analyser to measure ambient level
         try {
           if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
@@ -159,6 +223,12 @@ export function useSTT(
                       // normalize roughly to 0..1 (experimental)
                       const level = Math.min(1, rms * 10);
                       setAmbientLevel(level);
+
+                      // If ambient level rises, clear the health timer and reset counts
+                      if (level > 0.01) {
+                        listeningFailCountRef.current = 0;
+                        clearListeningHealthTimer();
+                      }
                     } catch (e) {
                       // ignore
                     }
@@ -184,6 +254,14 @@ export function useSTT(
     stopListening();
     setIsListening(false);
     setInterimTranscript("");
+    // clear health timers and reset fail count
+    try {
+      if (listeningHealthTimerRef.current) {
+        window.clearTimeout(listeningHealthTimerRef.current as number);
+        listeningHealthTimerRef.current = null;
+      }
+      listeningFailCountRef.current = 0;
+    } catch {}
     // flush any pending final immediately when stopping
     try {
       const cb = onFinalRef.current;
@@ -206,6 +284,14 @@ export function useSTT(
     setIsListening(false);
     setInterimTranscript("");
     pendingFinalRef.current = "";
+    // clear health timers and reset fail count
+    try {
+      if (listeningHealthTimerRef.current) {
+        window.clearTimeout(listeningHealthTimerRef.current as number);
+        listeningHealthTimerRef.current = null;
+      }
+      listeningFailCountRef.current = 0;
+    } catch {}
     if (timerRef.current) {
       window.clearTimeout(timerRef.current);
       timerRef.current = null;

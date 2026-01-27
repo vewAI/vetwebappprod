@@ -20,7 +20,7 @@ const STT_SUPPRESSION_COOLDOWN_MS = 1000; // cooldown after suppression is lifte
 // This is the nuclear option - even if recognition is active, we discard results.
 // This prevents the mic from "hearing" TTS audio no matter what.
 let deafUntil = 0;
-const DEAF_WINDOW_AFTER_TTS_MS = 1500; // ignore all results for 1500ms after TTS ends (increased buffer)
+const DEAF_WINDOW_AFTER_TTS_MS = Math.round(1500 * 1.1); // ignore all results for ~1650ms after TTS ends (10% longer buffer)
 
 // Global pause state - when true, STT should not auto-start on visibility changes
 let globalPaused = false;
@@ -247,6 +247,9 @@ export async function startListening(
   recognition = new (SpeechRecognition as any)();
   shouldRestart = true;
 
+  // Track whether the recognition is currently active (onstart/onend update)
+  let recognitionActive = false;
+
   // Try to add grammar list if supported
   const SpeechGrammarList = (window as any).SpeechGrammarList || (window as any).webkitSpeechGrammarList;
   if (SpeechGrammarList) {
@@ -292,6 +295,8 @@ export async function startListening(
       debugEventBus.emitEvent('success', 'STT', 'Speech recognition started');
       // reset restart attempts on successful start
       restartAttempts = 0;
+      // mark active
+      try { (recognition as any)._active = true; } catch {}
     };
 
     recognition.onerror = (event: any) => {
@@ -309,6 +314,41 @@ export async function startListening(
         if (fatalErrors.some((e) => errCode.includes(e))) {
           shouldRestart = false;
           debugEventBus.emitEvent('warning', 'STT', `Speech recognition fatal error, will not auto-restart: ${errCode}`);
+          return;
+        }
+
+        // Treat 'aborted' and 'no-speech' as transient errors: try a quick soft restart
+        if (errCode.includes('aborted') || errCode.includes('no-speech')) {
+          debugEventBus.emitEvent('warning', 'STT', `Transient STT error detected (${errCode}) - scheduling quick restart`);
+          // Attempt a gentle restart after a short pause, respecting suppression and restart caps
+          try {
+            if (!sttSuppressed && shouldRestart && restartAttempts < MAX_RESTARTS) {
+              restartAttempts += 1;
+              const shortDelay = 250; // short pause before restarting
+              setTimeout(() => {
+                try {
+                  if (sttSuppressed || Date.now() < sttSuppressedUntil) return;
+                  if ((recognition as any)?._active) {
+                    debugEventBus.emitEvent('info', 'STT', 'Restart suppressed: recognition already active');
+                    return;
+                  }
+                  debugEventBus.emitEvent('info', 'STT', 'Attempting quick restart after transient error', { errCode, attempt: restartAttempts });
+                  try {
+                    starting = true;
+                    recognition.start();
+                  } catch (e) {
+                    debugEventBus.emitEvent('info', 'STT', 'Quick restart failed or was duplicate', { error: String(e) });
+                  } finally {
+                    starting = false;
+                  }
+                } catch (e) {
+                  // ignore
+                }
+              }, shortDelay);
+            }
+          } catch (e) {
+            // ignore
+          }
         }
       } catch {
         // ignore
@@ -353,6 +393,8 @@ export async function startListening(
     // start while a start is already in progress.
     recognition.onend = () => {
       debugEventBus.emitEvent('info', 'STT', 'Speech recognition ended');
+      // clear active marker so future starts are allowed
+      try { (recognition as any)._active = false; } catch {}
       try {
           if (!shouldRestart) return;
           // If suppression is active or we're in the cooldown window, do not auto-restart
@@ -371,8 +413,25 @@ export async function startListening(
         restartAttempts += 1;
         setTimeout(() => {
           try {
+            // If we already consider recognition active, skip restarting
+            if ((recognition as any)?._active) {
+              debugEventBus.emitEvent('info', 'STT', 'Restart suppressed: recognition already active');
+              return;
+            }
             starting = true;
-            recognition.start();
+            try {
+              recognition.start();
+              // mark active when we successfully start
+              try { (recognition as any)._active = true; } catch {}
+            } catch (e) {
+              const errStr = String(e || "").toLowerCase();
+              if (errStr.includes('recognition has already started') || errStr.includes('invalidstateerror')) {
+                // benign race: recognition already started elsewhere - ignore
+                debugEventBus.emitEvent('info', 'STT', 'Ignored duplicate recognition.start() (already started)');
+              } else {
+                throw e;
+              }
+            }
           } catch (e) {
             debugEventBus.emitEvent('error', 'STT', 'Failed to restart speech recognition', { error: String(e) });
           } finally {
@@ -388,10 +447,27 @@ export async function startListening(
   // Start listening
   try {
     if (recognition) {
+      // If recognition is already active, return true without calling start again
+      if ((recognition as any)?._active) {
+        debugEventBus.emitEvent('info', 'STT', 'Start skipped: recognition already active');
+        return true;
+      }
+
       if (!starting) {
         starting = true;
-        recognition.start();
-        starting = false;
+        try {
+          recognition.start();
+        } catch (err) {
+          const es = String(err || "").toLowerCase();
+          if (es.includes('recognition has already started') || es.includes('invalidstateerror')) {
+            debugEventBus.emitEvent('info', 'STT', 'Ignored duplicate start attempt (already started)');
+            starting = false;
+            return true;
+          }
+          throw err;
+        } finally {
+          starting = false;
+        }
       }
       return true;
     }
@@ -504,9 +580,9 @@ export function enterDeafMode(durationMs = 0) {
 /**
  * Exit deaf mode after TTS ends. Adds a buffer period to catch any trailing audio.
  */
-export function exitDeafMode() {
-  deafUntil = Date.now() + DEAF_WINDOW_AFTER_TTS_MS;
-  debugEventBus.emitEvent('info', 'STT', `Exiting deaf mode, deaf until ${deafUntil} (${DEAF_WINDOW_AFTER_TTS_MS}ms buffer)`);
+export function exitDeafMode(bufferMs: number = DEAF_WINDOW_AFTER_TTS_MS) {
+  deafUntil = Date.now() + bufferMs;
+  debugEventBus.emitEvent('info', 'STT', `Exiting deaf mode, deaf until ${deafUntil} (${bufferMs}ms buffer)`);
 }
 
 /**

@@ -486,7 +486,12 @@ async function loadRolePromptOverride(
       return null;
     }
     const prompts = extractRolePromptsFromMetadata(data?.metadata ?? null);
-    return prompts[roleInfoKey] ?? null;
+    const candidate = prompts[roleInfoKey] ?? null;
+    if (candidate && /(?:invent|guess|fabricat|plausibl)/i.test(candidate)) {
+      console.warn("Rejected unsafe role prompt override containing fabrication instructions", { caseId, roleKey, roleInfoKey });
+      return null;
+    }
+    return candidate;
   } catch (error) {
     console.warn("Unhandled error loading role prompt override", error);
     return null;

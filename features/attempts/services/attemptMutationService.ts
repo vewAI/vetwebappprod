@@ -3,6 +3,7 @@ import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
 import type { Attempt } from "../models/attempt";
 import type { Message } from "@/features/chat/models/chat";
 import { transformAttempt } from "../mappers/attempt-mappers";
+import { debugEventBus } from "@/lib/debug-events-fixed";
 
 // Create a new attempt
 export async function createAttempt(caseId: string): Promise<Attempt | null> {
@@ -248,6 +249,19 @@ export async function saveAttemptProgress(
     }
 
     if (!response.ok) {
+      // Special-case unauthorized responses to emit a lightweight event so the UI
+      // can notify the user (e.g., session expiration) without spamming console.error.
+      if (response.status === 401) {
+        console.warn("Attempt progress save unauthorized (401)", { attemptId, status: response.status });
+        try { (debugEventBus as any).emitEvent?.('warning', 'Attempt', 'save_unauthorized', { attemptId, status: response.status }); } catch {}
+        try {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('vw:attempt-save-unauthorized', { detail: { attemptId } }));
+          }
+        } catch {}
+        return false;
+      }
+
       console.error(
         "Failed to save attempt progress via API:",
         response.status,

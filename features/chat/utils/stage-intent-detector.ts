@@ -12,6 +12,8 @@ export type StageIntentDetectionResult = {
   reason?: string;
 };
 
+import { debugEventBus } from "@/lib/debug-events-fixed";
+
 const DIRECTION_WORDS = [
   "proceed",
   "advance",
@@ -201,12 +203,16 @@ export function detectStageIntentLegacy(
         )
       : null;
 
-  const positiveResult = (confidence: "low" | "medium" | "high", reason: string) => ({
-    matched: true,
-    confidence,
-    heuristics: Array.from(heuristics),
-    reason,
-  });
+  const positiveResult = (confidence: "low" | "medium" | "high", reason: string) => {
+    const details = { heuristics: Array.from(heuristics), reason, confidence, snippet: normalized.slice(0,280), context };
+    try { debugEventBus.emitEvent?.('info','StageIntent','detection', details); } catch {}
+    return {
+      matched: true,
+      confidence,
+      heuristics: Array.from(heuristics),
+      reason,
+    };
+  };
 
   if (letsDoStageRegex?.test(normalized)) {
     heuristics.add("lets-do-stage");
@@ -361,6 +367,17 @@ export function detectStageIntentPhase3(
     directionVerb && keywordHits >= 2,
     "medium",
     "User combined a direction verb with multiple stage keywords"
+  );
+
+  // Special case: for Physical Examination, a single strong domain keyword
+  // (e.g., 'cardiovascular', 'auscultation') is typically enough to indicate
+  // the user's intent to perform the exam. Promote these to high confidence.
+  const isPhysicalStage = /physical|exam|examination/i.test(context.nextStageTitle ?? "");
+  register(
+    "physical-single",
+    isPhysicalStage && keywordHits >= 1,
+    "high",
+    "Single strong physical-exam keyword detected for Physical Examination"
   );
   register(
     "closing-current-stage",
