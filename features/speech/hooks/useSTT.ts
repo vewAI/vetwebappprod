@@ -155,46 +155,52 @@ export function useSTT(
         });
         setIsListening(Boolean(ok));
 
-        // Start a health-check timer: if we don't see any interim/final results
+              // Start a health-check timer: if we don't see any interim/final results
         // or ambient activity within HEALTH_TIMEOUT_MS, try to restart once.
+        // This check can be disabled at build-time by setting
+        // NEXT_PUBLIC_ENABLE_STT_HEALTHCHECK=true in the environment. By
+        // default it is disabled to avoid unwanted automatic mic shutdowns.
         try {
-          const HEALTH_TIMEOUT_MS = 2500;
-          clearListeningHealthTimer();
-          listeningHealthTimerRef.current = window.setTimeout(() => {
-            try {
-              // If we're suppressed or in deaf mode, ignore this check
-              const { isInDeafMode } = require("../services/sttService");
-              // eslint-disable-next-line @typescript-eslint/no-var-requires
-              const sttSuppressed = require("../services/sttService").isSttSuppressed();
-              if (sttSuppressed || isInDeafMode()) return;
-
-              // No results seen - attempt a soft restart up to 3 times
-              listeningFailCountRef.current += 1;
-              console.warn("STT health check: no audio results detected, attempting restart", { attempt: listeningFailCountRef.current });
-              // Try a stop/start cycle
+          const HEALTH_CHECK_ENABLED = process.env.NEXT_PUBLIC_ENABLE_STT_HEALTHCHECK === 'true';
+          if (HEALTH_CHECK_ENABLED) {
+            const HEALTH_TIMEOUT_MS = 2500;
+            clearListeningHealthTimer();
+            listeningHealthTimerRef.current = window.setTimeout(() => {
               try {
-                stopListening();
-              } catch {}
-              setIsListening(false);
-              window.setTimeout(() => {
-                try {
-                  // Attempt to start again
-                  start();
-                } catch (e) {
-                  console.error("STT health check restart failed", e);
-                }
-              }, 400);
+                // If we're suppressed or in deaf mode, ignore this check
+                const { isInDeafMode } = require("../services/sttService");
+                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                const sttSuppressed = require("../services/sttService").isSttSuppressed();
+                if (sttSuppressed || isInDeafMode()) return;
 
-              if (listeningFailCountRef.current >= 3) {
-                // Escalate: set an error and give up auto-restarts until user action
-                setError("stt-unresponsive");
-                console.error("STT health check: unresponsive after 3 attempts, please check microphone settings");
-                clearListeningHealthTimer();
+                // No results seen - attempt a soft restart up to 3 times
+                listeningFailCountRef.current += 1;
+                console.warn("STT health check: no audio results detected, attempting restart", { attempt: listeningFailCountRef.current });
+                // Try a stop/start cycle
+                try {
+                  stopListening();
+                } catch {}
+                setIsListening(false);
+                window.setTimeout(() => {
+                  try {
+                    // Attempt to start again
+                    start();
+                  } catch (e) {
+                    console.error("STT health check restart failed", e);
+                  }
+                }, 400);
+
+                if (listeningFailCountRef.current >= 3) {
+                  // Escalate: set an error and give up auto-restarts until user action
+                  setError("stt-unresponsive");
+                  console.error("STT health check: unresponsive after 3 attempts, please check microphone settings");
+                  clearListeningHealthTimer();
+                }
+              } catch (e) {
+                // ignore
               }
-            } catch (e) {
-              // ignore
-            }
-          }, HEALTH_TIMEOUT_MS) as unknown as number;
+            }, HEALTH_TIMEOUT_MS) as unknown as number;
+          }
         } catch (e) {}
 
         // If microphone stream is available, create an analyser to measure ambient level
