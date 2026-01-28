@@ -42,7 +42,7 @@ export function GuidedTour({ steps, tourId, className, autoStart = false }: Guid
   }
 
   return (
-    <Button variant="outline" size="sm" onClick={startTour} className={`gap-2 ${className}`}>
+    <Button id={`start-tour-${tourId}`} variant="outline" size="sm" onClick={startTour} className={`gap-2 ${className}`}>
       <PlayCircle className="h-4 w-4" />
       Start Tour
     </Button>
