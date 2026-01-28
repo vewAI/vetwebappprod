@@ -4,7 +4,7 @@ import type React from "react";
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 
-import { SendIcon, PenLine } from "lucide-react";
+import { SendIcon, PenLine, Play, Pause } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
@@ -5185,9 +5185,6 @@ export function ChatInterface({
                 </Button>
               </>
             )}
-          </div>
-        </div>
-      )}
           </div>
         </div>
       )}
