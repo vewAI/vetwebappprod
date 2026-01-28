@@ -3857,7 +3857,10 @@ export function ChatInterface({
   );
 
   // Toggle voice mode (persistent listening until toggled off)
+  const [showModeControls, setShowModeControls] = useState<boolean>(true);
   const toggleVoiceMode = useCallback(() => {
+    // Hide the SPEAK/WRITE and LEARN controls after user interaction
+    try { setShowModeControls(false); } catch (e) {}
     setVoiceModeEnabled(!voiceModeRef.current);
   }, [setVoiceModeEnabled]);
 
@@ -5098,6 +5101,28 @@ export function ChatInterface({
               </Button>
             </div>
 
+            {/* LEARN HOW TO USE (overlay) - shows below the big SPEAK / WRITE buttons */}
+            <div className="mt-4 flex justify-center">
+              <button
+                id="learn-how-to-use-overlay"
+                type="button"
+                onClick={() => {
+                  try {
+                    const btn = document.getElementById('start-tour-chat-interface') as HTMLButtonElement | null;
+                    if (btn) btn.click();
+                    // keep the start overlay visible so the user can choose SPEAK/WRITE after tour
+                    // but allow tour to run while overlay is present
+                  } catch (e) {
+                    // ignore
+                  }
+                }}
+                className="w-56 rounded-md bg-white/90 text-slate-800 text-sm px-4 py-3 shadow-md hover:shadow-lg transition"
+                aria-label="Learn how to use"
+              >
+                LEARN HOW TO USE
+              </button>
+            </div>
+
             <Button
               type="button"
               size="sm"
@@ -5245,40 +5270,50 @@ export function ChatInterface({
                   onToggle={toggleVoiceMode}
                   disabled={!speechSupported}
                 />
-                <button
-                  id="mode-status-button"
-                  className={`px-3 py-1 rounded-md text-sm ${voiceMode ? "bg-amber-500 text-white" : "bg-muted"}`}
-                  aria-pressed={voiceMode}
-                  onClick={() => {
-                    // when toggling on, request microphone access explicitly to force permission prompt
-                    if (!voiceMode) {
-                      try {
-                        void requestPermission();
-                      } catch (e) {}
-                    }
-                    setVoiceModeEnabled(!voiceMode);
-                    textareaRef.current?.focus();
-                  }}
-                >
-                  {voiceMode ? "SPEAK" : "WRITE"}
-                </button>
-                {/* LEARN HOW TO USE: launches the chat/case guided tour */}
-                <button
-                  id="learn-how-to-use"
-                  type="button"
-                  onClick={() => {
-                    try {
-                      const btn = document.getElementById('start-tour-chat-interface') as HTMLButtonElement | null;
-                      if (btn) btn.click();
-                    } catch (e) {
-                      // fallback: attempt to call driver via the GuidedTour component indirectly
-                    }
-                  }}
-                  className="mt-2 w-full rounded-md bg-white/90 text-slate-800 text-sm px-4 py-2 shadow-sm hover:shadow-md transition"
-                  aria-label="Learn how to use"
-                >
-                  LEARN HOW TO USE
-                </button>
+                {showModeControls && (
+                  <div className="flex flex-col items-stretch gap-2 w-full">
+                    <button
+                      id="mode-status-button"
+                      className={`px-3 py-1 rounded-md text-sm ${voiceMode ? "bg-amber-500 text-white" : "bg-muted"}`}
+                      aria-pressed={voiceMode}
+                      onClick={() => {
+                        // when toggling on, request microphone access explicitly to force permission prompt
+                        try { setShowModeControls(false); } catch (e) {}
+                        if (!voiceMode) {
+                          try {
+                            void requestPermission();
+                          } catch (e) {}
+                        }
+                        setVoiceModeEnabled(!voiceMode);
+                        textareaRef.current?.focus();
+                      }}
+                    >
+                      {voiceMode ? "SPEAK" : "WRITE"}
+                    </button>
+
+                    {/* LEARN HOW TO USE: launches the chat/case guided tour */}
+                    <button
+                      id="learn-how-to-use"
+                      type="button"
+                      onClick={() => {
+                        try {
+                          // Hide the controls after the user explicitly requests the tour
+                          setShowModeControls(false);
+                        } catch (e) {}
+                        try {
+                          const btn = document.getElementById('start-tour-chat-interface') as HTMLButtonElement | null;
+                          if (btn) btn.click();
+                        } catch (e) {
+                          // fallback: attempt to call driver via the GuidedTour component indirectly
+                        }
+                      }}
+                      className="mt-2 w-full rounded-md bg-white/90 text-slate-800 text-sm px-4 py-2 shadow-sm hover:shadow-md transition"
+                      aria-label="Learn how to use"
+                    >
+                      LEARN HOW TO USE
+                    </button>
+                  </div>
+                )}
               </div> 
 
               {/* NURSE button (right) with portrait above */}
