@@ -185,10 +185,11 @@ const PHYSICAL_EXAM_KEYWORDS: string[] = [
 
 const STAGE_COMPLETION_RULES: Record<string, StageCompletionRule> = {
   "physical examination": {
-    minUserTurns: 2,
-    minAssistantTurns: 2,
+    // Make detection more sensitive: single user/assistant turn + single keyword hit
+    minUserTurns: 1,
+    minAssistantTurns: 1,
     assistantKeywords: PHYSICAL_EXAM_KEYWORDS,
-    minAssistantKeywordHits: 2,
+    minAssistantKeywordHits: 1,
   },
 };
 
@@ -838,11 +839,13 @@ export function ChatInterface({
       try {
         if (ruleKey === "physical examination") {
           const assistantHasStructuredFindings = assistantMessages.some((m) => {
-            return m.structuredFindings && Object.keys(m.structuredFindings).length > 0;
+            return (m as any).structuredFindings && Object.keys((m as any).structuredFindings).length > 0;
           });
+          // More sensitive trigger: a single keyword hit from the assistant is sufficient
+          // to consider Physical Examination ready even if min turn counts are not fully met.
           if (
             assistantHasStructuredFindings ||
-            (rule.minAssistantKeywordHits && metrics.matchedAssistantKeywords >= rule.minAssistantKeywordHits)
+            (metrics.matchedAssistantKeywords && metrics.matchedAssistantKeywords >= 1)
           ) {
             ready = true;
           }
