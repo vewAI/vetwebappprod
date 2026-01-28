@@ -102,6 +102,7 @@ const PHRASE_CORRECTIONS: Record<string, string> = {
   "testing sound": "gastrointestinal sounds",
   "testing sounds": "gastrointestinal sounds",
   "breathing rights": "breathing rate",
+  "college basketball": "cardiovascular",
 };
 
 // Common mis-hearing where users say something that sounds like 'ask quotation'
@@ -111,7 +112,7 @@ PHRASE_CORRECTIONS["ask quotation"] = "auscultation";
 PHRASE_CORRECTIONS["baseball fields"] = "basophils";
 PHRASE_CORRECTIONS["baseball field"] = "basophils";
 
-function postProcessTranscript(text: string): string {
+export function postProcessTranscript(text: string): string {
   let processed = text;
   // Collapse very short immediate repeats like "okay don't okay don't don't worry"
   // by removing adjacent repeated n-grams for n=1..4.

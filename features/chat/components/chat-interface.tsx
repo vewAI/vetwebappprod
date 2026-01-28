@@ -1796,6 +1796,12 @@ export function ChatInterface({
   const resumeListeningRef = useRef<boolean>(false);
   const voiceTemporarilyDisabledRef = useRef<boolean>(false);
   const pendingFlushIntervalRef = useRef<number | null>(null);
+  // Suppress automatic STT start attempts until a given timestamp (ms since epoch).
+  // Used to avoid auto-listening when the UI switches focus (e.g., switching to Nurse tab).
+  const suppressAutoStartUntilRef = useRef<number>(0);
+  const suppressAutoStart = (ms: number) => {
+    try { suppressAutoStartUntilRef.current = Date.now() + ms; } catch {}
+  };
 
   const personaToastTimerRef = useRef<number | null>(null);
   const voiceModeToastTimerRef = useRef<number | null>(null);
@@ -1861,7 +1867,9 @@ export function ChatInterface({
               appendAssistantMessage(assistantMsg);
               if (ttsEnabled) {
                 try {
-                  await playTtsAndPauseStt(confirm, personaMeta?.voiceId, { roleKey: "veterinary-nurse", displayRole: assistantMsg.displayRole, role: "veterinary-nurse", caseId } as any, personaMeta?.sex as any);
+                  // Force TTS to resume STT when audio completes so the mic
+                  // becomes active immediately after the Nurse greeting.
+                  await playTtsAndPauseStt(confirm, personaMeta?.voiceId, { roleKey: "veterinary-nurse", displayRole: assistantMsg.displayRole, role: "veterinary-nurse", caseId, forceResume: true } as any, personaMeta?.sex as any);
                 } catch {}
               }
             } catch (e) {
@@ -1966,6 +1974,12 @@ export function ChatInterface({
       let attempts = 0;
       const maxAttempts = 3;
       const tryOnce = () => {
+        // Respect a global suppression window to avoid automatically starting
+        // STT immediately after UI interactions like persona switch.
+        if (Date.now() < suppressAutoStartUntilRef.current) {
+          console.debug("attemptStartListening suppressed due to recent UI interaction", { until: suppressAutoStartUntilRef.current, now: Date.now() });
+          return;
+        }
         if (userToggledOffRef.current || !voiceModeRef.current) {
           console.debug("attemptStartListening stopping retries", { attempts });
           return;

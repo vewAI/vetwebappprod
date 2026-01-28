@@ -11,7 +11,10 @@ export function detectPersonaSwitch(text: string): PersonaKey {
 
   // nurse-related phrases
   const nursePatterns = [
-    /can i talk (to|with) the nurse/, /talk (to|with) the nurse/, /speak (to|with) the nurse/, /talk to nurse/, /speak to nurse/, /talk with nurse/, /speak with nurse/, /switch to nurse/,
+    // Accept common polite variants and tolerate a frequent ASR mis-transcription 'nose'
+    /can i (please )?talk (to|with) (the )?(nurse|nose)/, /may i (please )?talk (to|with) (the )?(nurse|nose)/,
+    /talk (to|with) (the )?(nurse|nose)/, /speak (to|with) (the )?(nurse|nose)/, /switch to (the )?(nurse|nose)/,
+    /talk to (nurse|nose)/, /speak to (nurse|nose)/, /talk with (nurse|nose)/, /speak with (nurse|nose)/,
   ];
   for (const p of nursePatterns) if (p.test(t)) return "veterinary-nurse";
 
