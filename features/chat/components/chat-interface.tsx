@@ -68,7 +68,7 @@ import {
 } from "@/features/chat/utils/stage-intent-detector";
 import { parseRequestedKeys } from "@/features/chat/services/physFinder";
 import { endsWithIncompleteMarker } from "@/features/chat/utils/incomplete";
-import { detectPersonaSwitch, looksLikeLabRequest } from "@/features/chat/utils/persona-intent";
+import { detectPersonaSwitch, looksLikeLabRequest, looksLikePhysicalRequest } from "@/features/chat/utils/persona-intent";
 import { emitStageEvaluation } from "@/features/chat/utils/stage-eval";
 import axios from "axios";
 import {
