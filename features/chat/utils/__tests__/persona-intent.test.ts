@@ -10,6 +10,9 @@ describe("detectPersonaSwitch", () => {
   it("detects nurse switch phrases", () => {
     expect(detectPersonaSwitch("can I talk with the nurse")).toBe("veterinary-nurse");
     expect(detectPersonaSwitch("speak to nurse please")).toBe("veterinary-nurse");
+    // ASR can occasionally transcribe 'nurse' as 'nose'; accept that in persona-switch contexts
+    expect(detectPersonaSwitch("may i talk to the nose")).toBe("veterinary-nurse");
+    expect(detectPersonaSwitch("can i talk with the nose please")).toBe("veterinary-nurse");
   });
 
   it("returns null for non-switch phrases", () => {

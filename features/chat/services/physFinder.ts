@@ -21,6 +21,9 @@ const ALIAS_MAP: Record<string, string[]> = {
   // Add auscultation aliases; 'was quotation' is a common mis-transcription
   // that should map to auscultation.
   auscultation: ["auscultation", "ausc", "stethoscope", "was quotation", "quotation"],
+  rectal_palpation: ["rectal palpation", "rectal exam", "rectal palp", "rectal", "rectal examination"],
+  nasogastric_intubation: ["nasogastric intubation", "nasogastric tube", "ng tube", "nasogastric", "ngt"],
+  abdominocentesis: ["abdominocentesis", "abdominal centesis", "abdo centesis", "abdo-centesis"],
 };
 
 // Group tokens map to multiple canonical keys
@@ -138,6 +141,10 @@ export const PHYS_SYNONYMS: Record<string, string[]> = {
   ],
   hydration: ["hydration"],
   abdomen: ["abdomen", "abdominal", "rumen"],
+  // Procedure keywords we want to recognize for direct requests
+  rectal_palpation: ["rectal palpation", "rectal exam", "rectal palp", "rectal"],
+  nasogastric_intubation: ["nasogastric intubation", "nasogastric tube", "ng tube", "ngt", "nasogastric"],
+  abdominocentesis: ["abdominocentesis", "abdominal centesis", "abdo centesis"],
 };
 
 export default { parseRequestedKeys, matchPhysicalFindings };
