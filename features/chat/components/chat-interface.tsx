@@ -859,6 +859,9 @@ export function ChatInterface({
   const scheduleAutoProceedRef = useRef<(() => void) | null>(null);
   const stayBlockedUntilRef = useRef<number>(0);
   const rollbackRequestedRef = useRef<boolean>(false);
+  // Track whether the nurse acknowledgement (NURSE_ACK) has already been emitted
+  // during this attempt so we don't repeat the same phrasing multiple times.
+  const nurseAckGivenRef = useRef<boolean>(false);
   const isStageIntentLocked = () => {
     if (rollbackRequestedRef.current) {
       return true;
@@ -2756,6 +2759,8 @@ export function ChatInterface({
     if (!existingMessageId && activePersona === "veterinary-nurse") {
       (async () => {
         try {
+          // Do not repeat the same nurse acknowledgement phrase more than once per attempt
+          if (nurseAckGivenRef.current) return;
           const personaMeta = await ensurePersonaMetadata("veterinary-nurse");
           const ackText = NURSE_ACK;
           const ackMsg = chatService.createAssistantMessage(
@@ -2768,6 +2773,7 @@ export function ChatInterface({
             "veterinary-nurse"
           );
           appendAssistantMessage(ackMsg);
+          nurseAckGivenRef.current = true;
           if (ttsEnabled) {
             try {
               await playTtsAndPauseStt(ackText, personaMeta?.voiceId, { roleKey: "veterinary-nurse", displayRole: personaMeta?.displayName ?? "Nurse", role: "veterinary-nurse", caseId } as any, personaMeta?.sex as any);
