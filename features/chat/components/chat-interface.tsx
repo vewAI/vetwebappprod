@@ -5117,21 +5117,6 @@ export function ChatInterface({
                 </div>
                 <div className="text-xs text-muted-foreground mt-2">You can toggle voice mode and mic later using the mic button.</div>
 
-                {/* Auto-send toggle button (student control) */}
-                <Button
-                  type="button"
-                  size="icon"
-                  title={autoSendStt
-                    ? "Auto-send is ON — spoken messages will be sent automatically"
-                    : "Auto-send is OFF — click the arrow to send after speaking"
-                  }
-                  aria-pressed={autoSendStt}
-                  onClick={() => setAutoSendStt((v) => !v)}
-                  className={`absolute bottom-2 right-6 ${autoSendStt ? "bg-emerald-500 hover:bg-emerald-600 text-white" : "bg-muted text-white/90 hover:bg-muted/80"}`}
-                >
-                  {autoSendStt ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-                </Button>
-
                 {/* LEARN HOW TO USE (overlay) - shows below the SPEAK / WRITE buttons */}
                 <div className="mt-4 flex justify-center">
                   <button
@@ -5177,20 +5162,6 @@ export function ChatInterface({
                   disabled={startSequenceActive}
                 >
                   {startSequenceActive ? "Starting voice..." : "Click Here to START Speaking"}
-                </Button>
-                {/* Auto-send toggle button (student control) */}
-                <Button
-                  type="button"
-                  size="icon"
-                  title={autoSendStt
-                    ? "Auto-send is ON — spoken messages will be sent automatically"
-                    : "Auto-send is OFF — click the arrow to send after speaking"
-                  }
-                  aria-pressed={autoSendStt}
-                  onClick={() => setAutoSendStt((v) => !v)}
-                  className={`absolute bottom-2 right-6 ${autoSendStt ? "bg-emerald-500 hover:bg-emerald-600 text-white" : "bg-muted text-white/90 hover:bg-muted/80"}`}
-                >
-                  {autoSendStt ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
                 </Button>
 
                 {/* LEARN HOW TO USE (overlay) - shows below the SPEAK button */}
@@ -5414,7 +5385,20 @@ export function ChatInterface({
               </div> 
 
               {/* Next stage control (large button) */}
-              <div className="flex items-center justify-end gap-2">
+              <div className="relative flex items-center justify-end gap-2">
+                {showProceedHint && (
+                  <button
+                    id="proceed-hint"
+                    onClick={() => {
+                      try { void handleProceed(); } catch (e) {}
+                      try { setShowProceedHint(false); } catch (e) {}
+                    }}
+                    className="absolute -top-12 right-0 bg-orange-500 text-white px-3 py-2 rounded-md shadow-xl animate-bounce text-xs font-semibold z-50"
+                    aria-label="Proceed hint"
+                  >
+                    CLICK TO GO ON TO NEXT STAGE
+                  </button>
+                )}
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
