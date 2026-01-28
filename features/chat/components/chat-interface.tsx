@@ -5342,28 +5342,6 @@ export function ChatInterface({
                     >
                       {voiceMode ? "SPEAK" : "WRITE"}
                     </button>
-
-                    {/* LEARN HOW TO USE: launches the chat/case guided tour */}
-                    <button
-                      id="learn-how-to-use"
-                      type="button"
-                      onClick={() => {
-                        try {
-                          // Hide the controls after the user explicitly requests the tour
-                          setShowModeControls(false);
-                        } catch (e) {}
-                        try {
-                          const btn = document.getElementById('start-tour-chat-interface') as HTMLButtonElement | null;
-                          if (btn) btn.click();
-                        } catch (e) {
-                          // fallback: attempt to call driver via the GuidedTour component indirectly
-                        }
-                      }}
-                      className="mt-2 w-full rounded-md bg-white/90 text-slate-800 text-sm px-4 py-2 shadow-sm hover:shadow-md transition"
-                      aria-label="Learn how to use"
-                    >
-                      LEARN HOW TO USE
-                    </button>
                   </div>
                 )}
               </div> 
