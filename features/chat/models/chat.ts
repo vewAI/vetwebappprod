@@ -17,4 +17,6 @@ export interface Message {
   // optional status for UI (pending, failed, sent)
   status?: "pending" | "failed" | "sent";
   media?: CaseMediaItem[];
+  // Optional structured findings blob used by nurse/lab assistant messages (e.g., { hr: 38, rr: 16 })
+  structuredFindings?: Record<string, unknown>;
 }
