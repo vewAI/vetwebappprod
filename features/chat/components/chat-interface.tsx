@@ -1833,6 +1833,14 @@ export function ChatInterface({
     baseInputRef.current = nextDraft;
     setActivePersona(next);
 
+    // Scroll the message view to the most recent message when the user
+    // switches persona so the focused persona's recent messages are visible.
+    try {
+      window.setTimeout(() => {
+        try { messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); } catch (e) {}
+      }, 50);
+    } catch (e) {}
+
     // show a short toast to confirm persona switch
     const displayName = personaDirectoryRef.current?.[next]?.displayName ?? (next === "owner" ? "OWNER" : "NURSE");
     const toastTitle = next === "veterinary-nurse" ? "Hello Doc" : `Talking to ${displayName}`;
@@ -1851,6 +1859,23 @@ export function ChatInterface({
       if (next === "veterinary-nurse") {
         // Prevent repeated UI greetings
         if (!nurseGreetingSentRef.current) {
+          // If the user has recently sent a message as the Nurse, suppress the
+          // UI greeting because it would be redundant (user is already talking to Nurse).
+          try {
+            if (lastSentPersonaRef.current === "veterinary-nurse") {
+              nurseGreetingSentRef.current = true;
+              return;
+            }
+            // Also check the last few messages for a user message attributed to the Nurse
+            const recent = messages.slice(-4);
+            if (recent.some((m) => m.role === "user" && ((m as any).personaRoleKey === "veterinary-nurse" || (m.displayRole ?? "").toLowerCase().includes("nurse")))) {
+              nurseGreetingSentRef.current = true;
+              return;
+            }
+          } catch (e) {
+            // ignore checks
+          }
+
           nurseGreetingSentRef.current = true;
           (async () => {
             try {
@@ -3916,6 +3941,9 @@ export function ChatInterface({
 
   const ownerGreetingSentRef = useRef<boolean>(false);
   const nurseGreetingSentRef = useRef<boolean>(false);
+  // Track which stage-intro strings we've already appended during this attempt
+  // to avoid repeating the same intro (e.g., nurse intro) multiple times.
+  const sentStageIntroRef = useRef<Set<string>>(new Set());
 
   const sendOwnerGreetingIfNeeded = useCallback(async () => {
     try {
@@ -4322,6 +4350,36 @@ export function ChatInterface({
     };
     document.addEventListener("visibilitychange", handleVisibility);
 
+    // When the attempt is paused, any deliberate user interaction with a
+    // button or activating a control should unpause. Listen for pointerdown
+    // and keyboard activation events and unpause if needed.
+    const handleUserInteraction = (ev: Event) => {
+      try {
+        if (!isPaused) return;
+        const target = ev.target as HTMLElement | null;
+        if (!target) return;
+        // Button click or role=button
+        if (target.closest && target.closest('button, [role="button"]')) {
+          // Unpause via the togglePause helper (it will resume when paused)
+          try {
+            void togglePause();
+          } catch (e) {}
+        }
+        // Keyboard activation (Enter/Space) when a button is focused
+        if ((ev as KeyboardEvent).key && ((ev as KeyboardEvent).key === 'Enter' || (ev as KeyboardEvent).key === ' ')) {
+          const active = document.activeElement as HTMLElement | null;
+          if (active && (active.tagName === 'BUTTON' || active.getAttribute('role') === 'button')) {
+            try { void togglePause(); } catch (e) {}
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    document.addEventListener('pointerdown', handleUserInteraction);
+    document.addEventListener('keydown', handleUserInteraction as EventListener);
+
     // Listen for unauthorized save events (e.g., expired auth token) and show a helpful toast
     const onSaveUnauthorized = (ev: any) => {
       try {
@@ -4333,9 +4391,11 @@ export function ChatInterface({
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibility);
+      document.removeEventListener('pointerdown', handleUserInteraction);
+      document.removeEventListener('keydown', handleUserInteraction as EventListener);
       window.removeEventListener('vw:attempt-save-unauthorized', onSaveUnauthorized as EventListener);
     };
-  }, [attemptId, isListening, stop, setVoiceModeEnabled, setTtsEnabledState, stopActiveTtsPlayback, enterDeafMode]);
+  }, [attemptId, isListening, stop, setVoiceModeEnabled, setTtsEnabledState, stopActiveTtsPlayback, enterDeafMode, isPaused, togglePause, voiceMode]);
 
   // Auto-save (throttled) ��� keeps the existing delete+insert server behavior
   useEffect(() => {
@@ -4543,10 +4603,17 @@ export function ChatInterface({
   const getStageAssistantIntro = (targetStageIndex: number) => {
     const title = stages[targetStageIndex]?.title || "next stage";
     const role = String(stages[targetStageIndex]?.role || "").toLowerCase();
+
     // If the upcoming stage expects interaction with the owner/client,
-    // have the intro come from the owner (roleplay) rather than the
-    // veterinary assistant so the student hears the owner prompt.
+    // normally the intro should come from the owner. However, if the UI
+    // currently has the Nurse persona focused, we should not produce an
+    // owner prompt attributed to the Nurse (nurse must never speak owner
+    // prompts). In that case, return a Nurse-centred intro instead.
     if (role.includes("owner") || role.includes("client")) {
+      if (activePersona === "veterinary-nurse") {
+        // Nurse-focused intro (non-owner phrasing)
+        return `I'm the veterinary nurse supporting this case. I'm ready to share the documented findings for the ${title.toLowerCase()} whenever you need them.`;
+      }
       // A brief, natural owner prompt that invites the student to report
       // findings or ask follow-up questions. Keep it short so the student
       // can respond.
@@ -4666,8 +4733,17 @@ export function ChatInterface({
       sex: personaMeta?.sex,
     });
 
-    // Append assistant message immediately so user sees it
-    appendAssistantMessage(assistantMsg);
+    // Avoid repeating identical stage intro messages during the same attempt.
+    const introKey = `${normalizedRoleKey}:${introText}`;
+    if (!sentStageIntroRef.current.has(introKey)) {
+      // Append assistant message immediately so user sees it
+      appendAssistantMessage(assistantMsg);
+      sentStageIntroRef.current.add(introKey);
+    } else {
+      // Already sent this intro earlier in the attempt - skip appending/playing TTS
+      // but still ensure the UI scrolls the message area so the user sees latest
+      try { messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); } catch (e) {}
+    }
 
     // Speak if tts enabled; ensure the mic is fully stopped while the
     // assistant speaks so STT does not capture its audio, then restore

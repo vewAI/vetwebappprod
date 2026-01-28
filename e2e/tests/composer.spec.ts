@@ -48,4 +48,29 @@ test.describe('Composer header & persona UI', () => {
     const ack = page.locator('text=Let me check that Doc...');
     await expect(ack).toBeVisible();
   });
+
+  test('no extra nurse greeting when already talking to nurse and asking physical exam', async ({ page }) => {
+    await page.goto('/case-1');
+    // Select nurse tab (this may show a short toast/greeting)
+    await page.locator('[data-testid="persona-nurse"]').click();
+    // Wait for any toast to fade
+    await page.waitForTimeout(2500);
+
+    // Send an initial message as the nurse to simulate active conversation
+    await page.fill('#chat-input', 'hello nurse');
+    await page.press('#chat-input', 'Enter');
+    // Wait for ack to appear
+    await page.waitForSelector('text=Let me check that Doc...');
+
+    // Now ask for the cardiovascular exam which should trigger stage advance
+    await page.fill('#chat-input', 'please tell me the cardiovascular exam');
+    await page.press('#chat-input', 'Enter');
+
+    // Wait for nurse reply (find a nurse reply line)
+    await page.waitForSelector('text=I\'m the veterinary nurse supporting this case', { timeout: 5000 });
+
+    // Ensure 'Hello Doc' assistant greeting was not added again (only at most one instance)
+    const helloCount = await page.locator('text=Hello Doc').count();
+    expect(helloCount).toBeLessThanOrEqual(1);
+  });
 });
