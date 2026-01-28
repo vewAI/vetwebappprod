@@ -173,6 +173,14 @@ const PHYSICAL_EXAM_KEYWORDS: string[] = [
   "gait",
   "weight",
   "temperature reading",
+  "rectal",
+  "rectal palpation",
+  "rectal exam",
+  "nasogastric",
+  "nasogastric tube",
+  "ng tube",
+  "abdominocentesis",
+  "abdominal centesis",
 ];
 
 const STAGE_COMPLETION_RULES: Record<string, StageCompletionRule> = {
@@ -4476,9 +4484,10 @@ export function ChatInterface({
   };
 
   const isLastStage = currentStageIndex === stages.length - 1;
+  const nextStageName = isLastStage ? "Complete Examination" : stages[currentStageIndex + 1]?.title || "Next Stage";
   const nextStageTitle = isLastStage
     ? "Complete Examination"
-    : `Proceed to ${stages[currentStageIndex + 1]?.title || "Next Stage"}`;
+    : `Proceed to ${nextStageName}`;
 
   // Helper to produce a short assistant intro when proceeding to a new stage
   const getStageAssistantIntro = (targetStageIndex: number) => {
@@ -5042,7 +5051,7 @@ export function ChatInterface({
               {nextStageTitle}
             </Button>
 
-            <div className="grid grid-cols-1 sm:grid-cols-[auto_auto_1fr] gap-4 items-center w-full p-2 bg-background/80 border border-border rounded-lg">
+            <div className="grid grid-cols-1 sm:grid-cols-[auto_auto_1fr_auto] gap-4 items-center w-full p-2 bg-background/80 border border-border rounded-lg">
               {/* Left persona */}
               {/* OWNER button (left) with portrait above */}
               <div className="flex flex-col items-center gap-1 flex-shrink-0">
@@ -5122,7 +5131,29 @@ export function ChatInterface({
                 >
                   NURSE
                 </button>
-              </div> 
+              </div>
+
+              {/* Next stage control (large button) */}
+              <div className="flex items-center justify-end gap-2">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        id="next-stage-button"
+                        onClick={handleProceed}
+                        size="lg"
+                        variant="default"
+                        className={`px-6 py-3 text-sm font-semibold ${isLastStage ? "bg-gradient-to-l from-green-500 to-teal-500" : "bg-gradient-to-l from-blue-500 to-purple-500"} text-white border-none`}
+                      >
+                        {isLastStage ? "COMPLETE" : "NEXT STAGE"}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{`Click here to advance to ${nextStageName}`}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
             </div>
 
             {/* Input area placed to the right of persona controls (responsive) */}
