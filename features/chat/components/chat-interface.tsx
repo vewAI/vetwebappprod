@@ -5131,6 +5131,28 @@ export function ChatInterface({
                 >
                   {autoSendStt ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
                 </Button>
+
+                {/* LEARN HOW TO USE (overlay) - shows below the SPEAK / WRITE buttons */}
+                <div className="mt-4 flex justify-center">
+                  <button
+                    id="learn-how-to-use-overlay"
+                    type="button"
+                    onClick={() => {
+                      try {
+                        const btn = document.getElementById('start-tour-chat-interface') as HTMLButtonElement | null;
+                        if (btn) btn.click();
+                        // keep the start overlay visible so the user can choose SPEAK/WRITE after tour
+                      } catch (e) {
+                        // ignore
+                      }
+                    }}
+                    className="w-56 rounded-md bg-white/90 text-slate-800 text-sm px-4 py-3 shadow-md hover:shadow-lg transition"
+                    aria-label="Learn how to use"
+                  >
+                    LEARN HOW TO USE
+                  </button>
+                </div>
+
                 <Button
                   type="button"
                   size="sm"
@@ -5170,6 +5192,28 @@ export function ChatInterface({
                 >
                   {autoSendStt ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
                 </Button>
+
+                {/* LEARN HOW TO USE (overlay) - shows below the SPEAK button */}
+                <div className="mt-4 flex justify-center">
+                  <button
+                    id="learn-how-to-use-overlay"
+                    type="button"
+                    onClick={() => {
+                      try {
+                        const btn = document.getElementById('start-tour-chat-interface') as HTMLButtonElement | null;
+                        if (btn) btn.click();
+                        // keep the start overlay visible so the user can choose SPEAK/WRITE after tour
+                      } catch (e) {
+                        // ignore
+                      }
+                    }}
+                    className="w-56 rounded-md bg-white/90 text-slate-800 text-sm px-4 py-3 shadow-md hover:shadow-lg transition"
+                    aria-label="Learn how to use"
+                  >
+                    LEARN HOW TO USE
+                  </button>
+                </div>
+
                 <Button
                   type="button"
                   size="sm"
