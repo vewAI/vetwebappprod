@@ -26,3 +26,11 @@ describe("looksLikeLabRequest", () => {
     expect(looksLikeLabRequest("cbc and chemistry please"));
   });
 });
+
+describe("looksLikePhysicalRequest", () => {
+  it("detects physical exam related phrases", () => {
+    expect(looksLikePhysicalRequest("results of cardiovascular exam")).toBe(true);
+    expect(looksLikePhysicalRequest("tell me the cardiac auscultation findings")).toBe(true);
+    expect(looksLikePhysicalRequest("can I have the bloodwork results")).toBe(false);
+  });
+});

@@ -25,3 +25,30 @@ export function looksLikeLabRequest(text: string): boolean {
   if (!text) return false;
   return /\b(lab|labs|bloodwork|bloods|blood|cbc|chemistry|biochemistry|hematology|urine|urinalysis|radiograph|x-?ray|xray|imaging|ultrasound|test|tests|results|culture|pcr|serology)\b/i.test(text);
 }
+
+// Detect phrases that are explicitly about a physical exam or exam findings so
+// we can avoid treating them as lab/test requests (e.g., "results of cardiovascular exam").
+export function looksLikePhysicalRequest(text: string): boolean {
+  if (!text) return false;
+  const t = text.toLowerCase();
+  if (/\b(exam|examination|physical)\b/.test(t)) return true;
+  // common physical exam terms
+  const PHYSICAL_TERMS = [
+    "cardiovascular",
+    "cardiac",
+    "heart",
+    "pulse",
+    "respiratory",
+    "breathing",
+    "auscultation",
+    "lungs",
+    "temperature",
+    "palpation",
+    "rectal",
+    "abdominocentesis",
+    "auscultate",
+    "mucous",
+    "mucous membrane",
+  ];
+  return PHYSICAL_TERMS.some((kw) => t.includes(kw));
+}

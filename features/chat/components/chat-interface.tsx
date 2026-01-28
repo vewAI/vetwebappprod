@@ -153,6 +153,7 @@ const PHYSICAL_EXAM_KEYWORDS: string[] = [
   "temp",
   "pulse",
   "heart rate",
+  "cardiovascular",
   "respiratory",
   "breathing",
   "respiration",
@@ -2781,7 +2782,9 @@ export function ChatInterface({
     // If the current active persona is the nurse and the user is sending a message,
     // emit a brief nurse acknowledgement message immediately so the user sees a
     // responsive acknowledgement from the chosen persona before the server reply.
-    if (!existingMessageId && activePersona === "veterinary-nurse") {
+    // However, avoid sending the pre-lab acknowledgement when the user's message
+    // is clearly a physical-exam request (e.g., "results of cardiovascular exam").
+    if (!existingMessageId && activePersona === "veterinary-nurse" && !looksLikePhysicalRequest(trimmed)) {
       (async () => {
         try {
           // Do not repeat the same nurse acknowledgement phrase more than once per attempt
@@ -2899,6 +2902,36 @@ export function ChatInterface({
           });
         } catch (e) {}
       } else if (stageResult.status !== "ready") {
+        // Allow a high-confidence user request to move into Physical Examination
+        // even if assistant findings are not yet present. This supports students
+        // explicitly asking to start the exam (e.g., "college basketball" → cardiovascular).
+        try {
+          const nextTitleText = stages[currentStageIndex + 1]?.title ?? "";
+          if (
+            readinessSignal?.confidence === "high" &&
+            nextTitleText.toLowerCase().includes("physical") &&
+            !stageLocked
+          ) {
+            shouldAutoAdvance = true;
+            const nextIndex = Math.min(currentStageIndex + 1, stages.length - 1);
+            const nextTitle = stages[nextIndex]?.title ?? `Stage ${nextIndex + 1}`;
+            setPendingStageAdvance({ stageIndex: nextIndex, title: nextTitle });
+            try {
+              debugEventBus.emitEvent?.("info", "StageIntent", "forcedAdvance", {
+                nextStageIndex: nextIndex,
+                nextStageTitle: nextTitle,
+                heuristics: readinessSignal?.heuristics,
+                reason: "user-high-confidence-physical",
+              });
+            } catch (e) {}
+            reset();
+            baseInputRef.current = "";
+            return;
+          }
+        } catch (e) {
+          // ignore detection errors
+        }
+
         // If we have already warned the user for this stage (guardActive), allow them to proceed
         // if they persist (intent === "advance").
         if (guardActive) {
@@ -5026,28 +5059,59 @@ export function ChatInterface({
         <div className="mx-auto max-w-3xl">
           {/* Persona filter is controlled by the big OWNER / VOICE MODE / NURSE controls above */}
           <div className="space-y-4">
-            {messages
-              .filter((m) => {
-                // Determine persona for message: explicit personaRoleKey preferred,
-                // fallback to displayRole classification when available.
+            {/* Group consecutive assistant messages by same persona/stage into a single visual entry */}
+            {(() => {
+              const visible = messages.filter((m) => {
                 const p = m.personaRoleKey ?? (m.displayRole ? resolveChatPersonaRoleKey(m.displayRole, m.displayRole) : null);
                 return p === activePersona;
-              })
-              .map((message) => (
+              });
+
+              const grouped: Message[] = [];
+              for (const m of visible) {
+                const last = grouped.length ? grouped[grouped.length - 1] : null;
+                if (
+                  last &&
+                  last.role === "assistant" &&
+                  m.role === "assistant" &&
+                  (last.displayRole ?? last.role ?? "assistant") === (m.displayRole ?? m.role ?? "assistant") &&
+                  last.stageIndex === m.stageIndex
+                ) {
+                  try {
+                    // Merge content de-duplicating overlapping text
+                    const mergedContent = mergeStringsNoDup(last.content, m.content);
+                    (last as any).content = mergedContent;
+                    // Merge structured findings shallowly
+                    const lastSF = (last as any).structuredFindings || {};
+                    const mSF = (m as any).structuredFindings || {};
+                    const mergedSF = { ...lastSF, ...mSF };
+                    if (Object.keys(mergedSF).length) (last as any).structuredFindings = mergedSF;
+                    // Keep earliest timestamp
+                    (last as any).timestamp = last.timestamp || m.timestamp;
+                  } catch (e) {
+                    grouped.push({ ...m });
+                  }
+                } else {
+                  grouped.push({ ...m });
+                }
+              }
+
+              return grouped.map((message) => (
                 <ChatMessage
                   key={message.id}
                   message={message}
                   stages={stages}
                   onRetry={retryUserMessage}
                 />
-              ))}
+              ));
+            })()}
+
             {isLoading && (
               <div className="flex items-center space-x-2 text-sm text-muted-foreground">
                 <div className="animate-pulse">Thinking...</div>
               </div>
             )}
             <div ref={messagesEndRef} />
-          </div>
+          </div> 
         </div>
       </div>
 
@@ -5076,7 +5140,7 @@ export function ChatInterface({
                   type="button"
                   onClick={() => handleSetActivePersona("owner")}
                   aria-pressed={activePersona === "owner"}
-                  className={`h-10 w-10 rounded-full overflow-hidden border bg-muted focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                  className={`rounded-full overflow-hidden border bg-muted focus:outline-none focus:ring-2 focus:ring-blue-500 transition-transform ${activePersona === "owner" ? "h-20 w-20 scale-100" : "h-10 w-10 scale-100"}`}
                   aria-label="Select Owner persona"
                 >
                   {personaDirectory?.owner?.portraitUrl ? (
@@ -5130,7 +5194,7 @@ export function ChatInterface({
                   type="button"
                   onClick={() => handleSetActivePersona("veterinary-nurse")}
                   aria-pressed={activePersona === "veterinary-nurse"}
-                  className={`h-10 w-10 rounded-full overflow-hidden border bg-muted focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                  className={`rounded-full overflow-hidden border bg-muted focus:outline-none focus:ring-2 focus:ring-blue-500 transition-transform ${activePersona === "veterinary-nurse" ? "h-20 w-20 scale-100" : "h-10 w-10 scale-100"}`}
                   aria-label="Select Nurse persona"
                 >
                   {personaDirectory?.["veterinary-nurse"]?.portraitUrl ? (
@@ -5148,7 +5212,7 @@ export function ChatInterface({
                 >
                   NURSE
                 </button>
-              </div>
+              </div> 
 
               {/* Next stage control (large button) */}
               <div className="flex items-center justify-end gap-2">
