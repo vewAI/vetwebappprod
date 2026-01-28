@@ -35,14 +35,16 @@ export async function GET(req: any, ctx: any) {
         }
         const settingsFallback = (full.data && (full.data as any).settings) || {};
         const stageActivationFallback = settingsFallback.stageActivation || {};
-        return NextResponse.json({ stageActivation: stageActivationFallback });
+        const stageOverridesFallback = settingsFallback.stageOverrides || {};
+        return NextResponse.json({ stageActivation: stageActivationFallback, stageOverrides: stageOverridesFallback });
       }
       console.warn("Failed to fetch case settings", res.error);
       return NextResponse.json({ stageActivation: {} });
     }
     const settings = (res.data && (res.data as any).settings) || {};
     const stageActivation = settings.stageActivation || {};
-    return NextResponse.json({ stageActivation });
+    const stageOverrides = settings.stageOverrides || {};
+    return NextResponse.json({ stageActivation, stageOverrides });
   } catch (e) {
     console.error("Error reading stage settings", e);
     return NextResponse.json({ stageActivation: {} });
@@ -55,10 +57,11 @@ export async function POST(req: any, ctx: any) {
   const body = await req.json().catch(() => ({}));
   // Accept either a single stage update `{ stageIndex, active }`
   // or a full map `{ stageActivation: { "0": true, "1": false } }`.
-  const { stageIndex, active, stageActivation } = body as {
+  const { stageIndex, active, stageActivation, stageOverrides } = body as {
     stageIndex?: number;
     active?: boolean;
     stageActivation?: Record<string, boolean>;
+    stageOverrides?: Record<string, any>;
   };
   const supabase = getSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ ok: false, error: "supabase-unavailable" }, { status: 500 });
@@ -112,7 +115,25 @@ export async function POST(req: any, ctx: any) {
       // Single-stage update
       nextActivation = { ...activation, [String(stageIndex)]: Boolean(active) };
     }
-    const nextSettings = { ...current, stageActivation: nextActivation };
+
+    // Merge stage overrides if provided. The structure is free-form but we coerce simple numeric fields.
+    const currentOverrides = current.stageOverrides || {};
+    let nextOverrides = currentOverrides;
+    if (stageOverrides && typeof stageOverrides === "object") {
+      nextOverrides = { ...currentOverrides };
+      Object.keys(stageOverrides).forEach((k) => {
+        const incoming = (stageOverrides as any)[k] || {};
+        const existing = nextOverrides[k] || {};
+        const merged: any = { ...existing };
+        if (incoming.hasOwnProperty("minUserTurns")) merged.minUserTurns = Number(incoming.minUserTurns) || 0;
+        if (incoming.hasOwnProperty("minAssistantTurns")) merged.minAssistantTurns = Number(incoming.minAssistantTurns) || 0;
+        if (incoming.hasOwnProperty("minAssistantKeywordHits")) merged.minAssistantKeywordHits = Number(incoming.minAssistantKeywordHits) || 0;
+        if (incoming.hasOwnProperty("basePrompt")) merged.basePrompt = String(incoming.basePrompt || "");        if (incoming.hasOwnProperty("title")) merged.title = String(incoming.title || "");
+        if (incoming.hasOwnProperty("description")) merged.description = String(incoming.description || "");        nextOverrides[k] = merged;
+      });
+    }
+
+    const nextSettings = { ...current, stageActivation: nextActivation, stageOverrides: nextOverrides };
     // Log the settings we will attempt to write for debugging
     try {
       console.info("Updating case settings for", caseId, { nextSettings });
@@ -131,6 +152,7 @@ export async function POST(req: any, ctx: any) {
           {
             case_id: caseId,
             stage_activation: nextActivation,
+            stage_overrides: nextOverrides,
             updated_at: new Date().toISOString(),
           },
           { onConflict: "case_id" }

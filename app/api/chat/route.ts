@@ -1565,6 +1565,18 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
       systemGuideline += nurseBasePrompt;
     }
 
+    // Apply any per-stage 'basePrompt' overrides stored in the case's settings
+    try {
+      const caseSettings = caseRecord && typeof caseRecord === "object" ? (caseRecord as any).settings || {} : {};
+      const stageOverrides = caseSettings.stageOverrides || {};
+      const stageOverrideForIdx = typeof stageIndex === "number" ? stageOverrides[String(stageIndex)] || {} : {};
+      if (stageOverrideForIdx && stageOverrideForIdx.basePrompt) {
+        systemGuideline += `\n\nCASE STAGE PROMPT: ${String(stageOverrideForIdx.basePrompt)}`;
+      }
+    } catch (e) {
+      // ignore errors reading settings
+    }
+
     enhancedMessages.unshift({ role: "system", content: systemGuideline });
 
     let response = await openai.chat.completions.create({

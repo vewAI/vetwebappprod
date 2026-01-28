@@ -266,7 +266,8 @@ export function ChatInterface({
     { element: '#chat-messages', popover: { title: 'Conversation History', description: 'Read the dialogue between you and the virtual characters here.' } },
     { element: '#chat-input', popover: { title: 'Input Area', description: 'Type your questions or responses here. You can also use voice input.' } },
     { element: '#send-button', popover: { title: 'Send Message', description: 'Click to send your message to the virtual character.' } },
-    { element: '#voice-controls', popover: { title: 'Voice Controls', description: 'Toggle voice input (microphone) and text-to-speech (speaker) on or off.' } },
+    { element: '#voice-controls', popover: { title: 'Voice Controls', description: 'Use the mic icon to switch between SPEAK (voice input) and WRITE (typing) modes, and click the speaker icon to toggle text-to-speech playback. The mic mode controls whether your voice is recorded or the composer is used for manual typing.' } },
+    { element: '#persona-tabs', popover: { title: 'Persona (Owner / Nurse)', description: 'Switch who you are speaking AS: OWNER or NURSE. Use these buttons to change the character that will answer your next message. You can also change characters by voice — try saying: "May I talk to the nurse"' } },
     { element: '#notepad-toggle', popover: { title: 'Notepad', description: 'Open the notepad to jot down important findings or notes during the case.' } },
   ];
 
@@ -298,6 +299,34 @@ export function ChatInterface({
   };
 
   const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const [caseStageOverrides, setCaseStageOverrides] = useState<Record<string, any>>({});
+
+  // Load case-specific stage overrides (editable via admin panel)
+  useEffect(() => {
+    if (!caseId) return;
+    (async () => {
+      try {
+        const resp = await fetch(`/api/cases/${encodeURIComponent(caseId)}/stage-settings`);
+        const payload = await resp.json().catch(() => ({}));
+        const savedOverrides = payload?.stageOverrides || {};
+        const coercedOverrides: Record<string, any> = {};
+        Object.keys(savedOverrides).forEach((k) => {
+          const inc = (savedOverrides as any)[k] || {};
+          coercedOverrides[k] = {
+            minUserTurns: inc.minUserTurns != null ? Number(inc.minUserTurns) : 1,
+            minAssistantTurns: inc.minAssistantTurns != null ? Number(inc.minAssistantTurns) : 1,
+            minAssistantKeywordHits: inc.minAssistantKeywordHits != null ? Number(inc.minAssistantKeywordHits) : 1,
+            basePrompt: inc.basePrompt != null ? String(inc.basePrompt) : undefined,
+            title: inc.title != null ? String(inc.title) : undefined,
+            description: inc.description != null ? String(inc.description) : undefined,
+          };
+        });
+        setCaseStageOverrides(coercedOverrides);
+      } catch (e) {
+        // ignore
+      }
+    })();
+  }, [caseId]);
   // Active persona tab shown in the UI (owner | veterinary-nurse). Default to nurse to match prior UX.
   const [activePersona, setActivePersona] = useState<AllowedChatPersonaKey>("veterinary-nurse");
   // Per-persona draft persistence (in-memory + localStorage per attempt)
@@ -339,8 +368,42 @@ export function ChatInterface({
           return normalizeForDedupe(m.content) === norm;
         });
         if (duplicate) return prev;
+
+        // If the previous message is an assistant message from the same
+        // persona (same displayRole) and same stage, merge their contents
+        // instead of creating a separate message. This keeps consecutive
+        // assistant utterances visually integrated.
+        const last = prev.length > 0 ? prev[prev.length - 1] : null;
+        if (
+          last &&
+          last.role === "assistant" &&
+          (last.displayRole ?? last.role ?? "assistant") === role &&
+          last.stageIndex === msg.stageIndex
+        ) {
+          try {
+            const mergedContent = mergeStringsNoDup(last.content, msg.content);
+            // merge any structured findings if present (msg shape may have extra fields)
+            const lastSF = (last as any).structuredFindings || {};
+            const msgSF = (msg as any).structuredFindings || {};
+            const mergedSF = { ...lastSF, ...msgSF };
+            const merged: Message = {
+              ...last,
+              content: mergedContent,
+              // keep original id/timestamp of first message to preserve ordering
+              timestamp: last.timestamp || msg.timestamp || new Date().toISOString(),
+              // preserve status as sent (or prefer msg.status if it indicates final)
+              status: msg.status === "sent" ? "sent" : last.status,
+              // attach merged structured findings permissively
+              ...(Object.keys(mergedSF).length ? { structuredFindings: mergedSF } : {}),
+            } as Message & { structuredFindings?: any };
+            return [...prev.slice(0, -1), merged];
+          } catch (e) {
+            // fall back to append if merge fails
+            return [...prev, msg];
+          }
+        }
       } catch (e) {
-        // ignore dedupe errors
+        // ignore dedupe/merge errors
       }
       return [...prev, msg];
     });
@@ -648,8 +711,11 @@ export function ChatInterface({
         } catch {}
       };
 
-      addLabel(stage?.title);
-      addLabel(stage?.role);
+      // Prefer per-case overridden title/description when available
+      const overrideTitle = caseStageOverrides[String(index)]?.title;
+      const overrideDescription = caseStageOverrides[String(index)]?.description;
+      addLabel(overrideTitle ?? stage?.title);
+      addLabel(overrideDescription ?? stage?.role);
 
       const stageNumber = index + 1;
       keywords.add(`stage ${stageNumber}`);
@@ -704,7 +770,23 @@ export function ChatInterface({
       metrics.assistantTurns = assistantMessages.length;
 
       const ruleKey = stage.title?.toLowerCase().replace(/\s+/g, " ").trim();
-      const rule = ruleKey ? STAGE_COMPLETION_RULES[ruleKey] : undefined;
+      // base rule from static defaults
+      const baseRule = ruleKey ? STAGE_COMPLETION_RULES[ruleKey] : undefined;
+
+      // allow per-case overrides by stage index (admin UI stores overrides keyed by index)
+      const stageIdx = stages.findIndex((s) => s.title === stage.title);
+      const override = (stageIdx >= 0 && caseStageOverrides[String(stageIdx)]) || {};
+
+      const rule: StageCompletionRule | undefined = (() => {
+        if (!baseRule && !override) return undefined;
+        const merged: StageCompletionRule = { ...(baseRule || {}) };
+        if (override.minUserTurns != null) merged.minUserTurns = Number(override.minUserTurns);
+        if (override.minAssistantTurns != null) merged.minAssistantTurns = Number(override.minAssistantTurns);
+        if (override.minAssistantKeywordHits != null) merged.minAssistantKeywordHits = Number(override.minAssistantKeywordHits);
+        if (override.assistantKeywords && Array.isArray(override.assistantKeywords)) merged.assistantKeywords = override.assistantKeywords;
+        return merged;
+      })();
+
       if (!rule) {
         return { status: "ready", metrics, rule: undefined };
       }
@@ -738,6 +820,27 @@ export function ChatInterface({
         metrics.matchedAssistantKeywords < rule.minAssistantKeywordHits
       ) {
         ready = false;
+      }
+
+      // Special-case: for Physical Examination, allow the assistant's structured
+      // findings / keyword-rich reply to trigger readiness even if the turn
+      // counts (minUserTurns / minAssistantTurns) are not fully met. This
+      // handles cases where the nurse quickly provides vitals (e.g., HR/Temp)
+      // and should be sufficient to advance.
+      try {
+        if (ruleKey === "physical examination") {
+          const assistantHasStructuredFindings = assistantMessages.some((m) => {
+            return m.structuredFindings && Object.keys(m.structuredFindings).length > 0;
+          });
+          if (
+            assistantHasStructuredFindings ||
+            (rule.minAssistantKeywordHits && metrics.matchedAssistantKeywords >= rule.minAssistantKeywordHits)
+          ) {
+            ready = true;
+          }
+        }
+      } catch (e) {
+        // ignore if structure not present
       }
       
       if (ready) {
@@ -2039,6 +2142,13 @@ export function ChatInterface({
     try {
       reset();
     } catch {}
+
+    // Also clear the visible input box so TTS playback doesn't leave
+    // partial user text in the textbox while the assistant speaks.
+    try {
+      baseInputRef.current = "";
+      setInput("");
+    } catch (e) {}
     
     // Wait for mic hardware to fully release before playing audio
     // This is critical to prevent self-capture
