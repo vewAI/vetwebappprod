@@ -2406,8 +2406,10 @@ export function ChatInterface({
       const stage = stages?.[currentStageIndex];
       const stageKey = stage?.title?.toLowerCase().trim() ?? "";
       const isLabStage = /laboratory|lab|tests/.test(stageKey);
-      // If it's a lab request and we're a nurse before the lab stage, acknowledge locally *unless* the user explicitly clicked Send
-      if (!isLabStage && activePersona === "veterinary-nurse" && looksLikeLabRequest(trimmed) && options?.source !== 'manual') {
+      // If it's a lab request and we're a nurse before the lab stage, acknowledge locally.
+      // Previously this ignored explicit manual sends; treat manual sends the same and provide
+      // a clear acknowledgement so the student knows the request will be actioned in the Lab stage.
+      if (!isLabStage && activePersona === "veterinary-nurse" && looksLikeLabRequest(trimmed)) {
         // Append the user's original request to the chat so it doesn't appear to disappear
         try {
           const userMsg = chatService.createUserMessage(trimmed, currentStageIndex);
@@ -2417,7 +2419,7 @@ export function ChatInterface({
         }
 
         const personaMeta = await ensurePersonaMetadata("veterinary-nurse");
-        const ack = "We'll request that and we'll get the results in the Lab stage";
+        const ack = "We'll request those tests; the results will be available in the Lab stage.";
         const assistantMsg = chatService.createAssistantMessage(
           ack,
           currentStageIndex,
@@ -4441,6 +4443,14 @@ export function ChatInterface({
       // Delegate to shared sendUserMessage helper and mark as manual so it bypasses auto-send blocks
       await sendUserMessage(input, undefined, { source: 'manual' });
     } finally {
+      // Clear the base input buffer and visible input when the user clicks Send
+      try {
+        baseInputRef.current = "";
+      } catch {}
+      try {
+        setInput("");
+      } catch {}
+
       // Ensure focus returns to the textarea without causing a page scroll
       try {
         (textareaRef.current as any)?.focus?.({ preventScroll: true });
