@@ -1845,8 +1845,19 @@ export function ChatInterface({
 
   // Persist persona-specific input drafts to localStorage and show a brief
   // toast when the user switches persona.
-  const handleSetActivePersona = useCallback((next: AllowedChatPersonaKey) => {
+  const handleSetActivePersona = useCallback((next: AllowedChatPersonaKey, opts?: { delayMs?: number; suppressAutoStartMs?: number }) => {
     if (next === activePersona) return;
+    const delayMs = opts?.delayMs ?? 0;
+    const suppressMs = opts?.suppressAutoStartMs ?? 1200;
+    if (delayMs > 0) {
+      // Delay the persona switch/UI focus to let the student see their own message first
+      window.setTimeout(() => {
+        try { suppressAutoStart(suppressMs); } catch {}
+        // proceed with the normal immediate switch logic below by calling again without delay
+        handleSetActivePersona(next);
+      }, delayMs);
+      return;
+    }
     try {
       // save current draft
       window.localStorage.setItem(draftLocalStorageKey(activePersona), input || "");
@@ -2498,29 +2509,22 @@ export function ChatInterface({
       if (personaSwitch) {
         // Only switch if different
         if (personaSwitch !== activePersona) {
-          handleSetActivePersona(personaSwitch);
-          // Small confirmation message from the assistant persona
-          (async () => {
-            try {
-              const personaMeta = await ensurePersonaMetadata(personaSwitch);
-              const confirm = personaSwitch === "veterinary-nurse" ? "Hello Doc" : `Now talking to ${personaMeta?.displayName ?? (personaSwitch === "owner" ? "Owner" : "Nurse")}.`;
-              const assistantMsg = chatService.createAssistantMessage(
-                confirm,
-                currentStageIndex,
-                personaMeta?.displayName ?? (personaSwitch === "owner" ? "Owner" : "Nurse"),
-                personaMeta?.portraitUrl,
-                personaMeta?.voiceId,
-                personaMeta?.sex as any,
-                personaSwitch
-              );
-              appendAssistantMessage(assistantMsg);
-              if (ttsEnabled) {
-                try {
-                  await playTtsAndPauseStt(confirm, personaMeta?.voiceId, { roleKey: personaSwitch, displayRole: assistantMsg.displayRole, role: personaSwitch, caseId } as any, personaMeta?.sex as any);
-                } catch {}
-              }
-            } catch (e) {}
-          })();
+          // Append the user's original message immediately so it appears in the conversation
+          try {
+            const userMsg = chatService.createUserMessage(trimmed, currentStageIndex);
+            setMessages((prev) => [...prev, userMsg]);
+          } catch (e) {
+            console.warn("Failed to append local user message for persona switch", e);
+          }
+
+          // Clear the input since we've committed the spoken text to the conversation
+          try {
+            setInput("");
+            baseInputRef.current = "";
+          } catch (e) {}
+
+          // Switch persona after a short delay so the student sees their spoken text first
+          handleSetActivePersona(personaSwitch, { delayMs: 2000, suppressAutoStartMs: 2000 });
         }
         return;
       }
