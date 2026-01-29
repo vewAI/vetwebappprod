@@ -4021,6 +4021,7 @@ export function ChatInterface({
         }
       }
       setShowStartSpeakingPrompt(false);
+      try { hideIntroToast(); } catch (e) {}
 
       // Send owner's greeting at the start of the case
       try {
@@ -4031,7 +4032,7 @@ export function ChatInterface({
     } finally {
       setStartSequenceActive(false);
     }
-  }, [startSequenceActive, setVoiceModeEnabled, setTtsEnabledState, isListening, start, sendOwnerGreetingIfNeeded]);
+  }, [startSequenceActive, setVoiceModeEnabled, setTtsEnabledState, isListening, start, sendOwnerGreetingIfNeeded, hideIntroToast]);
 
   const handleStartWritePrompt = useCallback(() => {
     try {
@@ -4039,10 +4040,11 @@ export function ChatInterface({
       setTtsEnabledState(false);
       setVoiceModeEnabled(false);
       setShowStartSpeakingPrompt(false);
+      try { hideIntroToast(); } catch (e) {}
     } catch (err) {
       console.warn("Failed to initialize write controls:", err);
     }
-  }, [setVoiceModeEnabled, setTtsEnabledState]);
+  }, [setVoiceModeEnabled, setTtsEnabledState, hideIntroToast]);
 
   // Update input when transcript changes
   // Update input when interim or final transcripts arrive. When listening,
@@ -4247,20 +4249,21 @@ export function ChatInterface({
   const introShownRef = useRef(false);
   const [introMounted, setIntroMounted] = useState(false);
   const [showIntroToast, setShowIntroToast] = useState(false);
+
+  const hideIntroToast = useCallback(() => {
+    // Fade out, then remove from DOM after the CSS transition completes
+    try { setShowIntroToast(false); } catch (e) {}
+    try { window.setTimeout(() => setIntroMounted(false), 800); } catch (e) {}
+  }, []);
+
   useEffect(() => {
     if (!attemptId) return;
     if (introShownRef.current) return;
     introShownRef.current = true;
     setIntroMounted(true);
     setShowIntroToast(true);
-    // Hide after 7s (fade handled by CSS transition)
-    const t1 = window.setTimeout(() => setShowIntroToast(false), 7000);
-    // Remove from DOM after fade (0.8s)
-    const t2 = window.setTimeout(() => setIntroMounted(false), 7800);
-    return () => {
-      window.clearTimeout(t1);
-      window.clearTimeout(t2);
-    };
+    // Keep the intro visible until the user explicitly interacts (Speak/Write/Learn/Close)
+    return () => { /* no-op */ };
   }, [attemptId]);
 
   // Listen for debug events and surface stage-detection events as a subtle toast for quick visibility
@@ -5126,6 +5129,8 @@ export function ChatInterface({
                       try {
                         const btn = document.getElementById('start-tour-chat-interface') as HTMLButtonElement | null;
                         if (btn) btn.click();
+                        // Hide the intro banner when the user explicitly requests the tour
+                        try { hideIntroToast(); } catch (e) {}
                         // keep the start overlay visible so the user can choose SPEAK/WRITE after tour
                       } catch (e) {
                         // ignore
@@ -5146,6 +5151,7 @@ export function ChatInterface({
                   onClick={() => {
                     setShowStartSpeakingPrompt(false);
                     try { setVoiceModeEnabled(false); } catch (e) { /* ignore */ }
+                    try { hideIntroToast(); } catch (e) {}
                   }}
                   title="Close"
                 >
@@ -5173,6 +5179,8 @@ export function ChatInterface({
                       try {
                         const btn = document.getElementById('start-tour-chat-interface') as HTMLButtonElement | null;
                         if (btn) btn.click();
+                        // Hide the intro banner when the user explicitly requests the tour
+                        try { hideIntroToast(); } catch (e) {}
                         // keep the start overlay visible so the user can choose SPEAK/WRITE after tour
                       } catch (e) {
                         // ignore
@@ -5193,6 +5201,7 @@ export function ChatInterface({
                   onClick={() => {
                     setShowStartSpeakingPrompt(false);
                     try { setVoiceModeEnabled(false); } catch (e) { /* ignore */ }
+                    try { hideIntroToast(); } catch (e) {}
                   }}
                   title="Close"
                 >
