@@ -35,7 +35,7 @@ import {
   speakRemoteStream,
   stopActiveTtsPlayback,
 } from "@/features/speech/services/ttsService";
-import { setSttSuppressed, setSttSuppressedFor, enterDeafMode, exitDeafMode, setGlobalPaused, isInDeafMode } from "@/features/speech/services/sttService";
+import { setSttSuppressed, setSttSuppressedFor, isSttSuppressed, enterDeafMode, exitDeafMode, setGlobalPaused, isInDeafMode } from "@/features/speech/services/sttService";
 import { isSpeechRecognitionSupported } from "@/features/speech/services/sttService";
 import { ChatMessage } from "@/features/chat/components/chat-message";
 import { Notepad } from "@/features/chat/components/notepad";
@@ -4005,8 +4005,14 @@ export function ChatInterface({
       isSuppressingSttRef.current = false;
       isPlayingAudioRef.current = false;
       try {
-        setSttSuppressed(false, true); // skip cooldown
-        exitDeafMode(); // clear deaf mode timestamp
+        // Only clear suppression/deaf mode if no audio is currently playing.
+        // Prioritize TTS suppression over pause/resume to avoid accidental mic restarts.
+        if (!isPlayingAudioRef.current) {
+          setSttSuppressed(false, true); // skip cooldown
+          exitDeafMode(); // clear deaf mode timestamp
+        } else {
+          try { debugEventBus.emitEvent?.('info','STT','defer_clear_suppression_due_to_playback'); } catch {}
+        }
       } catch {}
       
       // Ensure voice mode and TTS are enabled when resuming
@@ -4019,7 +4025,15 @@ export function ChatInterface({
       if (voiceModeRef.current && !isListening) {
         // Small delay to ensure state is fully cleared before starting
         setTimeout(() => {
-          start();
+          try {
+            if (!isPlayingAudioRef.current && !isSttSuppressed() && !isInDeafMode()) {
+              start();
+            } else {
+              try { debugEventBus.emitEvent?.('info','STT','deferred_manual_start_due_to_suppression'); } catch {}
+            }
+          } catch (e) {
+            // ignore
+          }
         }, 100);
       }
       // fade out the "Attempt Paused" toast when resuming
