@@ -1880,6 +1880,40 @@ export function ChatInterface({
         // Prevent repeated UI greetings
         // Suppress immediate auto-starts briefly to avoid accidental mic restarts when switching persona
         try { suppressAutoStart(1200); } catch {}
+
+        // Attempt to auto-advance stages on a UI-based nurse activation (History->Physical, Diagnostic->Lab)
+        try {
+          const stage = stages?.[currentStageIndex];
+          const stageTitle = (stage?.title ?? "").toLowerCase();
+          // Emit event for QA tracing
+          try { debugEventBus.emitEvent?.('info','StageIntent','persona-ui-switch',{ stageIndex: currentStageIndex, stageTitle }); } catch {}
+
+          const attemptAdvanceTo = async (predicate: (label: string) => boolean) => {
+            for (let i = 0; i < 6; i++) {
+              const s = stages?.[currentStageIndex];
+              const sTitle = (s?.title ?? "").toLowerCase();
+              if (predicate(sTitle)) return true;
+              try {
+                onProceedToNextStage(messages, 0);
+              } catch {}
+              await new Promise((r) => setTimeout(r, 220));
+            }
+            return false;
+          };
+
+          if (/history/.test(stageTitle) || /history taking/.test(stageTitle)) {
+            try { debugEventBus.emitEvent?.('info','StageIntent','persona-ui-trigger-advance',{ from: stageTitle, to: 'physical examination' }); } catch {}
+            void attemptAdvanceTo((l) => /physical/.test(l));
+          }
+
+          if (/diagnostic/.test(stageTitle) || /diagnostic planning/.test(stageTitle)) {
+            try { debugEventBus.emitEvent?.('info','StageIntent','persona-ui-trigger-advance',{ from: stageTitle, to: 'laboratory' }); } catch {}
+            void attemptAdvanceTo((l) => /laboratory|lab|tests/.test(l));
+          }
+        } catch (e) {
+          // ignore
+        }
+
         if (!nurseGreetingSentRef.current) {
           // If the user has recently sent a message as the Nurse, suppress the
           // UI greeting because it would be redundant (user is already talking to Nurse).
@@ -3045,6 +3079,7 @@ export function ChatInterface({
     }
 
     setIsLoading(true);
+    try { debugEventBus.emitEvent?.('info','UI','send_started',{ stageIndex: currentStageIndex, activePersona, ts: Date.now() }); } catch {}
 
     try {
       // If we previously inserted a '...' placeholder waiting for continuation,
@@ -3397,6 +3432,7 @@ export function ChatInterface({
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
+      try { debugEventBus.emitEvent?.('info','UI','send_finished',{ stageIndex: currentStageIndex, activePersona, ts: Date.now() }); } catch {}
       // Reset interim transcripts after a send
       reset();
       // Clear base input buffer after a send so future dictation starts

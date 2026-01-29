@@ -1589,10 +1589,16 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
 
     enhancedMessages.unshift({ role: "system", content: systemGuideline });
 
+    // When a nurse or lab persona answers during sensitive stages, use a low-temperature
+    // deterministic setting to reduce the chance of interpretive language being generated.
+    const isSensitivePersona = (personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician");
+    const tempForCall = (isSensitivePersona && (isPhysicalStage || isLabStage)) ? 0.0 : 0.7;
+    try { debugEventBus.emitEvent?.('info','ChatConfig','model_call',{ personaRoleKey, isPhysicalStage, isLabStage, temperature: tempForCall }); } catch {}
+
     let response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: enhancedMessages as any[],
-      temperature: 0.7,
+      temperature: tempForCall,
       max_tokens: 1000,
     });
 
