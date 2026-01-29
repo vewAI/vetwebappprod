@@ -13,6 +13,7 @@ import type {
 } from "@/features/personas/models/persona";
 import { CHAT_SYSTEM_GUIDELINE } from "@/features/chat/prompts/systemGuideline";
 import { resolvePromptValue } from "@/features/prompts/services/promptService";
+import { getConditionPhysicalExamDefaults } from "@/features/prompts/services/casePromptAutomation";
 import { requireUser } from "@/app/api/_lib/auth";
 import {
   parseRequestedKeys,
@@ -1280,8 +1281,22 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
                   const converted = convertCelsiusToFahrenheitInText(combined);
                   phrases.push(`${name}: ${converted}`);
                 } else {
-                  // Mark missing values as NOT_AVAILABLE so the LLM can craft a helpful reply (see guidance below)
-                  phrases.push(`${name}: NOT_AVAILABLE`);
+                  // If we have species or condition defaults, include a helpful 'typical' note
+                  const species = caseRecord && typeof caseRecord === "object" ? String((caseRecord as any).species ?? "").trim() : "";
+                  const condition = caseRecord && typeof caseRecord === "object" ? String((caseRecord as any).condition ?? "").trim() : "";
+                  try {
+                    const defaults = getConditionPhysicalExamDefaults(condition, species || "");
+                    const match = (defaults.vitals || []).find((v) =>
+                      v.toLowerCase().startsWith(name.toLowerCase()) || v.toLowerCase().includes(name.toLowerCase()),
+                    );
+                    if (match) {
+                      phrases.push(`${name}: NOT_AVAILABLE (no recorded value; typical: ${match})`);
+                    } else {
+                      phrases.push(`${name}: NOT_AVAILABLE`);
+                    }
+                  } catch (e) {
+                    phrases.push(`${name}: NOT_AVAILABLE`);
+                  }
                 }
               } else {
                 // No matching lines found for this requested canonical key.
@@ -1295,7 +1310,21 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
                   );
                 } catch {}
                 // Mark missing values as NOT_AVAILABLE so the LLM can craft a helpful reply (see guidance below)
-                phrases.push(`${name}: NOT_AVAILABLE`);
+                const species = caseRecord && typeof caseRecord === "object" ? String((caseRecord as any).species ?? "").trim() : "";
+                const condition = caseRecord && typeof caseRecord === "object" ? String((caseRecord as any).condition ?? "").trim() : "";
+                try {
+                  const defaults = getConditionPhysicalExamDefaults(condition, species || "");
+                  const match = (defaults.vitals || []).find((v) =>
+                    v.toLowerCase().startsWith(name.toLowerCase()) || v.toLowerCase().includes(name.toLowerCase()),
+                  );
+                  if (match) {
+                    phrases.push(`${name}: NOT_AVAILABLE (no recorded value; typical: ${match})`);
+                  } else {
+                    phrases.push(`${name}: NOT_AVAILABLE`);
+                  }
+                } catch (e) {
+                  phrases.push(`${name}: NOT_AVAILABLE`);
+                }
               }
             }
             const snippet = phrases.join(", ");
@@ -1304,7 +1333,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
               enhancedMessages.unshift({
                 role: "system",
                 content:
-                  "MISSING_RESULT_GUIDANCE: Some requested parameters are flagged as NOT_AVAILABLE. When replying, the responding persona (nurse/lab) should say something like: 'I don't see that recorded; it may be pending or not yet run. I can request the test and you'll see results in the Lab stage.' Keep the reply concise and do not invent values.",
+                  "MISSING_RESULT_GUIDANCE: Some requested parameters are flagged as NOT_AVAILABLE. When replying, the responding persona (nurse/lab) should acknowledge the student's request. In the Laboratory stage, state that the result is not recorded and offer to request the test. In the Physical Examination stage, you may instead indicate the recorded status as 'not recorded' and optionally provide a clearly-labeled typical range for the species (e.g., 'Typical range for adult bovines: HR 60–80 bpm') but MUST label it as 'typical range' so it is not confused with recorded data. Always keep replies concise, do not invent precise recorded values, and offer to request tests or collect findings when appropriate.",
               });
             }
             enhancedMessages.unshift({
@@ -1563,7 +1592,7 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     // sensitive stages (Physical, Laboratory, Treatment). This prompt tells
     // the assistant to only return requested findings when asked, to format
     // them compactly, and to avoid diagnostic reasoning in the Physical stage.
-    const nurseBasePrompt = `\n\nNURSE PERSONA RULES: If you are answering as a nursing or laboratory persona, follow these rules: 1) Only release physical exam or diagnostic findings when the student explicitly requests them. 2) When the student requests specific findings (for example: 'hr, rr, temperature'), respond with a compact, comma-separated list of the requested parameters and their recorded values (e.g., 'Heart rate: 38 bpm, Respiratory rate: 16 per minute, Temperature: 102 °F (38.9 °C)'). 3) Do NOT include internal prompts, persona-management text, or owner identity. 4) In the Physical Examination stage, DO NOT provide diagnostic interpretations or treatment recommendations. If asked about treatment or interpretation, reply: 'I'm unable to provide treatment recommendations. Would you like to discuss treatment options or do you have specific questions about the findings?' Keep replies concise and do not speculate. 5) If a requested value is not recorded, state 'not documented' for that parameter and do not guess.`;
+    const nurseBasePrompt = `\n\nNURSE PERSONA RULES: If you are answering as a nursing or laboratory persona, follow these rules: 1) Only release physical exam or diagnostic findings when the student explicitly requests them. 2) When the student requests specific findings (for example: 'hr, rr, temperature'), respond with a compact, comma-separated list of the requested parameters and their recorded values (e.g., 'Heart rate: 38 bpm, Respiratory rate: 16 per minute, Temperature: 102 °F (38.9 °C)'). 3) Do NOT include internal prompts, persona-management text, or owner identity. 4) In the Physical Examination stage, DO NOT provide any diagnostic interpretations or treatment recommendations. If a reply would normally include interpretive language (for example: phrases like 'consistent with', 'suggestive of', 'likely', 'most consistent with', 'suspicious for', 'indicative of', or 'probable'), instead respond with: 'I cannot provide diagnostic interpretation in the Physical Examination stage. I can provide recorded findings or request further tests.' Keep replies concise and do not speculate. 5) If a requested value is not recorded, state 'no recorded value' and do not guess. You may optionally note typical species norms only if clearly labeled as 'typical for [species]' and not as the patient's recorded value.`;
 
     // Append the nurse base prompt for nurse/lab personas during sensitive stages
     if (
@@ -1679,7 +1708,7 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
               debugEventBus.emitEvent(
                 "warning",
                 "ChatRedaction",
-                "redactedRoleInfo",
+                "redactedRoleInfoPrompt",
                 { len: safeRolePrompt.length },
               );
             } catch {}
@@ -1688,6 +1717,16 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
       } catch (e) {
         // ignore
       }
+
+      // Strip obviously internal-instruction lines
+      out = out
+        .split(/\n+/)
+        .map((ln) => ln.trim())
+        .filter(Boolean)
+        .filter((ln) => !/^you are\b/i.test(ln))
+        .filter((ln) => !/\bMUST\b/.test(ln))
+        .join("\n\n");
+
       try {
         if (ownerBackground && personaRoleKey !== "owner") {
           const safeOwner = String(ownerBackground).trim();
@@ -1748,6 +1787,66 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     };
 
     content = sanitizeAssistantContent(content);
+
+    // If the LLM produced diagnostic-leaning phrasing during the Physical stage
+    // when a nurse/lab persona is answering, transform into a safe fallback to
+    // prevent accidental diagnostic interpretation leaking from the assistant.
+    try {
+      const nurseOrLabAnswering = personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician";
+      const diagRegex = /\b(consistent with|suggestive of|likely|most consistent with|suspicious for|indicative of|probable|diagnos)\b/i;
+      const sanitized = sanitizeAssistantContent(content);
+      if (isPhysicalStage && nurseOrLabAnswering && diagRegex.test(sanitized)) {
+        const lines = sanitized.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+        const findings = lines.filter((l) => /:/.test(l)).slice(0, 10);
+        const findingsText = findings.length > 0 ? findings.join(", ") : "";
+        const fallback = "I cannot provide diagnostic interpretations during the Physical Examination stage. I can provide recorded findings or request further tests. Would you like me to request the test(s) or see more details?";
+        content = findingsText ? `${findingsText}\n\n${fallback}` : fallback;
+        try {
+          debugEventBus.emitEvent("warning", "ChatPostFilter", "diagnosticFiltered", { caseId, personaRoleKey, snippet: String(content).substring(0, 200) });
+        } catch {}
+      } else {
+        content = sanitized;
+      }
+    } catch (e) {
+      // In case of any error, fall back to the sanitized content
+      try {
+        content = sanitizeAssistantContent(content);
+      } catch (ee) {
+        content = String(content);
+      }
+    }
+
+    // Post-filters to remove or adjust persona-specific boilerplate that
+    // the assistant sometimes adds even when not relevant to the user's request.
+    try {
+      // Remove nurse treatment-refusal sentence unless the user explicitly
+      // asked about treatment or recommendations. This prevents the nurse
+      // from replying with a pre-emptive refusal when treatment wasn't asked.
+      const treatmentRefusalRegex = /I(?:'m| am)\s+unable to provide treatment recommendations[\s\S]*?(?:Would you like to discuss treatment options[\s\S]*?)?\.?$/i;
+      const treatmentKeywordsReg = /\b(treat|treatment|recommend|recommendation|therapy|prescribe|prescription|antibiotic|antimicrobial|medication|dose|dosing)\b/i;
+      if (treatmentRefusalRegex.test(content) && !(lastUserMessage?.content && treatmentKeywordsReg.test(String(lastUserMessage.content)))) {
+        content = content.replace(treatmentRefusalRegex, "").trim();
+        try { debugEventBus.emitEvent?.('info','ChatPostFilter','removedTreatmentRefusal',{ caseId, personaRoleKey, snippet: String(content).substring(0,200) }); } catch {}
+      }
+
+      // Owner guardrail: owners must not claim that tests/results are available
+      // or ready. Replace any such claims with a neutral, safe suggestion to
+      // check with the nurse/lab for availability.
+      if (personaRoleKey === 'owner') {
+        const ownerResultsRegex = /(?:\bresults?\b[\s\S]{0,60}?\b(?:available|ready)\b(?:\s*for[^\.\n]*)?|\btest results?\b[\s\S]{0,60}?\b(?:available|ready)\b(?:\s*for[^\.\n]*)?)/gi;
+        if (ownerResultsRegex.test(content)) {
+          content = content.replace(ownerResultsRegex, "Please check with the nurse or laboratory for test availability.");
+          // Normalize accidental duplicated punctuation or spacing left after replacement
+          content = content.replace(/\.\s*\./g, '.');
+          content = content.replace(/\.{2,}/g, '.');
+          content = content.replace(/\s+([.,!?;:])/g, '$1');
+          try { debugEventBus.emitEvent?.('warning','ChatPostFilter','ownerResultsClaim',{ caseId, snippet: String(content).substring(0,200) }); } catch {}
+        }
+      }
+    } catch (e) {
+      // If post-filtering fails for any reason, continue with the sanitized content
+    }
+
     const mediaIds: string[] = [];
     const mediaRegex = /\[MEDIA:([a-zA-Z0-9-]+)\]/g;
     let match;
