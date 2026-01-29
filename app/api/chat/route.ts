@@ -1280,7 +1280,8 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
                   const converted = convertCelsiusToFahrenheitInText(combined);
                   phrases.push(`${name}: ${converted}`);
                 } else {
-                  phrases.push(`${name}: not documented`);
+                  // Mark missing values as NOT_AVAILABLE so the LLM can craft a helpful reply (see guidance below)
+                  phrases.push(`${name}: NOT_AVAILABLE`);
                 }
               } else {
                 // No matching lines found for this requested canonical key.
@@ -1293,10 +1294,19 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
                     { key: m.canonicalKey, physSnippet: String(physText).substring(0, 200) },
                   );
                 } catch {}
-                phrases.push(`${name}: not documented`);
+                // Mark missing values as NOT_AVAILABLE so the LLM can craft a helpful reply (see guidance below)
+                phrases.push(`${name}: NOT_AVAILABLE`);
               }
             }
             const snippet = phrases.join(", ");
+            // If any requested key was NOT_AVAILABLE, add guidance so the LLM responds helpfully
+            if (snippet.includes('NOT_AVAILABLE')) {
+              enhancedMessages.unshift({
+                role: "system",
+                content:
+                  "MISSING_RESULT_GUIDANCE: Some requested parameters are flagged as NOT_AVAILABLE. When replying, the responding persona (nurse/lab) should say something like: 'I don't see that recorded; it may be pending or not yet run. I can request the test and you'll see results in the Lab stage.' Keep the reply concise and do not invent values.",
+              });
+            }
             enhancedMessages.unshift({
               role: "system",
               content: `PHYSICAL_EXAM_FINDINGS (requested subset):\n${snippet}`,

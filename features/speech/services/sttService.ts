@@ -561,6 +561,11 @@ export function setSttSuppressed(val: boolean, skipCooldown = false) {
       sttSuppressedUntil = skipCooldown ? 0 : (Date.now() + STT_SUPPRESSION_COOLDOWN_MS);
     } catch {}
   }
+
+  // Emit lightweight telemetry so we can trace suppression transitions
+  try {
+    (debugEventBus as any).emitEvent?.('info', 'STT', 'suppression_set', { sttSuppressed, sttSuppressedUntil });
+  } catch {}
 }
 
 export function isSttSuppressed() {

@@ -21,4 +21,15 @@ describe("emitStageEvaluation", () => {
     const res = emitStageEvaluation("case-1", 0, msgs);
     expect(res.status).toBe("ready");
   });
+
+  it("counts user-sourced keyword mentions toward readiness", () => {
+    const msgs = [
+      { role: "user", content: "can you tell me the results of auscultation", stageIndex: 0 },
+      { role: "assistant", content: "Not documented.", stageIndex: 0 },
+      { role: "user", content: "what about heart rate and respiratory", stageIndex: 0 },
+      { role: "assistant", content: "Not documented.", stageIndex: 0 },
+    ] as any;
+    const res = emitStageEvaluation("case-1", 0, msgs);
+    expect(res.status).toBe("ready");
+  });
 });

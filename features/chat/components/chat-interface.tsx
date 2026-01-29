@@ -466,9 +466,19 @@ export function ChatInterface({
         return { message: aiMessage, allowTts: true };
       }
 
-      // If the assistant content is short/simple, allow it
+      // If the assistant content is short/simple, allow it. Also map terse 'Not documented' replies to a more helpful human-friendly phrasing.
       const content = String(aiMessage.content ?? "").trim();
-      if (!content || content.length < 180) return { message: aiMessage, allowTts: true };
+      if (!content || content.length < 180) {
+        try {
+          const normalizedShort = content.toLowerCase().trim();
+          if (normalizedShort === "not documented." || normalizedShort === "not documented" || /:\s*not documented$/i.test(content)) {
+            const friendly = "I don't see that recorded; it may be pending or not yet run. I can request the test and you'll see results in the Lab stage.";
+            const replaced: Message = { ...aiMessage, content: friendly };
+            return { message: replaced, allowTts: true };
+          }
+        } catch {}
+        return { message: aiMessage, allowTts: true };
+      }
 
       // Heuristics: if content contains multiple parameter indicators or pipe separators,
       // treat as a findings dump and suppress it in favor of a clarifying prompt.
@@ -1868,6 +1878,8 @@ export function ChatInterface({
     try {
       if (next === "veterinary-nurse") {
         // Prevent repeated UI greetings
+        // Suppress immediate auto-starts briefly to avoid accidental mic restarts when switching persona
+        try { suppressAutoStart(1200); } catch {}
         if (!nurseGreetingSentRef.current) {
           // If the user has recently sent a message as the Nurse, suppress the
           // UI greeting because it would be redundant (user is already talking to Nurse).
@@ -2066,6 +2078,7 @@ export function ChatInterface({
       } catch {}
     };
     ensureSttSuppressedDuringPlayback();
+    try { debugEventBus.emitEvent?.('info', 'TTS', 'play_start', { snippet: (text || "").slice(0,80), forced: (meta as any)?.forceResume === true, ts: Date.now() }); } catch {}
     if (!text) return;
     stopActiveTtsPlayback();
     isPlayingAudioRef.current = true;
@@ -2123,6 +2136,7 @@ export function ChatInterface({
       if (ttsResumeExecuted.current) return;
       ttsResumeExecuted.current = true;
       isSuppressingSttRef.current = false;
+      try { debugEventBus.emitEvent?.('info','TTS','resuming',{ skipResumeLocal, wasMicPausedForTts: wasMicPausedForTtsRef.current, resumeListening: resumeListeningRef.current, ts: Date.now() }); } catch {}
       try {
         exitDeafMode();
       } catch {}
@@ -4284,7 +4298,20 @@ export function ChatInterface({
     const handler = (ev: any) => {
       try {
         const event = ev as any;
-        // Ignore high-volume speech debug events
+        // If trace capture is enabled, store events for later inspection (QA only)
+        try {
+          const enabled = typeof window !== 'undefined' && (window.localStorage?.getItem?.('sttTrace') === '1' || (window as any).__stt_trace_enabled);
+          if (enabled) {
+            try {
+              (window as any).__stt_trace = (window as any).__stt_trace || [];
+              (window as any).__stt_trace.push({ ts: Date.now(), event });
+              // Keep trace bounded
+              if ((window as any).__stt_trace.length > 500) (window as any).__stt_trace.shift();
+            } catch {}
+          }
+        } catch {}
+
+        // Ignore high-volume speech debug events for the toast UI (they're still captured in trace)
         if (event.source === 'TTS' || event.source === 'STT') return;
         // Only show a toast for stage-related debug events so the UI isn't noisy
         if (event.source && String(event.source).toLowerCase().startsWith('stage')) {
@@ -4301,6 +4328,18 @@ export function ChatInterface({
     try {
       debugEventBus.on('debug-event', handler);
     } catch {}
+    // Expose simple helpers for QA: enable trace capture with localStorage.setItem('sttTrace','1') or set window.__stt_trace_enabled = true
+    try {
+      (window as any).dumpSttTrace = () => {
+        try {
+          console.log('__stt_trace length:', (window as any).__stt_trace?.length ?? 0);
+          console.log((window as any).__stt_trace?.slice(-200) ?? []);
+        } catch (e) {
+          console.warn('Failed to dump STT trace', e);
+        }
+      };
+    } catch {}
+
     return () => {
       try { debugEventBus.off('debug-event', handler); } catch {}
     };

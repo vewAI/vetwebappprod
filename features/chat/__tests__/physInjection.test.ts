@@ -69,10 +69,10 @@ describe("Physical findings injection snippet", () => {
         if (combined) {
           phrases.push(`${name}: ${combined}`);
         } else {
-          phrases.push(`${name}: not documented`);
+          phrases.push(`${name}: NOT_AVAILABLE`);
         }
       } else {
-        phrases.push(`${name}: not documented`);
+        phrases.push(`${name}: NOT_AVAILABLE`);
       }
     }
     const snippet = phrases.join(", ");
