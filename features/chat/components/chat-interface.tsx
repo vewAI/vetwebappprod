@@ -516,6 +516,13 @@ export function ChatInterface({
   const [showStartSpeakingPrompt, setShowStartSpeakingPrompt] = useState<boolean>(() =>
     SANDBOX_VOICE_UI_ENABLED ? true : false
   );
+
+  const hideIntroToast = useCallback(() => {
+    // Fade out intro toast then remove from DOM after transition
+    try { setShowIntroToast(false); } catch (e) {}
+    try { window.setTimeout(() => setIntroMounted(false), 800); } catch (e) {}
+  }, []);
+
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
   // Lightweight toast for mic/noise status
   const [micToast, setMicToast] = useState<string | null>(null);
@@ -4249,12 +4256,6 @@ export function ChatInterface({
   const introShownRef = useRef(false);
   const [introMounted, setIntroMounted] = useState(false);
   const [showIntroToast, setShowIntroToast] = useState(false);
-
-  const hideIntroToast = useCallback(() => {
-    // Fade out, then remove from DOM after the CSS transition completes
-    try { setShowIntroToast(false); } catch (e) {}
-    try { window.setTimeout(() => setIntroMounted(false), 800); } catch (e) {}
-  }, []);
 
   useEffect(() => {
     if (!attemptId) return;
