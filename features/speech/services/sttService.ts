@@ -230,6 +230,13 @@ export async function startListening(
     debugEventBus.emitEvent('info', 'STT', 'Start suppressed by global flag');
     return false;
   }
+  // If we're in deaf mode, block starts entirely. Deaf mode is the highest
+  // priority: even if the mic can technically start, we should not allow it
+  // to begin while TTS playback is intended to be heard.
+  if (isInDeafMode()) {
+    debugEventBus.emitEvent('info', 'STT', 'Start blocked: in deaf mode');
+    return false;
+  }
   // Stop any ongoing recognition to ensure a fresh instance
   stopListening();
 
@@ -568,8 +575,67 @@ export function setSttSuppressed(val: boolean, skipCooldown = false) {
   } catch {}
 }
 
+/**
+ * Set STT suppressed for a specific duration from now. This guarantees the
+ * startListening guard will reject attempts until the duration elapses.
+ */
+export function setSttSuppressedFor(durationMs: number) {
+  try {
+    sttSuppressed = true;
+    sttSuppressedUntil = Date.now() + Math.max(0, Math.floor(durationMs));
+    // Ensure any active recognition is stopped immediately
+    try {
+      shouldRestart = false;
+      if (recognition) recognition.abort();
+    } catch {}
+    (debugEventBus as any).emitEvent?.('info', 'STT', 'suppression_set_for', { durationMs, sttSuppressedUntil });
+  } catch {}
+}
+
 export function isSttSuppressed() {
   return Boolean(sttSuppressed);
+}
+
+/**
+ * Returns true if starting STT is allowed right now (not suppressed, not deaf).
+ */
+export function canStartListening(): boolean {
+  try {
+    return !sttSuppressed && Date.now() >= sttSuppressedUntil && !isInDeafMode();
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * Schedule clearing STT suppression when a predicate becomes true.
+ * Returns a cancel function to abort the scheduled checks.
+ * The predicate is polled every `intervalMs` up to `timeoutMs`.
+ */
+export function scheduleClearSuppressionWhen(predicate: () => boolean, intervalMs = 200, timeoutMs = 8000): { cancel: () => void } {
+  let cancelled = false;
+  const start = Date.now();
+  const check = () => {
+    if (cancelled) return;
+    try {
+      if (predicate()) {
+        try { setSttSuppressed(false, true); } catch {}
+        cancelled = true;
+        return;
+      }
+      if (Date.now() - start > timeoutMs) {
+        // Timeout reached: do not clear suppression automatically; leave it for manual clearing
+        try { (debugEventBus as any).emitEvent?.('info', 'STT', 'clear_suppression_timeout'); } catch {}
+        cancelled = true;
+        return;
+      }
+    } catch (e) {
+      // ignore and retry until timeout
+    }
+    setTimeout(check, intervalMs);
+  };
+  setTimeout(check, intervalMs);
+  return { cancel: () => { cancelled = true; } };
 }
 
 /**

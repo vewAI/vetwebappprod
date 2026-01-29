@@ -35,7 +35,7 @@ import {
   speakRemoteStream,
   stopActiveTtsPlayback,
 } from "@/features/speech/services/ttsService";
-import { setSttSuppressed, setSttSuppressedFor, isSttSuppressed, enterDeafMode, exitDeafMode, setGlobalPaused, isInDeafMode } from "@/features/speech/services/sttService";
+import { setSttSuppressed, setSttSuppressedFor, isSttSuppressed, enterDeafMode, exitDeafMode, setGlobalPaused, isInDeafMode, canStartListening, scheduleClearSuppressionWhen } from "@/features/speech/services/sttService";
 import { isSpeechRecognitionSupported } from "@/features/speech/services/sttService";
 import { ChatMessage } from "@/features/chat/components/chat-message";
 import { Notepad } from "@/features/chat/components/notepad";
@@ -2080,6 +2080,7 @@ export function ChatInterface({
         console.debug("attemptStartListening aborted: voiceMode disabled");
         return;
       }
+
       let attempts = 0;
       const maxAttempts = 3;
       const tryOnce = () => {
@@ -2092,6 +2093,19 @@ export function ChatInterface({
         if (userToggledOffRef.current || !voiceModeRef.current) {
           console.debug("attemptStartListening stopping retries", { attempts });
           return;
+        }
+        // Central check: ask service whether we can start now
+        try {
+          if (!canStartListening()) {
+            console.debug("attemptStartListening aborted: service-level suppression or deaf mode active");
+            return;
+          }
+        } catch (e) {
+          // If helper fails for any reason, fall back to old guards
+          if (isSttSuppressed() || isInDeafMode()) {
+            console.debug("attemptStartListening aborted: fallback suppression/deaf mode guard");
+            return;
+          }
         }
         try {
           console.debug("attemptStartListening try", { attempt: attempts + 1 });
@@ -4012,6 +4026,12 @@ export function ChatInterface({
           exitDeafMode(); // clear deaf mode timestamp
         } else {
           try { debugEventBus.emitEvent?.('info','STT','defer_clear_suppression_due_to_playback'); } catch {}
+          // Schedule a safe clear: service will clear suppression once it sees playback ended
+          try {
+            scheduleClearSuppressionWhen(() => !isPlayingAudioRef.current, 200, 8000);
+          } catch (e) {
+            // ignore scheduling failures
+          }
         }
       } catch {}
       
