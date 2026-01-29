@@ -1286,9 +1286,9 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
                   const species = caseRecord && typeof caseRecord === "object" ? String((caseRecord as any).species ?? "").trim() : "";
                   const condition = caseRecord && typeof caseRecord === "object" ? String((caseRecord as any).condition ?? "").trim() : "";
                   try {
-                    const { getConditionPhysicalExamDefaults } = await import("@/features/prompts/services/casePromptAutomation");
-                    const defaults = getConditionPhysicalExamDefaults(condition, species || "");
-                    const match = (defaults.vitals || []).find((v) =>
+                    const cpa = (await import("@/features/prompts/services/casePromptAutomation")) as any;
+                    const defaults = cpa.getConditionPhysicalExamDefaults(condition, species || "");
+                    const match = (defaults.vitals || []).find((v: any) =>
                       v.toLowerCase().startsWith(name.toLowerCase()) || v.toLowerCase().includes(name.toLowerCase()),
                     );
                     if (match) {
@@ -1315,9 +1315,9 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
                 const species = caseRecord && typeof caseRecord === "object" ? String((caseRecord as any).species ?? "").trim() : "";
                 const condition = caseRecord && typeof caseRecord === "object" ? String((caseRecord as any).condition ?? "").trim() : "";
                 try {
-                  const { getConditionPhysicalExamDefaults } = await import("@/features/prompts/services/casePromptAutomation");
-                  const defaults = getConditionPhysicalExamDefaults(condition, species || "");
-                  const match = (defaults.vitals || []).find((v) =>
+                  const cpa = (await import("@/features/prompts/services/casePromptAutomation")) as any;
+                  const defaults = cpa.getConditionPhysicalExamDefaults(condition, species || "");
+                  const match = (defaults.vitals || []).find((v: any) =>
                     v.toLowerCase().startsWith(name.toLowerCase()) || v.toLowerCase().includes(name.toLowerCase()),
                   );
                   if (match) {
