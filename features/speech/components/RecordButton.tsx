@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button"
 import { Mic, MicOff, Trash2 } from "lucide-react"
 import { useSTT } from "../hooks/useSTT"
+import { canStartListening } from "../services/sttService";
 import { useSpeechDevices } from "@/features/speech/context/audio-device-context"
 
 interface RecordButtonProps {
@@ -30,6 +31,11 @@ export function RecordButton({ onTranscriptChange, className = "" }: RecordButto
         onTranscriptChange(transcript);
       }
     } else {
+      try {
+        if (!canStartListening()) return;
+      } catch (e) {
+        // fallback to allow user-initiated start if helper fails
+      }
       start();
     }
   };

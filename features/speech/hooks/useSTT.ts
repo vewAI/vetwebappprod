@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { startListening, stopListening, abortListening, isSttSuppressed, isInDeafMode, isGlobalPaused } from "../services/sttService";
+import { startListening, stopListening, abortListening, isSttSuppressed, isInDeafMode, isGlobalPaused, canStartListening } from "../services/sttService";
 
 type UseSttOptions = {
   inputDeviceId?: string | null;
@@ -48,8 +48,15 @@ export function useSTT(
         if (isSttSuppressed() || isInDeafMode() || isGlobalPaused()) {
           console.debug("useSTT: Visibility change ignored - suppressed/deaf/paused");
           return;
-        }
-        // Try to restart listening if interrupted
+        }        // Also consult the central service-level guard before starting
+        try {
+          if (!canStartListening()) {
+            console.debug("useSTT: Visibility change start ignored - service guard");
+            return;
+          }
+        } catch (e) {
+          // If the helper fails, fall back to the existing checks
+        }        // Try to restart listening if interrupted
         start();
       }
     };

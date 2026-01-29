@@ -1,4 +1,5 @@
 import { parseRequestedKeys, matchPhysicalFindings } from "@/features/chat/services/physFinder";
+import { getConditionPhysicalExamDefaults } from "@/features/prompts/services/casePromptAutomation";
 import { describe, it, expect } from "vitest";
 
 describe("Physical findings injection snippet", () => {
@@ -77,5 +78,65 @@ describe("Physical findings injection snippet", () => {
     }
     const snippet = phrases.join(", ");
     expect(snippet).toContain("Heart rate: 88");
+  });
+
+  it("should include a species-typical fallback when a requested vital is not recorded", () => {
+    const userText = "What is the heart rate?";
+    const requested = parseRequestedKeys(userText);
+    const requestedPhys = (requested?.canonical ?? []).filter((k: string) => ["heart_rate","respiratory_rate","temperature","blood_pressure"].includes(k));
+    const physText = ``; // no findings recorded
+    const subset = matchPhysicalFindings({ ...requested, canonical: requestedPhys }, physText);
+
+    const displayNames: Record<string, string> = {
+      heart_rate: "Heart rate",
+      respiratory_rate: "Respiratory rate",
+      temperature: "Temperature",
+      blood_pressure: "Blood pressure",
+    };
+
+    const cleanValue = (v: string): string => {
+      if (!v) return v;
+      let s = v.replace(/^['"`]+/, "").replace(/['"`]+$/, "").trim();
+      s = s.replace(/,$/, "").trim();
+      if (s.includes(":")) {
+        const parts = s.split(":");
+        parts.shift();
+        s = parts.join(":").trim();
+      }
+      return s;
+    };
+
+    const phrases: string[] = [];
+    for (const m of subset) {
+      const name = displayNames[m.canonicalKey] ?? m.canonicalKey;
+      if (m.lines && m.lines.length > 0) {
+        const vals = m.lines.map((l) => cleanValue(l)).filter(Boolean);
+        const combined = vals.length > 0 ? vals.join(" | ") : null;
+        if (combined) {
+          phrases.push(`${name}: ${combined}`);
+        } else {
+          // Emulate server fallback using species defaults for 'canine'
+          const defaults = getConditionPhysicalExamDefaults("", "canine");
+          const match = (defaults.vitals || []).find((v) => v.toLowerCase().includes(name.toLowerCase()));
+          if (match) {
+            phrases.push(`${name}: NOT_AVAILABLE (no recorded value; typical: ${match})`);
+          } else {
+            phrases.push(`${name}: NOT_AVAILABLE`);
+          }
+        }
+      } else {
+        const defaults = getConditionPhysicalExamDefaults("", "canine");
+        const match = (defaults.vitals || []).find((v) => v.toLowerCase().includes(name.toLowerCase()));
+        if (match) {
+          phrases.push(`${name}: NOT_AVAILABLE (no recorded value; typical: ${match})`);
+        } else {
+          phrases.push(`${name}: NOT_AVAILABLE`);
+        }
+      }
+    }
+
+    const snippet = phrases.join(", ");
+    expect(snippet).toContain("typical");
+    expect(snippet).toContain("Heart rate");
   });
 });

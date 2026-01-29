@@ -549,7 +549,7 @@ export function abortListening(): void {
  * will be prevented. When clearing suppression, callers may choose to
  * restart listening as appropriate.
  */
-export function setSttSuppressed(val: boolean, skipCooldown = false) {
+export function setSttSuppressed(val: boolean, skipCooldown = false, reason?: string) {
   sttSuppressed = Boolean(val);
   if (sttSuppressed) {
     // Ensure any active recognition is stopped immediately
@@ -571,7 +571,7 @@ export function setSttSuppressed(val: boolean, skipCooldown = false) {
 
   // Emit lightweight telemetry so we can trace suppression transitions
   try {
-    (debugEventBus as any).emitEvent?.('info', 'STT', 'suppression_set', { sttSuppressed, sttSuppressedUntil });
+    (debugEventBus as any).emitEvent?.('info', 'STT', 'suppression_set', { sttSuppressed, sttSuppressedUntil, reason: reason ?? null });
   } catch {}
 }
 
@@ -579,7 +579,7 @@ export function setSttSuppressed(val: boolean, skipCooldown = false) {
  * Set STT suppressed for a specific duration from now. This guarantees the
  * startListening guard will reject attempts until the duration elapses.
  */
-export function setSttSuppressedFor(durationMs: number) {
+export function setSttSuppressedFor(durationMs: number, reason?: string) {
   try {
     sttSuppressed = true;
     sttSuppressedUntil = Date.now() + Math.max(0, Math.floor(durationMs));
@@ -588,7 +588,7 @@ export function setSttSuppressedFor(durationMs: number) {
       shouldRestart = false;
       if (recognition) recognition.abort();
     } catch {}
-    (debugEventBus as any).emitEvent?.('info', 'STT', 'suppression_set_for', { durationMs, sttSuppressedUntil });
+    (debugEventBus as any).emitEvent?.('info', 'STT', 'suppression_set_for', { durationMs, sttSuppressedUntil, reason: reason ?? null });
   } catch {}
 }
 

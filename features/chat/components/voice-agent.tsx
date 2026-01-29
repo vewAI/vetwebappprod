@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Mic, MicOff, Play, Pause } from "lucide-react";
 import { useSTT } from "@/features/speech/hooks/useSTT";
+import { canStartListening } from "@/features/speech/services/sttService";
 import { useTTS } from "@/features/speech/hooks/useTTS";
 import { getFallbackAvatarProfiles, fetchAvatarProfiles } from "@/features/avatar/services/avatarConfigService";
 import { chatService } from "@/features/chat/services/chatService";
@@ -77,7 +78,14 @@ export const VoiceAgent: React.FC<VoiceAgentProps> = ({ caseId = "case-1", stage
   // start/stop wrappers
   const toggleListening = useCallback(() => {
     if (isListening) stop();
-    else start();
+    else {
+      try {
+        if (!canStartListening()) return;
+      } catch (e) {
+        // fallback to allow user-initiated start if helper fails
+      }
+      start();
+    }
   }, [isListening, start, stop]);
 
   // Play last assistant reply with TTS

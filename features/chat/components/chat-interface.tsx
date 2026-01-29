@@ -1328,6 +1328,9 @@ export function ChatInterface({
       sttErrorRestartTimerRef.current = window.setTimeout(() => {
         if (voiceModeRef.current && !isListening && !userToggledOffRef.current && !isPaused && !isPlayingAudioRef.current) {
           try {
+            try {
+              if (!canStartListening()) return;
+            } catch (e) {}
             start();
           } catch (e) {
             console.warn("Failed to restart STT after error:", e);
@@ -1360,6 +1363,9 @@ export function ChatInterface({
         sttErrorRestartTimerRef.current = window.setTimeout(() => {
           if (voiceModeRef.current && !isListening && !userToggledOffRef.current && !isPaused && !isPlayingAudioRef.current) {
             try {
+              try {
+                if (!canStartListening()) return;
+              } catch (e) {}
               start();
             } catch (e) {
               console.warn("Failed to restart STT after transient error:", e);
@@ -2176,7 +2182,7 @@ export function ChatInterface({
     // ALWAYS stop STT before playing TTS to prevent mic from picking up audio
     // Set suppression FIRST to prevent any auto-restart
     try {
-      setSttSuppressed(true);
+      setSttSuppressed(true, false, 'tts');
     } catch {}
     isSuppressingSttRef.current = true;
     
@@ -2257,6 +2263,9 @@ export function ChatInterface({
                 try {
                   if (voiceModeRef.current && !isListening && !userToggledOffRef.current) {
                     console.debug("playTtsAndPauseStt: retrying STT start after resume attempt");
+                    try {
+                      if (!canStartListening()) return;
+                    } catch (e) {}
                     start();
                   }
                 } catch (e) {
@@ -2276,6 +2285,9 @@ export function ChatInterface({
                 try {
                   if (voiceModeRef.current && !isListening && !userToggledOffRef.current) {
                     console.debug("playTtsAndPauseStt: retrying STT start after fallback resume attempt");
+                    try {
+                      if (!canStartListening()) return;
+                    } catch (e) {}
                     start();
                   }
                 } catch (e) {
@@ -2353,7 +2365,7 @@ export function ChatInterface({
       // attempt to start listening concurrently with audio playback ending.
       try {
         const SAFETY_BUFFER_MS = 500;
-        setSttSuppressedFor(resumeDelay + SAFETY_BUFFER_MS);
+        setSttSuppressedFor(resumeDelay + SAFETY_BUFFER_MS, 'tts');
       } catch (e) {
         // ignore failures to set suppression
       }
@@ -3427,7 +3439,7 @@ export function ChatInterface({
             // so we clear it here to ensure the mic can restart.
             isSuppressingSttRef.current = false;
             try {
-              setSttSuppressed(false, true);
+              setSttSuppressed(false, true, 'tts-clear');
             } catch {}
             // Exit deaf mode immediately since we're manually resuming
             try {
@@ -3950,6 +3962,9 @@ export function ChatInterface({
             // small delay to allow permission prompt to finish processing
             setTimeout(() => {
               try {
+                try {
+                  if (!canStartListening()) return;
+                } catch (e) {}
                 start();
               } catch (e) {
                 /* ignore start failure */
@@ -4047,6 +4062,9 @@ export function ChatInterface({
         setTimeout(() => {
           try {
             if (!isPlayingAudioRef.current && !isSttSuppressed() && !isInDeafMode()) {
+              try {
+                if (!canStartListening()) return;
+              } catch (e) {}
               start();
             } else {
               try { debugEventBus.emitEvent?.('info','STT','deferred_manual_start_due_to_suppression'); } catch {}
@@ -4173,7 +4191,13 @@ export function ChatInterface({
       userToggledOffRef.current = false; 
       if (!isListening) {
         try {
-          start();
+          try {
+            if (!canStartListening()) {
+              console.debug("start prevented by service guard on user init click");
+            } else start();
+          } catch (e) {
+            start();
+          }
         } catch (e) {
           console.warn("Failed to start STT on click", e);
         }
@@ -4484,7 +4508,13 @@ export function ChatInterface({
         reset();
         setInput("");
         baseInputRef.current = "";
-        start();
+        try {
+          if (!canStartListening()) {
+            console.debug("auto-start suppressed by service guard when opening attempt");
+          } else start();
+        } catch (e) {
+          start();
+        }
         startedListeningRef.current = true;
       } catch (e) {
         console.error("Failed to auto-start STT:", e);
@@ -4498,7 +4528,13 @@ export function ChatInterface({
     if (isListening || startedListeningRef.current || isPlayingAudioRef.current) return;
     try {
       reset();
-      start();
+      try {
+        if (!canStartListening()) {
+          console.debug("auto-start suppressed by service guard (voiceMode change)");
+        } else start();
+      } catch (e) {
+        start();
+      }
       startedListeningRef.current = true;
     } catch (e) {
       console.error("Failed to auto-start STT:", e);
