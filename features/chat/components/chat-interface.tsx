@@ -5092,7 +5092,6 @@ export function ChatInterface({
       {showStartSpeakingPrompt && (
         <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center">
           <div className="relative pointer-events-auto">
-            {SANDBOX_VOICE_UI_ENABLED ? (
               <div className="flex flex-col items-center space-y-4">
                 <div className="text-center mb-2 font-semibold">How would you like to begin?</div>
                 <div className="flex space-x-4">
@@ -5156,57 +5155,7 @@ export function ChatInterface({
                   ×
                 </Button>
               </div>
-            ) : (
-              <>
-                <Button
-                  type="button"
-                  size="lg"
-                  className="px-8 py-6 text-lg font-semibold text-white shadow-2xl bg-gradient-to-r from-rose-500 via-orange-500 to-amber-500 hover:from-rose-600 hover:to-amber-600"
-                  onClick={handleStartSpeakingPrompt}
-                  disabled={startSequenceActive}
-                >
-                  {startSequenceActive ? "Starting voice..." : "Click Here to START Speaking"}
-                </Button>
 
-                {/* LEARN HOW TO USE (overlay) - shows below the SPEAK button */}
-                <div className="mt-4 flex justify-center">
-                  <button
-                    id="learn-how-to-use-overlay"
-                    type="button"
-                    onClick={() => {
-                      try {
-                        const btn = document.getElementById('start-tour-chat-interface') as HTMLButtonElement | null;
-                        if (btn) btn.click();
-                        // Hide the intro banner when the user explicitly requests the tour
-                        try { hideIntroToast(); } catch (e) {}
-                        // keep the start overlay visible so the user can choose SPEAK/WRITE after tour
-                      } catch (e) {
-                        // ignore
-                      }
-                    }}
-                    className="w-56 rounded-md bg-white/90 text-slate-800 text-sm px-4 py-3 shadow-md hover:shadow-lg transition"
-                    aria-label="Learn how to use"
-                  >
-                    LEARN HOW TO USE
-                  </button>
-                </div>
-
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="absolute -top-3 -right-3 bg-muted/90 text-foreground"
-                  onClick={() => {
-                    setShowStartSpeakingPrompt(false);
-                    try { setVoiceModeEnabled(false); } catch (e) { /* ignore */ }
-                    try { hideIntroToast(); } catch (e) {}
-                  }}
-                  title="Close"
-                >
-                  ×
-                </Button>
-              </>
-            )}
           </div>
         </div>
       )}
