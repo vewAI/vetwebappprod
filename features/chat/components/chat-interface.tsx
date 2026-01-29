@@ -365,7 +365,23 @@ export function ChatInterface({
       .replace(/\s+/g, " ")
       .trim();
 
+  // In-memory set to avoid race-condition duplicates across concurrent append calls.
+  const recentAssistantContentSetRef = useRef<Set<string>>(new Set());
   const appendAssistantMessage = (msg: Message) => {
+    try {
+      const norm = normalizeForDedupe(msg.content);
+      // If recently appended identical assistant content exists in the in-memory set,
+      // skip to avoid races where multiple appenders add the same message.
+      if (recentAssistantContentSetRef.current.has(norm)) {
+        return;
+      }
+      // Register and schedule removal after 10s to keep set bounded
+      recentAssistantContentSetRef.current.add(norm);
+      window.setTimeout(() => {
+        try { recentAssistantContentSetRef.current.delete(norm); } catch {}
+      }, 10000);
+    } catch {}
+
     setMessages((prev) => {
       try {
         const recent = prev.slice(-6);
@@ -4675,9 +4691,11 @@ export function ChatInterface({
   const handleSubmit = async (e: React.FormEvent) => {
     try {
       e.preventDefault();
+      try { debugEventBus.emitEvent?.('info','UI','submit_clicked',{ stageIndex: currentStageIndex, activePersona, inputSample: (input||"").slice(0,140) }); } catch {}
       // Delegate to shared sendUserMessage helper and mark as manual so it bypasses auto-send blocks
       await sendUserMessage(input, undefined, { source: 'manual' });
     } finally {
+      try { debugEventBus.emitEvent?.('info','UI','submit_complete',{ stageIndex: currentStageIndex, activePersona }); } catch {}
       // Clear the base input buffer and visible input when the user clicks Send
       try {
         baseInputRef.current = "";
