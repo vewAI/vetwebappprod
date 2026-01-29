@@ -35,7 +35,7 @@ import {
   speakRemoteStream,
   stopActiveTtsPlayback,
 } from "@/features/speech/services/ttsService";
-import { setSttSuppressed, enterDeafMode, exitDeafMode, setGlobalPaused, isInDeafMode } from "@/features/speech/services/sttService";
+import { setSttSuppressed, setSttSuppressedFor, enterDeafMode, exitDeafMode, setGlobalPaused, isInDeafMode } from "@/features/speech/services/sttService";
 import { isSpeechRecognitionSupported } from "@/features/speech/services/sttService";
 import { ChatMessage } from "@/features/chat/components/chat-message";
 import { Notepad } from "@/features/chat/components/notepad";
@@ -2194,74 +2194,93 @@ export function ChatInterface({
     const RESUME_DELAY_AFTER_TTS_MS = 50; // small buffer after TTS end (use estimate-driven timing)
 
     const doTtsResume = (skipResumeLocal = false) => {
-      if (ttsResumeExecuted.current) return;
-      ttsResumeExecuted.current = true;
-      isSuppressingSttRef.current = false;
-      try { debugEventBus.emitEvent?.('info','TTS','resuming',{ skipResumeLocal, wasMicPausedForTts: wasMicPausedForTtsRef.current, resumeListening: resumeListeningRef.current, ts: Date.now() }); } catch {}
-      try {
-        exitDeafMode();
-      } catch {}
-      try {
-        // Clear suppression and skip cooldown so startListening can proceed immediately
-        setSttSuppressed(false, true);
-      } catch {}
-
-      // Use a small deaf buffer upon resumption to avoid trailing echo but keep it
-      // minimal (only a few ms) because we're relying on the estimate to time the resume.
-      const RESUME_DEAF_BUFFER_MS = 50;
-      try {
-        exitDeafMode(RESUME_DEAF_BUFFER_MS);
-      } catch {}
-
-      if (skipResumeLocal || skipResume) return;
-
-      const shouldResumeDueToTts = wasMicPausedForTtsRef.current && !userToggledOffRef.current;
-
-      if (shouldResumeDueToTts) {
-        wasMicPausedForTtsRef.current = false;
-        resumeListeningRef.current = false;
+      // Don't resume until audio playback has actually finished. If this was
+      // triggered by the estimate timer but audio is still playing, poll
+      // until playback ends so we do not clear suppression prematurely.
+      const tryResumeWhenSafe = () => {
         try {
-          console.debug("playTtsAndPauseStt: resuming STT due to TTS-paused mic", { delay: RESUME_DELAY_AFTER_TTS_MS });
-        } catch (e) {}
-        attemptStartListening(RESUME_DELAY_AFTER_TTS_MS);
-        // Safety: if start doesn't take after a short grace period, try one more time
-        try {
-          window.setTimeout(() => {
+          if (ttsResumeExecuted.current) return;
+          if (isPlayingAudioRef.current) {
+            // Try again shortly; keep suppression in place
+            window.setTimeout(tryResumeWhenSafe, 200);
+            return;
+          }
+
+          // Safe to resume now
+          ttsResumeExecuted.current = true;
+          isSuppressingSttRef.current = false;
+          try { debugEventBus.emitEvent?.('info','TTS','resuming',{ skipResumeLocal, wasMicPausedForTts: wasMicPausedForTtsRef.current, resumeListening: resumeListeningRef.current, ts: Date.now() }); } catch {}
+          try {
+            exitDeafMode();
+          } catch {}
+
+          try {
+            // Clear suppression and skip cooldown so startListening can proceed immediately
+            setSttSuppressed(false, true);
+          } catch {}
+
+          // Use a small deaf buffer upon resumption to avoid trailing echo but keep it
+          // minimal (only a few ms) because we're relying on the estimate to time the resume.
+          const RESUME_DEAF_BUFFER_MS = 50;
+          try {
+            exitDeafMode(RESUME_DEAF_BUFFER_MS);
+          } catch {}
+
+          if (skipResumeLocal || skipResume) return;
+
+          const shouldResumeDueToTts = wasMicPausedForTtsRef.current && !userToggledOffRef.current;
+
+          if (shouldResumeDueToTts) {
+            wasMicPausedForTtsRef.current = false;
+            resumeListeningRef.current = false;
             try {
-              if (voiceModeRef.current && !isListening && !userToggledOffRef.current) {
-                console.debug("playTtsAndPauseStt: retrying STT start after resume attempt");
-                start();
-              }
-            } catch (e) {
-              // ignore retry failures
-            }
-          }, 800);
-        } catch (e) {}
-      } else if (resumeListeningRef.current) {
-        // Fallback: only resume if we explicitly marked resumeListen before
-        resumeListeningRef.current = false;
-        try {
-          console.debug("playTtsAndPauseStt: resuming STT (fallback)", { delay: RESUME_DELAY_AFTER_TTS_MS });
-        } catch (e) {}
-        attemptStartListening(RESUME_DELAY_AFTER_TTS_MS);
-        try {
-          window.setTimeout(() => {
+              console.debug("playTtsAndPauseStt: resuming STT due to TTS-paused mic", { delay: RESUME_DELAY_AFTER_TTS_MS });
+            } catch (e) {}
+            attemptStartListening(RESUME_DELAY_AFTER_TTS_MS);
+            // Safety: if start doesn't take after a short grace period, try one more time
             try {
-              if (voiceModeRef.current && !isListening && !userToggledOffRef.current) {
-                console.debug("playTtsAndPauseStt: retrying STT start after fallback resume attempt");
-                start();
-              }
-            } catch (e) {
-              // ignore retry failures
-            }
-          }, 800);
-        } catch (e) {}
-      } else {
-        // Do not auto-start merely because voiceMode is enabled if the mic was idle at TTS start.
-        try {
-          console.debug("playTtsAndPauseStt: not resuming STT because mic was idle before TTS and no resume marker set");
-        } catch (e) {}
-      }
+              window.setTimeout(() => {
+                try {
+                  if (voiceModeRef.current && !isListening && !userToggledOffRef.current) {
+                    console.debug("playTtsAndPauseStt: retrying STT start after resume attempt");
+                    start();
+                  }
+                } catch (e) {
+                  // ignore retry failures
+                }
+              }, 800);
+            } catch (e) {}
+          } else if (resumeListeningRef.current) {
+            // Fallback: only resume if we explicitly marked resumeListen before
+            resumeListeningRef.current = false;
+            try {
+              console.debug("playTtsAndPauseStt: resuming STT (fallback)", { delay: RESUME_DELAY_AFTER_TTS_MS });
+            } catch (e) {}
+            attemptStartListening(RESUME_DELAY_AFTER_TTS_MS);
+            try {
+              window.setTimeout(() => {
+                try {
+                  if (voiceModeRef.current && !isListening && !userToggledOffRef.current) {
+                    console.debug("playTtsAndPauseStt: retrying STT start after fallback resume attempt");
+                    start();
+                  }
+                } catch (e) {
+                  // ignore retry failures
+                }
+              }, 800);
+            } catch (e) {}
+          } else {
+            // Do not auto-start merely because voiceMode is enabled if the mic was idle at TTS start.
+            try {
+              console.debug("playTtsAndPauseStt: not resuming STT because mic was idle before TTS and no resume marker set");
+            } catch (e) {}
+          }
+        } catch (e) {
+          console.error("Error while attempting safe resume after TTS:", e);
+        }
+      };
+
+      tryResumeWhenSafe();
     };
 
     // Timer used when we estimate TTS length based on text so we can resume
@@ -2314,6 +2333,16 @@ export function ChatInterface({
         } catch {}
         doTtsResume();
       }, resumeDelay);
+
+      // Ensure global STT suppression lasts at least for the estimated TTS duration
+      // plus a small safety buffer to avoid races where other components may
+      // attempt to start listening concurrently with audio playback ending.
+      try {
+        const SAFETY_BUFFER_MS = 500;
+        setSttSuppressedFor(resumeDelay + SAFETY_BUFFER_MS);
+      } catch (e) {
+        // ignore failures to set suppression
+      }
     } catch (e) {
       // ignore timer scheduling errors
     }
@@ -2348,15 +2377,21 @@ export function ChatInterface({
       }
     } finally {
       isPlayingAudioRef.current = false;
-      // Record the tts end time. Do NOT resume here; resume is handled by the
-      // scheduled estimate timer to avoid premature auto-listen.
+      // Record the tts end time.
       lastTtsEndRef.current = Date.now();
       // Keep the estimate timer in place; if playback fails critically, we
       // will still fall back to the estimate. Do not clear the estimated timer
-      // here so the single source of truth (the estimate) controls resumption.
+      // here so the single source of truth (the estimate) controls resumption when appropriate.
       try {
         debugEventBus.emitEvent?.('info', 'TTS', 'playback_finished', { estimatedMs });
       } catch {}
+      // Ensure we attempt resume now that audio actually ended; the resume
+      // helper will check safety and only resume when appropriate.
+      try {
+        doTtsResume();
+      } catch (e) {
+        console.warn('Error triggering TTS resume after playback finished', e);
+      }
     }
   };
 
