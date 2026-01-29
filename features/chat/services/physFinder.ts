@@ -108,8 +108,12 @@ export function matchPhysicalFindings(requested: RequestedKeys, findingsText: st
 
     for (const line of lines) {
       const low = line.toLowerCase();
-      // match if any alias appears as a whole word or as a substring
-      if (loweredAliases.some((alias) => low.includes(alias.split(" ")[0]))) {
+      // match if any alias appears as a whole phrase or as a substring to be tolerant
+      // of ASR mis-transcriptions (e.g., 'was quotation' -> auscultation)
+      if (
+        loweredAliases.some((alias) => low.includes(alias)) ||
+        loweredAliases.some((alias) => low.includes(alias.split(" ")[0]))
+      ) {
         matched.push(line);
       }
     }

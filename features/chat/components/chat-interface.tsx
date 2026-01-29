@@ -2794,17 +2794,32 @@ export function ChatInterface({
     let snapshot: Message[] = [];
 
     // Guard: avoid double-user messages. If the last message in the history
-    // is already from the user, do not append another consecutive user message.
-    // This prevents accidental duplicate sends or repeated STT auto-sends from
-    // creating back-to-back student messages in the chat.
+    // is already from the user, only block another consecutive user message
+    // if it contains the SAME normalized text as the one already sent. This
+    // allows different consecutive messages to be sent without being blocked.
     const lastMsg = messages[messages.length - 1];
     if (!existingMessageId && lastMsg && lastMsg.role === "user") {
       try {
-        console.warn("Suppressed consecutive user message to avoid duplicates", { lastId: lastMsg.id, newText: trimmed, source: options?.source ?? 'unknown' });
-        try { debugEventBus.emitEvent?.('info','AutoSend','blocked_consecutive_user',{ lastId: lastMsg.id, text: trimmed, source: options?.source ?? 'unknown' }); } catch {};
-        if (options?.source === 'auto') {
-          try { setTimepointToast({ title: "Auto-send blocked", body: "A recent message was already sent — tap Send to force it." }); setTimeout(() => hideTimepointToastWithFade(300), 2400); } catch {}
-          return;
+        const normalize = (s: string) =>
+          String(s)
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/gi, "")
+            .replace(/\s+/g, " ")
+            .trim();
+        const normLast = normalize(lastMsg.content ?? "");
+        const normTrim = normalize(trimmed);
+        const lastTs = lastMsg.timestamp ? Date.parse(lastMsg.timestamp) : NaN;
+        const recent = Number.isFinite(lastTs) ? Date.now() - lastTs < 5000 : false;
+
+        // Only suppress if texts match exactly (normalized) and the previous
+        // message was recent to avoid blocking legitimately new consecutive messages.
+        if (normLast && normTrim && normLast === normTrim && recent) {
+          console.warn("Suppressed consecutive duplicate user message to avoid duplicates", { lastId: lastMsg.id, newText: trimmed, source: options?.source ?? 'unknown' });
+          try { debugEventBus.emitEvent?.('info','AutoSend','blocked_consecutive_user',{ lastId: lastMsg.id, text: trimmed, source: options?.source ?? 'unknown' }); } catch {};
+          if (options?.source === 'auto') {
+            try { setTimepointToast({ title: "Auto-send blocked", body: "A recent message was already sent — tap Send to force it." }); setTimeout(() => hideTimepointToastWithFade(300), 2400); } catch {}
+            return;
+          }
         }
       } catch (e) {}
       // Manual sends override this guard and will proceed
