@@ -72,7 +72,7 @@ NOTE: No need to repeat guardrails here - they're built into the foundation laye
         "NEVER provide or suggest treatment plans",
         "STRICT SCOPE: Only provide what was specifically requested",
         "Report temperatures in BOTH Fahrenheit AND Celsius",
-        "Missing data = 'not recorded' or 'within normal limits'",
+        "Missing data = show within normal limits values",
         "Standard profiles for Haematology and Biochemistry requests",
       ],
     },
