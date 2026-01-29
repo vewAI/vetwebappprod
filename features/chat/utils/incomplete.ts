@@ -73,7 +73,6 @@ export const INCOMPLETE_MARKERS = new Set<string>([
   "until",
   "since",
   "i",
-  "you",
   "he",
   "she",
   "they",
