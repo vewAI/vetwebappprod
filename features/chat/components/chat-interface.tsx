@@ -510,12 +510,9 @@ export function ChatInterface({
   const lastSavedSnapshotRef = useRef<string>("");
 
   const [isPaused, setIsPaused] = useState(false);
-  // Feature flag: enable sandbox voice UI experiments (SPEAK/WRITE prompt and single mic UI 🔧)
-  // Controlled by NEXT_PUBLIC_SANDBOX_VOICE_UI (default: false)
-  const SANDBOX_VOICE_UI_ENABLED = process.env.NEXT_PUBLIC_SANDBOX_VOICE_UI === "true";
-  const [showStartSpeakingPrompt, setShowStartSpeakingPrompt] = useState<boolean>(() =>
-    SANDBOX_VOICE_UI_ENABLED ? true : false
-  );
+  // Start overlay (SPEAK / WRITE / LEARN) should be visible by default in all environments.
+  // Previously this was gated by NEXT_PUBLIC_SANDBOX_VOICE_UI; we enable it for production use.
+  const [showStartSpeakingPrompt, setShowStartSpeakingPrompt] = useState<boolean>(true);
 
   const hideIntroToast = useCallback(() => {
     // Fade out intro toast then remove from DOM after transition
