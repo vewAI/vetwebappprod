@@ -1286,8 +1286,8 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
                   const species = caseRecord && typeof caseRecord === "object" ? String((caseRecord as any).species ?? "").trim() : "";
                   const condition = caseRecord && typeof caseRecord === "object" ? String((caseRecord as any).condition ?? "").trim() : "";
                   try {
-                    const cpa = await import("@/features/prompts/services/casePromptAutomation");
-                    const defaults = cpa.getConditionPhysicalExamDefaults(condition, species || "");
+                    const { getConditionPhysicalExamDefaults } = await import("@/features/prompts/services/casePromptAutomation");
+                    const defaults = getConditionPhysicalExamDefaults(condition, species || "");
                     const match = (defaults.vitals || []).find((v) =>
                       v.toLowerCase().startsWith(name.toLowerCase()) || v.toLowerCase().includes(name.toLowerCase()),
                     );
@@ -1315,8 +1315,8 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
                 const species = caseRecord && typeof caseRecord === "object" ? String((caseRecord as any).species ?? "").trim() : "";
                 const condition = caseRecord && typeof caseRecord === "object" ? String((caseRecord as any).condition ?? "").trim() : "";
                 try {
-                  const cpa = await import("@/features/prompts/services/casePromptAutomation");
-                  const defaults = cpa.getConditionPhysicalExamDefaults(condition, species || "");
+                  const { getConditionPhysicalExamDefaults } = await import("@/features/prompts/services/casePromptAutomation");
+                  const defaults = getConditionPhysicalExamDefaults(condition, species || "");
                   const match = (defaults.vitals || []).find((v) =>
                     v.toLowerCase().startsWith(name.toLowerCase()) || v.toLowerCase().includes(name.toLowerCase()),
                   );
