@@ -13,7 +13,8 @@ import type {
 } from "@/features/personas/models/persona";
 import { CHAT_SYSTEM_GUIDELINE } from "@/features/chat/prompts/systemGuideline";
 import { resolvePromptValue } from "@/features/prompts/services/promptService";
-import * as casePromptAutomation from "@/features/prompts/services/casePromptAutomation";
+// dynamic import used for casePromptAutomation to avoid Turbopack static export checks
+// (see usage sites where we `await import()` the module) 
 import { requireUser } from "@/app/api/_lib/auth";
 import {
   parseRequestedKeys,
@@ -1285,7 +1286,8 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
                   const species = caseRecord && typeof caseRecord === "object" ? String((caseRecord as any).species ?? "").trim() : "";
                   const condition = caseRecord && typeof caseRecord === "object" ? String((caseRecord as any).condition ?? "").trim() : "";
                   try {
-                    const defaults = casePromptAutomation.getConditionPhysicalExamDefaults(condition, species || "");
+                    const cpa = await import("@/features/prompts/services/casePromptAutomation");
+                    const defaults = cpa.getConditionPhysicalExamDefaults(condition, species || "");
                     const match = (defaults.vitals || []).find((v) =>
                       v.toLowerCase().startsWith(name.toLowerCase()) || v.toLowerCase().includes(name.toLowerCase()),
                     );
@@ -1313,7 +1315,8 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
                 const species = caseRecord && typeof caseRecord === "object" ? String((caseRecord as any).species ?? "").trim() : "";
                 const condition = caseRecord && typeof caseRecord === "object" ? String((caseRecord as any).condition ?? "").trim() : "";
                 try {
-                  const defaults = casePromptAutomation.getConditionPhysicalExamDefaults(condition, species || "");
+                  const cpa = await import("@/features/prompts/services/casePromptAutomation");
+                  const defaults = cpa.getConditionPhysicalExamDefaults(condition, species || "");
                   const match = (defaults.vitals || []).find((v) =>
                     v.toLowerCase().startsWith(name.toLowerCase()) || v.toLowerCase().includes(name.toLowerCase()),
                   );
