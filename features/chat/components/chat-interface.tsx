@@ -446,69 +446,14 @@ export function ChatInterface({
     }
   }, [currentStageIndex, stages]);
 
-  // Transform or suppress nurse/lab assistant messages on the client as a
-  // secondary guardrail: if the assistant is a nurse and the current stage
-  // is Physical/Laboratory/Treatment and the student did NOT explicitly
-  // request specific findings, replace the long findings dump with a
-  // clarifying prompt. Also disable TTS for suppressed messages to avoid
-  // accidental self-capture or leakage.
+import { transformNurseAssistantMessage as transformNurseAssistantMessageUtil } from "@/features/chat/utils/nurseTransform";
+
+  // Small wrapper to preserve the original signature and pass the live messages array
   const transformNurseAssistantMessage = (
     aiMessage: Message,
     stage: Stage | undefined,
     lastUserText?: string
-  ): { message: Message; allowTts: boolean } => {
-    try {
-      const personaKey = aiMessage.personaRoleKey ?? "";
-      const roleLower = (stage?.role ?? "").toLowerCase();
-      const stageTitle = (stage?.title ?? "").toLowerCase();
-      const isSensitiveStage = /physical|laboratory|lab|treatment/.test(stageTitle) || /nurse|lab|laboratory/.test(roleLower);
-      const isNursePersona = personaKey === "veterinary-nurse" || /nurse|lab/.test(personaKey || roleLower);
-      if (!isSensitiveStage || !isNursePersona) return { message: aiMessage, allowTts: true };
-
-      // Prefer explicit lastUserText, but fall back to the most recent
-      // user message from conversation state if not provided.
-      let lastUser = String(lastUserText ?? "").trim();
-      if (!lastUser) {
-        try {
-          const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
-          lastUser = String(lastUserMsg?.content ?? "").trim();
-        } catch (e) {
-          lastUser = "";
-        }
-      }
-      const requested = parseRequestedKeys(lastUser || "");
-      // If the user explicitly requested specific canonical keys, allow normal flow
-      if (requested && Array.isArray(requested.canonical) && requested.canonical.length > 0) {
-        return { message: aiMessage, allowTts: true };
-      }
-
-      // If the assistant content is short/simple, allow it. Also map terse 'Not documented' replies to a more helpful human-friendly phrasing.
-      const content = String(aiMessage.content ?? "").trim();
-      if (!content || content.length < 180) {
-        try {
-          const normalizedShort = content.toLowerCase().trim();
-          if (normalizedShort === "not documented." || normalizedShort === "not documented" || /:\s*not documented$/i.test(content)) {
-            const friendly = "I don't see that recorded; it may be pending or not yet run. I can request the test and you'll see results in the Lab stage.";
-            const replaced: Message = { ...aiMessage, content: friendly };
-            return { message: replaced, allowTts: true };
-          }
-        } catch {}
-        return { message: aiMessage, allowTts: true };
-      }
-
-      // Heuristics: if content contains multiple parameter indicators or pipe separators,
-      // treat as a findings dump and suppress it in favor of a clarifying prompt.
-      const findingsIndicators = /(temperature|temp\b|heart rate|pulse|respiratory rate|rr\b|hr\b|blood pressure|vitals|respirations)/i;
-      const looksLikeDump = (content.match(/\|/g) || []).length >= 2 || findingsIndicators.test(content);
-      if (!looksLikeDump) return { message: aiMessage, allowTts: true };
-
-      const clarifying = "I can provide specific physical findings if you request them. Which parameters would you like (for example: 'hr, rr, temperature')?";
-      const replaced: Message = { ...aiMessage, content: clarifying };
-      return { message: replaced, allowTts: false };
-    } catch (e) {
-      return { message: aiMessage, allowTts: true };
-    }
-  };
+  ): { message: Message; allowTts: boolean } => transformNurseAssistantMessageUtil(aiMessage, stage, lastUserText, messages);
   const { timepoints } = useCaseTimepoints(caseId);
   const latestInitialMessagesRef = useRef<Message[]>(initialMessages ?? []);
   const lastHydratedAttemptKeyRef = useRef<string | null>(null);
@@ -1982,9 +1927,8 @@ export function ChatInterface({
               appendAssistantMessage(assistantMsg);
               if (ttsEnabled) {
                 try {
-                  // Only force resume if the mic was actively listening before the persona UI switch.
-                  const forceResume = Boolean(isListening && !userToggledOffRef.current);
-                  await playTtsAndPauseStt(confirm, personaMeta?.voiceId, { roleKey: "veterinary-nurse", displayRole: assistantMsg.displayRole, role: "veterinary-nurse", caseId, forceResume } as any, personaMeta?.sex as any);
+                  // Do NOT force resume after a UI-driven Nurse greeting to avoid auto-starting the mic.
+                  await playTtsAndPauseStt(confirm, personaMeta?.voiceId, { roleKey: "veterinary-nurse", displayRole: assistantMsg.displayRole, role: "veterinary-nurse", caseId, forceResume: false } as any, personaMeta?.sex as any);
                 } catch {}
               }
             } catch (e) {
@@ -2558,6 +2502,8 @@ export function ChatInterface({
   };
 
   const lastSubmissionRef = useRef<{ content: string; timestamp: number } | null>(null);
+  // Track message ids currently being sent to avoid duplicate send requests
+  const sendingMessageIdsRef = useRef<Set<string> | null>(new Set());
 
   // sendUserMessage helper (used by manual submit and auto-send)
   const sendUserMessage = async (text: string, existingMessageId?: string, options?: { source?: 'auto' | 'manual' | 'retry' }) => {
@@ -3169,6 +3115,14 @@ export function ChatInterface({
       return;
     }
 
+    // Prevent double-sends for the same message id when multiple triggers fire simultaneously
+    if (!sendingMessageIdsRef.current) sendingMessageIdsRef.current = new Set<string>();
+    if (userMessage && sendingMessageIdsRef.current.has(userMessage.id)) {
+      console.debug("sendUserMessage: send already in progress for this message id, skipping duplicate send", { id: userMessage.id });
+      try { debugEventBus.emitEvent?.('info','UI','send_skipped_duplicate_inflight',{ messageId: userMessage.id }); } catch {}
+      return;
+    }
+
     setIsLoading(true);
     try { debugEventBus.emitEvent?.('info','UI','send_started',{ stageIndex: currentStageIndex, activePersona, ts: Date.now() }); } catch {}
 
@@ -3187,6 +3141,11 @@ export function ChatInterface({
 
       // Capture payload for debug tracing (admin panel)
       try { setLastLlmPayload(snapshot.map(m => ({ role: m.role, content: m.content }))); } catch {}
+      // Mark message as 'in-flight' to prevent duplicate sends
+      try {
+        if (userMessage && sendingMessageIdsRef.current) sendingMessageIdsRef.current.add(userMessage.id);
+      } catch (e) {}
+
       const response = await chatService.sendMessage(
         snapshot,
         currentStageIndex,
@@ -3522,6 +3481,11 @@ export function ChatInterface({
       );
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
+      // Remove the message id from the in-flight set when done
+      try {
+        if (userMessage && sendingMessageIdsRef.current) sendingMessageIdsRef.current.delete(userMessage.id);
+      } catch (e) {}
+
       setIsLoading(false);
       try { debugEventBus.emitEvent?.('info','UI','send_finished',{ stageIndex: currentStageIndex, activePersona, ts: Date.now() }); } catch {}
       // Reset interim transcripts after a send
