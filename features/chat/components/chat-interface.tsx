@@ -4972,7 +4972,51 @@ export function ChatInterface({
     const introKey = `${normalizedRoleKey}:${introText}`;
     if (!sentStageIntroRef.current.has(introKey)) {
       // Append assistant message immediately so user sees it
-      appendAssistantMessage(assistantMsg);
+      // Special UX: if we're leaving the Physical Examination stage and
+      // the intro is coming from the nurse, use a shorter prompt that
+      // asks the Doctor to tell the owner what they think, then after
+      // 3s switch focus to the owner and show an owner placeholder.
+      const leavingPhysical = /physical|exam|examination/i.test((stages[currentStageIndex]?.title ?? "").toLowerCase());
+      if (leavingPhysical && normalizedRoleKey === "veterinary-nurse") {
+        // Override nurse placeholder text
+        (assistantMsg as any).content = "All right Doc, tell the owner what you think.";
+        appendAssistantMessage(assistantMsg);
+        // Schedule persona switch to owner and show owner placeholder after 3s
+        try {
+          // Delay UI switch and suppress auto-start to avoid accidental mic resume
+          handleSetActivePersona("owner", { delayMs: 3000, suppressAutoStartMs: 3000 });
+        } catch (e) {}
+
+        // Append owner placeholder after 3s so it's visible in the owner stream
+        void (async () => {
+          const delay = 3000;
+          await new Promise((res) => setTimeout(res, delay));
+          try {
+            const ownerMeta = await ensurePersonaMetadata("owner");
+            const ownerVoice = getOrAssignVoiceForRole("owner", attemptId, { preferredVoice: ownerMeta?.voiceId, sex: (ownerMeta?.sex as any) ?? "neutral" });
+            const ownerMsg = chatService.createAssistantMessage(
+              "Do you have any news, Doc?",
+              targetIndex,
+              ownerMeta?.displayName ?? "Owner",
+              ownerMeta?.portraitUrl,
+              ownerVoice,
+              ownerMeta?.sex,
+              "owner"
+            );
+            upsertPersonaDirectory("owner", {
+              displayName: ownerMeta?.displayName ?? "Owner",
+              portraitUrl: ownerMeta?.portraitUrl,
+              voiceId: ownerVoice,
+              sex: ownerMeta?.sex,
+            });
+            appendAssistantMessage(ownerMsg);
+          } catch (err) {
+            // non-blocking
+          }
+        })();
+      } else {
+        appendAssistantMessage(assistantMsg);
+      }
       sentStageIntroRef.current.add(introKey);
     } else {
       // Already sent this intro earlier in the attempt - skip appending/playing TTS
