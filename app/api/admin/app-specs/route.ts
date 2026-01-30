@@ -105,15 +105,31 @@ NOTE: No need to repeat guardrails here - they're built into the foundation laye
     ],
     sttConfig: {
       provider: "openai-whisper",
-      incompletePhraseSuffixes: ["and", "but", "so", "because", "with", "the", "a", "an", "to", "for", "of", "or", "if", "when", "that", "which", "who", "where", "is", "are", "was", "were", "have", "has", "had", "do", "does", "did", "will", "would", "could", "should", "can", "may", "might", "must", "shall", "also", "then", "than", "as", "at", "by", "in", "on", "up", "out", "about", "into", "through", "during", "before", "after", "above", "below", "between", "under", "again", "further", "once", "here", "there", "all", "each", "few", "more", "most", "other", "some", "such", "no", "not", "only", "own", "same", "just", "now", "very", "even", "still", "already", "always", "never", "often", "sometimes", "usually", "really", "actually", "probably", "perhaps", "maybe", "likely", "certainly", "definitely", "basically", "essentially", "generally", "typically", "specifically", "particularly", "especially", "mainly", "mostly", "partly", "primarily", "simply", "just", "quite", "rather", "somewhat", "fairly", "pretty", "very", "really", "too", "enough", "almost", "nearly", "hardly", "barely", "scarcely", "only", "merely", "just", "even", "still", "already", "yet", "anymore", "either", "neither", "both", "whether"],
-      description: "Incomplete phrases ending with these words will show '...' and wait for continuation",
+      // Short list maintained for UI docs; actual detection uses a smaller, curated set and
+      // the `endsWithIncompleteMarker` helper. Note: 'you' was intentionally removed so
+      // sentences ending in "you" no longer block auto-send.
+      incompletePhraseSuffixes: ["and", "but", "so", "because", "with", "the", "a", "an", "to", "for", "of", "or", "if", "when", "that", "which", "is", "are", "was", "were"],
+      description: "Incomplete phrases detected by STT will insert a placeholder '...' and wait for user continuation. The service provides `canStartListening()` and `scheduleClearSuppressionWhen()` helpers to safely coordinate starts after TTS or UI interactions.",
+      helpers: {
+        canStartListening: "Service-level guard that returns false while explicit suppression, deaf mode, or cooldown windows are active. Use before calling startListening().",
+        scheduleClearSuppressionWhen: "Polls a predicate (every 200ms up to 8s by default) and clears STT suppression when it becomes safe (e.g., audio finished). Returns a cancel function.",
+        constants: {
+          suppressionPollIntervalMs: 200,
+          suppressionPollTimeoutMs: 8000
+        }
+      }
     },
     ttsConfig: {
-      preDelay: 600,
-      suppressionClear: 600,
-      sttResumeDelay: 720,
-      deafWindowAfterTts: 1000,
-      description: "Timing delays (ms) for TTS/STT coordination in voice mode. Deaf window prevents mic from hearing its own TTS playback.",
+      // Updated to reflect service behavior: we use a conservative pre-delay to allow
+      // microphone hardware to release and permission prompts to resolve,
+      // a small resume buffer after audio completes, and a longer 'deaf window' to
+      // ignore any trailing audio that could be self-captured.
+      preDelay: 700, // ms: wait for hardware/permission stabilization before starting audio play
+      suppressionClear: 50, // ms: nominal buffer used when clearing suppression after TTS
+      sttResumeDelay: 50, // ms: small buffer applied before attempting to restart STT after audio
+      resumeRetryDelay: 800, // ms: retry start if first resume attempt didn't take
+      deafWindowAfterTts: 1650, // ms: deaf mode duration (prevents capturing own TTS + safety buffer)
+      description: "Timings used to coordinate TTS playback and STT suppression/resume. Key helpers: playTtsAndPauseStt will enter deaf mode and set suppression; scheduleClearSuppressionWhen is used to clear suppression only when playback has actually ended.",
     },
   };
 
