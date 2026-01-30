@@ -67,6 +67,7 @@ import {
   type StageIntentContext,
 } from "@/features/chat/utils/stage-intent-detector";
 import { parseRequestedKeys } from "@/features/chat/services/physFinder";
+import { transformNurseAssistantMessage as transformNurseAssistantMessageUtil } from "@/features/chat/utils/nurseTransform";
 import { endsWithIncompleteMarker } from "@/features/chat/utils/incomplete";
 import { detectPersonaSwitch, looksLikeLabRequest, looksLikePhysicalRequest } from "@/features/chat/utils/persona-intent";
 import { emitStageEvaluation } from "@/features/chat/utils/stage-eval";
@@ -86,6 +87,8 @@ import { useAuth } from "@/features/auth/services/authService";
 import { HelpTip } from "@/components/ui/help-tip";
 import { GuidedTour } from "@/components/ui/guided-tour";
 import { FontSizeToggle } from "@/features/navigation/components/font-size-toggle";
+
+import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
 
 const STAGE_KEYWORD_SYNONYMS: Record<string, string[]> = {
   examination: ["exam"],
@@ -203,7 +206,6 @@ const STAGE_STAY_BLOCK_WINDOW_MS = 45_000;
 const normalizeVoiceId = (voice?: string | null) =>
   voice && isSupportedVoice(voice) ? voice : undefined;
 
-import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
 
 type ChatInterfaceProps = {
   caseId: string;
@@ -445,8 +447,6 @@ export function ChatInterface({
       // ignore
     }
   }, [currentStageIndex, stages]);
-
-import { transformNurseAssistantMessage as transformNurseAssistantMessageUtil } from "@/features/chat/utils/nurseTransform";
 
   // Small wrapper to preserve the original signature and pass the live messages array
   const transformNurseAssistantMessage = (
