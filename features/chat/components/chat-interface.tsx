@@ -1982,9 +1982,9 @@ export function ChatInterface({
               appendAssistantMessage(assistantMsg);
               if (ttsEnabled) {
                 try {
-                  // Force TTS to resume STT when audio completes so the mic
-                  // becomes active immediately after the Nurse greeting.
-                  await playTtsAndPauseStt(confirm, personaMeta?.voiceId, { roleKey: "veterinary-nurse", displayRole: assistantMsg.displayRole, role: "veterinary-nurse", caseId, forceResume: true } as any, personaMeta?.sex as any);
+                  // Only force resume if the mic was actively listening before the persona UI switch.
+                  const forceResume = Boolean(isListening && !userToggledOffRef.current);
+                  await playTtsAndPauseStt(confirm, personaMeta?.voiceId, { roleKey: "veterinary-nurse", displayRole: assistantMsg.displayRole, role: "veterinary-nurse", caseId, forceResume } as any, personaMeta?.sex as any);
                 } catch {}
               }
             } catch (e) {
@@ -2922,13 +2922,23 @@ export function ChatInterface({
     let userMessage = null as Message | null;
     let snapshot: Message[] = [];
 
-    // Guard: avoid double-user messages. If the last message in the history
-    // is already from the user, only block another consecutive user message
-    // if it contains the SAME normalized text as the one already sent. This
-    // allows different consecutive messages to be sent without being blocked.
+    // Guard: attempt to coalesce recent consecutive user messages from the same persona
+    // into a single pending message to avoid duplicate or fragmented sends.
     const lastMsg = messages[messages.length - 1];
     if (!existingMessageId && lastMsg && lastMsg.role === "user") {
       try {
+        // First, try bundling/coalescing when appropriate
+        try {
+          const { messages: coalesced, mergedMessage } = require("@/features/chat/utils/messageBundling").coalesceMessages(messages, trimmed, activePersona);
+          if (mergedMessage) {
+            // Use the coalesced messages snapshot and proceed using mergedMessage
+            setMessages(coalesced);
+            userMessage = mergedMessage as Message;
+            snapshot = coalesced;
+          }
+        } catch (e) {}
+
+        // Existing duplicate guard (uses a normalization heuristic)
         const normalize = (s: string) =>
           String(s)
             .toLowerCase()
