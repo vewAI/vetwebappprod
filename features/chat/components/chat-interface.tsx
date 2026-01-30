@@ -67,6 +67,7 @@ import {
   type StageIntentContext,
 } from "@/features/chat/utils/stage-intent-detector";
 import { parseRequestedKeys } from "@/features/chat/services/physFinder";
+import { coalesceMessages } from "@/features/chat/utils/messageBundling";
 import { transformNurseAssistantMessage as transformNurseAssistantMessageUtil } from "@/features/chat/utils/nurseTransform";
 import { endsWithIncompleteMarker } from "@/features/chat/utils/incomplete";
 import { detectPersonaSwitch, looksLikeLabRequest, looksLikePhysicalRequest } from "@/features/chat/utils/persona-intent";
@@ -371,17 +372,22 @@ export function ChatInterface({
   const recentAssistantContentSetRef = useRef<Set<string>>(new Set());
   const appendAssistantMessage = (msg: Message) => {
     try {
+      const isEphemeral = Boolean((msg as any).ephemeral === true);
       const norm = normalizeForDedupe(msg.content);
-      // If recently appended identical assistant content exists in the in-memory set,
-      // skip to avoid races where multiple appenders add the same message.
-      if (recentAssistantContentSetRef.current.has(norm)) {
+      // If this is a non-ephemeral message and we've recently appended the
+      // same assistant content, skip to avoid races where multiple appenders
+      // add the same message. Ephemeral placeholders should NOT block later
+      // real assistant replies, so we don't register them in the recent set.
+      if (!isEphemeral && recentAssistantContentSetRef.current.has(norm)) {
         return;
       }
-      // Register and schedule removal after 10s to keep set bounded
-      recentAssistantContentSetRef.current.add(norm);
-      window.setTimeout(() => {
-        try { recentAssistantContentSetRef.current.delete(norm); } catch {}
-      }, 10000);
+      // Register and schedule removal after 10s to keep set bounded for real messages
+      if (!isEphemeral) {
+        recentAssistantContentSetRef.current.add(norm);
+        window.setTimeout(() => {
+          try { recentAssistantContentSetRef.current.delete(norm); } catch {}
+        }, 10000);
+      }
     } catch {}
 
     setMessages((prev) => {
@@ -400,7 +406,9 @@ export function ChatInterface({
         // If the previous message is an assistant message from the same
         // persona (same displayRole) and same stage, merge their contents
         // instead of creating a separate message. This keeps consecutive
-        // assistant utterances visually integrated.
+        // assistant utterances visually integrated. Also, if the previous
+        // assistant message was an ephemeral UI placeholder (e.g. nurse ACK),
+        // replace it with the real assistant message instead of merging.
         const last = prev.length > 0 ? prev[prev.length - 1] : null;
         if (
           last &&
@@ -409,6 +417,18 @@ export function ChatInterface({
           last.stageIndex === msg.stageIndex
         ) {
           try {
+            const lastEphemeral = Boolean((last as any).ephemeral === true);
+            // If last was ephemeral placeholder, replace it entirely with the
+            // real message to ensure the assistant reply is visible.
+            if (lastEphemeral) {
+              const replaced: Message = {
+                ...msg,
+                // preserve ordering timestamp from the ephemeral placeholder
+                timestamp: last.timestamp || msg.timestamp || new Date().toISOString(),
+                status: msg.status === "sent" ? "sent" : last.status,
+              } as Message;
+              return [...prev.slice(0, -1), replaced];
+            }
             const mergedContent = mergeStringsNoDup(last.content, msg.content);
             // merge any structured findings if present (msg shape may have extra fields)
             const lastSF = (last as any).structuredFindings || {};
@@ -2515,7 +2535,9 @@ export function ChatInterface({
           // Append the user's original message immediately so it appears in the conversation
           try {
             const userMsg = chatService.createUserMessage(trimmed, currentStageIndex);
-            setMessages((prev) => [...prev, userMsg]);
+              // Ensure this locally-appended message is attributed to the current UI persona
+              try { (userMsg as any).personaRoleKey = activePersona; } catch {}
+              setMessages((prev) => [...prev, userMsg]);
           } catch (e) {
             console.warn("Failed to append local user message for persona switch", e);
           }
@@ -2527,7 +2549,9 @@ export function ChatInterface({
           } catch (e) {}
 
           // Switch persona after a short delay so the student sees their spoken text first
-          handleSetActivePersona(personaSwitch, { delayMs: 2000, suppressAutoStartMs: 2000 });
+          // Wait 3 seconds so the student's message is visible in the current persona
+          // conversation stream before switching focus to the requested persona.
+          handleSetActivePersona(personaSwitch, { delayMs: 3000, suppressAutoStartMs: 3000 });
         }
         return;
       }
@@ -2871,7 +2895,7 @@ export function ChatInterface({
       try {
         // First, try bundling/coalescing when appropriate
         try {
-          const { messages: coalesced, mergedMessage } = require("@/features/chat/utils/messageBundling").coalesceMessages(messages, trimmed, activePersona);
+          const { messages: coalesced, mergedMessage } = coalesceMessages(messages, trimmed, activePersona);
           if (mergedMessage) {
             // Use the coalesced messages snapshot and proceed using mergedMessage
             setMessages(coalesced);
@@ -2931,6 +2955,9 @@ export function ChatInterface({
             personaMeta?.sex as any,
             "veterinary-nurse"
           );
+          // Mark as ephemeral placeholder so it doesn't block or dedupe
+          // the real assistant response that will arrive from the server.
+          try { (ackMsg as any).ephemeral = true; } catch {}
           appendAssistantMessage(ackMsg);
           nurseAckGivenRef.current = true;
           if (ttsEnabled) {

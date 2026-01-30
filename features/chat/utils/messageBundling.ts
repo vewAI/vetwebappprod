@@ -51,6 +51,10 @@ export function coalesceMessages(messages: Message[], newText: string, currentPe
     timestamp: newTimestamp,
     status: "pending",
   };
+  // Ensure persona attribution is preserved or explicitly set to the current persona
+  try {
+    (mergedMessage as any).personaRoleKey = currentPersona ?? (last as any).personaRoleKey ?? null;
+  } catch {}
   const newMessages = [...messages.slice(0, messages.length - 1), mergedMessage];
   return { messages: newMessages, mergedMessage };
 }
