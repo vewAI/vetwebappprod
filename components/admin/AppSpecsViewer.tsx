@@ -41,13 +41,27 @@ interface STTConfig {
   provider: string;
   incompletePhraseSuffixes: string[];
   description: string;
+  descriptionLong?: string;
+  speakMode?: {
+    description?: string;
+    behavior?: string[];
+    incompleteFragmentTiming?: {
+      initialWaitMs?: number;
+      extendedWaitMs?: number;
+      note?: string;
+    };
+    autoSendBehavior?: string;
+  };
+  helpers?: { suppressionReasons?: string };
 }
 
 interface TTSConfig {
   preDelay: number;
   suppressionClear: number;
   sttResumeDelay: number;
+  resumeRetryDelay?: number;
   deafWindowAfterTts: number;
+  deafWindowCalc?: string;
   description: string;
 }
 
@@ -72,9 +86,12 @@ interface PromptIntegration {
   nurseGuardrails?: string[];
 }
 
+interface PromptSample { key: string; summary: string }
+
 interface AppSpecs {
   promptIntegration: PromptIntegration;
   rolePromptDefinitions: RolePromptDefinition[];
+  promptSamples?: PromptSample[];
   findingsReleaseStrategies: FindingsStrategy[];
   defaultStages: DefaultStage[];
   personaRoleKeys: PersonaRoleKey[];
@@ -319,6 +336,20 @@ export function AppSpecsViewer({ open, onOpenChange }: AppSpecsViewerProps) {
                 </div>
               </CollapsibleSection>
 
+              {/* Prompt Samples Summary */}
+              {specs.promptSamples && specs.promptSamples.length > 0 && (
+                <CollapsibleSection title={`Prompt Samples (${specs.promptSamples.length})`} defaultOpen={false}>
+                  <div className="space-y-2 text-sm">
+                    {specs.promptSamples.map((ps: any) => (
+                      <div key={ps.key} className="flex items-start gap-3 p-2 bg-muted rounded-md">
+                        <div className="font-mono text-xs w-32">{ps.key}</div>
+                        <div className="text-muted-foreground">{ps.summary}</div>
+                      </div>
+                    ))}
+                  </div>
+                </CollapsibleSection>
+              )}
+
               {/* Role Prompt Definitions */}
               <CollapsibleSection
                 title={`Role Prompt Definitions (${specs.rolePromptDefinitions.length})`}
@@ -538,6 +569,9 @@ export function AppSpecsViewer({ open, onOpenChange }: AppSpecsViewerProps) {
                           {specs.ttsConfig.deafWindowAfterTts}
                         </div>
                         <div className="text-xs text-muted-foreground">Deaf window (ms)</div>
+                        {specs.ttsConfig.deafWindowCalc && (
+                          <div className="text-xs text-muted-foreground mt-1">Calc: {specs.ttsConfig.deafWindowCalc}</div>
+                        )}
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground mt-3">
@@ -546,13 +580,46 @@ export function AppSpecsViewer({ open, onOpenChange }: AppSpecsViewerProps) {
                   </div>
 
                   <div>
-                    <h4 className="font-medium mb-2">STT Configuration</h4>
+                    <h4 className="font-medium mb-2">Speak Mode & STT Configuration</h4>
                     <p className="text-sm text-muted-foreground mb-2">
                       Provider: <Badge variant="outline">{specs.sttConfig.provider}</Badge>
                     </p>
-                    <p className="text-sm text-muted-foreground mb-2">
-                      {specs.sttConfig.description}
-                    </p>
+
+                    {specs.sttConfig.descriptionLong ? (
+                      <p className="text-sm text-muted-foreground mb-2">{specs.sttConfig.descriptionLong}</p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground mb-2">{specs.sttConfig.description}</p>
+                    )}
+
+                    {/* Speak Mode details */}
+                    {specs.sttConfig.speakMode && (
+                      <div className="p-3 bg-muted rounded-md mb-2">
+                        <div className="text-xs text-muted-foreground mb-1">Speak Mode</div>
+                        <div className="text-sm mb-2">{specs.sttConfig.speakMode.description}</div>
+                        <div className="text-xs font-medium mb-1">Behaviors:</div>
+                        <ul className="list-disc list-inside text-sm mb-2">
+                          {specs.sttConfig.speakMode.behavior?.map((b, i) => (
+                            <li key={i}>{b}</li>
+                          ))}
+                        </ul>
+                        <div className="text-xs font-medium mb-1">Incomplete fragment timing:</div>
+                        <div className="text-sm">
+                          Initial wait: <strong>{specs.sttConfig.speakMode.incompleteFragmentTiming?.initialWaitMs ?? "n/a"}ms</strong>
+                          <br />
+                          Extended wait: <strong>{specs.sttConfig.speakMode.incompleteFragmentTiming?.extendedWaitMs ?? "n/a"}ms</strong>
+                          <div className="text-xs text-muted-foreground mt-1">{specs.sttConfig.speakMode.incompleteFragmentTiming?.note}</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Helpers */}
+                    {specs.sttConfig.helpers?.suppressionReasons && (
+                      <div className="p-3 bg-muted rounded-md mb-2">
+                        <div className="text-xs text-muted-foreground mb-1">Suppression & Telemetry</div>
+                        <div className="text-sm">{specs.sttConfig.helpers.suppressionReasons}</div>
+                      </div>
+                    )}
+
                     <div className="p-3 bg-muted rounded-md">
                       <div className="text-xs text-muted-foreground mb-1">
                         Incomplete phrase suffixes ({specs.sttConfig.incompletePhraseSuffixes.length} words):
