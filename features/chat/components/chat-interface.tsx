@@ -1913,23 +1913,19 @@ import { transformNurseAssistantMessage as transformNurseAssistantMessageUtil } 
           nurseGreetingSentRef.current = true;
           (async () => {
             try {
-              const personaMeta = await ensurePersonaMetadata("veterinary-nurse");
-              const confirm = "Hello Doc";
-              const assistantMsg = chatService.createAssistantMessage(
-                confirm,
-                currentStageIndex,
-                personaMeta?.displayName ?? "Nurse",
-                personaMeta?.portraitUrl,
-                personaMeta?.voiceId,
-                personaMeta?.sex as any,
-                "veterinary-nurse"
-              );
-              appendAssistantMessage(assistantMsg);
-              if (ttsEnabled) {
-                try {
-                  // Do NOT force resume after a UI-driven Nurse greeting to avoid auto-starting the mic.
-                  await playTtsAndPauseStt(confirm, personaMeta?.voiceId, { roleKey: "veterinary-nurse", displayRole: assistantMsg.displayRole, role: "veterinary-nurse", caseId, forceResume: false } as any, personaMeta?.sex as any);
-                } catch {}
+              // Defer to shared helper so we can unit test the UI-driven greeting behavior
+              try {
+                await (await import("@/features/chat/utils/sendPersonaGreeting")).sendPersonaGreeting("veterinary-nurse", {
+                  ensurePersonaMetadata,
+                  appendAssistantMessage,
+                  playTtsAndPauseStt,
+                  ttsEnabled,
+                  currentStageIndex,
+                  caseId,
+                  isListening: isListening,
+                });
+              } catch (e) {
+                // ignore helper failures
               }
             } catch (e) {
               // ignore
