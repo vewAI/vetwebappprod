@@ -2277,54 +2277,24 @@ export function ChatInterface({
             // ignore
           }
 
-          if (!nurseGreetingSentRef.current) {
-            // If the user has recently sent a message as the Nurse, suppress the
-            // UI greeting because it would be redundant (user is already talking to Nurse).
-            try {
-              if (lastSentPersonaRef.current === "veterinary-nurse") {
-                nurseGreetingSentRef.current = true;
-                return;
-              }
-              // Also check the last few messages for a user message attributed to the Nurse
-              const recent = messages.slice(-4);
-              if (
-                recent.some(
-                  (m) =>
-                    m.role === "user" &&
-                    ((m as any).personaRoleKey === "veterinary-nurse" ||
-                      (m.displayRole ?? "").toLowerCase().includes("nurse")),
-                )
-              ) {
-                nurseGreetingSentRef.current = true;
-                return;
-              }
-            } catch (e) {
-              // ignore checks
-            }
-
+          // Prefer that the Nurse remains listening rather than auto-speaking.
+          // Skip the canned UI greeting and instead attempt to start STT so
+          // the Nurse can immediately hear the student input.
+          try {
+            // Mark greeting as 'handled' so we don't attempt to send it later
             nurseGreetingSentRef.current = true;
-            (async () => {
+            // Small delay to allow UI to settle; then try to start listening.
+            window.setTimeout(() => {
               try {
-                // Defer to shared helper so we can unit test the UI-driven greeting behavior
-                try {
-                  await (
-                    await import("@/features/chat/utils/sendPersonaGreeting")
-                  ).sendPersonaGreeting("veterinary-nurse", {
-                    ensurePersonaMetadata,
-                    appendAssistantMessage,
-                    playTtsAndPauseStt,
-                    ttsEnabled,
-                    currentStageIndex,
-                    caseId,
-                    isListening: isListening,
-                  });
-                } catch (e) {
-                  // ignore helper failures
-                }
+                if (canStartListening && canStartListening()) start();
               } catch (e) {
-                // ignore
+                // ignore - do not attempt fallback start here to avoid bypassing
+                // the suppression cooldown (`sttSuppressedUntil`). Let the
+                // centralized resume logic handle restarts.
               }
-            })();
+            }, 150);
+          } catch (e) {
+            // non-blocking
           }
         }
       } catch (e) {

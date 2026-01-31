@@ -745,46 +745,26 @@ export function canStartListening(): boolean {
  * Returns a cancel function to abort the scheduled checks.
  * The predicate is polled every `intervalMs` up to `timeoutMs`.
  */
+import { scheduleClearSuppressionWhen as _scheduleClearSuppressionWhen } from "@/features/chat/utils/timers";
+
 export function scheduleClearSuppressionWhen(
   predicate: () => boolean,
-  intervalMs = 200,
+  _intervalMs = 200,
   timeoutMs = 8000,
 ): { cancel: () => void } {
-  let cancelled = false;
-  const start = Date.now();
-  const check = () => {
-    if (cancelled) return;
+  // Delegate polling implementation to shared timers helper and wire the
+  // resolution to clear STT suppression. Keep the same external shape
+  // so callers in the codebase are unaffected.
+  const handle = _scheduleClearSuppressionWhen(predicate, timeoutMs);
+  // When the shared promise resolves true, clear suppression (skip cooldown).
+  void handle.promise.then((ok) => {
     try {
-      if (predicate()) {
-        try {
-          setSttSuppressed(false, true);
-        } catch {}
-        cancelled = true;
-        return;
-      }
-      if (Date.now() - start > timeoutMs) {
-        // Timeout reached: do not clear suppression automatically; leave it for manual clearing
-        try {
-          (debugEventBus as any).emitEvent?.(
-            "info",
-            "STT",
-            "clear_suppression_timeout",
-          );
-        } catch {}
-        cancelled = true;
-        return;
-      }
+      if (ok) setSttSuppressed(false, true);
     } catch (e) {
-      // ignore and retry until timeout
+      // ignore
     }
-    setTimeout(check, intervalMs);
-  };
-  setTimeout(check, intervalMs);
-  return {
-    cancel: () => {
-      cancelled = true;
-    },
-  };
+  });
+  return { cancel: handle.cancel };
 }
 
 /**
