@@ -5935,8 +5935,9 @@ export function ChatInterface({
     // prompts). In that case, return a Nurse-centred intro instead.
     if (role.includes("owner") || role.includes("client")) {
       if (activePersona === "veterinary-nurse") {
-        // Nurse-focused intro (non-owner phrasing)
-        return `I'm the veterinary nurse supporting this case. I'm ready to share the documented findings for the ${title.toLowerCase()} whenever you need them.`;
+        // Nurse should not produce a canned intro; keep silent so the nurse
+        // remains listening and available to the student.
+        return "";
       }
       // A brief, natural owner prompt that invites the student to report
       // findings or ask follow-up questions. Keep it short so the student
@@ -5948,7 +5949,8 @@ export function ChatInterface({
       return "What are your indications and treatment plan, Doctor?";
     }
 
-    return `I'm the veterinary nurse supporting this case. I'm ready to share the documented findings for the ${title.toLowerCase()} whenever you need them.`;
+    // Default: no canned nurse intro; return empty to avoid auto-speaking.
+    return "";
   };
 
   const handleProceed = async () => {
@@ -6000,15 +6002,8 @@ export function ChatInterface({
     const roleName = String(stageRole);
     let normalizedRoleKey = resolveChatPersonaRoleKey(stageRole, roleName);
 
-    // Fix: If the intro text explicitly claims to be the veterinary nurse,
-    // but the stage role is generic (e.g. "Veterinarian"), force the nurse persona.
-    // This ensures the correct avatar (with picture) and voice are used.
-    if (
-      introText.includes("I'm the veterinary nurse") &&
-      normalizedRoleKey !== "veterinary-nurse"
-    ) {
-      normalizedRoleKey = "veterinary-nurse";
-    }
+    // NOTE: removed automatic forcing based on canned nurse intro text
+    // to avoid any accidental persona assertions from generated strings.
 
     // Clear hint when proceeding
     setShowProceedHint(false);
@@ -6060,7 +6055,20 @@ export function ChatInterface({
 
     // Avoid repeating identical stage intro messages during the same attempt.
     const introKey = `${normalizedRoleKey}:${introText}`;
-    if (!sentStageIntroRef.current.has(introKey)) {
+    // If this is the default nurse intro phrasing, do NOT append or play it.
+    // The nurse should keep listening instead of producing a canned intro.
+    const nurseIntroMarker = "I'm the veterinary nurse";
+    const skipNurseIntro =
+      introText &&
+      introText.includes(nurseIntroMarker) &&
+      normalizedRoleKey === "veterinary-nurse";
+
+    if (skipNurseIntro) {
+      // Mark as sent so we don't trigger it again, but do not append or play TTS.
+      sentStageIntroRef.current.add(introKey);
+    }
+
+    if (!sentStageIntroRef.current.has(introKey) && !skipNurseIntro) {
       // Append assistant message immediately so user sees it
       // Special UX: if we're leaving the Physical Examination stage and
       // the intro is coming from the nurse, use a shorter prompt that
@@ -6250,38 +6258,9 @@ export function ChatInterface({
           // this is that intro and voice mode was enabled before the temp
           // disable, schedule a forced restore after 9s so the mic is toggled
           // back on for the student even if TTS events are delayed.
-          try {
-            const nurseIntroMarker =
-              "I'm the veterinary nurse supporting this case";
-            if (
-              introText &&
-              introText.includes(nurseIntroMarker) &&
-              prevVoiceWasOnRef.current
-            ) {
-              // Clear any previous timer
-              if (forceRestoreTimerRef.current) {
-                clearTimeout(forceRestoreTimerRef.current);
-              }
-              forceRestoreTimerRef.current = setTimeout(() => {
-                // Only restore if still temporarily disabled and user didn't
-                // explicitly toggle mic off in the meantime.
-                if (
-                  tempVoiceDisabledRef.current &&
-                  !userToggledOffRef.current
-                ) {
-                  tempVoiceDisabledRef.current = false;
-                  try {
-                    setVoiceModeEnabled(true);
-                  } catch (err) {
-                    console.warn("Forced restore of voice mode failed:", err);
-                  }
-                }
-                forceRestoreTimerRef.current = null;
-              }, 9000);
-            }
-          } catch (e) {
-            // ignore timer setup errors
-          }
+          // Removed special-case forced restore tied to a canned nurse intro
+          // because we no longer generate that intro. Resume/restore logic
+          // now relies on the standard TTS/playback flow and guards.
 
           try {
             await waitForTtsToFinish(15000, 100);
