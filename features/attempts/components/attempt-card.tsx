@@ -1,33 +1,21 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, Calendar, ChevronRight, Trash2 } from "lucide-react";
+import { Clock, Calendar, ChevronRight } from "lucide-react";
 import type { AttemptSummary } from "../models/attempt";
 
 import type { Case } from "@/features/case-selection/models/case";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
 
 type AttemptCardProps = {
   attempt: AttemptSummary;
   caseItem?: Case;
-  onDelete: () => void;
 };
 
-export function AttemptCard({ attempt, onDelete }: AttemptCardProps) {
-  const [isDeleting, setIsDeleting] = useState(false);
-
+export function AttemptCard({ attempt }: AttemptCardProps) {
   // Format date
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
@@ -46,18 +34,6 @@ export function AttemptCard({ attempt, onDelete }: AttemptCardProps) {
     return `${minutes} min${minutes !== 1 ? "s" : ""}`;
   };
 
-  // Handle delete confirmation
-  const handleDeleteClick = () => {
-    if (
-      window.confirm(
-        `Are you sure you want to delete "${attempt.title}"? This action cannot be undone.`
-      )
-    ) {
-      setIsDeleting(true);
-      onDelete();
-    }
-  };
-
   return (
     <Card
       className={cn(
@@ -66,104 +42,56 @@ export function AttemptCard({ attempt, onDelete }: AttemptCardProps) {
         "hover:bg-muted/40 dark:hover:bg-muted/60",
         "focus-within:ring-2 focus-within:ring-primary/30",
 
-        attempt.completionStatus === "completed" &&
-          "border-l-4 border-l-teal-500/60",
-        attempt.completionStatus === "in_progress" &&
-          "border-l-4 border-l-amber-700/50",
-        attempt.completionStatus === "abandoned" &&
-          "border-l-4 border-l-rose-500/60"
+        attempt.completionStatus === "completed" && "border-l-4 border-l-teal-500/60",
+        attempt.completionStatus === "in_progress" && "border-l-4 border-l-amber-700/50",
+        attempt.completionStatus === "abandoned" && "border-l-4 border-l-rose-500/60",
       )}
     >
       <div className="flex gap-4 px-4 h-full">
         {/* Case Image */}
         {attempt?.caseImageUrl && (
-          <div>
-            <div className="relative w-24 h-24 flex-shrink-0">
-              <Image
-                src={attempt?.caseImageUrl}
-                alt={attempt?.caseTitle}
-                fill
-                className="object-cover border p-1"
-                sizes="96px"
-                priority={false}
-              />
+          <div className="">
+            <div className="relative  w-24 h-24 mb-2">
+              <Image src={attempt?.caseImageUrl} alt={attempt?.caseTitle} fill className="object-cover border p-1" sizes="96px" priority={false} />
             </div>
-            <div className="text-center">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="
-              text-muted-foreground
-              hover:text-destructive
-              transition-colors
-            "
-                onClick={handleDeleteClick}
-                disabled={isDeleting}
-              >
-                {isDeleting ? (
-                  "Deleting..."
-                ) : (
-                  <>
-                    <Trash2 className="h-4 w-4 mr-1" />
-                    <span className="sr-only">Delete</span>
-                  </>
-                )}
-              </Button>
-            </div>
+
+            <span
+              className={`text-xs py-1 px-3 tracking-wide ${
+                attempt.completionStatus === "completed"
+                  ? "text-emerald-700 "
+                  : attempt.completionStatus === "in_progress"
+                    ? "text-amber-700 "
+                    : "text-red-500 "
+              }`}
+            >
+              {attempt.completionStatus === "completed" ? "Completed" : attempt.completionStatus === "in_progress" ? "In Progress" : "Abandoned"}
+            </span>
           </div>
         )}
 
         {/* Card Content */}
         <div className="flex-1 flex flex-col h-full">
-          <CardHeader className="pb-3 px-0">
+          <CardHeader className=" px-0">
             <div className="flex justify-between items-start gap-3">
               <div className="min-w-0">
-                <CardTitle className="text-base font-semibold text-primary">
-                  {attempt.title}
-                </CardTitle>
+                <CardTitle className="text-base font-semibold text-primary">{attempt.caseTitle}</CardTitle>
+                <span className="text-xs text-muted-foreground font-semibold"> {attempt.title}</span>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-              <div className="flex items-center gap-1.5">
-                <Calendar className="h-3.5 w-3.5 opacity-70" />
-                <span>{formatDate(attempt.createdAt)}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Clock className="h-3.5 w-3.5 opacity-70" />
-                <span>{formatTimeSpent(attempt.timeSpentSeconds)}</span>
-              </div>
-            </div>
-            <p
-              className={cn(
-                "shrink text-sm",
-                attempt.completionStatus === "completed"
-                  ? "text-emerald-500"
-                  : attempt.completionStatus === "in_progress"
-                  ? "text-amber-500"
-                  : "text-destructive"
-              )}
-            >
-              <Badge
-                className={`text-xs py-1 px-3 tracking-wide ${
-                  attempt.completionStatus === "completed"
-                    ? "bg-emerald-500 text-white"
-                    : attempt.completionStatus === "in_progress"
-                    ? "bg-amber-500 text-white"
-                    : "bg-red-500 text-white"
-                }`}
-              >
-                {attempt.completionStatus === "completed"
-                  ? "Completed"
-                  : attempt.completionStatus === "in_progress"
-                  ? "In Progress"
-                  : "Abandoned"}
-              </Badge>
-            </p>
           </CardHeader>
 
-          <CardContent className="pt-0 px-0 pb-3 flex-grow">
+          <CardContent className="pb-2 px-0 flex-grow">
             <CardDescription className="text-xs mt-0.5">
-              {attempt?.caseTitle || "Unknown Case"}
+              <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+                <div className="flex items-center gap-1.5">
+                  <Calendar className="h-3.5 w-3.5 opacity-70" />
+                  <span>{formatDate(attempt.createdAt)}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5 opacity-70" />
+                  <span>{formatTimeSpent(attempt.timeSpentSeconds)}</span>
+                </div>
+              </div>
             </CardDescription>
           </CardContent>
 

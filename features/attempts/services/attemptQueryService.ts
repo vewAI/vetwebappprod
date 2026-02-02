@@ -1,16 +1,6 @@
 import { supabase } from "@/lib/supabase";
-import {
-  Attempt,
-  AttemptMessage,
-  AttemptFeedback,
-  AttemptSummary,
-} from "../models/attempt";
-import {
-  transformAttempt,
-  transformAttemptSummary,
-  transformFeedback,
-  transformMessage,
-} from "../mappers/attempt-mappers";
+import { Attempt, AttemptMessage, AttemptFeedback, AttemptSummary } from "../models/attempt";
+import { transformAttempt, transformAttemptSummary, transformFeedback, transformMessage } from "../mappers/attempt-mappers";
 
 // Get all attempts for the current user
 export async function getUserAttempts(): Promise<AttemptSummary[]> {
@@ -23,7 +13,7 @@ export async function getUserAttempts(): Promise<AttemptSummary[]> {
     const { data, error } = await supabase
       .from("attempts")
       .select(
-        "id, case_id, title, created_at, completed_at, completion_status, last_stage_index, time_spent_seconds, cases (title, category, difficulty, image_url)`"
+        "id, case_id, title, created_at, completed_at, completion_status, last_stage_index, time_spent_seconds, cases (title, category, difficulty, image_url)`",
       )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
@@ -41,7 +31,7 @@ export async function getUserAttempts(): Promise<AttemptSummary[]> {
 }
 
 // Get attempts for a specific case
-export async function getAttemptsByCase(caseId: string): Promise<Attempt[]> {
+export async function getAttemptsByCase(caseId: string): Promise<AttemptSummary[]> {
   try {
     const {
       data: { user },
@@ -50,7 +40,9 @@ export async function getAttemptsByCase(caseId: string): Promise<Attempt[]> {
 
     const { data, error } = await supabase
       .from("attempts")
-      .select("*")
+      .select(
+        "id, case_id, title, created_at, completed_at, completion_status, last_stage_index, time_spent_seconds, cases (title, category, difficulty, image_url)`",
+      )
       .eq("user_id", user.id)
       .eq("case_id", caseId)
       .order("created_at", { ascending: false });
@@ -60,7 +52,7 @@ export async function getAttemptsByCase(caseId: string): Promise<Attempt[]> {
       return [];
     }
 
-    return data.map(transformAttempt);
+    return data.map(transformAttemptSummary);
   } catch (error) {
     console.error("Unexpected error fetching attempts for case:", error);
     return [];
@@ -74,11 +66,7 @@ export async function getAttemptById(attemptId: string): Promise<{
   feedback: AttemptFeedback[];
 }> {
   // Get attempt
-  const { data: attemptData, error: attemptError } = await supabase
-    .from("attempts")
-    .select("*")
-    .eq("id", attemptId)
-    .single();
+  const { data: attemptData, error: attemptError } = await supabase.from("attempts").select("*").eq("id", attemptId).single();
 
   if (attemptError || !attemptData) {
     console.error("Error fetching attempt:", attemptError);
@@ -115,11 +103,7 @@ export async function getAttemptById(attemptId: string): Promise<{
 }
 
 export async function getAttemptsByUserId(userId: string): Promise<Attempt[]> {
-  const { data, error } = await supabase
-    .from("attempts")
-    .select("*")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false });
+  const { data, error } = await supabase.from("attempts").select("*").eq("user_id", userId).order("created_at", { ascending: false });
 
   if (error) {
     console.error("Error fetching attempts:", error);
@@ -130,15 +114,9 @@ export async function getAttemptsByUserId(userId: string): Promise<Attempt[]> {
 }
 
 // Get followups for a given attempt
-export async function getFollowupsForAttempt(
-  attemptId: string
-): Promise<any[]> {
+export async function getFollowupsForAttempt(attemptId: string): Promise<any[]> {
   try {
-    const { data, error } = await supabase
-      .from("followups")
-      .select("*")
-      .eq("attempt_id", attemptId)
-      .order("created_at", { ascending: true });
+    const { data, error } = await supabase.from("followups").select("*").eq("attempt_id", attemptId).order("created_at", { ascending: true });
 
     if (error) {
       console.error("Error fetching followups:", error);
