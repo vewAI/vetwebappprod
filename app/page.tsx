@@ -18,17 +18,7 @@ import { Badge } from "@/components/ui/badge";
 
 type Role = "student" | "professor" | "admin" | null;
 
-function SectionHeader({
-  label,
-  title,
-  description,
-  action,
-}: {
-  label: string;
-  title: string;
-  description?: string;
-  action?: React.ReactNode;
-}) {
+function SectionHeader({ label, title, description, action }: { label: string; title: string; description?: string; action?: React.ReactNode }) {
   return (
     <div className="mb-4 flex items-end justify-between gap-4 ">
       <div className="space-y-2">
@@ -37,12 +27,8 @@ function SectionHeader({
           <span>{label}</span>
         </div>
         <div>
-          <h2 className="text-xl font-semibold tracking-tight md:text-2xl">
-            {title}
-          </h2>
-          {description && (
-            <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-          )}
+          <h2 className="text-xl font-semibold tracking-tight md:text-2xl">{title}</h2>
+          {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
         </div>
       </div>
       {action && <div className="shrink-0">{action}</div>}
@@ -57,11 +43,7 @@ type Notification = {
   tone?: "info" | "success" | "warning";
 };
 
-function NotificationsBar({
-  notifications,
-}: {
-  notifications: Notification[];
-}) {
+function NotificationsBar({ notifications }: { notifications: Notification[] }) {
   if (!notifications.length) return null;
 
   return (
@@ -73,18 +55,10 @@ function NotificationsBar({
         >
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between gap-2">
-              <CardTitle className="text-sm font-semibold">
-                {item.title}
-              </CardTitle>
+              <CardTitle className="text-sm font-semibold">{item.title}</CardTitle>
               {item.tone && (
                 <Badge
-                  variant={
-                    item.tone === "success"
-                      ? "success"
-                      : item.tone === "warning"
-                        ? "warning"
-                        : "secondary"
-                  }
+                  variant={item.tone === "success" ? "success" : item.tone === "warning" ? "warning" : "secondary"}
                   className="text-[10px] uppercase tracking-wide"
                 >
                   {item.tone}
@@ -92,22 +66,15 @@ function NotificationsBar({
               )}
             </div>
           </CardHeader>
-          <CardContent className="pt-0 text-xs text-muted-foreground">
-            {item.description}
-          </CardContent>
+          <CardContent className="pt-0 text-xs text-muted-foreground">{item.description}</CardContent>
         </Card>
       ))}
     </div>
   );
 }
 
-async function getProfessorStudentAttemptsNeedingFeedback(
-  professorId: string,
-): Promise<AttemptSummary[]> {
-  const { data: relations, error: relError } = await supabase
-    .from("professor_students")
-    .select("student_id")
-    .eq("professor_id", professorId);
+async function getProfessorStudentAttemptsNeedingFeedback(professorId: string): Promise<AttemptSummary[]> {
+  const { data: relations, error: relError } = await supabase.from("professor_students").select("student_id").eq("professor_id", professorId);
 
   if (relError || !relations || relations.length === 0) {
     return [];
@@ -138,13 +105,10 @@ async function getProfessorStudentAttemptsNeedingFeedback(
 export default function HomePage() {
   const { user, role } = useAuth() as { user: any; role: Role };
   const [studentAttempts, setStudentAttempts] = useState<AttemptSummary[]>([]);
-  const [professorAttempts, setProfessorAttempts] = useState<AttemptSummary[]>(
-    [],
-  );
+  const [professorAttempts, setProfessorAttempts] = useState<AttemptSummary[]>([]);
   const [latestCases, setLatestCases] = useState<Case[]>([]);
   const [loadingStudentAttempts, setLoadingStudentAttempts] = useState(false);
-  const [loadingProfessorAttempts, setLoadingProfessorAttempts] =
-    useState(false);
+  const [loadingProfessorAttempts, setLoadingProfessorAttempts] = useState(false);
   const [loadingCases, setLoadingCases] = useState(false);
 
   useEffect(() => {
@@ -186,20 +150,14 @@ export default function HomePage() {
     const items: Notification[] = [];
 
     if (role === "student") {
-      const inProgressCount = studentAttempts.filter(
-        (a) => a.completionStatus === "in_progress",
-      ).length;
-      const completedCount = studentAttempts.filter(
-        (a) => a.completionStatus === "completed",
-      ).length;
+      const inProgressCount = studentAttempts.filter((a) => a.completionStatus === "in_progress").length;
+      const completedCount = studentAttempts.filter((a) => a.completionStatus === "completed").length;
 
       if (inProgressCount > 0) {
         items.push({
           id: "student-in-progress",
           title: "Pick up where you left off",
-          description: `You have ${inProgressCount} attempt${
-            inProgressCount > 1 ? "s" : ""
-          } still in progress.`,
+          description: `You have ${inProgressCount} attempt${inProgressCount > 1 ? "s" : ""} still in progress.`,
           tone: "info",
         });
       }
@@ -208,9 +166,7 @@ export default function HomePage() {
         items.push({
           id: "student-completed",
           title: "Completed practice",
-          description: `You've completed ${completedCount} recent attempt${
-            completedCount > 1 ? "s" : ""
-          }. Review them in the attempts area.`,
+          description: `You've completed ${completedCount} recent attempt${completedCount > 1 ? "s" : ""}. Review them in the attempts area.`,
           tone: "success",
         });
       }
@@ -234,8 +190,7 @@ export default function HomePage() {
       items.push({
         id: "all-clear",
         title: "You're all caught up",
-        description:
-          "No outstanding items right now. Explore a new case to keep your skills sharp.",
+        description: "No outstanding items right now. Explore a new case to keep your skills sharp.",
         tone: "success",
       });
     }
@@ -255,24 +210,18 @@ export default function HomePage() {
                 <span>Veterinary Clinical Skills</span>
               </div>
               <div className="space-y-3">
-                <h1 className="text-3xl font-semibold tracking-tight md:text-4xl lg:text-5xl">
-                  Veterinary OSCE Simulator
-                </h1>
+                <h1 className="text-3xl font-semibold tracking-tight md:text-4xl lg:text-5xl">Veterinary OSCE Simulator</h1>
                 <p className="text-sm text-primary-foreground/90 md:text-base dark:text-white">
                   AI-powered educational simulator for veterinary students
                 </p>
               </div>
               <p className="max-w-lg text-sm text-primary-foreground/80 md:text-base dark:text-white/60">
-                Practice real-world clinical scenarios, receive instant AI
-                feedback, and build confidence before stepping into your next
-                OSCE or rotation.
+                Practice real-world clinical scenarios, receive instant AI feedback, and build confidence before stepping into your next OSCE or
+                rotation.
               </p>
               <div className="flex flex-wrap gap-3">
                 <Link href="/cases">
-                  <Button
-                    size="sm"
-                    className="rounded-full bg-primary-foreground text-primary hover:bg-white dark:text-white/90"
-                  >
+                  <Button size="sm" className="rounded-full bg-primary-foreground text-primary hover:bg-white dark:text-white/90">
                     Browse all cases
                   </Button>
                 </Link>
@@ -290,14 +239,7 @@ export default function HomePage() {
             <div className="relative h-28 w-32 self-end motion-safe:animate-in motion-safe:fade-in-50 motion-safe:slide-in-from-right-6 md:h-32 md:w-40 lg:h-40 lg:w-48">
               <div className="absolute inset-0 rounded-3xl bg-black/10 blur-2xl" />
               <div className="relative flex h-full w-full items-center justify-center rounded-3xl border border-white/10 bg-white/10 shadow-2xl backdrop-blur-md">
-                <Image
-                  src="/logo.png"
-                  alt="Veterinary OSCE Simulator logo"
-                  width={120}
-                  height={120}
-                  className="h-16 w-auto md:h-20"
-                  priority
-                />
+                <Image src="/logo.png" alt="Veterinary OSCE Simulator logo" width={120} height={120} className="h-16 w-auto md:h-20" priority />
               </div>
             </div>
           </div>
@@ -314,9 +256,7 @@ export default function HomePage() {
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                 <span>Welcome back</span>
               </div>
-              <h2 className="mt-2 text-2xl font-semibold tracking-tight md:text-3xl">
-                Good to see you, {displayName}.
-              </h2>
+              <h2 className="mt-2 text-2xl font-semibold tracking-tight md:text-3xl">Good to see you, {displayName}.</h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 {role === "professor"
                   ? "Review your students' progress and assign new cases."
@@ -343,26 +283,15 @@ export default function HomePage() {
               }
             />
             {loadingStudentAttempts ? (
-              <div className="p-4 text-sm text-muted-foreground">
-                Loading your recent attempts...
-              </div>
+              <div className="p-4 text-sm text-muted-foreground">Loading your recent attempts...</div>
             ) : studentAttempts.length === 0 ? (
               <Card className="border-dashed bg-muted/40 text-sm text-muted-foreground">
-                <CardContent className="py-6">
-                  You don&apos;t have any attempts yet. Start your first case
-                  from the cases library below.
-                </CardContent>
+                <CardContent className="py-6">You don&apos;t have any attempts yet. Start your first case from the cases library below.</CardContent>
               </Card>
             ) : (
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {studentAttempts.slice(0, 3).map((attempt) => (
-                  <AttemptCard
-                    key={attempt.id}
-                    attempt={attempt}
-                    onDelete={() => {
-                      // Deletion can be wired into a dedicated attempts management view.
-                    }}
-                  />
+                  <AttemptCard key={attempt.id} attempt={attempt} />
                 ))}
               </div>
             )}
@@ -384,26 +313,15 @@ export default function HomePage() {
               }
             />
             {loadingProfessorAttempts ? (
-              <div className="p-4 text-sm text-muted-foreground">
-                Loading student attempts...
-              </div>
+              <div className="p-4 text-sm text-muted-foreground">Loading student attempts...</div>
             ) : professorAttempts.length === 0 ? (
               <Card className="border-dashed bg-muted/40 text-sm text-muted-foreground">
-                <CardContent className="py-6">
-                  There are no completed attempts from your students waiting for
-                  feedback right now.
-                </CardContent>
+                <CardContent className="py-6">There are no completed attempts from your students waiting for feedback right now.</CardContent>
               </Card>
             ) : (
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {professorAttempts.map((attempt) => (
-                  <AttemptCard
-                    key={attempt.id}
-                    attempt={attempt}
-                    onDelete={() => {
-                      // Professors typically won&apos;t delete student attempts from here.
-                    }}
-                  />
+                  <AttemptCard key={attempt.id} attempt={attempt} />
                 ))}
               </div>
             )}
@@ -427,15 +345,10 @@ export default function HomePage() {
             }
           />
           {loadingCases ? (
-            <div className="p-4 text-sm text-muted-foreground">
-              Loading latest cases...
-            </div>
+            <div className="p-4 text-sm text-muted-foreground">Loading latest cases...</div>
           ) : latestCases.length === 0 ? (
             <Card className="border-dashed bg-muted/40 text-sm text-muted-foreground">
-              <CardContent className="py-6">
-                No cases are available yet. Check back soon or contact your
-                instructor.
-              </CardContent>
+              <CardContent className="py-6">No cases are available yet. Check back soon or contact your instructor.</CardContent>
             </Card>
           ) : (
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">

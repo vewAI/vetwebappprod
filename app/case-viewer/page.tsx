@@ -5,21 +5,14 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 // ImageUploader intentionally not used here to allow manual image_url input in edit mode.
 import axios from "axios";
-import {
-  caseFieldMeta,
-  orderedCaseFieldKeys,
-  type CaseFieldKey,
-} from "@/features/cases/fieldMeta";
+import { caseFieldMeta, orderedCaseFieldKeys, type CaseFieldKey } from "@/features/cases/fieldMeta";
 import { isCaseFieldAutomatable } from "@/features/prompts/services/casePromptAutomation";
 import { useAuth } from "@/features/auth/services/authService";
 import { CaseMediaEditor } from "@/features/cases/components/case-media-editor";
 import CasePapersUploader from "@/features/cases/components/case-papers-uploader";
 import { AvatarSelector } from "@/features/cases/components/avatar-selector";
 import { PersonaEditor, type PersonaConfig } from "@/features/personas/components/PersonaEditor";
-import {
-  normalizeCaseMedia,
-  type CaseMediaItem,
-} from "@/features/cases/models/caseMedia";
+import { normalizeCaseMedia, type CaseMediaItem } from "@/features/cases/models/caseMedia";
 import { AdminDebugPanel } from "@/features/admin/components/AdminDebugPanel";
 import { TimeProgressionEditor } from "@/features/cases/components/case-time-progression-editor";
 import { caseConfig } from "@/features/config/case-config";
@@ -65,9 +58,7 @@ export default function CaseViewerPage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [editable, setEditable] = useState(false);
   const [formState, setFormState] = useState<CaseRecord | null>(null);
-  const [expandedField, setExpandedField] = useState<CaseFieldKey | null>(
-    null
-  );
+  const [expandedField, setExpandedField] = useState<CaseFieldKey | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteStep, setDeleteStep] = useState<1 | 2>(1);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -91,7 +82,12 @@ export default function CaseViewerPage() {
     >
   >({});
   const [mediaDraft, setMediaDraft] = useState<CaseMediaItem[]>([]);
-  const [compareResult, setCompareResult] = useState<null | { suggested?: Record<string, unknown>; diffs?: Record<string, { original: unknown; suggested: unknown }>; snippet?: string; error?: string }>(null);
+  const [compareResult, setCompareResult] = useState<null | {
+    suggested?: Record<string, unknown>;
+    diffs?: Record<string, { original: unknown; suggested: unknown }>;
+    snippet?: string;
+    error?: string;
+  }>(null);
   const [selectedSuggestKeys, setSelectedSuggestKeys] = useState<Record<string, boolean>>({});
   const [applying, setApplying] = useState(false);
 
@@ -118,16 +114,13 @@ export default function CaseViewerPage() {
       setFormState({ ...record, media });
       setMediaDraft(media);
     },
-    [parseMedia]
+    [parseMedia],
   );
 
-  const handleMediaChange = useCallback(
-    (items: CaseMediaItem[]) => {
-      setMediaDraft(items);
-      setFormState((prev) => (prev ? { ...prev, media: items } : prev));
-    },
-    []
-  );
+  const handleMediaChange = useCallback((items: CaseMediaItem[]) => {
+    setMediaDraft(items);
+    setFormState((prev) => (prev ? { ...prev, media: items } : prev));
+  }, []);
 
   // Extract persona config from a PersonaRow
   const extractPersonaConfig = useCallback((row: PersonaRow | undefined): Partial<PersonaConfig> => {
@@ -159,12 +152,12 @@ export default function CaseViewerPage() {
           params: { caseId },
         });
         const data = resp.data as { personas?: PersonaRow[] };
-        const list = Array.isArray(data?.personas) ? data.personas ?? [] : [];
-        
+        const list = Array.isArray(data?.personas) ? (data.personas ?? []) : [];
+
         // Extract owner and nurse configs from case personas
         const ownerRow = list.find((row) => row.role_key === "owner");
         const nurseRow = list.find((row) => row.role_key === "veterinary-nurse");
-        
+
         setOwnerPersonaConfig(extractPersonaConfig(ownerRow));
         setNursePersonaConfig(extractPersonaConfig(nurseRow));
         setPersonaConfigsDirty(false);
@@ -180,34 +173,31 @@ export default function CaseViewerPage() {
             combined = combined.concat(shared.personas);
           }
         } catch (sharedErr) {
-          console.warn(
-            "Failed to load shared personas in case viewer",
-            sharedErr
-          );
+          console.warn("Failed to load shared personas in case viewer", sharedErr);
         }
 
         // Filter personas based on the roles defined in caseConfig for this case
         const stages = caseConfig[caseId] || [];
         const allowedRoles = new Set<string>();
-        
+
         // Always include owner
         allowedRoles.add("owner");
-        
+
         // Add roles from stages
-        stages.forEach(stage => {
+        stages.forEach((stage) => {
           if (stage.role) {
             const normalized = resolveChatPersonaRoleKey(stage.role, stage.role);
             if (normalized) allowedRoles.add(normalized);
           }
         });
 
-        const filtered = combined.filter(p => {
+        const filtered = combined.filter((p) => {
           // If it's a case-specific persona (like owner), keep it if it matches the case
           if (p.case_id === caseId) return true;
-          
+
           // If it's a global persona, check if its role is used in this case
           if (p.role_key && allowedRoles.has(p.role_key)) return true;
-          
+
           return false;
         });
 
@@ -220,7 +210,7 @@ export default function CaseViewerPage() {
         setPersonasLoading(false);
       }
     },
-    [authHeaders, extractPersonaConfig]
+    [authHeaders, extractPersonaConfig],
   );
 
   useEffect(() => {
@@ -240,9 +230,7 @@ export default function CaseViewerPage() {
           headers: authHeaders,
         });
         const data = response.data as unknown;
-        const parsed = Array.isArray(data)
-          ? (data as CaseRecord[])
-          : ([] as CaseRecord[]);
+        const parsed = Array.isArray(data) ? (data as CaseRecord[]) : ([] as CaseRecord[]);
         setCases(parsed);
         if (parsed.length > 0) {
           setCurrentIndex(0);
@@ -293,65 +281,76 @@ export default function CaseViewerPage() {
   };
 
   // Save persona configurations to case_personas table
-  const savePersonaConfigs = useCallback(async (caseId: string) => {
-    if (!authHeaders) return;
-    
-    const configs = [
-      { roleKey: "owner", config: ownerPersonaConfig },
-      { roleKey: "veterinary-nurse", config: nursePersonaConfig },
-    ];
+  const savePersonaConfigs = useCallback(
+    async (caseId: string) => {
+      if (!authHeaders) return;
 
-    for (const { roleKey, config } of configs) {
-      if (!config.imageUrl && !config.displayName && !config.sex && !config.voiceId && !config.behaviorPrompt) {
-        continue; // Skip if no config set
-      }
+      const configs = [
+        { roleKey: "owner", config: ownerPersonaConfig },
+        { roleKey: "veterinary-nurse", config: nursePersonaConfig },
+      ];
 
-      try {
-        await axios.put("/api/personas", {
-          caseId,
-          roleKey,
-          displayName: config.displayName,
-          imageUrl: config.imageUrl,
-          sex: config.sex,
-          voiceId: config.voiceId,
-          sourcePersonaId: config.sourcePersonaId,
-          behaviorPrompt: config.behaviorPrompt ?? null,
-        }, { headers: authHeaders });
-      } catch (err) {
-        console.error(`Failed to save ${roleKey} persona config`, err);
+      for (const { roleKey, config } of configs) {
+        if (!config.imageUrl && !config.displayName && !config.sex && !config.voiceId && !config.behaviorPrompt) {
+          continue; // Skip if no config set
+        }
+
+        try {
+          await axios.put(
+            "/api/personas",
+            {
+              caseId,
+              roleKey,
+              displayName: config.displayName,
+              imageUrl: config.imageUrl,
+              sex: config.sex,
+              voiceId: config.voiceId,
+              sourcePersonaId: config.sourcePersonaId,
+              behaviorPrompt: config.behaviorPrompt ?? null,
+            },
+            { headers: authHeaders },
+          );
+        } catch (err) {
+          console.error(`Failed to save ${roleKey} persona config`, err);
+        }
       }
-    }
-  }, [authHeaders, ownerPersonaConfig, nursePersonaConfig]);
+    },
+    [authHeaders, ownerPersonaConfig, nursePersonaConfig],
+  );
 
   // Handle persona config changes
   const handleOwnerPersonaChange = useCallback((config: PersonaConfig) => {
     setOwnerPersonaConfig(config);
     setPersonaConfigsDirty(true);
     // Also update form state for avatar URL
-    setFormState((prev) => prev ? { 
-      ...prev, 
-      owner_avatar_url: config.imageUrl,
-      owner_persona_id: config.sourcePersonaId,
-    } : prev);
+    setFormState((prev) =>
+      prev
+        ? {
+            ...prev,
+            owner_avatar_url: config.imageUrl,
+            owner_persona_id: config.sourcePersonaId,
+          }
+        : prev,
+    );
   }, []);
 
   const handleNursePersonaChange = useCallback((config: PersonaConfig) => {
     setNursePersonaConfig(config);
     setPersonaConfigsDirty(true);
     // Also update form state for avatar URL
-    setFormState((prev) => prev ? { 
-      ...prev, 
-      nurse_avatar_url: config.imageUrl,
-      nurse_persona_id: config.sourcePersonaId,
-    } : prev);
+    setFormState((prev) =>
+      prev
+        ? {
+            ...prev,
+            nurse_avatar_url: config.imageUrl,
+            nurse_persona_id: config.sourcePersonaId,
+          }
+        : prev,
+    );
   }, []);
 
   const isAxiosError = (error: unknown): error is AxiosErrorLike => {
-    return (
-      typeof error === "object" &&
-      error !== null &&
-      Boolean((error as { isAxiosError?: boolean }).isAxiosError)
-    );
+    return typeof error === "object" && error !== null && Boolean((error as { isAxiosError?: boolean }).isAxiosError);
   };
 
   const updateAutomationStatus = (
@@ -363,12 +362,12 @@ export default function CaseViewerPage() {
             message: string | null;
             error: string | null;
           }
-        | undefined
+        | undefined,
     ) => {
       loading: boolean;
       message: string | null;
       error: string | null;
-    }
+    },
   ) => {
     setAutomationState((prev) => {
       const next = { ...prev };
@@ -440,15 +439,13 @@ export default function CaseViewerPage() {
         },
         {
           headers: authHeaders,
-        }
+        },
       );
       const data = response.data as { data?: { image_url?: string } };
       const generatedUrl = data?.data?.image_url ?? "";
 
       if (generatedUrl) {
-        setFormState((prev) =>
-          prev ? { ...prev, image_url: generatedUrl } : prev
-        );
+        setFormState((prev) => (prev ? { ...prev, image_url: generatedUrl } : prev));
         setCases((prev) => {
           const next = [...prev];
           if (next[currentIndex]) {
@@ -543,7 +540,7 @@ export default function CaseViewerPage() {
         },
         {
           headers: authHeaders,
-        }
+        },
       );
       const data = response.data as { content?: string };
       const content = typeof data.content === "string" ? data.content : "";
@@ -610,9 +607,7 @@ export default function CaseViewerPage() {
 
   const extraEntries = useMemo(() => {
     if (!formState) return [] as [string, unknown][];
-    return Object.entries(formState).filter(
-      ([key]) => key !== "media" && !knownFieldKeys.has(key as CaseFieldKey)
-    );
+    return Object.entries(formState).filter(([key]) => key !== "media" && !knownFieldKeys.has(key as CaseFieldKey));
   }, [formState]);
 
   const handlePrev = () => {
@@ -626,8 +621,7 @@ export default function CaseViewerPage() {
 
   if (loading) return <div className="p-8 text-center">Loading cases...</div>;
   if (error) return <div className="p-8 text-center text-red-600">{error}</div>;
-  if (!cases.length)
-    return <div className="p-8 text-center">No cases found.</div>;
+  if (!cases.length) return <div className="p-8 text-center">No cases found.</div>;
 
   const imageUrl = formState ? formatValue(formState["image_url"]) : "";
   const caseIdValue = formState ? formatValue(formState["id"]).trim() : "";
@@ -645,10 +639,7 @@ export default function CaseViewerPage() {
       {/* Show image if available */}
       {imageUrl && (
         <div className="mb-4 rounded bg-gray-100">
-          <div
-            className="relative w-full overflow-hidden"
-            style={{ aspectRatio: "4 / 3" }}
-          >
+          <div className="relative w-full overflow-hidden" style={{ aspectRatio: "4 / 3" }}>
             <Image
               src={imageUrl}
               alt={`Case ${formatValue(formState?.["id"])} image`}
@@ -662,19 +653,13 @@ export default function CaseViewerPage() {
       )}
       <div className="sticky top-20 z-30 -mx-8 mb-4 bg-background/90 backdrop-blur-sm p-4 flex justify-between items-center">
         <div className="flex items-center gap-3">
-          <Button
-            onClick={handlePrev}
-            disabled={currentIndex === 0}
-          >
+          <Button onClick={handlePrev} disabled={currentIndex === 0}>
             ← Prev
           </Button>
           <span className="font-semibold">
             Case {currentIndex + 1} of {cases.length}
           </span>
-          <Button
-            onClick={handleNext}
-            disabled={currentIndex === cases.length - 1}
-          >
+          <Button onClick={handleNext} disabled={currentIndex === cases.length - 1}>
             Next →
           </Button>
         </div>
@@ -707,14 +692,14 @@ export default function CaseViewerPage() {
               }
               try {
                 // Build payload with persona config data for persistence
-                const payload: Record<string, unknown> = { 
-                  ...formState, 
+                const payload: Record<string, unknown> = {
+                  ...formState,
                   media: mediaDraft,
                   // Include persona configs in payload for the API to process
                   _ownerPersonaConfig: ownerPersonaConfig,
                   _nursePersonaConfig: nursePersonaConfig,
                 };
-                
+
                 // Also update the avatar URL fields for backwards compatibility
                 if (ownerPersonaConfig.imageUrl) {
                   payload["owner_avatar_url"] = ownerPersonaConfig.imageUrl;
@@ -728,7 +713,7 @@ export default function CaseViewerPage() {
                 if (nursePersonaConfig.sourcePersonaId) {
                   payload["nurse_persona_id"] = nursePersonaConfig.sourcePersonaId;
                 }
-                
+
                 const resp = await axios.put("/api/cases", payload, {
                   headers: authHeaders,
                 });
@@ -784,45 +769,26 @@ export default function CaseViewerPage() {
               </p>
             </div>
           </div>
-          {personasError && (
-            <p className="mb-4 text-sm text-red-600">{personasError}</p>
-          )}
-          
+          {personasError && <p className="mb-4 text-sm text-red-600">{personasError}</p>}
+
           <div className="grid gap-6 lg:grid-cols-2">
             {/* Owner Persona */}
             <div>
               <h3 className="font-medium mb-3 text-lg">Pet Owner</h3>
-              <PersonaEditor
-                role="owner"
-                caseId={caseIdValue}
-                value={ownerPersonaConfig}
-                onChange={handleOwnerPersonaChange}
-                readOnly={!editable}
-              />
+              <PersonaEditor role="owner" caseId={caseIdValue} value={ownerPersonaConfig} onChange={handleOwnerPersonaChange} readOnly={!editable} />
             </div>
-            
+
             {/* Nurse Persona */}
             <div>
               <h3 className="font-medium mb-3 text-lg">Veterinary Nurse</h3>
-              <PersonaEditor
-                role="nurse"
-                caseId={caseIdValue}
-                value={nursePersonaConfig}
-                onChange={handleNursePersonaChange}
-                readOnly={!editable}
-              />
+              <PersonaEditor role="nurse" caseId={caseIdValue} value={nursePersonaConfig} onChange={handleNursePersonaChange} readOnly={!editable} />
             </div>
           </div>
         </div>
       )}
       {formState && (
         <div className="mb-6">
-          <CaseMediaEditor
-            caseId={caseIdValue || undefined}
-            value={mediaDraft}
-            onChange={handleMediaChange}
-            readOnly={!editable}
-          />
+          <CaseMediaEditor caseId={caseIdValue || undefined} value={mediaDraft} onChange={handleMediaChange} readOnly={!editable} />
         </div>
       )}
       {formState && caseIdValue && (
@@ -840,8 +806,13 @@ export default function CaseViewerPage() {
                 const headers = authHeaders ?? {};
                 await fetch(`/api/cases/${encodeURIComponent(caseIdValue)}/papers/ingest`, {
                   method: "POST",
-                  headers: { ...(headers as Record<string,string>), "Content-Type": "application/json" },
-                  body: JSON.stringify({ fields: ["details", "physical_exam_findings", "diagnostic_findings"] }),
+                  headers: {
+                    ...(headers as Record<string, string>),
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    fields: ["details", "physical_exam_findings", "diagnostic_findings"],
+                  }),
                 });
                 // refresh page to show appended data
                 window.location.reload();
@@ -868,29 +839,33 @@ export default function CaseViewerPage() {
                   }
                   const b64 = typeof window !== "undefined" ? window.btoa(binary) : Buffer.from(bytes).toString("base64");
                   const headers = authHeaders ?? {};
-                    const resp = await axios.post(`/api/cases/${encodeURIComponent(caseIdValue)}/compare`, {
+                  const resp = await axios.post(
+                    `/api/cases/${encodeURIComponent(caseIdValue)}/compare`,
+                    {
                       fileName: f.name,
                       mimeType: f.type || "application/octet-stream",
                       contentBase64: b64,
-                    }, { headers });
-                    const data = resp.data as any;
-                    if ((data as any)?.error) {
-                      setCompareResult({ error: String((data as any).error) });
-                      setSelectedSuggestKeys({});
-                    } else if (data?.diffs && Object.keys(data.diffs).length > 0) {
-                      setCompareResult(data);
-                      const keys: Record<string, boolean> = {};
-                      Object.keys(data.diffs).forEach((k) => (keys[k] = true));
-                      setSelectedSuggestKeys(keys);
-                    } else if (data?.suggested) {
-                      setCompareResult(data);
-                      const keys: Record<string, boolean> = {};
-                      Object.keys(data.suggested).forEach((k) => (keys[k] = true));
-                      setSelectedSuggestKeys(keys);
-                    } else {
-                      setCompareResult({});
-                      setSelectedSuggestKeys({});
-                    }
+                    },
+                    { headers },
+                  );
+                  const data = resp.data as any;
+                  if ((data as any)?.error) {
+                    setCompareResult({ error: String((data as any).error) });
+                    setSelectedSuggestKeys({});
+                  } else if (data?.diffs && Object.keys(data.diffs).length > 0) {
+                    setCompareResult(data);
+                    const keys: Record<string, boolean> = {};
+                    Object.keys(data.diffs).forEach((k) => (keys[k] = true));
+                    setSelectedSuggestKeys(keys);
+                  } else if (data?.suggested) {
+                    setCompareResult(data);
+                    const keys: Record<string, boolean> = {};
+                    Object.keys(data.suggested).forEach((k) => (keys[k] = true));
+                    setSelectedSuggestKeys(keys);
+                  } else {
+                    setCompareResult({});
+                    setSelectedSuggestKeys({});
+                  }
                 } catch (err) {
                   console.error(err);
                   alert("Upload & compare failed");
@@ -900,20 +875,13 @@ export default function CaseViewerPage() {
                 }
               }}
             />
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              onClick={() => fileInputRef.current?.click()}
-            >
+            <Button type="button" size="sm" variant="secondary" onClick={() => fileInputRef.current?.click()}>
               Upload & Compare
             </Button>
             {/* Diff / suggestions panel */}
             {compareResult && (
               <div className="mt-4 rounded border bg-background p-4">
-                {compareResult.error ? (
-                  <div className="text-sm text-red-600">Error: {compareResult.error}</div>
-                ) : null}
+                {compareResult.error ? <div className="text-sm text-red-600">Error: {compareResult.error}</div> : null}
                 {compareResult.diffs && Object.keys(compareResult.diffs).length > 0 ? (
                   <div>
                     <div className="font-semibold mb-2">Suggested updates</div>
@@ -924,18 +892,27 @@ export default function CaseViewerPage() {
                             <input
                               type="checkbox"
                               checked={!!selectedSuggestKeys[key]}
-                              onChange={(e) => setSelectedSuggestKeys((prev) => ({ ...prev, [key]: e.target.checked }))}
+                              onChange={(e) =>
+                                setSelectedSuggestKeys((prev) => ({
+                                  ...prev,
+                                  [key]: e.target.checked,
+                                }))
+                              }
                             />
                             <div className="font-medium">{key.replace(/_/g, " ")}</div>
                           </label>
                           <div className="grid grid-cols-2 gap-4 text-sm">
                             <div>
                               <div className="text-xs text-muted-foreground">Original</div>
-                              <pre className="whitespace-pre-wrap max-h-32 overflow-auto p-2 rounded bg-muted text-xs">{typeof pair.original === 'string' ? pair.original : JSON.stringify(pair.original, null, 2)}</pre>
+                              <pre className="whitespace-pre-wrap max-h-32 overflow-auto p-2 rounded bg-muted text-xs">
+                                {typeof pair.original === "string" ? pair.original : JSON.stringify(pair.original, null, 2)}
+                              </pre>
                             </div>
                             <div>
                               <div className="text-xs text-muted-foreground">Suggested</div>
-                              <pre className="whitespace-pre-wrap max-h-32 overflow-auto p-2 rounded bg-muted text-xs">{typeof pair.suggested === 'string' ? pair.suggested : JSON.stringify(pair.suggested, null, 2)}</pre>
+                              <pre className="whitespace-pre-wrap max-h-32 overflow-auto p-2 rounded bg-muted text-xs">
+                                {typeof pair.suggested === "string" ? pair.suggested : JSON.stringify(pair.suggested, null, 2)}
+                              </pre>
                             </div>
                           </div>
                         </div>
@@ -947,9 +924,9 @@ export default function CaseViewerPage() {
                         size="sm"
                         onClick={async () => {
                           // build updates from selected keys
-                          const keys = Object.keys(selectedSuggestKeys).filter(k => selectedSuggestKeys[k]);
+                          const keys = Object.keys(selectedSuggestKeys).filter((k) => selectedSuggestKeys[k]);
                           if (keys.length === 0) {
-                            alert('No fields selected');
+                            alert("No fields selected");
                             return;
                           }
                           const updates: Record<string, unknown> = {};
@@ -959,38 +936,53 @@ export default function CaseViewerPage() {
                           }
                           try {
                             setApplying(true);
-                            const resp = await axios.post(`/api/cases/${encodeURIComponent(caseIdValue)}/compare/apply`, { updates }, { headers: authHeaders });
+                            const resp = await axios.post(
+                              `/api/cases/${encodeURIComponent(caseIdValue)}/compare/apply`,
+                              { updates },
+                              { headers: authHeaders },
+                            );
                             const d = resp.data as any;
                             if ((d as any)?.success && d.data) {
                               // update UI copy in-place
-                              setFormState(prev => prev ? { ...prev, ...d.data } : prev);
-                              setCases(prev => {
+                              setFormState((prev) => (prev ? { ...prev, ...d.data } : prev));
+                              setCases((prev) => {
                                 const next = [...prev];
                                 if (next[currentIndex]) {
-                                  next[currentIndex] = { ...next[currentIndex], ...d.data };
+                                  next[currentIndex] = {
+                                    ...next[currentIndex],
+                                    ...d.data,
+                                  };
                                 }
                                 return next;
                               });
                               setCompareResult(null);
                               setSelectedSuggestKeys({});
-                              alert('Applied updates');
+                              alert("Applied updates");
                             } else if (d?.error) {
                               alert(`Apply failed: ${d.error}`);
                             } else {
-                              alert('Apply returned unexpected response');
+                              alert("Apply returned unexpected response");
                             }
                           } catch (err) {
                             console.error(err);
-                            alert('Failed to apply updates');
+                            alert("Failed to apply updates");
                           } finally {
                             setApplying(false);
                           }
                         }}
                         disabled={applying}
                       >
-                        {applying ? 'Applying...' : 'Confirm & Apply'}
+                        {applying ? "Applying..." : "Confirm & Apply"}
                       </Button>
-                      <Button type="button" size="sm" variant="ghost" onClick={() => { setCompareResult(null); setSelectedSuggestKeys({}); }}>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setCompareResult(null);
+                          setSelectedSuggestKeys({});
+                        }}
+                      >
                         Cancel
                       </Button>
                     </div>
@@ -1000,7 +992,14 @@ export default function CaseViewerPage() {
                     <div className="font-semibold mb-2">Suggested updates (no diffs)</div>
                     <pre className="whitespace-pre-wrap text-sm">{JSON.stringify(compareResult.suggested, null, 2)}</pre>
                     <div className="mt-3">
-                      <Button type="button" size="sm" onClick={() => { setCompareResult(null); setSelectedSuggestKeys({}); }}>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => {
+                          setCompareResult(null);
+                          setSelectedSuggestKeys({});
+                        }}
+                      >
                         Close
                       </Button>
                     </div>
@@ -1015,10 +1014,7 @@ export default function CaseViewerPage() {
       )}
       {formState && caseIdValue && (
         <div className="mb-6">
-          <TimeProgressionEditor
-            caseId={caseIdValue}
-            readOnly={!editable}
-          />
+          <TimeProgressionEditor caseId={caseIdValue} readOnly={!editable} />
         </div>
       )}
       <form className="space-y-4">
@@ -1091,23 +1087,12 @@ export default function CaseViewerPage() {
                     </Button>
                   </div>
                   {meta.help && (
-                    <p
-                      id={helpId}
-                      className="mt-1 text-sm text-muted-foreground"
-                    >
+                    <p id={helpId} className="mt-1 text-sm text-muted-foreground">
                       {meta.help}
                     </p>
                   )}
-                  {automation?.error ? (
-                    <p className="mt-1 text-sm text-red-600">
-                      {automation.error}
-                    </p>
-                  ) : null}
-                  {automation?.message ? (
-                    <p className="mt-1 text-sm text-green-600">
-                      {automation.message}
-                    </p>
-                  ) : null}
+                  {automation?.error ? <p className="mt-1 text-sm text-red-600">{automation.error}</p> : null}
+                  {automation?.message ? <p className="mt-1 text-sm text-green-600">{automation.message}</p> : null}
                 </div>
               );
             }
@@ -1144,11 +1129,7 @@ export default function CaseViewerPage() {
                       rows={3}
                     />
                     <div className="flex flex-col gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => setExpandedField(key)}
-                      >
+                      <Button type="button" size="sm" onClick={() => setExpandedField(key)}>
                         Expand
                       </Button>
                       {isAutomatable ? (
@@ -1165,19 +1146,12 @@ export default function CaseViewerPage() {
                     </div>
                   </div>
                   {meta.help && (
-                    <p
-                      id={helpId}
-                      className="mt-1 text-sm text-muted-foreground"
-                    >
+                    <p id={helpId} className="mt-1 text-sm text-muted-foreground">
                       {meta.help}
                     </p>
                   )}
-                  {automation?.error ? (
-                    <p className="mt-1 text-sm text-red-600">{automation.error}</p>
-                  ) : null}
-                  {automation?.message ? (
-                    <p className="mt-1 text-sm text-green-600">{automation.message}</p>
-                  ) : null}
+                  {automation?.error ? <p className="mt-1 text-sm text-red-600">{automation.error}</p> : null}
+                  {automation?.message ? <p className="mt-1 text-sm text-green-600">{automation.message}</p> : null}
                 </div>
               );
             }
@@ -1211,19 +1185,12 @@ export default function CaseViewerPage() {
                   ) : null}
                 </div>
                 {meta.help && (
-                  <p
-                    id={helpId}
-                    className="mt-1 text-sm text-muted-foreground"
-                  >
+                  <p id={helpId} className="mt-1 text-sm text-muted-foreground">
                     {meta.help}
                   </p>
                 )}
-                {automation?.error ? (
-                  <p className="mt-1 text-sm text-red-600">{automation.error}</p>
-                ) : null}
-                {automation?.message ? (
-                  <p className="mt-1 text-sm text-green-600">{automation.message}</p>
-                ) : null}
+                {automation?.error ? <p className="mt-1 text-sm text-red-600">{automation.error}</p> : null}
+                {automation?.message ? <p className="mt-1 text-sm text-green-600">{automation.message}</p> : null}
               </div>
             );
           })}
@@ -1255,9 +1222,7 @@ export default function CaseViewerPage() {
         {expandedField && (
           <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
             <div className="bg-background text-foreground rounded-lg shadow-lg max-w-2xl w-full p-6">
-              <h2 className="text-lg font-bold mb-2">
-                {caseFieldMeta[expandedField]?.label ?? expandedField}
-              </h2>
+              <h2 className="text-lg font-bold mb-2">{caseFieldMeta[expandedField]?.label ?? expandedField}</h2>
               <textarea
                 value={formatValue(formState?.[expandedField], true)}
                 id={`${expandedField}-expanded`}
@@ -1268,11 +1233,7 @@ export default function CaseViewerPage() {
                 className={`${textareaFieldClass} h-64`}
                 rows={caseFieldMeta[expandedField]?.rows ?? 12}
               />
-              {caseFieldMeta[expandedField]?.help && (
-                <p className="mt-2 text-sm text-muted-foreground">
-                  {caseFieldMeta[expandedField]?.help}
-                </p>
-              )}
+              {caseFieldMeta[expandedField]?.help && <p className="mt-2 text-sm text-muted-foreground">{caseFieldMeta[expandedField]?.help}</p>}
               <div className="flex justify-end mt-4">
                 <Button type="button" onClick={() => setExpandedField(null)}>
                   Close
@@ -1285,31 +1246,18 @@ export default function CaseViewerPage() {
         {/* Delete confirmation modal (two-step) */}
         {showDeleteModal && formState && (
           <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-            <div
-              className={`rounded-lg shadow-lg max-w-md w-full p-6 ${
-                deleteStep === 2
-                  ? "bg-red-600 text-white"
-                  : "bg-white text-black"
-              }`}
-            >
+            <div className={`rounded-lg shadow-lg max-w-md w-full p-6 ${deleteStep === 2 ? "bg-red-600 text-white" : "bg-white text-black"}`}>
               {deleteStep === 1 ? (
                 <>
                   <h3 className="text-xl font-bold mb-2">Confirm Delete</h3>
                   <p className="mb-4">
-                    Are you sure you want to delete the case{" "}
-                    <strong>{formatValue(formState["id"])}</strong>?
+                    Are you sure you want to delete the case <strong>{formatValue(formState["id"])}</strong>?
                   </p>
                   <div className="flex justify-end gap-2">
-                    <Button
-                      variant="ghost"
-                      onClick={() => setShowDeleteModal(false)}
-                    >
+                    <Button variant="ghost" onClick={() => setShowDeleteModal(false)}>
                       Cancel
                     </Button>
-                    <Button
-                      className="bg-yellow-500 text-black hover:bg-yellow-600"
-                      onClick={() => setDeleteStep(2)}
-                    >
+                    <Button className="bg-yellow-500 text-black hover:bg-yellow-600" onClick={() => setDeleteStep(2)}>
                       Proceed to Delete
                     </Button>
                   </div>
@@ -1317,10 +1265,7 @@ export default function CaseViewerPage() {
               ) : (
                 <>
                   <h3 className="text-xl font-bold mb-2">Final Confirmation</h3>
-                  <p className="mb-4">
-                    This action is irreversible. Deleting the case will remove
-                    it from the system permanently.
-                  </p>
+                  <p className="mb-4">This action is irreversible. Deleting the case will remove it from the system permanently.</p>
                   <div className="flex gap-2">
                     <Button
                       variant="ghost"
@@ -1341,42 +1286,27 @@ export default function CaseViewerPage() {
                         }
                         try {
                           setIsDeleting(true);
-                          const resp = await axios.delete(
-                            `/api/cases?id=${encodeURIComponent(id)}`,
-                            {
-                              headers: authHeaders,
-                            }
-                          );
+                          const resp = await axios.delete(`/api/cases?id=${encodeURIComponent(id)}`, {
+                            headers: authHeaders,
+                          });
                           const respData = resp.data as unknown;
                           const respObj = respData as Record<string, unknown>;
                           if (respObj && respObj["success"]) {
-                            const next = cases.filter(
-                              (c) => formatValue(c["id"]) !== id
-                            );
+                            const next = cases.filter((c) => formatValue(c["id"]) !== id);
                             setCases(next);
-                            const newIndex = Math.max(
-                              0,
-                              Math.min(currentIndex, next.length - 1)
-                            );
+                            const newIndex = Math.max(0, Math.min(currentIndex, next.length - 1));
                             setCurrentIndex(newIndex);
-                            setFormState(
-                              next[newIndex] ? { ...next[newIndex] } : null
-                            );
+                            setFormState(next[newIndex] ? { ...next[newIndex] } : null);
                             setShowDeleteModal(false);
                             setEditable(false);
                             setExpandedField(null);
                           } else {
-                            const errMsg =
-                              typeof respObj["error"] === "string"
-                                ? respObj["error"]
-                                : undefined;
+                            const errMsg = typeof respObj["error"] === "string" ? respObj["error"] : undefined;
                             throw new Error(errMsg ?? "Delete failed");
                           }
                         } catch (err) {
                           console.error("Error deleting case:", err);
-                          alert(
-                            "Error deleting case. See console for details."
-                          );
+                          alert("Error deleting case. See console for details.");
                         } finally {
                           setIsDeleting(false);
                         }
