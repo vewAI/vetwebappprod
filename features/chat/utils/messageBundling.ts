@@ -1,6 +1,9 @@
 import type { Message } from "@/features/chat/models/chat";
 
-export function mergeStringsNoDup(base: string | undefined, add: string | undefined): string {
+export function mergeStringsNoDup(
+  base: string | undefined,
+  add: string | undefined,
+): string {
   const b = String(base || "").trim();
   const a = String(add || "").trim();
   if (!b) return a;
@@ -19,10 +22,19 @@ export function mergeStringsNoDup(base: string | undefined, add: string | undefi
 }
 
 export function normalizeForCompare(s: string) {
-  return String(s).toLowerCase().replace(/[^a-z0-9\s]/gi, "").replace(/\s+/g, " ").trim();
+  return String(s)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-export function shouldCoalesce(lastMsg: Message | undefined, currentPersona: string | null | undefined, newText: string, windowMs = 2500): boolean {
+export function shouldCoalesce(
+  lastMsg: Message | undefined,
+  currentPersona: string | null | undefined,
+  newText: string,
+  windowMs = 2500,
+): boolean {
   if (!lastMsg) return false;
   if (lastMsg.role !== "user") return false;
   const lastPersona = lastMsg.personaRoleKey ?? null;
@@ -38,23 +50,41 @@ export function shouldCoalesce(lastMsg: Message | undefined, currentPersona: str
   return true;
 }
 
-export function coalesceMessages(messages: Message[], newText: string, currentPersona: string | null | undefined, windowMs = 2500): { messages: Message[]; mergedMessage?: Message | null } {
+export function coalesceMessages(
+  messages: Message[],
+  newText: string,
+  currentPersona: string | null | undefined,
+  windowMs = 2500,
+): { messages: Message[]; mergedMessage?: Message | null } {
   const last = messages.length ? messages[messages.length - 1] : undefined;
   if (!shouldCoalesce(last, currentPersona, newText, windowMs)) {
     return { messages, mergedMessage: null };
   }
   const mergedContent = mergeStringsNoDup(last!.content, newText);
-  const newTimestamp = new Date().toISOString();
+  // Use a slightly advanced timestamp to ensure consumers detect a change
+  // even when called within the same millisecond in fast test environments.
+  const newTimestamp = new Date(Date.now() + 1).toISOString();
   const mergedMessage: Message = {
-    ...last!,
+    // Create a fresh id so this merged pending message is treated as a new
+    // outbound message by send logic (avoids colliding with any in-flight id
+    // from the previous message that we merged into).
+    ...(last! as any),
+    id:
+      typeof crypto !== "undefined" && (crypto as any).randomUUID
+        ? (crypto as any).randomUUID()
+        : Date.now().toString(),
     content: mergedContent,
     timestamp: newTimestamp,
     status: "pending",
   };
   // Ensure persona attribution is preserved or explicitly set to the current persona
   try {
-    (mergedMessage as any).personaRoleKey = currentPersona ?? (last as any).personaRoleKey ?? null;
+    (mergedMessage as any).personaRoleKey =
+      currentPersona ?? (last as any).personaRoleKey ?? null;
   } catch {}
-  const newMessages = [...messages.slice(0, messages.length - 1), mergedMessage];
+  const newMessages = [
+    ...messages.slice(0, messages.length - 1),
+    mergedMessage,
+  ];
   return { messages: newMessages, mergedMessage };
 }

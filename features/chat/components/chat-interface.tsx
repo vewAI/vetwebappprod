@@ -48,7 +48,6 @@ import PersonaTabs from "@/features/chat/components/PersonaTabs";
 import { estimateTtsDurationMs } from "@/features/chat/utils/ttsEstimate";
 import VoiceModeControl from "@/features/chat/components/VoiceModeControl";
 import { AudioDeviceSelector } from "@/features/speech/components/audio-device-selector";
-import { IntroDialog } from "./intro-dialog";
 import { detectStageIntentLegacy, detectStageIntentPhase3, type StageIntentContext } from "@/features/chat/utils/stage-intent-detector";
 import { parseRequestedKeys } from "@/features/chat/services/physFinder";
 import { coalesceMessages } from "@/features/chat/utils/messageBundling";
@@ -71,6 +70,7 @@ import type { CaseTimepoint } from "@/features/cases/models/caseTimepoint";
 import { useAuth } from "@/features/auth/services/authService";
 import { HelpTip } from "@/components/ui/help-tip";
 import { GuidedTour } from "@/components/ui/guided-tour";
+import { FontSizeToggle } from "@/features/navigation/components/font-size-toggle";
 
 import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
 
@@ -117,6 +117,38 @@ function mergeStringsNoDup(base: string | undefined, add: string | undefined): s
   }
   // No overlap found
   return `${b} ${a}`;
+}
+
+// Collapse adjacent repeated sentences and exact repeated-halves patterns
+// that sometimes appear when the assistant content is streamed or merged
+// multiple times. This is intentionally conservative to avoid removing
+// legitimate repeated phrases.
+function collapseAdjacentDuplicates(s: string | undefined): string {
+  const txt = String(s ?? "").trim();
+  if (!txt) return "";
+  // Fast path: if the whole text is exactly two repeats of the same string,
+  // return the single instance. Compare trimmed lowercased forms.
+  try {
+    const half = Math.floor(txt.length / 2);
+    const firstHalf = txt.slice(0, half).trim();
+    const secondHalf = txt.slice(half).trim();
+    if (firstHalf.length > 20 && firstHalf.toLowerCase() === secondHalf.toLowerCase()) {
+      return firstHalf;
+    }
+  } catch {}
+
+  // Split into sentences by common end punctuation or newlines and collapse
+  // consecutive identical sentences.
+  const parts = txt.split(/(?<=[.!?])\s+|\n+/);
+  const out: string[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i].trim();
+    if (!p) continue;
+    const prev = out.length ? out[out.length - 1] : null;
+    if (prev && prev.toLowerCase() === p.toLowerCase()) continue;
+    out.push(p);
+  }
+  return out.join(" ");
 }
 
 type StageCompletionRule = {
@@ -229,7 +261,10 @@ export function ChatInterface({
   // State for timepoint progression dialog
   const [showTimepointDialog, setShowTimepointDialog] = useState(false);
   const [pendingTimepoint, setPendingTimepoint] = useState<any>(null);
-  const awaitingContinuationRef = useRef<{ partial: string; placeholderId: string } | null>(null);
+  const awaitingContinuationRef = useRef<{
+    partial: string;
+    placeholderId: string;
+  } | null>(null);
   const [autoSendStt, setAutoSendStt] = useState<boolean>(() => {
     try {
       const raw = typeof window !== "undefined" ? window.localStorage.getItem("sttAutoSend") : null;
@@ -255,10 +290,25 @@ export function ChatInterface({
   const tourSteps = [
     {
       element: "#chat-messages",
-      popover: { title: "Conversation History", description: "Read the dialogue between you and the virtual characters here." },
+      popover: {
+        title: "Conversation History",
+        description: "Read the dialogue between you and the virtual characters here.",
+      },
     },
-    { element: "#chat-input", popover: { title: "Input Area", description: "Type your questions or responses here. You can also use voice input." } },
-    { element: "#send-button", popover: { title: "Send Message", description: "Click to send your message to the virtual character." } },
+    {
+      element: "#chat-input",
+      popover: {
+        title: "Input Area",
+        description: "Type your questions or responses here. You can also use voice input.",
+      },
+    },
+    {
+      element: "#send-button",
+      popover: {
+        title: "Send Message",
+        description: "Click to send your message to the virtual character.",
+      },
+    },
     {
       element: "#voice-controls",
       popover: {
@@ -272,17 +322,23 @@ export function ChatInterface({
       popover: {
         title: "Persona (Owner / Nurse)",
         description:
-          'Switch who you are speaking AS: OWNER or NURSE. Use these buttons to change the character that will answer your next message. You can also change characters by voice — try saying: "May I talk to the nurse"',
+          'Switch who you are speaking TO: OWNER or NURSE. Use these buttons to change the character that will answer your next message. You can also change characters by voice — try saying: "May I talk to the nurse"',
       },
     },
     {
       element: "#notepad-toggle",
-      popover: { title: "Notepad", description: "Open the notepad to jot down important findings or notes during the case." },
+      popover: {
+        title: "Notepad",
+        description: "Open the notepad to jot down important findings or notes during the case.",
+      },
     },
   ];
 
   // Toast for timepoint progression
-  const [timepointToast, setTimepointToast] = useState<{ title: string; body: string } | null>(null);
+  const [timepointToast, setTimepointToast] = useState<{
+    title: string;
+    body: string;
+  } | null>(null);
   // Control visibility to allow animate-out before removing the toast
   const [toastVisible, setToastVisible] = useState(false);
 
@@ -306,6 +362,14 @@ export function ChatInterface({
   };
 
   const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const currentStageIndexRef = useRef<number>(currentStageIndex);
+  useEffect(() => {
+    currentStageIndexRef.current = currentStageIndex;
+  }, [currentStageIndex]);
+  const stagesRef = useRef<Stage[]>(stages);
+  useEffect(() => {
+    stagesRef.current = stages;
+  }, [stages]);
   const [caseStageOverrides, setCaseStageOverrides] = useState<Record<string, any>>({});
 
   // Load case-specific stage overrides (editable via admin panel)
@@ -349,7 +413,10 @@ export function ChatInterface({
     try {
       const ownerDraft = attemptId ? window.localStorage.getItem(draftLocalStorageKey("owner")) : null;
       const nurseDraft = attemptId ? window.localStorage.getItem(draftLocalStorageKey("veterinary-nurse")) : null;
-      setPersonaDrafts({ owner: ownerDraft ?? "", "veterinary-nurse": nurseDraft ?? "" });
+      setPersonaDrafts({
+        owner: ownerDraft ?? "",
+        "veterinary-nurse": nurseDraft ?? "",
+      });
     } catch (e) {
       // ignore localStorage failures
     }
@@ -367,7 +434,8 @@ export function ChatInterface({
   const appendAssistantMessage = (msg: Message) => {
     try {
       const isEphemeral = Boolean((msg as any).ephemeral === true);
-      const norm = normalizeForDedupe(msg.content);
+      const collapsed = collapseAdjacentDuplicates(msg.content);
+      const norm = normalizeForDedupe(collapsed);
       // If this is a non-ephemeral message and we've recently appended the
       // same assistant content, skip to avoid races where multiple appenders
       // add the same message. Ephemeral placeholders should NOT block later
@@ -389,7 +457,8 @@ export function ChatInterface({
     setMessages((prev) => {
       try {
         const recent = prev.slice(-6);
-        const norm = normalizeForDedupe(msg.content);
+        const collapsed = collapseAdjacentDuplicates(msg.content);
+        const norm = normalizeForDedupe(collapsed);
         const role = msg.displayRole ?? msg.role ?? "assistant";
         const duplicate = recent.some((m) => {
           if (m.role !== "assistant") return false;
@@ -420,7 +489,9 @@ export function ChatInterface({
               } as Message;
               return [...prev.slice(0, -1), replaced];
             }
-            const mergedContent = mergeStringsNoDup(last.content, msg.content);
+            let mergedContent = mergeStringsNoDup(last.content, msg.content);
+            // Clean up accidental duplicates produced by streaming/merging
+            mergedContent = collapseAdjacentDuplicates(mergedContent);
             // merge any structured findings if present (msg shape may have extra fields)
             const lastSF = (last as any).structuredFindings || {};
             const msgSF = (msg as any).structuredFindings || {};
@@ -438,13 +509,21 @@ export function ChatInterface({
             return [...prev.slice(0, -1), merged];
           } catch (e) {
             // fall back to append if merge fails
-            return [...prev, msg];
+            const collapsedMsg = {
+              ...msg,
+              content: collapseAdjacentDuplicates(msg.content),
+            } as Message;
+            return [...prev, collapsedMsg];
           }
         }
       } catch (e) {
         // ignore dedupe/merge errors
       }
-      return [...prev, msg];
+      const collapsedMsg = {
+        ...msg,
+        content: collapseAdjacentDuplicates(msg.content),
+      } as Message;
+      return [...prev, collapsedMsg];
     });
   };
 
@@ -494,6 +573,16 @@ export function ChatInterface({
   // Start overlay (SPEAK / WRITE / LEARN) should be visible by default in all environments.
   // Previously this was gated by NEXT_PUBLIC_SANDBOX_VOICE_UI; we enable it for production use.
   const [showStartSpeakingPrompt, setShowStartSpeakingPrompt] = useState<boolean>(true);
+
+  const hideIntroToast = useCallback(() => {
+    // Fade out intro toast then remove from DOM after transition
+    try {
+      setShowIntroToast(false);
+    } catch (e) {}
+    try {
+      window.setTimeout(() => setIntroMounted(false), 800);
+    } catch (e) {}
+  }, []);
 
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
   // Lightweight toast for mic/noise status
@@ -551,8 +640,15 @@ export function ChatInterface({
       personaDirectoryResolveRef.current = null;
     }
   }, []);
-  const [stageIndicator, setStageIndicator] = useState<{ title: string; body: string } | null>(null);
-  const [advanceGuard, setAdvanceGuard] = useState<{ stageIndex: number; askedAt: number; metrics: StageCompletionMetrics } | null>(() => {
+  const [stageIndicator, setStageIndicator] = useState<{
+    title: string;
+    body: string;
+  } | null>(null);
+  const [advanceGuard, setAdvanceGuard] = useState<{
+    stageIndex: number;
+    askedAt: number;
+    metrics: StageCompletionMetrics;
+  } | null>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem(`advanceGuard-${attemptId}`);
       if (saved) {
@@ -862,6 +958,10 @@ export function ChatInterface({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Keep a base input buffer (committed text from prior finals or manual typing)
   const baseInputRef = useRef<string>("");
+  // Track whether the most recent input changes came from manual typing
+  // (true) or from STT updates (false). Used to avoid clearing manual
+  // drafts when STT inactivity timers fire.
+  const lastTypedByUserRef = useRef<boolean>(false);
   // Remember whether we've already started listening for this attempt to
   // avoid repeatedly calling `start()` due to hook identity changes.
   const startedListeningRef = useRef<boolean>(false);
@@ -903,7 +1003,10 @@ export function ChatInterface({
   const clearInputSuppressionRef = useRef<boolean>(false);
 
   // Pending stage-advance confirmation state (shows inline banner with YES/NO)
-  const [pendingStageAdvance, setPendingStageAdvance] = useState<{ stageIndex: number; title: string } | null>(null);
+  const [pendingStageAdvance, setPendingStageAdvance] = useState<{
+    stageIndex: number;
+    title: string;
+  } | null>(null);
   // Timers for STT error toast fade and voice-mode restart
   const sttErrorToastTimerRef = useRef<number | null>(null);
   const sttErrorRestartTimerRef = useRef<number | null>(null);
@@ -1060,7 +1163,9 @@ export function ChatInterface({
               lastFinalHandledRef.current = trimmed;
               // helpful UX hint when auto-send would have been triggered but was suppressed by TTS echo
               try {
-                debugEventBus.emitEvent?.("info", "AutoSend", "blocked_echo", { text: trimmed });
+                debugEventBus.emitEvent?.("info", "AutoSend", "blocked_echo", {
+                  text: trimmed,
+                });
               } catch {}
               return;
             }
@@ -1114,6 +1219,9 @@ export function ChatInterface({
         // pauses do not erase earlier content. Maintain spacing. Also
         // guard against the base already ending with the same text.
         baseInputRef.current = mergeStringsNoDup(baseInputRef.current, trimmed);
+        try {
+          lastTypedByUserRef.current = false;
+        } catch {}
         // Reflect in the visible textarea immediately
         setInput(baseInputRef.current);
 
@@ -1228,7 +1336,32 @@ export function ChatInterface({
                 } catch {}
                 // show a brief hint so users understand why auto-send didn't fire
                 try {
-                  setTimepointToast({ title: "Auto-send blocked", body: "Message looks incomplete — tap Send to send it anyway." });
+                  setTimepointToast({
+                    title: "Auto-send blocked",
+                    body: "Message looks incomplete — tap Send to send it anyway.",
+                  });
+                  setTimeout(() => hideTimepointToastWithFade(300), 2400);
+                } catch {}
+                return;
+              }
+
+              // New guard: require an explicit send marker or terminal punctuation
+              // to avoid accidental auto-sends from short or incomplete phrases.
+              // `textToSend` is already declared earlier in this callback; reuse it.
+              const explicitSendRegex = /\b(send|submit|send it|send that|go ahead|done|okay|ok)\b/i;
+              const endsWithPunct = /[.!?]$/.test(textToSend);
+              const explicitSend = explicitSendRegex.test(textToSend) || endsWithPunct;
+
+              if (!explicitSend && textToSend.split(/\s+/).filter(Boolean).length < 5) {
+                console.debug("Auto-send BLOCKED: no explicit send marker or punctuation", { text: textToSend, source: "final-auto-guard" });
+                try {
+                  debugEventBus.emitEvent?.("info", "AutoSend", "blocked_no_marker", { text: textToSend, source: "final-auto-guard" });
+                } catch {}
+                try {
+                  setTimepointToast({
+                    title: "Auto-send blocked",
+                    body: "Message didn't have an explicit send marker or punctuation — tap Send to submit.",
+                  });
                   setTimeout(() => hideTimepointToastWithFade(300), 2400);
                 } catch {}
                 return;
@@ -1385,12 +1518,19 @@ export function ChatInterface({
   const [debugToastVisible, setDebugToastVisible] = useState(false);
   const [debugToastText, setDebugToastText] = useState<string | null>(null);
   const debugToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // When true, suppress the next admin debug toast (used for auto-stage-advance to avoid noisy toasts)
+  const suppressNextAdminDebugToastRef = useRef<boolean>(false);
 
   // Show a 10s debug toast when last LLM payload/response updates and
   // debug mode is enabled for an admin user.
   useEffect(() => {
     try {
       const isAdmin = role === "admin";
+      if (suppressNextAdminDebugToastRef.current) {
+        // consume the suppression marker and skip this toast
+        suppressNextAdminDebugToastRef.current = false;
+        return;
+      }
       if (!isAdmin || !debugEnabled) return;
       if (!lastLlmPayload && !lastLlmResponse) return;
 
@@ -1447,7 +1587,9 @@ export function ChatInterface({
     const startNoiseMonitoring = async () => {
       try {
         // Reuse mic stream or get a new one
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
         noiseStreamRef.current = stream;
 
         const audioContext = new AudioContext();
@@ -1803,6 +1945,44 @@ export function ChatInterface({
         return;
       }
       try {
+        // Prevent STT from appending fragments during the persona switch.
+        // Reset STT engine and clear any pending auto-send timers to avoid
+        // race conditions where a final transcript arrives and writes the
+        // previous persona's text into the newly focused persona input.
+        try {
+          // stop/reset the STT hook
+          try {
+            stop?.();
+          } catch {}
+          try {
+            reset?.();
+          } catch {}
+          // Clear pending auto-send timers/state
+          try {
+            if (autoSendTimerRef.current) {
+              window.clearTimeout(autoSendTimerRef.current);
+              autoSendTimerRef.current = null;
+            }
+            if (autoSendFinalTimerRef.current) {
+              window.clearTimeout(autoSendFinalTimerRef.current);
+              autoSendFinalTimerRef.current = null;
+            }
+            autoSendPendingTextRef.current = null;
+            lastAppendedTextRef.current = null;
+            lastFinalHandledRef.current = null;
+          } catch {}
+          // Mark STT suppressed briefly while we switch
+          try {
+            isSuppressingSttRef.current = true;
+            // release suppression shortly after switching (handled below)
+            window.setTimeout(() => {
+              try {
+                isSuppressingSttRef.current = false;
+              } catch {}
+            }, 300);
+          } catch {}
+        } catch (e) {}
+
         // save current draft
         window.localStorage.setItem(draftLocalStorageKey(activePersona), input || "");
       } catch (e) {
@@ -1829,7 +2009,10 @@ export function ChatInterface({
       try {
         window.setTimeout(() => {
           try {
-            messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+            messagesEndRef.current?.scrollIntoView({
+              behavior: "smooth",
+              block: "end",
+            });
           } catch (e) {}
         }, 50);
       } catch (e) {}
@@ -1867,13 +2050,28 @@ export function ChatInterface({
 
             const attemptAdvanceTo = async (predicate: (label: string) => boolean) => {
               for (let i = 0; i < 6; i++) {
-                const s = stages?.[currentStageIndex];
+                const s = stagesRef.current?.[currentStageIndexRef.current];
                 const sTitle = (s?.title ?? "").toLowerCase();
                 if (predicate(sTitle)) return true;
                 try {
                   onProceedToNextStage(messages, 0);
                 } catch {}
-                await new Promise((r) => setTimeout(r, 220));
+                // Wait for parent to update currentStageIndex (poll the ref),
+                // but don't block forever.
+                const initialIndex = currentStageIndexRef.current;
+                const start = Date.now();
+                let progressed = false;
+                while (Date.now() - start < 1200) {
+                  await new Promise((r) => setTimeout(r, 120));
+                  if (currentStageIndexRef.current !== initialIndex) {
+                    progressed = true;
+                    break;
+                  }
+                }
+                if (progressed) {
+                  // allow the loop to re-evaluate the new stage title
+                  continue;
+                }
               }
               return false;
             };
@@ -1895,59 +2093,37 @@ export function ChatInterface({
             // ignore
           }
 
-          if (!nurseGreetingSentRef.current) {
-            // If the user has recently sent a message as the Nurse, suppress the
-            // UI greeting because it would be redundant (user is already talking to Nurse).
-            try {
-              if (lastSentPersonaRef.current === "veterinary-nurse") {
-                nurseGreetingSentRef.current = true;
-                return;
-              }
-              // Also check the last few messages for a user message attributed to the Nurse
-              const recent = messages.slice(-4);
-              if (
-                recent.some(
-                  (m) =>
-                    m.role === "user" && ((m as any).personaRoleKey === "veterinary-nurse" || (m.displayRole ?? "").toLowerCase().includes("nurse")),
-                )
-              ) {
-                nurseGreetingSentRef.current = true;
-                return;
-              }
-            } catch (e) {
-              // ignore checks
-            }
-
+          // Prefer that the Nurse remains listening rather than auto-speaking.
+          // Skip the canned UI greeting and instead attempt to start STT so
+          // the Nurse can immediately hear the student input.
+          try {
+            // Mark greeting as 'handled' so we don't attempt to send it later
             nurseGreetingSentRef.current = true;
-            (async () => {
+            // Small delay to allow UI to settle; then try to start listening.
+            window.setTimeout(() => {
               try {
-                // Defer to shared helper so we can unit test the UI-driven greeting behavior
+                // Use centralized speechService to decide whether starting is allowed.
                 try {
-                  await (
-                    await import("@/features/chat/utils/sendPersonaGreeting")
-                  ).sendPersonaGreeting("veterinary-nurse", {
-                    ensurePersonaMetadata,
-                    appendAssistantMessage,
-                    playTtsAndPauseStt,
-                    ttsEnabled,
-                    currentStageIndex,
-                    caseId,
-                    isListening: isListening,
-                  });
+                  // Request permission to start; requestStart only checks guards.
+                  const allowed = (require("@/features/chat/services/speechService") as any).requestStart?.("persona-ui-nurse") ?? false;
+                  if (allowed) start();
                 } catch (e) {
-                  // ignore helper failures
+                  // Fallback to conservative check
+                  if (canStartListening && canStartListening()) start();
                 }
               } catch (e) {
                 // ignore
               }
-            })();
+            }, 150);
+          } catch (e) {
+            // non-blocking
           }
         }
       } catch (e) {
         // non-blocking
       }
     },
-    [activePersona, input, personaDrafts, attemptId, setInput, setActivePersona],
+    [activePersona, input, personaDrafts, attemptId, setInput, setActivePersona, stop, reset],
   );
 
   // Persist current draft whenever input changes
@@ -2053,7 +2229,9 @@ export function ChatInterface({
             return;
           }
           if (userToggledOffRef.current || !voiceModeRef.current) {
-            console.debug("attemptStartListening stopping retries", { attempts });
+            console.debug("attemptStartListening stopping retries", {
+              attempts,
+            });
             return;
           }
           // Central check: ask service whether we can start now
@@ -2070,7 +2248,9 @@ export function ChatInterface({
             }
           }
           try {
-            console.debug("attemptStartListening try", { attempt: attempts + 1 });
+            console.debug("attemptStartListening try", {
+              attempt: attempts + 1,
+            });
             start();
           } catch (e) {
             console.debug("attemptStartListening start() threw", e);
@@ -2082,7 +2262,9 @@ export function ChatInterface({
               else console.debug("attemptStartListening stopping further retries: isListening or toggled off", { isListening: !!isListening });
             }, 700);
           } else {
-            console.debug("attemptStartListening reached max attempts", { attempts });
+            console.debug("attemptStartListening reached max attempts", {
+              attempts,
+            });
           }
         };
         tryOnce();
@@ -2131,10 +2313,13 @@ export function ChatInterface({
     autoSendPendingTextRef.current = null;
 
     // NUCLEAR OPTION: Enter deaf mode IMMEDIATELY before doing anything else.
-    // This ensures ALL STT results are discarded during TTS playback.
-    // Even if the mic somehow stays active, results will be ignored.
+    // For user-initiated flows (e.g. Next Stage button) prefer shorter
+    // suppression and avoid entering long deaf windows so the mic returns
+    // to listening promptly. meta?.userInitiated toggles this behaviour.
     try {
-      enterDeafMode(); // Sets deafUntil to MAX_SAFE_INTEGER until TTS ends
+      if (!(meta as any)?.userInitiated) {
+        enterDeafMode(); // Sets deafUntil to MAX_SAFE_INTEGER until TTS ends
+      }
     } catch {}
 
     // ALWAYS stop STT before playing TTS to prevent mic from picking up audio
@@ -2242,7 +2427,9 @@ export function ChatInterface({
             // Fallback: only resume if we explicitly marked resumeListen before
             resumeListeningRef.current = false;
             try {
-              console.debug("playTtsAndPauseStt: resuming STT (fallback)", { delay: RESUME_DELAY_AFTER_TTS_MS });
+              console.debug("playTtsAndPauseStt: resuming STT (fallback)", {
+                delay: RESUME_DELAY_AFTER_TTS_MS,
+              });
             } catch (e) {}
             attemptStartListening(RESUME_DELAY_AFTER_TTS_MS);
             try {
@@ -2276,7 +2463,13 @@ export function ChatInterface({
 
     // Timer used when we estimate TTS length based on text so we can resume
     // STT even if the audio 'ended' event is delayed or missing.
-    const ttsEstimatedEndTimerRef: { current: number | null } = { current: null };
+    const ttsEstimatedEndTimerRef: { current: number | null } = {
+      current: null,
+    };
+
+    // Shared handle for the forced resume safety timer so it can be cleared
+    // from the finally block below regardless of where the scheduling occurs.
+    let forcedResumeTimer: number | null = null;
 
     // Use abort() for immediate stop - stop() may allow some processing to continue
     try {
@@ -2292,11 +2485,14 @@ export function ChatInterface({
       reset();
     } catch {}
 
-    // Also clear the visible input box so TTS playback doesn't leave
-    // partial user text in the textbox while the assistant speaks.
+    // Preserve WRITE-mode drafts: only clear the input buffer when voiceMode
+    // is active. This prevents typed text from vanishing when a stage transition
+    // triggers TTS but the user is in WRITE mode.
     try {
-      baseInputRef.current = "";
-      setInput("");
+      if (voiceMode) {
+        baseInputRef.current = "";
+        setInput("");
+      }
     } catch (e) {}
 
     // Wait for mic hardware to fully release before playing audio
@@ -2313,14 +2509,29 @@ export function ChatInterface({
       clearTtsEstimatedTimer(ttsEstimatedEndTimerRef);
       const ESTIMATE_RESUME_BUFFER_MS = 50; // small buffer after estimate before resuming
       const TTS_ESTIMATE_MULTIPLIER = 1.35; // increase estimate by 35% before resuming
-      const resumeDelay = Math.round(estimatedMs * TTS_ESTIMATE_MULTIPLIER) + ESTIMATE_RESUME_BUFFER_MS;
+      let resumeDelay = Math.round(estimatedMs * TTS_ESTIMATE_MULTIPLIER) + ESTIMATE_RESUME_BUFFER_MS;
+      // If this playback was triggered by an explicit user action (e.g.
+      // clicking Next Stage), cap the resume delay to avoid long suppression
+      // windows that frustrate voice-mode users.
+      if ((meta as any)?.userInitiated) {
+        const USER_INITIATED_MAX = 2000; // 2s cap
+        resumeDelay = Math.min(resumeDelay, USER_INITIATED_MAX);
+      }
       try {
-        debugEventBus.emitEvent?.("info", "TTS", "estimated_resume_scheduled", { estimatedMs, resumeDelay, multiplier: TTS_ESTIMATE_MULTIPLIER });
+        debugEventBus.emitEvent?.("info", "TTS", "estimated_resume_scheduled", {
+          estimatedMs,
+          resumeDelay,
+          multiplier: TTS_ESTIMATE_MULTIPLIER,
+        });
       } catch {}
       // Schedule resume using only the estimate (do not resume on audio ended)
       ttsEstimatedEndTimerRef.current = window.setTimeout(() => {
         try {
-          debugEventBus.emitEvent?.("info", "TTS", "estimated_resume_fired", { estimatedMs, resumeDelay, multiplier: TTS_ESTIMATE_MULTIPLIER });
+          debugEventBus.emitEvent?.("info", "TTS", "estimated_resume_fired", {
+            estimatedMs,
+            resumeDelay,
+            multiplier: TTS_ESTIMATE_MULTIPLIER,
+          });
         } catch {}
         doTtsResume();
       }, resumeDelay);
@@ -2334,6 +2545,27 @@ export function ChatInterface({
       } catch (e) {
         // ignore failures to set suppression
       }
+      // Fast-fail safety: if resume hasn't occurred after a short window,
+      // force-clear suppression and attempt to restart STT. This protects
+      // against long TTS stalls or network issues.
+      const FORCED_RESUME_MS = 4000;
+      forcedResumeTimer = window.setTimeout(() => {
+        try {
+          if (!isListening && !isPlayingAudioRef.current) {
+            try {
+              setSttSuppressed(false, true, "tts-forced");
+            } catch {}
+            try {
+              exitDeafMode();
+            } catch {}
+            try {
+              attemptStartListening(100);
+            } catch {}
+          }
+        } catch (e) {
+          // ignore
+        }
+      }, FORCED_RESUME_MS);
     } catch (e) {
       // ignore timer scheduling errors
     }
@@ -2374,7 +2606,9 @@ export function ChatInterface({
       // will still fall back to the estimate. Do not clear the estimated timer
       // here so the single source of truth (the estimate) controls resumption when appropriate.
       try {
-        debugEventBus.emitEvent?.("info", "TTS", "playback_finished", { estimatedMs });
+        debugEventBus.emitEvent?.("info", "TTS", "playback_finished", {
+          estimatedMs,
+        });
       } catch {}
       // Ensure we attempt resume now that audio actually ended; the resume
       // helper will check safety and only resume when appropriate.
@@ -2383,6 +2617,30 @@ export function ChatInterface({
       } catch (e) {
         console.warn("Error triggering TTS resume after playback finished", e);
       }
+      // Fallback: if resume logic didn't restart STT for some reason, attempt a safe restart
+      // shortly after the resume window. This covers race conditions where suppression
+      // flags or timers may have been left set.
+      try {
+        window.setTimeout(() => {
+          try {
+            if (voiceMode && !isListening && !userToggledOffRef.current && !isPlayingAudioRef.current) {
+              try {
+                setSttSuppressed(false, true, "tts-fallback");
+              } catch {}
+              try {
+                exitDeafMode();
+              } catch {}
+              attemptStartListening(200);
+            }
+          } catch (e) {
+            // ignore
+          }
+        }, RESUME_DELAY_AFTER_TTS_MS + 500);
+      } catch {}
+      // Clear the forced resume timer if it was set
+      try {
+        if (typeof forcedResumeTimer !== "undefined" && forcedResumeTimer) window.clearTimeout(forcedResumeTimer as number);
+      } catch {}
     }
   };
 
@@ -2407,7 +2665,10 @@ export function ChatInterface({
       const normalizedRoleKey = resolveChatPersonaRoleKey(stage.role, roleName);
       const personaMeta = await ensurePersonaMetadata(normalizedRoleKey);
       try {
-        console.debug("emitStageReadinessPrompt personaMeta", { normalizedRoleKey, personaMeta });
+        console.debug("emitStageReadinessPrompt personaMeta", {
+          normalizedRoleKey,
+          personaMeta,
+        });
       } catch (e) {}
 
       let voiceSex: "male" | "female" | "neutral" =
@@ -2498,7 +2759,12 @@ export function ChatInterface({
     }, 600);
   };
 
-  const lastSubmissionRef = useRef<{ content: string; timestamp: number } | null>(null);
+  const lastSubmissionRef = useRef<{
+    content: string;
+    timestamp: number;
+  } | null>(null);
+  // Timer handle for auto-expiring the last submission marker (to avoid permanent blocks)
+  const lastSubmissionTimerRef = useRef<number | null>(null);
   // Track message ids currently being sent to avoid duplicate send requests
   const sendingMessageIdsRef = useRef<Set<string> | null>(new Set());
 
@@ -2534,7 +2800,10 @@ export function ChatInterface({
           // Switch persona after a short delay so the student sees their spoken text first
           // Wait 3 seconds so the student's message is visible in the current persona
           // conversation stream before switching focus to the requested persona.
-          handleSetActivePersona(personaSwitch, { delayMs: 3000, suppressAutoStartMs: 3000 });
+          handleSetActivePersona(personaSwitch, {
+            delayMs: 3000,
+            suppressAutoStartMs: 3000,
+          });
         }
         return;
       }
@@ -2577,7 +2846,12 @@ export function ChatInterface({
             await playTtsAndPauseStt(
               ack,
               personaMeta?.voiceId,
-              { roleKey: "veterinary-nurse", displayRole: assistantMsg.displayRole, role: "veterinary-nurse", caseId } as any,
+              {
+                roleKey: "veterinary-nurse",
+                displayRole: assistantMsg.displayRole,
+                role: "veterinary-nurse",
+                caseId,
+              } as any,
               personaMeta?.sex as any,
             );
           } catch (e) {}
@@ -2595,14 +2869,23 @@ export function ChatInterface({
     // If the exact same content is submitted within 2.5 seconds, block it.
     const now = Date.now();
     if (lastSubmissionRef.current && lastSubmissionRef.current.content === trimmed && now - lastSubmissionRef.current.timestamp < 2500) {
-      console.warn("Duplicate submission blocked by ref-check:", { text: trimmed, source: options?.source ?? "unknown" });
+      console.warn("Duplicate submission blocked by ref-check:", {
+        text: trimmed,
+        source: options?.source ?? "unknown",
+      });
       try {
-        debugEventBus.emitEvent?.("info", "AutoSend", "blocked_duplicate_ref", { text: trimmed, source: options?.source ?? "unknown" });
+        debugEventBus.emitEvent?.("info", "AutoSend", "blocked_duplicate_ref", {
+          text: trimmed,
+          source: options?.source ?? "unknown",
+        });
       } catch {}
       // If this was an auto-send, show a small hint to the user explaining why it was blocked
       if (options?.source === "auto") {
         try {
-          setTimepointToast({ title: "Auto-send blocked", body: "Message was detected as a duplicate — tap Send to force it." });
+          setTimepointToast({
+            title: "Auto-send blocked",
+            body: "Message was detected as a duplicate — tap Send to force it.",
+          });
           setTimeout(() => hideTimepointToastWithFade(300), 2400);
         } catch {}
         return;
@@ -2614,18 +2897,50 @@ export function ChatInterface({
     // conditions where the server reply might be attributed to another role.
     selectedPersonaAtSendRef.current = activePersona;
     try {
-      console.debug("sendUserMessage: selectedPersonaAtSend", { selectedPersonaAtSend: selectedPersonaAtSendRef.current, activePersona });
+      console.debug("sendUserMessage: selectedPersonaAtSend", {
+        selectedPersonaAtSend: selectedPersonaAtSendRef.current,
+        activePersona,
+      });
     } catch (e) {}
 
-    // Update submission tracker immediately
-    lastSubmissionRef.current = { content: trimmed, timestamp: now };
+    // Update submission tracker immediately and set an expiry so the
+    // duplicate-block doesn't persist longer than a user-friendly TTL.
+    try {
+      lastSubmissionRef.current = { content: trimmed, timestamp: now };
+      // Clear any existing expiry timer
+      if (lastSubmissionTimerRef.current) {
+        try {
+          window.clearTimeout(lastSubmissionTimerRef.current);
+        } catch {}
+        lastSubmissionTimerRef.current = null;
+      }
+      // Auto-expire after ~8s (within requested 5-10s window)
+      try {
+        lastSubmissionTimerRef.current = window.setTimeout(() => {
+          try {
+            lastSubmissionRef.current = null;
+          } catch {}
+          try {
+            lastSubmissionTimerRef.current = null;
+          } catch {}
+        }, 8000) as unknown as number;
+      } catch {}
+    } catch (e) {
+      lastSubmissionRef.current = { content: trimmed, timestamp: now };
+    }
 
     // Run a lightweight stage evaluation every time the user sends a message
     try {
       const stageEval = emitStageEvaluation(
         caseId,
         currentStageIndex,
-        messages.concat([{ role: "user", content: trimmed, stageIndex: currentStageIndex } as any]),
+        messages.concat([
+          {
+            role: "user",
+            content: trimmed,
+            stageIndex: currentStageIndex,
+          } as any,
+        ]),
       );
       console.debug("Stage evaluation on sendUserMessage", stageEval);
     } catch (e) {
@@ -2651,7 +2966,10 @@ export function ChatInterface({
           console.debug("Duplicate detected against last user message - skipping send", { text: trimmed, source: options?.source ?? "unknown" });
           if (options?.source === "auto") {
             try {
-              setTimepointToast({ title: "Auto-send blocked", body: "Duplicate of your previous message — tap Send to force it." });
+              setTimepointToast({
+                title: "Auto-send blocked",
+                body: "Duplicate of your previous message — tap Send to force it.",
+              });
               setTimeout(() => hideTimepointToastWithFade(300), 2400);
             } catch {}
             return;
@@ -2687,10 +3005,17 @@ export function ChatInterface({
             ? (personaMeta.sex as "male" | "female" | "neutral")
             : "neutral";
         try {
-          console.debug("physical-stage personaMeta", { normalizedRoleKey, personaMeta, voiceSex });
+          console.debug("physical-stage personaMeta", {
+            normalizedRoleKey,
+            personaMeta,
+            voiceSex,
+          });
         } catch (e) {}
         try {
-          console.debug("physical-stage personaMeta", { normalizedRoleKey, personaMeta });
+          console.debug("physical-stage personaMeta", {
+            normalizedRoleKey,
+            personaMeta,
+          });
         } catch (e) {}
         const voiceForRole = getOrAssignVoiceForRole(normalizedRoleKey, attemptId, {
           preferredVoice: personaMeta?.voiceId,
@@ -2713,7 +3038,10 @@ export function ChatInterface({
         // the helper runs slightly later.
         try {
           wasMicPausedForTtsRef.current = !!isListening && !userToggledOffRef.current;
-          console.debug("physical-stage: wasMicPausedForTts set", { wasListening: isListening, marker: wasMicPausedForTtsRef.current });
+          console.debug("physical-stage: wasMicPausedForTts set", {
+            wasListening: isListening,
+            marker: wasMicPausedForTtsRef.current,
+          });
         } catch (e) {}
 
         if (ttsEnabled && brief) {
@@ -2721,7 +3049,12 @@ export function ChatInterface({
             await playTtsAndPauseStt(
               brief,
               voiceForRole,
-              { roleKey: normalizedRoleKey, displayRole: assistantMsg.displayRole, role: stage?.role ?? roleLabel, caseId } as any,
+              {
+                roleKey: normalizedRoleKey,
+                displayRole: assistantMsg.displayRole,
+                role: stage?.role ?? roleLabel,
+                caseId,
+              } as any,
               personaMeta?.sex as any,
             );
           } catch (e) {
@@ -2817,11 +3150,19 @@ export function ChatInterface({
           : "Assistant";
         const placeholder = chatService.createAssistantMessage("...", currentStageIndex, roleLabel, undefined, undefined, undefined, undefined);
         setMessages((prev) => [...prev, placeholder]);
-        awaitingContinuationRef.current = { partial: trimmed, placeholderId: placeholder.id };
+        awaitingContinuationRef.current = {
+          partial: trimmed,
+          placeholderId: placeholder.id,
+        };
         // reflect in input but do not send to server yet
         baseInputRef.current = trimmed;
         setInput(trimmed);
-        console.debug("Waiting for continuation - incomplete phrase detected", { tokenCount, lastWord, endsWithIncompleteMarker, trimmed });
+        console.debug("Waiting for continuation - incomplete phrase detected", {
+          tokenCount,
+          lastWord,
+          endsWithIncompleteMarker,
+          trimmed,
+        });
         // schedule an auto-send if no continuation arrives within 6s
         if (autoSendSttRef.current) {
           if (placeholderAutoSendTimerRef.current) {
@@ -2913,6 +3254,13 @@ export function ChatInterface({
           if (mergedMessage) {
             // Use the coalesced messages snapshot and proceed using mergedMessage
             setMessages(coalesced);
+            // Immediately clear the visible input and base buffer when we've
+            // committed the user's text into the conversation to avoid it
+            // remaining in the textbox (bug: user saw Sending... with text still present).
+            try {
+              baseInputRef.current = "";
+              setInput("");
+            } catch {}
             userMessage = mergedMessage as Message;
             snapshot = coalesced;
           }
@@ -2947,7 +3295,10 @@ export function ChatInterface({
           } catch {}
           if (options?.source === "auto") {
             try {
-              setTimepointToast({ title: "Auto-send blocked", body: "A recent message was already sent — tap Send to force it." });
+              setTimepointToast({
+                title: "Auto-send blocked",
+                body: "A recent message was already sent — tap Send to force it.",
+              });
               setTimeout(() => hideTimepointToastWithFade(300), 2400);
             } catch {}
             return;
@@ -2964,9 +3315,9 @@ export function ChatInterface({
     // If the current active persona is the nurse and the user is sending a message,
     // emit a brief nurse acknowledgement message immediately so the user sees a
     // responsive acknowledgement from the chosen persona before the server reply.
-    // However, avoid sending the pre-lab acknowledgement when the user's message
-    // is clearly a physical-exam request (e.g., "results of cardiovascular exam").
-    if (!existingMessageId && activePersona === "veterinary-nurse" && !looksLikePhysicalRequest(trimmed)) {
+    // Only emit this canned nurse ack for explicit lab/test requests (e.g., "bloodwork",
+    // "CBC", "chemistry", "radiograph"), not for generic or physical-exam requests.
+    if (!existingMessageId && activePersona === "veterinary-nurse" && looksLikeLabRequest(trimmed)) {
       (async () => {
         try {
           // Do not repeat the same nurse acknowledgement phrase more than once per attempt
@@ -2991,10 +3342,18 @@ export function ChatInterface({
           nurseAckGivenRef.current = true;
           if (ttsEnabled) {
             try {
+              // Force resume after this short ack so the mic/STT will be re-enabled
+              // for follow-up dictation even if it wasn't actively listening before.
               await playTtsAndPauseStt(
                 ackText,
                 personaMeta?.voiceId,
-                { roleKey: "veterinary-nurse", displayRole: personaMeta?.displayName ?? "Nurse", role: "veterinary-nurse", caseId } as any,
+                {
+                  roleKey: "veterinary-nurse",
+                  displayRole: personaMeta?.displayName ?? "Nurse",
+                  role: "veterinary-nurse",
+                  caseId,
+                  forceResume: true,
+                } as any,
                 personaMeta?.sex as any,
               );
             } catch (e) {
@@ -3144,6 +3503,10 @@ export function ChatInterface({
       }
       reset();
       baseInputRef.current = "";
+      // Avoid spamming admin debug toasts when advancing automatically
+      try {
+        suppressNextAdminDebugToastRef.current = true;
+      } catch {}
       scheduleAutoProceedRef.current?.();
       return;
     }
@@ -3153,14 +3516,23 @@ export function ChatInterface({
     if (userMessage && sendingMessageIdsRef.current.has(userMessage.id)) {
       console.debug("sendUserMessage: send already in progress for this message id, skipping duplicate send", { id: userMessage.id });
       try {
-        debugEventBus.emitEvent?.("info", "UI", "send_skipped_duplicate_inflight", { messageId: userMessage.id });
+        const snapshot = Array.from(sendingMessageIdsRef.current.values()).slice(0, 20);
+        debugEventBus.emitEvent?.("info", "UI", "send_skipped_duplicate_inflight", {
+          messageId: userMessage.id,
+          inflightCount: snapshot.length,
+          inflightSample: snapshot,
+        });
       } catch {}
       return;
     }
 
     setIsLoading(true);
     try {
-      debugEventBus.emitEvent?.("info", "UI", "send_started", { stageIndex: currentStageIndex, activePersona, ts: Date.now() });
+      debugEventBus.emitEvent?.("info", "UI", "send_started", {
+        stageIndex: currentStageIndex,
+        activePersona,
+        ts: Date.now(),
+      });
     } catch {}
 
     try {
@@ -3182,7 +3554,34 @@ export function ChatInterface({
       } catch {}
       // Mark message as 'in-flight' to prevent duplicate sends
       try {
-        if (userMessage && sendingMessageIdsRef.current) sendingMessageIdsRef.current.add(userMessage.id);
+        if (userMessage && sendingMessageIdsRef.current) {
+          sendingMessageIdsRef.current.add(userMessage.id);
+          try {
+            const snapshot = Array.from(sendingMessageIdsRef.current.values()).slice(0, 20);
+            debugEventBus.emitEvent?.("info", "UI", "send_marked_inflight", {
+              messageId: userMessage.id,
+              inflightCount: snapshot.length,
+              inflightSample: snapshot,
+              ts: Date.now(),
+            });
+          } catch {}
+          // Auto-clean any stale in-flight ids after a reasonable timeout so
+          // that a hung/never-resolved send cannot permanently block retries.
+          try {
+            window.setTimeout(() => {
+              try {
+                sendingMessageIdsRef.current?.delete(userMessage.id);
+                try {
+                  debugEventBus.emitEvent?.("info", "UI", "send_cleared_inflight", {
+                    messageId: userMessage.id,
+                    reason: "timeout",
+                    ts: Date.now(),
+                  });
+                } catch {}
+              } catch {}
+            }, 9_000);
+          } catch {}
+        }
       } catch (e) {}
 
       const response = await chatService.sendMessage(snapshot, currentStageIndex, caseId, { attemptId });
@@ -3312,7 +3711,6 @@ export function ChatInterface({
       upsertPersonaDirectory(normalizedPersonaKey, {
         displayName: aiMessage.displayRole,
         portraitUrl,
-        voiceId: assistantVoiceId,
         sex: resolvedResponseSex,
       });
 
@@ -3384,7 +3782,10 @@ export function ChatInterface({
             } finally {
               // Only replace placeholder with real content AFTER TTS completes or errors
               // This ensures text appears after audio finishes
-              console.debug("Voice-first: replacing placeholder with content", { ttsCompleted, playbackError: !!playbackError });
+              console.debug("Voice-first: replacing placeholder with content", {
+                ttsCompleted,
+                playbackError: !!playbackError,
+              });
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === placeholderMessage.id
@@ -3490,12 +3891,25 @@ export function ChatInterface({
     } finally {
       // Remove the message id from the in-flight set when done
       try {
-        if (userMessage && sendingMessageIdsRef.current) sendingMessageIdsRef.current.delete(userMessage.id);
+        if (userMessage && sendingMessageIdsRef.current) {
+          sendingMessageIdsRef.current.delete(userMessage.id);
+          try {
+            debugEventBus.emitEvent?.("info", "UI", "send_cleared_inflight", {
+              messageId: userMessage.id,
+              reason: "finished",
+              ts: Date.now(),
+            });
+          } catch {}
+        }
       } catch (e) {}
 
       setIsLoading(false);
       try {
-        debugEventBus.emitEvent?.("info", "UI", "send_finished", { stageIndex: currentStageIndex, activePersona, ts: Date.now() });
+        debugEventBus.emitEvent?.("info", "UI", "send_finished", {
+          stageIndex: currentStageIndex,
+          activePersona,
+          ts: Date.now(),
+        });
       } catch {}
       // Reset interim transcripts after a send
       reset();
@@ -3526,7 +3940,12 @@ export function ChatInterface({
       const nextStage = stages[nextIndex];
       const trimmed = content?.trim();
       if (!nextStage || !trimmed) {
-        return { matched: false, intent: "none", confidence: "low", heuristics: [] };
+        return {
+          matched: false,
+          intent: "none",
+          confidence: "low",
+          heuristics: [],
+        };
       }
 
       const context: StageReadinessContext = {
@@ -3929,7 +4348,10 @@ export function ChatInterface({
 
           // Show short toast indicating speak mode activated
           try {
-            setTimepointToast({ title: "SPEAK - Voice Mode Activated", body: "" });
+            setTimepointToast({
+              title: "SPEAK - Voice Mode Activated",
+              body: "",
+            });
             if (voiceModeToastTimerRef.current) {
               window.clearTimeout(voiceModeToastTimerRef.current);
               voiceModeToastTimerRef.current = null;
@@ -3951,7 +4373,10 @@ export function ChatInterface({
 
           // Show short toast indicating write mode activated
           try {
-            setTimepointToast({ title: "WRITE - Write Mode Activated", body: "" });
+            setTimepointToast({
+              title: "WRITE - Write Mode Activated",
+              body: "",
+            });
             if (voiceModeToastTimerRef.current) {
               window.clearTimeout(voiceModeToastTimerRef.current);
               voiceModeToastTimerRef.current = null;
@@ -4118,7 +4543,13 @@ export function ChatInterface({
           await playTtsAndPauseStt(
             greeting,
             personaMeta?.voiceId,
-            { roleKey: "owner", displayRole: assistantMsg.displayRole, role: "owner", caseId, forceResume } as any,
+            {
+              roleKey: "owner",
+              displayRole: assistantMsg.displayRole,
+              role: "owner",
+              caseId,
+              forceResume,
+            } as any,
             personaMeta?.sex as any,
           );
         } catch {
@@ -4169,6 +4600,9 @@ export function ChatInterface({
         }
       }
       setShowStartSpeakingPrompt(false);
+      try {
+        hideIntroToast();
+      } catch (e) {}
 
       // Send owner's greeting at the start of the case
       try {
@@ -4179,7 +4613,7 @@ export function ChatInterface({
     } finally {
       setStartSequenceActive(false);
     }
-  }, [startSequenceActive, setVoiceModeEnabled, setTtsEnabledState, isListening, start, sendOwnerGreetingIfNeeded]);
+  }, [startSequenceActive, setVoiceModeEnabled, setTtsEnabledState, isListening, start, sendOwnerGreetingIfNeeded, hideIntroToast]);
 
   const handleStartWritePrompt = useCallback(() => {
     try {
@@ -4187,10 +4621,13 @@ export function ChatInterface({
       setTtsEnabledState(false);
       setVoiceModeEnabled(false);
       setShowStartSpeakingPrompt(false);
+      try {
+        hideIntroToast();
+      } catch (e) {}
     } catch (err) {
       console.warn("Failed to initialize write controls:", err);
     }
-  }, [setVoiceModeEnabled, setTtsEnabledState]);
+  }, [setVoiceModeEnabled, setTtsEnabledState, hideIntroToast]);
 
   // Update input when transcript changes
   // Update input when interim or final transcripts arrive. When listening,
@@ -4211,6 +4648,9 @@ export function ChatInterface({
           autoSendPendingTextRef.current = null;
         }
         const combined = mergeStringsNoDup(baseInputRef.current, interimTranscript.trim());
+        try {
+          lastTypedByUserRef.current = false;
+        } catch {}
         setInput(combined);
         return;
       }
@@ -4252,13 +4692,18 @@ export function ChatInterface({
             try {
               // GUARD: If we're in deaf mode (TTS playing or just ended), skip auto-send
               if (isInDeafMode()) {
-                console.debug("Auto-send (transcript) BLOCKED: in deaf mode", { source: "transcript-auto" });
+                console.debug("Auto-send (transcript) BLOCKED: in deaf mode", {
+                  source: "transcript-auto",
+                });
                 try {
                   debugEventBus.emitEvent?.("info", "AutoSend", "blocked_deaf_mode", { source: "transcript-auto" });
                 } catch {}
                 // show a short hint for transcript-auto blocked sends
                 try {
-                  setTimepointToast({ title: "Auto-send blocked", body: "Audio playback detected — tap Send to force your message." });
+                  setTimepointToast({
+                    title: "Auto-send blocked",
+                    body: "Audio playback detected — tap Send to force your message.",
+                  });
                   setTimeout(() => hideTimepointToastWithFade(300), 2400);
                 } catch {}
                 return;
@@ -4279,47 +4724,9 @@ export function ChatInterface({
   // the mic and auto-send any pending text. This prevents the mic from
   // auto-stopping earlier while allowing long pauses during nurse stages.
   useEffect(() => {
-    try {
-      const stage = stages?.[currentStageIndex];
-      const stageTitle = (stage?.title ?? "").toLowerCase();
-      const isSensitiveStage = /physical|laboratory|lab|treatment/.test(stageTitle);
-
-      // Clear timer if not applicable
-      if (!isListening || !isSensitiveStage) {
-        if (micInactivityTimerRef.current) {
-          window.clearTimeout(micInactivityTimerRef.current);
-          micInactivityTimerRef.current = null;
-        }
-        return;
-      }
-
-      // Reset timer on each transcript/interim update
-      if (micInactivityTimerRef.current) {
-        window.clearTimeout(micInactivityTimerRef.current);
-        micInactivityTimerRef.current = null;
-      }
-
-      micInactivityTimerRef.current = window.setTimeout(() => {
-        try {
-          // Send any pending text then stop listening
-          stopAndMaybeSend();
-          stop();
-          showMicToast("Microphone stopped due to inactivity", 2000);
-        } catch (e) {
-          // ignore
-        }
-        micInactivityTimerRef.current = null;
-      }, 90000);
-
-      return () => {
-        if (micInactivityTimerRef.current) {
-          window.clearTimeout(micInactivityTimerRef.current);
-          micInactivityTimerRef.current = null;
-        }
-      };
-    } catch (e) {
-      // ignore
-    }
+    // Disabled: automatic microphone stop due to inactivity removed.
+    // Rationale: user requested removing automatic STT/mic turn-off timeouts.
+    return;
   }, [isListening, transcript, interimTranscript, currentStageIndex, stages, stopAndMaybeSend, stop]);
 
   // Adjust STT debounce adaptively based on ambient noise level to reduce
@@ -4359,7 +4766,10 @@ export function ChatInterface({
           if (!isVisible) {
             // Scroll the container to show newest message. Use container.scrollTo so the
             // page viewport doesn't jump.
-            container.scrollTo({ top: container.scrollHeight, behavior: "auto" });
+            container.scrollTo({
+              top: container.scrollHeight,
+              behavior: "auto",
+            });
           }
           return;
         } catch (inner) {
@@ -4371,25 +4781,33 @@ export function ChatInterface({
       // using 'block: nearest'. This minimizes the chance that the browser will scroll
       // the outer page container.
       try {
-        messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "nearest" });
+        messagesEndRef.current?.scrollIntoView({
+          behavior: "auto",
+          block: "nearest",
+        });
       } catch {}
     } catch (e) {
       // If anything else goes wrong, be noisy in console but avoid breaking the app
       try {
-        messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "nearest" });
+        messagesEndRef.current?.scrollIntoView({
+          behavior: "auto",
+          block: "nearest",
+        });
       } catch {}
     }
   }, [messages]);
 
   // Intro toast: central, non-blocking pop-up shown when an attempt opens.
   const introShownRef = useRef(false);
-  const [introMounted, setIntroMounted] = useState(true);
+  const [introMounted, setIntroMounted] = useState(false);
+  const [showIntroToast, setShowIntroToast] = useState(false);
 
   useEffect(() => {
     if (!attemptId) return;
     if (introShownRef.current) return;
     introShownRef.current = true;
-
+    setIntroMounted(true);
+    setShowIntroToast(true);
     // Keep the intro visible until the user explicitly interacts (Speak/Write/Learn/Close)
     return () => {
       /* no-op */
@@ -4420,12 +4838,15 @@ export function ChatInterface({
         // Only show a toast for stage-related debug events so the UI isn't noisy
         if (event.source && String(event.source).toLowerCase().startsWith("stage")) {
           try {
-            setTimepointToast({
-              title: `${event.source} - ${event.message}`,
-              body: event.details ? JSON.stringify(event.details, null, 0).slice(0, 220) : "",
+            // Stage-related debug events are captured in the STT trace for QA
+            // but should not surface as UI toasts to avoid cluttering the user.
+            // Emit an informational debug event so telemetry still records the occurrence.
+            debugEventBus.emitEvent?.("info", "UI", "stage_toast_suppressed", {
+              source: event.source,
+              message: event.message,
+              details: event.details ? String(event.details).slice(0, 400) : null,
+              ts: Date.now(),
             });
-            // Content visible briefly
-            setTimeout(() => hideTimepointToastWithFade(300), 3000);
           } catch {}
         }
       } catch (e) {
@@ -4501,50 +4922,62 @@ export function ChatInterface({
     }
   }, [voiceMode, isListening, reset, start]);
 
+  // Clear the writing/input box after 15s of STT inactivity.
+  // The timer resets on STT activity (`interimTranscript` or `transcript`) and
+  // will only clear input when the input content appears to have come from
+  // STT (i.e. when `lastTypedByUserRef` is false). This avoids erasing manual typing.
+  useEffect(() => {
+    const INACTIVITY_MS = 15000;
+    let t: number | null = null;
+
+    const clearIfStt = () => {
+      try {
+        // Only clear if there is input and it wasn't typed manually
+        if (typeof input === "string" && input.trim().length > 0) {
+          // `lastTypedByUserRef` is used elsewhere in the component to track manual typing;
+          // if it doesn't exist, fall back to clearing regardless.
+          const lastTypedByUser = (lastTypedByUserRef as any)?.current;
+          if (!lastTypedByUser) {
+            setInput("");
+            baseInputRef.current = "";
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    const resetTimer = () => {
+      try {
+        if (t) {
+          window.clearTimeout(t);
+          t = null;
+        }
+        t = window.setTimeout(() => {
+          clearIfStt();
+        }, INACTIVITY_MS);
+      } catch (e) {}
+    };
+
+    // Reset on STT signals: interimTranscript or transcript updates, and when
+    // listening state changes (e.g., stop -> start)
+    resetTimer();
+
+    return () => {
+      try {
+        if (t) window.clearTimeout(t);
+      } catch {}
+    };
+    // Depend on STT outputs and input so we reset when speech arrives or user types
+  }, [interimTranscript, transcript, isListening, input]);
+
   // Auto-pause attempt and show toast if user leaves the chat page
   useEffect(() => {
+    // Disabled: automatic pausing when tab is hidden. Per request, do not auto-stop
+    // or pause the attempt based on visibility/timeouts; leave control to user actions.
     if (!attemptId) return;
     const handleVisibility = () => {
-      if (document.visibilityState === "hidden") {
-        setIsPaused(true);
-        // Set global pause flag to prevent STT auto-restart when window is refocused
-        setGlobalPaused(true);
-        // Turn off voice mode when auto-pausing - CRITICAL for stopping STT/TTS
-        try {
-          setVoiceModeEnabled(false);
-        } catch {
-          // fallback: ensure listeners and TTS are stopped
-          if (isListening) {
-            try {
-              stop();
-            } catch {}
-          }
-        }
-        stopActiveTtsPlayback();
-        setTtsEnabledState(false);
-        // Also enter deaf mode to ignore any pending STT results
-        enterDeafMode();
-        setTimepointToast({
-          title: "Attempt Paused",
-          body: "You left the case. The attempt is paused. Re-enter to unpause.",
-        });
-      } else if (document.visibilityState === "visible") {
-        // Clear any pause/deaf-mode status when the user returns to the tab
-        setIsPaused(false);
-        setGlobalPaused(false);
-        try {
-          exitDeafMode();
-        } catch {}
-        try {
-          // If voice mode is enabled and the user didn't explicitly toggle off,
-          // attempt to re-start listening after a short delay to allow devices to settle.
-          if (voiceMode && !userToggledOffRef.current) {
-            attemptStartListening(400);
-          }
-        } catch (e) {
-          // ignore
-        }
-      }
+      // no-op: automatic visibility-based pause disabled
     };
     document.addEventListener("visibilitychange", handleVisibility);
 
@@ -4583,7 +5016,10 @@ export function ChatInterface({
     // Listen for unauthorized save events (e.g., expired auth token) and show a helpful toast
     const onSaveUnauthorized = (ev: any) => {
       try {
-        setTimepointToast({ title: "Save Failed", body: "Failed to save progress — please sign in again." });
+        setTimepointToast({
+          title: "Save Failed",
+          body: "Failed to save progress — please sign in again.",
+        });
         setTimeout(() => hideTimepointToastWithFade(300), 3000);
       } catch (e) {}
     };
@@ -4730,15 +5166,18 @@ export function ChatInterface({
     return () => {
       mounted = false;
       clearInterval(timer);
+      if (lastSubmissionTimerRef.current) {
+        try {
+          window.clearTimeout(lastSubmissionTimerRef.current);
+        } catch {}
+        lastSubmissionTimerRef.current = null;
+      }
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
   }, [attemptId, messages, currentStageIndex, timeSpentSeconds, saveProgress]);
 
   useEffect(() => {
-    console.log("Intro mounted:", introMounted);
-    if (introMounted) return;
-
     const stage = stages[currentStageIndex];
     const stageTitle = stage?.title ?? `Stage ${currentStageIndex + 1}`;
     const tip = getStageTip(caseId, currentStageIndex);
@@ -4756,7 +5195,7 @@ export function ChatInterface({
     } else {
       setStageIndicator(null);
     }
-  }, [introMounted]);
+  }, [caseId, currentStageIndex, stages]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     try {
@@ -4772,7 +5211,10 @@ export function ChatInterface({
       await sendUserMessage(input, undefined, { source: "manual" });
     } finally {
       try {
-        debugEventBus.emitEvent?.("info", "UI", "submit_complete", { stageIndex: currentStageIndex, activePersona });
+        debugEventBus.emitEvent?.("info", "UI", "submit_complete", {
+          stageIndex: currentStageIndex,
+          activePersona,
+        });
       } catch {}
       // Clear the base input buffer and visible input when the user clicks Send
       try {
@@ -4810,14 +5252,21 @@ export function ChatInterface({
     const role = String(stages[targetStageIndex]?.role || "").toLowerCase();
 
     // If the upcoming stage expects interaction with the owner/client,
-    // normally the intro should come from the owner. However, if the UI
-    // currently has the Nurse persona focused, we should not produce an
-    // owner prompt attributed to the Nurse (nurse must never speak owner
-    // prompts). In that case, return a Nurse-centred intro instead.
+    // normally the intro should come from the owner. The nurse should only
+    // use the nurse-centered findings prompt when the target stage is the
+    // Physical Examination (or similar). For all other owner/client stages
+    // do not return the nurse findings greeting.
+    const titleLower = title.toLowerCase();
+    const isPhysicalStage = /physical|exam|examination/.test(titleLower);
     if (role.includes("owner") || role.includes("client")) {
       if (activePersona === "veterinary-nurse") {
-        // Nurse-focused intro (non-owner phrasing)
-        return `I'm the veterinary nurse supporting this case. I'm ready to share the documented findings for the ${title.toLowerCase()} whenever you need them.`;
+        // Nurse-focused intro only for physical/exam stages
+        if (isPhysicalStage) {
+          return `I'm the veterinary nurse supporting this case. I'm ready to share the documented findings for the ${title.toLowerCase()} whenever you need them.`;
+        }
+        // Do not attribute owner prompts to the nurse on non-physical stages;
+        // fall back to a neutral owner-style prompt instead.
+        return `Hi Doc, do you have any news for me?`;
       }
       // A brief, natural owner prompt that invites the student to report
       // findings or ask follow-up questions. Keep it short so the student
@@ -4829,7 +5278,10 @@ export function ChatInterface({
       return "What are your indications and treatment plan, Doctor?";
     }
 
-    return `I'm the veterinary nurse supporting this case. I'm ready to share the documented findings for the ${title.toLowerCase()} whenever you need them.`;
+    // Default fallback: do not return a nurse-specific findings prompt here
+    // to avoid accidentally attributing nurse-first phrasing to non-physical
+    // stages. Use a neutral continuation-ready message.
+    return `I'm ready to continue with the ${title.toLowerCase()} whenever you're ready.`;
   };
 
   const handleProceed = async () => {
@@ -4947,7 +5399,10 @@ export function ChatInterface({
         // Schedule persona switch to owner and show owner placeholder after 3s
         try {
           // Delay UI switch and suppress auto-start to avoid accidental mic resume
-          handleSetActivePersona("owner", { delayMs: 3000, suppressAutoStartMs: 3000 });
+          handleSetActivePersona("owner", {
+            delayMs: 3000,
+            suppressAutoStartMs: 3000,
+          });
         } catch (e) {}
 
         // Append owner placeholder after 3s so it's visible in the owner stream
@@ -4988,7 +5443,10 @@ export function ChatInterface({
       // Already sent this intro earlier in the attempt - skip appending/playing TTS
       // but still ensure the UI scrolls the message area so the user sees latest
       try {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+        messagesEndRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "end",
+        });
       } catch (e) {}
     }
 
@@ -5015,7 +5473,10 @@ export function ChatInterface({
           // deterministically attempt to restart it after playback completes.
           wasMicPausedForTtsRef.current = !userToggledOffRef.current && wasListening;
           try {
-            console.debug("Intro TTS: marking wasMicPausedForTts", { wasListening, userToggledOff: userToggledOffRef.current });
+            console.debug("Intro TTS: marking wasMicPausedForTts", {
+              wasListening,
+              userToggledOff: userToggledOffRef.current,
+            });
           } catch (e) {}
 
           // Do NOT stop the mic or toggle the visible mic UI here. The
@@ -5038,7 +5499,10 @@ export function ChatInterface({
             stageId: stages[targetIndex]?.id,
             stageIntro: true,
           },
-        } satisfies Omit<TtsEventDetail, "audio">;
+          // Mark this TTS as coming directly from a user action (Next Stage)
+          // so playback orchestration can shorten suppression windows.
+          userInitiated: true,
+        } as any;
         // For non-sensitive intros allow auto-resume so the mic is
         // reliably restarted after playback when it was previously listening.
         // Use skipResume=false (explicit) to avoid leaving the mic disabled.
@@ -5142,7 +5606,10 @@ export function ChatInterface({
           // If we intentionally skipped TTS for this intro, log for diagnostics.
           if (skipIntroTts) {
             try {
-              console.debug("Skipping intro TTS for nurse in sensitive stage", { targetIndex, introStageTitleLower });
+              console.debug("Skipping intro TTS for nurse in sensitive stage", {
+                targetIndex,
+                introStageTitleLower,
+              });
             } catch (e) {}
 
             // Ensure voice mode is available after the intro when TTS is intentionally skipped.
@@ -5199,7 +5666,9 @@ export function ChatInterface({
     const { stageIndex } = pendingStageAdvance;
     setPendingStageAdvance(null);
     try {
-      debugEventBus.emitEvent?.("success", "StageIntent", "confirmed", { stageIndex });
+      debugEventBus.emitEvent?.("success", "StageIntent", "confirmed", {
+        stageIndex,
+      });
     } catch (e) {}
     // If a direct proceed handler is available, call it immediately.
     if (handleProceedRef.current && !isAdvancingRef.current) {
@@ -5220,7 +5689,9 @@ export function ChatInterface({
     setPendingStageAdvance(null);
     lockStageIntent("stay");
     try {
-      debugEventBus.emitEvent?.("info", "StageIntent", "declined", { stageIndex: declined.stageIndex });
+      debugEventBus.emitEvent?.("info", "StageIntent", "declined", {
+        stageIndex: declined.stageIndex,
+      });
     } catch (e) {}
   };
 
@@ -5269,25 +5740,112 @@ export function ChatInterface({
         </div>
       )}
 
-      {/* Intro modal (new) — keep existing toast for now */}
-      <IntroDialog
-        mounted={introMounted}
-        onClose={() => setIntroMounted(false)}
-        onContinue={async (mode: "text" | "voice", opts?: { autoSendStt?: boolean }) => {
-          setIntroMounted(false);
-          // Reflect the user's auto-send choice in the chat state if provided
-          if (opts && typeof opts.autoSendStt !== "undefined") {
-            setAutoSendStt(Boolean(opts.autoSendStt));
-          }
-          if (mode === "voice") {
-            // Ensure voice mode is enabled (this will request permission if needed)
-            setVoiceModeEnabled(true);
-          } else {
-            setVoiceModeEnabled(false);
-          }
-        }}
-      />
+      {/* Intro toast (central, non-blocking) */}
+      {introMounted && (
+        <div className="fixed inset-0 flex items-start justify-center pt-24 pointer-events-none z-50">
+          <div
+            // Allow clicks inside the card so the user can dismiss it early.
+            className={`max-w-xl w-full mx-4 transition-opacity duration-700 ${showIntroToast ? "opacity-100" : "opacity-0"}`}
+          >
+            <div
+              role="status"
+              aria-live="polite"
+              onClick={() => {
+                // Start fade-out immediately, then remove from DOM after the
+                // transition completes (matching the 0.8s fade used earlier).
+                setShowIntroToast(false);
+                window.setTimeout(() => setIntroMounted(false), 800);
+              }}
+              className="cursor-pointer pointer-events-auto bg-orange-500 text-white px-6 py-4 rounded-lg shadow-lg text-center"
+            >
+              <div className="text-sm leading-relaxed">
+                You are about to start the clinical interview. Greet the owner, then proceed with history-taking and physical exam questions.
+                <div className="mt-2 font-semibold">Voice Mode is enabled:</div>
+                <div className="text-xs mt-1">
+                  the app will listen and speak. To switch to text-only, click the 'Voice Mode' button to disable listening and speaking.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {showStartSpeakingPrompt && (
+        <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center">
+          <div className="relative pointer-events-auto">
+            <div className="flex flex-col items-center space-y-4">
+              <div className="text-center mb-2 font-semibold">How would you like to begin?</div>
+              <div className="flex space-x-4">
+                <Button
+                  type="button"
+                  size="lg"
+                  className="px-8 py-6 text-lg font-semibold text-white shadow-2xl bg-gradient-to-r from-rose-500 via-orange-500 to-amber-500 hover:from-rose-600 hover:to-amber-600"
+                  onClick={handleStartSpeakingPrompt}
+                  disabled={startSequenceActive}
+                >
+                  {startSequenceActive ? "Starting voice..." : "Speak"}
+                </Button>
+                <Button
+                  type="button"
+                  size="lg"
+                  variant="outline"
+                  className="px-6 py-6 text-lg font-semibold"
+                  onClick={handleStartWritePrompt}
+                  disabled={startSequenceActive}
+                >
+                  Write
+                </Button>
+              </div>
+              <div className="text-xs text-muted-foreground mt-2">You can toggle voice mode and mic later using the mic button.</div>
 
+              {/* LEARN HOW TO USE (overlay) - shows below the SPEAK / WRITE buttons */}
+              <div className="mt-4 flex justify-center">
+                <button
+                  id="learn-how-to-use-overlay"
+                  type="button"
+                  onClick={() => {
+                    try {
+                      const btn = document.getElementById("start-tour-chat-interface") as HTMLButtonElement | null;
+                      if (btn) btn.click();
+                      // Hide the intro banner when the user explicitly requests the tour
+                      try {
+                        hideIntroToast();
+                      } catch (e) {}
+                      // keep the start overlay visible so the user can choose SPEAK/WRITE after tour
+                    } catch (e) {
+                      // ignore
+                    }
+                  }}
+                  className="w-56 rounded-md bg-white/90 text-slate-800 text-sm px-4 py-3 shadow-md hover:shadow-lg transition"
+                  aria-label="Learn how to use"
+                >
+                  LEARN HOW TO USE
+                </button>
+              </div>
+
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="absolute -top-3 -right-3 bg-muted/90 text-foreground"
+                onClick={() => {
+                  setShowStartSpeakingPrompt(false);
+                  try {
+                    setVoiceModeEnabled(false);
+                  } catch (e) {
+                    /* ignore */
+                  }
+                  try {
+                    hideIntroToast();
+                  } catch (e) {}
+                }}
+                title="Close"
+              >
+                ×
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Stage Tip Toast (central, non-blocking) */}
       {stageIndicator && (
         <div className="fixed top-24 left-0 right-0 flex justify-center pointer-events-none z-40">
@@ -5357,224 +5915,268 @@ export function ChatInterface({
 
       {/* Proceed to Next Stage button */}
       <div id="stage-controls" className="border-t bg-background p-4">
-        <div className="flex flex-col sm:flex-row justify-between items-start mb-4 gap-4">
-          <Button
-            onClick={handleProceed}
-            disabled={false}
-            className={`sr-only w-full sm:flex-1 ${
-              isLastStage
-                ? "bg-gradient-to-l from-green-500 to-teal-500 hover:from-green-600 hover:to-teal-600"
-                : "bg-gradient-to-l from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600"
-            } 
+        <div className="mx-auto max-w-3xl">
+          <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
+            <Button
+              onClick={handleProceed}
+              disabled={false}
+              className={`sr-only w-full sm:flex-1 ${
+                isLastStage
+                  ? "bg-gradient-to-l from-green-500 to-teal-500 hover:from-green-600 hover:to-teal-600"
+                  : "bg-gradient-to-l from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600"
+              } 
                 text-white border-none transition-all duration-300`}
-            variant="outline"
-          >
-            {nextStageTitle}
-          </Button>
+              variant="outline"
+            >
+              {nextStageTitle}
+            </Button>
 
-          <div className="grid grid-cols-1 sm:grid-cols-[auto_auto_1fr_auto] gap-4 items-center w-full p-2 bg-background/80 border border-border rounded-lg">
-            {/* Left persona */}
-            {/* OWNER button (left) with portrait above */}
-            <div className="flex flex-col items-center gap-1 flex-shrink-0">
-              <button
-                type="button"
-                onClick={() => handleSetActivePersona("owner")}
-                aria-pressed={activePersona === "owner"}
-                className={`rounded-full overflow-hidden border bg-muted focus:outline-none focus:ring-2 focus:ring-blue-500 transition-transform ${activePersona === "owner" ? "h-20 w-20 scale-100" : "h-10 w-10 scale-100"}`}
-                aria-label="Select Owner persona"
-              >
-                {personaDirectory?.owner?.portraitUrl ? (
-                  <img src={personaDirectory.owner.portraitUrl} alt="OWNER portrait" className="h-full w-full object-cover" loading="lazy" />
-                ) : (
-                  <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">OWN</div>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSetActivePersona("owner")}
-                className={`px-2 py-0.5 text-sm rounded-md ${activePersona === "owner" ? "bg-blue-600 text-white" : "bg-muted"}`}
-                aria-pressed={activePersona === "owner"}
-                data-testid="owner-tab"
-              >
-                OWNER
-              </button>
-            </div>
-
-            {/* Central voice control with a single status button below showing current mode */}
-            <div className="flex flex-col items-center gap-2 justify-center flex-shrink-0">
-              <VoiceModeControl
-                voiceMode={voiceMode}
-                isListening={isListening}
-                isSpeaking={isSpeaking}
-                onToggle={toggleVoiceMode}
-                disabled={!speechSupported}
-              />
-              {showModeControls && (
-                <div className="flex flex-col items-stretch gap-2 w-full">
-                  <button
-                    id="mode-status-button"
-                    className={`px-3 py-1 rounded-md text-sm ${voiceMode ? "bg-amber-500 text-white" : "bg-muted"}`}
-                    aria-pressed={voiceMode}
-                    onClick={() => {
-                      // when toggling on, request microphone access explicitly to force permission prompt
-                      try {
-                        setShowModeControls(false);
-                      } catch (e) {}
-                      if (!voiceMode) {
-                        try {
-                          void requestPermission();
-                        } catch (e) {}
-                      }
-                      setVoiceModeEnabled(!voiceMode);
-                      textareaRef.current?.focus();
-                    }}
-                  >
-                    {voiceMode ? "SPEAK" : "WRITE"}
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* NURSE button (right) with portrait above */}
-            <div className="flex flex-col items-center gap-1 flex-shrink-0">
-              <button
-                type="button"
-                onClick={() => handleSetActivePersona("veterinary-nurse")}
-                aria-pressed={activePersona === "veterinary-nurse"}
-                className={`rounded-full overflow-hidden border bg-muted focus:outline-none focus:ring-2 focus:ring-blue-500 transition-transform ${activePersona === "veterinary-nurse" ? "h-20 w-20 scale-100" : "h-10 w-10 scale-100"}`}
-                aria-label="Select Nurse persona"
-              >
-                {personaDirectory?.["veterinary-nurse"]?.portraitUrl ? (
-                  <img
-                    src={personaDirectory!["veterinary-nurse"].portraitUrl}
-                    alt="NURSE portrait"
-                    className="h-full w-full object-cover"
-                    loading="lazy"
-                  />
-                ) : (
-                  <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">NUR</div>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSetActivePersona("veterinary-nurse")}
-                className={`px-2 py-0.5 text-sm rounded-md ${activePersona === "veterinary-nurse" ? "bg-blue-600 text-white" : "bg-muted"}`}
-                aria-pressed={activePersona === "veterinary-nurse"}
-                data-testid="nurse-tab"
-              >
-                NURSE
-              </button>
-            </div>
-
-            {/* Next stage control (large button) */}
-            <div className="relative flex items-center justify-end gap-2">
-              {showProceedHint && (
+            <div className="grid grid-cols-1 sm:grid-cols-[auto_auto_1fr_auto] gap-4 items-center w-full p-2 bg-background/80 border border-border rounded-lg">
+              {/* Left persona */}
+              {/* OWNER button (left) with portrait above */}
+              <div className="flex flex-col items-center gap-1 flex-shrink-0">
                 <button
-                  id="proceed-hint"
-                  onClick={() => {
-                    try {
-                      void handleProceed();
-                    } catch (e) {}
-                    try {
-                      setShowProceedHint(false);
-                    } catch (e) {}
-                  }}
-                  className="absolute -top-12 right-0 bg-orange-500 text-white px-3 py-2 rounded-md shadow-xl animate-bounce text-xs font-semibold z-50"
-                  aria-label="Proceed hint"
+                  type="button"
+                  onClick={() => handleSetActivePersona("owner")}
+                  aria-pressed={activePersona === "owner"}
+                  className={`rounded-full overflow-hidden border bg-muted focus:outline-none focus:ring-2 focus:ring-blue-500 transition-transform ${activePersona === "owner" ? "h-20 w-20 scale-100" : "h-10 w-10 scale-100"}`}
+                  aria-label="Select Owner persona"
                 >
-                  CLICK TO GO ON TO NEXT STAGE
-                </button>
-              )}
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      id="next-stage-button"
-                      onClick={handleProceed}
-                      size="lg"
-                      variant="default"
-                      className={`px-6 py-3 text-sm font-semibold ${isLastStage ? "bg-gradient-to-l from-green-500 to-teal-500" : "bg-gradient-to-l from-blue-500 to-purple-500"} text-white border-none`}
-                    >
-                      {isLastStage ? "COMPLETE" : "NEXT STAGE"}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{`Click here to advance to ${nextStageName}`}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
-          </div>
-
-          {/* Input area placed to the right of persona controls (responsive) */}
-          <div className="col-span-1 sm:col-span-1 w-full">
-            <form onSubmit={handleSubmit} className="relative">
-              {pendingStageAdvance && (
-                <div className="mb-2 rounded-md border bg-blue-50 px-3 py-2 text-sm flex items-center justify-between gap-3">
-                  <div>
-                    Step to stage: <strong>{pendingStageAdvance.title}</strong>?
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button size="sm" onClick={confirmPendingAdvance}>
-                      Yes
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={declinePendingAdvance}>
-                      No
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              <Textarea
-                id="chat-input"
-                name="chat-message"
-                autoComplete="off"
-                ref={textareaRef}
-                value={input}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  baseInputRef.current = val;
-                  setInput(val);
-                  if (showStartSpeakingPrompt) {
-                    setShowStartSpeakingPrompt(false);
-                    try {
-                      setVoiceModeEnabled(false);
-                    } catch (err) {}
-                    try {
-                      void sendOwnerGreetingIfNeeded();
-                    } catch (e) {}
-                  }
-                }}
-                onKeyDown={handleKeyDown}
-                placeholder={isListening ? `${interimTranscript || "Listening..."}` : "Type or record your message..."}
-                className="min-h-[90px] w-full resize-none pr-28 rounded-md bg-muted/20 border border-border px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                rows={3}
-              />
-
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span>
-                      <Button
-                        type="submit"
-                        id="send-button"
-                        size="icon"
-                        disabled={isLoading || !input.trim() || input.trim().length < 2}
-                        className={`absolute bottom-2 right-2 ${input.trim() && input.trim().length >= 2 ? "bg-gradient-to-l from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600 border-none" : ""} ${autoSendFlash ? "animate-pulse ring-2 ring-offset-1 ring-blue-300" : ""}`}
-                      >
-                        <SendIcon className="h-5 w-5" />
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  {input.trim().length > 0 && input.trim().length < 2 && (
-                    <TooltipContent>
-                      <p>Message too short</p>
-                    </TooltipContent>
+                  {personaDirectory?.owner?.portraitUrl ? (
+                    <img src={personaDirectory.owner.portraitUrl} alt="OWNER portrait" className="h-full w-full object-cover" loading="lazy" />
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">OWN</div>
                   )}
-                </Tooltip>
-              </TooltipProvider>
-            </form>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSetActivePersona("owner")}
+                  className={`px-2 py-0.5 text-sm rounded-md ${activePersona === "owner" ? "bg-blue-600 text-white" : "bg-muted"}`}
+                  aria-pressed={activePersona === "owner"}
+                  data-testid="owner-tab"
+                >
+                  OWNER
+                </button>
+              </div>
 
+              {/* Central voice control with a single status button below showing current mode */}
+              <div className="flex flex-col items-center gap-2 justify-center flex-shrink-0">
+                <VoiceModeControl
+                  voiceMode={voiceMode}
+                  isListening={isListening}
+                  isSpeaking={isSpeaking}
+                  onToggle={toggleVoiceMode}
+                  disabled={!speechSupported}
+                />
+                {showModeControls && (
+                  <div className="flex flex-col items-stretch gap-2 w-full">
+                    <button
+                      id="mode-status-button"
+                      className={`px-3 py-1 rounded-md text-sm ${voiceMode ? "bg-amber-500 text-white" : "bg-muted"}`}
+                      aria-pressed={voiceMode}
+                      onClick={() => {
+                        // when toggling on, request microphone access explicitly to force permission prompt
+                        try {
+                          setShowModeControls(false);
+                        } catch (e) {}
+                        if (!voiceMode) {
+                          try {
+                            void requestPermission();
+                          } catch (e) {}
+                        }
+                        setVoiceModeEnabled(!voiceMode);
+                        textareaRef.current?.focus();
+                      }}
+                    >
+                      {voiceMode ? "SPEAK" : "WRITE"}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* NURSE button (right) with portrait above */}
+              <div className="flex flex-col items-center gap-1 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleSetActivePersona("veterinary-nurse")}
+                  aria-pressed={activePersona === "veterinary-nurse"}
+                  className={`rounded-full overflow-hidden border bg-muted focus:outline-none focus:ring-2 focus:ring-blue-500 transition-transform ${activePersona === "veterinary-nurse" ? "h-20 w-20 scale-100" : "h-10 w-10 scale-100"}`}
+                  aria-label="Select Nurse persona"
+                >
+                  {personaDirectory?.["veterinary-nurse"]?.portraitUrl ? (
+                    <img
+                      src={personaDirectory!["veterinary-nurse"].portraitUrl}
+                      alt="NURSE portrait"
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">NUR</div>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSetActivePersona("veterinary-nurse")}
+                  className={`px-2 py-0.5 text-sm rounded-md ${activePersona === "veterinary-nurse" ? "bg-blue-600 text-white" : "bg-muted"}`}
+                  aria-pressed={activePersona === "veterinary-nurse"}
+                  data-testid="nurse-tab"
+                >
+                  NURSE
+                </button>
+              </div>
+
+              {/* Next stage control (large button) */}
+              <div className="relative flex items-center justify-end gap-2">
+                {showProceedHint && (
+                  <button
+                    id="proceed-hint"
+                    onClick={() => {
+                      try {
+                        void handleProceed();
+                      } catch (e) {}
+                      try {
+                        setShowProceedHint(false);
+                      } catch (e) {}
+                    }}
+                    className="absolute -top-12 right-0 bg-orange-500 text-white px-3 py-2 rounded-md shadow-xl animate-bounce text-xs font-semibold z-50"
+                    aria-label="Proceed hint"
+                  >
+                    CLICK TO GO ON TO NEXT STAGE
+                  </button>
+                )}
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        id="next-stage-button"
+                        onClick={handleProceed}
+                        size="lg"
+                        variant="default"
+                        className={`px-6 py-3 text-sm font-semibold ${isLastStage ? "bg-gradient-to-l from-green-500 to-teal-500" : "bg-gradient-to-l from-blue-500 to-purple-500"} text-white border-none`}
+                      >
+                        {isLastStage ? "COMPLETE" : "NEXT STAGE"}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{`Click here to advance to ${nextStageName}`}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            </div>
+
+            {/* Input area placed to the right of persona controls (responsive) */}
+            <div className="col-span-1 sm:col-span-1 w-full">
+              <form onSubmit={handleSubmit} className="relative">
+                {pendingStageAdvance && (
+                  <div className="mb-2 rounded-md border bg-blue-50 px-3 py-2 text-sm flex items-center justify-between gap-3">
+                    <div>
+                      Step to stage: <strong>{pendingStageAdvance.title}</strong>?
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" onClick={confirmPendingAdvance}>
+                        Yes
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={declinePendingAdvance}>
+                        No
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                <Textarea
+                  id="chat-input"
+                  name="chat-message"
+                  autoComplete="off"
+                  ref={textareaRef}
+                  value={input}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    baseInputRef.current = val;
+                    setInput(val);
+                    try {
+                      lastTypedByUserRef.current = true;
+                    } catch {}
+                    try {
+                      // If the user edits the input, allow re-submission of the
+                      // previously-blocked content by clearing the lastSubmissionRef
+                      // when the current input no longer matches the last submitted text.
+                      if (lastSubmissionRef.current && lastSubmissionRef.current.content !== val.trim()) {
+                        lastSubmissionRef.current = null;
+                        if (lastSubmissionTimerRef.current) {
+                          try {
+                            window.clearTimeout(lastSubmissionTimerRef.current);
+                          } catch {}
+                          lastSubmissionTimerRef.current = null;
+                        }
+                      }
+                    } catch {}
+                    if (showStartSpeakingPrompt) {
+                      setShowStartSpeakingPrompt(false);
+                      try {
+                        setVoiceModeEnabled(false);
+                      } catch (err) {}
+                      try {
+                        void sendOwnerGreetingIfNeeded();
+                      } catch (e) {}
+                    }
+                  }}
+                  onKeyDown={handleKeyDown}
+                  placeholder={isListening ? `${interimTranscript || "Listening..."}` : "Type or record your message..."}
+                  className="min-h-[90px] w-full resize-none pr-28 rounded-md bg-muted/20 border border-border px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  rows={3}
+                />
+
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span>
+                        <Button
+                          type="submit"
+                          id="send-button"
+                          size="icon"
+                          disabled={isLoading || !input.trim() || input.trim().length < 2}
+                          className={`absolute bottom-2 right-2 ${input.trim() && input.trim().length >= 2 ? "bg-gradient-to-l from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600 border-none" : ""} ${autoSendFlash ? "animate-pulse ring-2 ring-offset-1 ring-blue-300" : ""}`}
+                        >
+                          <SendIcon className="h-5 w-5" />
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    {input.trim().length > 0 && input.trim().length < 2 && (
+                      <TooltipContent>
+                        <p>Message too short</p>
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                </TooltipProvider>
+              </form>
+
+              <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="flex items-center gap-1 text-xs"
+                  onClick={() =>
+                    setShowNotepadByPersona((prev) => ({
+                      ...prev,
+                      [activePersona]: !prev[activePersona],
+                    }))
+                  }
+                >
+                  <PenLine className="h-3.5 w-3.5" />
+                  {showNotepadByPersona[activePersona] ? "Hide Notepad" : "Show Notepad"}
+                </Button>
+
+                <div className="flex items-center gap-1 border rounded-md px-1 bg-background/50">
+                  <FontSizeToggle />
+                </div>
+
+                <label className="flex items-center gap-2 cursor-pointer text-xs">
+                  <Checkbox checked={autoSendStt} onCheckedChange={(v) => setAutoSendStt(Boolean(v))} />
+                  <span>Auto-send STT</span>
+                </label>
+              </div>
+            </div>
             <div className="w-full mt-3">
               {audioDevicesSupported && (
                 <div className="mb-2 space-y-2">
@@ -5584,23 +6186,6 @@ export function ChatInterface({
                   <AudioDeviceSelector />
                 </div>
               )}
-            </div>
-
-            <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="flex items-center gap-1 text-xs"
-                onClick={() => setShowNotepadByPersona((prev) => ({ ...prev, [activePersona]: !prev[activePersona] }))}
-              >
-                <PenLine className="h-3.5 w-3.5" />
-                {showNotepadByPersona[activePersona] ? "Hide Notepad" : "Show Notepad"}
-              </Button>
-
-              <label className="flex items-center gap-2 cursor-pointer text-xs">
-                <Checkbox checked={autoSendStt} onCheckedChange={(v) => setAutoSendStt(Boolean(v))} />
-                <span>Auto-send STT</span>
-              </label>
             </div>
           </div>
         </div>
@@ -5644,7 +6229,12 @@ export function ChatInterface({
       {/* Notepad (per-persona) */}
       <Notepad
         isOpen={Boolean(showNotepadByPersona[activePersona])}
-        onClose={() => setShowNotepadByPersona((prev) => ({ ...prev, [activePersona]: false }))}
+        onClose={() =>
+          setShowNotepadByPersona((prev) => ({
+            ...prev,
+            [activePersona]: false,
+          }))
+        }
       />
     </div>
   );

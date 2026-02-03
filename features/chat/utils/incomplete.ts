@@ -38,7 +38,6 @@ export const INCOMPLETE_MARKERS = new Set<string>([
   "be",
   "been",
   "being",
-  "have",
   "has",
   "had",
   "do",
