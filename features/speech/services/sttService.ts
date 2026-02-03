@@ -1,4 +1,4 @@
-import { debugEventBus } from "@/lib/debug-events-fixed";
+import { debugEventBus } from "../../../lib/debug-events-fixed";
 
 // Global recognition instance
 type _ResultRow = Record<string, unknown>;
@@ -85,6 +85,8 @@ const CORRECTIONS: Record<string, string> = {
   rental: "rectal",
   // Short-hand mis-hearings for basophils
   baseball: "basophils",
+  // Common mis-transcription: 'finance' -> 'findings'
+  finance: "findings",
 };
 
 // Phrase-level corrections for multi-word mis-transcriptions.
@@ -106,6 +108,9 @@ const PHRASE_CORRECTIONS: Record<string, string> = {
   // Common mis-hearing: 'The Simpsons' (TV show) -> 'the symptoms'
   "the simpsons": "the symptoms",
   simpsons: "symptoms",
+  // User said 'cardiovascular oscillation' but meant 'cardiovascular auscultation'
+  "cardiovascular oscillation": "cardiovascular auscultation",
+  "cardiovascular oscillations": "cardiovascular auscultation",
 };
 
 // Common mis-hearing where users say something that sounds like 'ask quotation'
@@ -163,12 +168,18 @@ export function postProcessTranscript(text: string): string {
   const substitutions: Array<{ from: string; to: string }> = [];
 
   // Prefer veterinary sense for ambiguous tokens (e.g., 'other' -> 'udder').
-  // Only do these replacements on whole-word boundaries to avoid accidental
-  // mangling of unrelated words. Record substitutions for telemetry.
+  // Be conservative: only map standalone 'other' to 'udder' for short
+  // transcripts (likely a single-field response) or when symptom words are
+  // present (e.g., 'other swelling'). This avoids mangling longer sentences
+  // where 'other' is used generically.
   const beforeOther = processed;
-  processed = processed.replace(/\bother\b/gi, "udder");
-  if (processed !== beforeOther)
-    substitutions.push({ from: "other", to: "udder" });
+  const wordCount = processed.trim() ? processed.trim().split(/\s+/).length : 0;
+  const symptomPattern = /\b(swelling|edema|pain|heat|swollen|inflamed)\b/i;
+  if (wordCount <= 6 || symptomPattern.test(processed)) {
+    processed = processed.replace(/\bother\b/gi, "udder");
+    if (processed !== beforeOther)
+      substitutions.push({ from: "other", to: "udder" });
+  }
   const beforeOther2 = processed;
   processed = processed.replace(
     /\b(the|my|her|cow's|left|right|front|rear)\s+other\b/gi,
@@ -745,7 +756,7 @@ export function canStartListening(): boolean {
  * Returns a cancel function to abort the scheduled checks.
  * The predicate is polled every `intervalMs` up to `timeoutMs`.
  */
-import { scheduleClearSuppressionWhen as _scheduleClearSuppressionWhen } from "@/features/chat/utils/timers";
+import { scheduleClearSuppressionWhen as _scheduleClearSuppressionWhen } from "../../chat/utils/timers";
 
 export function scheduleClearSuppressionWhen(
   predicate: () => boolean,
