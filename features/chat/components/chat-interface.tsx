@@ -5502,7 +5502,7 @@ export function ChatInterface({
           // Mark this TTS as coming directly from a user action (Next Stage)
           // so playback orchestration can shorten suppression windows.
           userInitiated: true,
-        } satisfies Omit<TtsEventDetail, "audio">;
+        } as any;
         // For non-sensitive intros allow auto-resume so the mic is
         // reliably restarted after playback when it was previously listening.
         // Use skipResume=false (explicit) to avoid leaving the mic disabled.
