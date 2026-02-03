@@ -28,9 +28,12 @@ export default function CaseInstructionsPage() {
   const [caseData, setCaseData] = useState<Case | null>(null);
 
   const tourSteps = [
-    { element: '#case-title', popover: { title: 'Case Details', description: 'Review the case title, estimated time, and overview before starting.' } },
-    { element: '#start-button', popover: { title: 'Start Case', description: 'Click here to begin the simulation. A new attempt will be created.' } },
-    { element: '#past-attempts', popover: { title: 'Past Attempts', description: 'View your previous attempts and their status here.' } },
+    {
+      element: "#case-title",
+      popover: { title: "Case Details", description: "Review the case title, estimated time, and overview before starting." },
+    },
+    { element: "#start-button", popover: { title: "Start Case", description: "Click here to begin the simulation. A new attempt will be created." } },
+    { element: "#past-attempts", popover: { title: "Past Attempts", description: "View your previous attempts and their status here." } },
   ];
 
   useEffect(() => {
@@ -68,7 +71,7 @@ export default function CaseInstructionsPage() {
         const { professorService } = await import("@/features/professor/services/professorService");
         const assigned = await professorService.getAssignedCasesForStudent(user.id);
         const match = Array.isArray(assigned) ? assigned.find((a: any) => a.case_id === id || a.case?.id === id) : null;
-        const profId = match ? (match.professor_id || match.professorId || null) : null;
+        const profId = match ? match.professor_id || match.professorId || null : null;
         if (!cancelled) setAssignedProfessorId(profId);
         if (profId) {
           const resp = await fetch(`/api/professor-feedback?studentId=${encodeURIComponent(user.id)}`, { headers: { Accept: "application/json" } });
@@ -85,14 +88,16 @@ export default function CaseInstructionsPage() {
       }
     }
     loadAssignmentAndFeedback();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [user, id]);
 
   const handleStartCase = () => {
     setIsStarting(true);
     // Navigate directly to the case page
     // The case page will create a new attempt if needed
-    router.push(`/${id}`);
+    router.push(`/case/${id}/attempt`);
   };
 
   const [isStartingOver, setIsStartingOver] = useState(false);
@@ -106,9 +111,7 @@ export default function CaseInstructionsPage() {
       return;
     }
 
-    const ok = window.confirm(
-      `Found ${inProgress.length} in-progress attempt(s). Start over will erase them and begin a fresh attempt. Continue?`
-    );
+    const ok = window.confirm(`Found ${inProgress.length} in-progress attempt(s). Start over will erase them and begin a fresh attempt. Continue?`);
     if (!ok) return;
 
     setIsStartingOver(true);
@@ -148,10 +151,7 @@ export default function CaseInstructionsPage() {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-6">
-        <Link
-          href="/"
-          className="inline-flex items-center text-sm text-muted-foreground hover:text-primary"
-        >
+        <Link href="/" className="inline-flex items-center text-sm text-muted-foreground hover:text-primary">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Case Selection
         </Link>
@@ -194,26 +194,18 @@ export default function CaseInstructionsPage() {
 
               <h2 className="text-xl font-semibold mt-6 mb-2">Instructions</h2>
               <p>
-                In this clinical case, you will interact with a simulated client and
-                patient. Work through the case by taking a history, performing a
-                physical examination, and recommending diagnostic tests as
-                appropriate.
+                In this clinical case, you will interact with a simulated client and patient. Work through the case by taking a history, performing a
+                physical examination, and recommending diagnostic tests as appropriate.
               </p>
               <ul>
                 <li>Proceed through each stage of the case in order</li>
                 <li>You can save your progress at any time</li>
-                <li>
-                  Once completed, you will receive feedback on your performance
-                </li>
+                <li>Once completed, you will receive feedback on your performance</li>
               </ul>
             </div>
 
             <div id="start-button" className="mt-8 flex items-center gap-2">
-              <Button
-                onClick={handleStartCase}
-                disabled={isStarting}
-                className="w-full sm:w-auto text-lg py-6 px-8"
-              >
+              <Button onClick={handleStartCase} disabled={isStarting} className="w-full sm:w-auto text-lg py-6 px-8">
                 {isStarting ? (
                   <>
                     <Loader2 className="mr-2 h-5 w-5 animate-spin" />
@@ -228,13 +220,7 @@ export default function CaseInstructionsPage() {
               </Button>
               <HelpTip content="Clicking this will launch the simulation environment." />
               {attempts.some((a) => a.completionStatus === "in_progress") && (
-                <Button
-                  variant="ghost"
-                  onClick={handleStartOver}
-                  disabled={isStartingOver}
-                  size="sm"
-                  className="ml-3"
-                >
+                <Button variant="ghost" onClick={handleStartOver} disabled={isStartingOver} size="sm" className="ml-3">
                   {isStartingOver ? "Starting over..." : "Start Over"}
                 </Button>
               )}
@@ -260,10 +246,7 @@ export default function CaseInstructionsPage() {
             ) : attempts.length > 0 ? (
               <div className="space-y-4">
                 {attempts.map((attempt) => (
-                  <div
-                    key={attempt.id}
-                    className="bg-background rounded-md p-4 shadow-sm"
-                  >
+                  <div key={attempt.id} className="bg-background rounded-md p-4 shadow-sm">
                     <div className="flex justify-between items-start mb-2">
                       <h3 className="font-medium">{attempt.title}</h3>
                       <div
@@ -271,32 +254,26 @@ export default function CaseInstructionsPage() {
                           attempt.completionStatus === "completed"
                             ? "bg-green-100 text-green-800"
                             : attempt.completionStatus === "in_progress"
-                            ? "bg-yellow-100 text-yellow-800"
-                            : "bg-red-100 text-red-800"
+                              ? "bg-yellow-100 text-yellow-800"
+                              : "bg-red-100 text-red-800"
                         }`}
                       >
                         {attempt.completionStatus === "completed"
                           ? "Completed"
                           : attempt.completionStatus === "in_progress"
-                          ? "In Progress"
-                          : "Abandoned"}
+                            ? "In Progress"
+                            : "Abandoned"}
                       </div>
                     </div>
                     <div className="flex items-center justify-between mt-2">
                       <div className="flex items-center gap-3 text-xs text-muted-foreground">
                         <div className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
-                          <span>
-                            {new Date(attempt.createdAt).toLocaleDateString()}
-                          </span>
+                          <span>{new Date(attempt.createdAt).toLocaleDateString()}</span>
                         </div>
                       </div>
                       <Link href={`/attempts/${attempt.id}`}>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-2 text-xs"
-                        >
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs">
                           View
                         </Button>
                       </Link>
@@ -305,9 +282,7 @@ export default function CaseInstructionsPage() {
                 ))}
               </div>
             ) : (
-              <p className="text-center py-4 text-muted-foreground">
-                You haven&apos;t attempted this case yet.
-              </p>
+              <p className="text-center py-4 text-muted-foreground">You haven&apos;t attempted this case yet.</p>
             )}
           </div>
           {/* Professor feedback (visible if this case is assigned to the student) */}

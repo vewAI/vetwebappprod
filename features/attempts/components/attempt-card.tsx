@@ -3,14 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Clock, Calendar, ChevronRight, Trash2 } from "lucide-react";
 import type { AttemptSummary } from "../models/attempt";
@@ -48,11 +41,7 @@ export function AttemptCard({ attempt, onDelete }: AttemptCardProps) {
 
   // Handle delete confirmation
   const handleDeleteClick = () => {
-    if (
-      window.confirm(
-        `Are you sure you want to delete "${attempt.title}"? This action cannot be undone.`
-      )
-    ) {
+    if (window.confirm(`Are you sure you want to delete "${attempt.title}"? This action cannot be undone.`)) {
       setIsDeleting(true);
       onDelete();
     }
@@ -66,12 +55,9 @@ export function AttemptCard({ attempt, onDelete }: AttemptCardProps) {
         "hover:bg-muted/40 dark:hover:bg-muted/60",
         "focus-within:ring-2 focus-within:ring-primary/30",
 
-        attempt.completionStatus === "completed" &&
-          "border-l-4 border-l-teal-500/60",
-        attempt.completionStatus === "in_progress" &&
-          "border-l-4 border-l-amber-700/50",
-        attempt.completionStatus === "abandoned" &&
-          "border-l-4 border-l-rose-500/60"
+        attempt.completionStatus === "completed" && "border-l-4 border-l-teal-500/60",
+        attempt.completionStatus === "in_progress" && "border-l-4 border-l-amber-700/50",
+        attempt.completionStatus === "abandoned" && "border-l-4 border-l-rose-500/60",
       )}
     >
       <div className="flex gap-4 px-4 h-full">
@@ -79,14 +65,7 @@ export function AttemptCard({ attempt, onDelete }: AttemptCardProps) {
         {attempt?.caseImageUrl && (
           <div>
             <div className="relative w-24 h-24 flex-shrink-0">
-              <Image
-                src={attempt?.caseImageUrl}
-                alt={attempt?.caseTitle}
-                fill
-                className="object-cover border p-1"
-                sizes="96px"
-                priority={false}
-              />
+              <Image src={attempt?.caseImageUrl} alt={attempt?.caseTitle} fill className="object-cover border p-1" sizes="96px" priority={false} />
             </div>
             <div className="text-center">
               <Button
@@ -118,9 +97,7 @@ export function AttemptCard({ attempt, onDelete }: AttemptCardProps) {
           <CardHeader className="pb-3 px-0">
             <div className="flex justify-between items-start gap-3">
               <div className="min-w-0">
-                <CardTitle className="text-base font-semibold text-primary">
-                  {attempt.title}
-                </CardTitle>
+                <CardTitle className="text-base font-semibold text-primary">{attempt.title}</CardTitle>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
@@ -139,8 +116,8 @@ export function AttemptCard({ attempt, onDelete }: AttemptCardProps) {
                 attempt.completionStatus === "completed"
                   ? "text-emerald-500"
                   : attempt.completionStatus === "in_progress"
-                  ? "text-amber-500"
-                  : "text-destructive"
+                    ? "text-amber-500"
+                    : "text-destructive",
               )}
             >
               <Badge
@@ -148,29 +125,23 @@ export function AttemptCard({ attempt, onDelete }: AttemptCardProps) {
                   attempt.completionStatus === "completed"
                     ? "bg-emerald-500 text-white"
                     : attempt.completionStatus === "in_progress"
-                    ? "bg-amber-500 text-white"
-                    : "bg-red-500 text-white"
+                      ? "bg-amber-500 text-white"
+                      : "bg-red-500 text-white"
                 }`}
               >
-                {attempt.completionStatus === "completed"
-                  ? "Completed"
-                  : attempt.completionStatus === "in_progress"
-                  ? "In Progress"
-                  : "Abandoned"}
+                {attempt.completionStatus === "completed" ? "Completed" : attempt.completionStatus === "in_progress" ? "In Progress" : "Abandoned"}
               </Badge>
             </p>
           </CardHeader>
 
           <CardContent className="pt-0 px-0 pb-3 flex-grow">
-            <CardDescription className="text-xs mt-0.5">
-              {attempt?.caseTitle || "Unknown Case"}
-            </CardDescription>
+            <CardDescription className="text-xs mt-0.5">{attempt?.caseTitle || "Unknown Case"}</CardDescription>
           </CardContent>
 
           <CardFooter className="flex justify-end px-0">
             <div className="flex items-center gap-2">
               {attempt.completionStatus !== "completed" ? (
-                <Link href={`/${attempt.caseId}?attempt=${attempt.id}`}>
+                <Link href={`/case/${attempt.caseId}/attempt?attempt=${attempt.id}`}>
                   <Button size="sm" variant="ghost">
                     Continue
                     <ChevronRight className="ml-1 h-4 w-4" />

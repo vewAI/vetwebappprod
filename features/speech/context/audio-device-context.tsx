@@ -1,20 +1,9 @@
 "use client";
 
 import type { ReactNode } from "react";
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
-import {
-  setPreferredInputDevice,
-  setPreferredOutputDevice,
-} from "../services/deviceRegistry";
+import { setPreferredInputDevice, setPreferredOutputDevice } from "../services/deviceRegistry";
 
 const INPUT_STORAGE_KEY = "speech:selected-input-device";
 const OUTPUT_STORAGE_KEY = "speech:selected-output-device";
@@ -55,17 +44,12 @@ const defaultContextValue: AudioDeviceContextValue = {
   isSupported: false,
 };
 
-const AudioDeviceContext = createContext<AudioDeviceContextValue>(
-  defaultContextValue
-);
+const AudioDeviceContext = createContext<AudioDeviceContextValue>(defaultContextValue);
 
 function persistSelection(key: string, value: string | null) {
   if (typeof window === "undefined") return;
   try {
-    const stores: (Storage | undefined)[] = [
-      window.localStorage,
-      window.sessionStorage,
-    ];
+    const stores: (Storage | undefined)[] = [window.localStorage, window.sessionStorage];
     stores.forEach((store) => {
       if (!store) return;
       if (value) {
@@ -82,22 +66,13 @@ function persistSelection(key: string, value: string | null) {
 function readStoredSelection(key: string): string | null {
   if (typeof window === "undefined") return null;
   try {
-    return (
-      window.sessionStorage.getItem(key) ??
-      window.localStorage.getItem(key) ??
-      null
-    );
+    return window.sessionStorage.getItem(key) ?? window.localStorage.getItem(key) ?? null;
   } catch {
     return null;
   }
 }
 
-function mapDeviceLabel(
-  device: MediaDeviceInfo,
-  index: number,
-  fallbackPrefix: string,
-  labelsAvailable: boolean
-): AudioDeviceOption {
+function mapDeviceLabel(device: MediaDeviceInfo, index: number, fallbackPrefix: string, labelsAvailable: boolean): AudioDeviceOption {
   const suffix = labelsAvailable ? "" : " (allow access for names)";
   return {
     deviceId: device.deviceId || `${device.kind}-${index}`,
@@ -106,19 +81,11 @@ function mapDeviceLabel(
   };
 }
 
-export function SpeechDeviceProvider({
-  children,
-}: {
-  children: ReactNode;
-}) {
+export function SpeechDeviceProvider({ children }: { children: ReactNode }) {
   const [inputDevices, setInputDevices] = useState<AudioDeviceOption[]>([]);
   const [outputDevices, setOutputDevices] = useState<AudioDeviceOption[]>([]);
-  const [selectedInputId, setSelectedInputIdState] = useState<string | null>(
-    null
-  );
-  const [selectedOutputId, setSelectedOutputIdState] = useState<string | null>(
-    null
-  );
+  const [selectedInputId, setSelectedInputIdState] = useState<string | null>(null);
+  const [selectedOutputId, setSelectedOutputIdState] = useState<string | null>(null);
   const [labelsAvailable, setLabelsAvailable] = useState<boolean>(false);
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const [isEnumerating, setIsEnumerating] = useState<boolean>(false);
@@ -126,15 +93,10 @@ export function SpeechDeviceProvider({
   const storedInputRef = useRef<string | null>(null);
   const storedOutputRef = useRef<string | null>(null);
 
-  const isSupported =
-    typeof navigator !== "undefined" &&
-    Boolean(navigator.mediaDevices?.enumerateDevices);
+  const isSupported = typeof navigator !== "undefined" && Boolean(navigator.mediaDevices?.enumerateDevices);
 
   const refreshDevices = useCallback(async () => {
-    if (
-      typeof navigator === "undefined" ||
-      !navigator.mediaDevices?.enumerateDevices
-    ) {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) {
       setInputDevices([]);
       setOutputDevices([]);
       setLabelsAvailable(false);
@@ -147,9 +109,7 @@ export function SpeechDeviceProvider({
       setLabelsAvailable(hasLabels);
       const inputs = devices
         .filter((device) => device.kind === "audioinput")
-        .map((device, index) =>
-          mapDeviceLabel(device, index, "Microphone", hasLabels)
-        );
+        .map((device, index) => mapDeviceLabel(device, index, "Microphone", hasLabels));
       const outputs = devices
         .filter((device) => device.kind === "audiooutput")
         .map((device, index) => mapDeviceLabel(device, index, "Speaker", true));
@@ -157,10 +117,7 @@ export function SpeechDeviceProvider({
       setOutputDevices(outputs);
       setPermissionError(null);
     } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Unable to enumerate audio devices.";
+      const message = err instanceof Error ? err.message : "Unable to enumerate audio devices.";
       setPermissionError(message);
     } finally {
       setIsEnumerating(false);
@@ -168,10 +125,7 @@ export function SpeechDeviceProvider({
   }, []);
 
   const requestPermission = useCallback(async () => {
-    if (
-      typeof navigator === "undefined" ||
-      !navigator.mediaDevices?.getUserMedia
-    ) {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
       setPermissionError("Browser does not support microphone access.");
       return;
     }
@@ -181,10 +135,7 @@ export function SpeechDeviceProvider({
       setPermissionError(null);
       await refreshDevices();
     } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Microphone permission denied.";
+      const message = err instanceof Error ? err.message : "Microphone permission denied.";
       setPermissionError(message);
     }
   }, [refreshDevices]);
@@ -252,9 +203,7 @@ export function SpeechDeviceProvider({
         return current;
       }
       const fallback =
-        (storedInputRef.current &&
-          inputDevices.some((d) => d.deviceId === storedInputRef.current) &&
-          storedInputRef.current) ||
+        (storedInputRef.current && inputDevices.some((d) => d.deviceId === storedInputRef.current) && storedInputRef.current) ||
         inputDevices[0].deviceId;
       storedInputRef.current = fallback;
       setPreferredInputDevice(fallback);
@@ -276,9 +225,7 @@ export function SpeechDeviceProvider({
         return current;
       }
       const fallback =
-        (storedOutputRef.current &&
-          outputDevices.some((d) => d.deviceId === storedOutputRef.current) &&
-          storedOutputRef.current) ||
+        (storedOutputRef.current && outputDevices.some((d) => d.deviceId === storedOutputRef.current) && storedOutputRef.current) ||
         outputDevices[0].deviceId;
       storedOutputRef.current = fallback;
       setPreferredOutputDevice(fallback);
@@ -303,26 +250,22 @@ export function SpeechDeviceProvider({
       isSupported,
     }),
     [
-    inputDevices,
-    outputDevices,
-    selectedInputId,
-    selectedOutputId,
-    setSelectedInputId,
-    setSelectedOutputId,
-    refreshDevices,
-    requestPermission,
-    labelsAvailable,
-    permissionError,
-    isEnumerating,
-    isSupported,
-    ]
+      inputDevices,
+      outputDevices,
+      selectedInputId,
+      selectedOutputId,
+      setSelectedInputId,
+      setSelectedOutputId,
+      refreshDevices,
+      requestPermission,
+      labelsAvailable,
+      permissionError,
+      isEnumerating,
+      isSupported,
+    ],
   );
 
-  return (
-    <AudioDeviceContext.Provider value={value}>
-      {children}
-    </AudioDeviceContext.Provider>
-  );
+  return <AudioDeviceContext.Provider value={value}>{children}</AudioDeviceContext.Provider>;
 }
 
 export function useSpeechDevices(): AudioDeviceContextValue {

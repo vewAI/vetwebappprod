@@ -7,33 +7,17 @@ import { fetchCaseById } from "@/features/case-selection/services/caseService";
 // Removed unused imports (Link, Button, ChevronLeft) to satisfy lint rules.
 import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 import { ChatInterface } from "@/features/chat/components/chat-interface";
 import { ProgressSidebar } from "@/features/chat/components/progress-sidebar";
 import { CompletionDialog } from "@/features/feedback/components/completion-dialog";
-import {
-  createAttempt,
-  completeAttempt,
-  getAttemptById,
-  deleteAttempt,
-} from "@/features/attempts/services/attemptService";
+import { createAttempt, completeAttempt, getAttemptById, deleteAttempt } from "@/features/attempts/services/attemptService";
 import { useSaveAttempt } from "@/features/attempts/hooks/useSaveAttempt";
 import { useAuth } from "@/features/auth/services/authService";
 import type { Message } from "@/features/chat/models/chat";
 import type { Stage } from "@/features/stages/types";
-import {
-  getStagesForCase,
-  initializeStages,
-  markStageCompleted,
-} from "@/features/stages/services/stageService";
+import { getStagesForCase, initializeStages, markStageCompleted } from "@/features/stages/services/stageService";
 import { createFollowup } from "@/features/attempts/services/attemptMutationService";
 import { useCaseTimepoints } from "@/features/cases/hooks/useCaseTimepoints";
 import { GuidedTour } from "@/components/ui/guided-tour";
@@ -53,9 +37,21 @@ export default function CaseChatPage() {
   const [showSidebar, setShowSidebar] = useState(false);
 
   const tourSteps = [
-    { element: '#progress-sidebar', popover: { title: 'Progress Tracker', description: 'Track your progress through the different stages of the consultation (History, Exam, etc.).' } },
-    { element: '#chat-interface', popover: { title: 'Chat Interface', description: 'Interact with the virtual client and patient here. Type your questions or actions.' } },
-    { element: '#stage-controls', popover: { title: 'Stage Controls', description: 'Use the buttons here to advance to the next stage when you are ready.' } },
+    {
+      element: "#progress-sidebar",
+      popover: {
+        title: "Progress Tracker",
+        description: "Track your progress through the different stages of the consultation (History, Exam, etc.).",
+      },
+    },
+    {
+      element: "#chat-interface",
+      popover: { title: "Chat Interface", description: "Interact with the virtual client and patient here. Type your questions or actions." },
+    },
+    {
+      element: "#stage-controls",
+      popover: { title: "Stage Controls", description: "Use the buttons here to advance to the next stage when you are ready." },
+    },
   ];
 
   // Attempt & stages
@@ -85,12 +81,12 @@ export default function CaseChatPage() {
   // This replaces the imperative logic in getAttemptById which suffered from closure staleness
   useEffect(() => {
     if (stages.length === 0) return;
-    
+
     // Check if any previous stages are not marked as completed
-    const needsUpdate = stages.slice(0, currentStageIndex).some(stage => !stage.completed);
-    
+    const needsUpdate = stages.slice(0, currentStageIndex).some((stage) => !stage.completed);
+
     if (needsUpdate) {
-      setStages(prev => {
+      setStages((prev) => {
         let next = [...prev];
         let changed = false;
         for (let i = 0; i < currentStageIndex; i++) {
@@ -110,9 +106,7 @@ export default function CaseChatPage() {
     (async () => {
       try {
         const mod = await import("@/features/stages/services/stageService");
-        const active = mod.getActiveStagesForCase
-          ? await mod.getActiveStagesForCase(id)
-          : mod.getStagesForCase(id);
+        const active = mod.getActiveStagesForCase ? await mod.getActiveStagesForCase(id) : mod.getStagesForCase(id);
         if (!cancelled) setStages(initializeStages(active));
       } catch (e) {
         console.warn("Failed to load active stages", e);
@@ -130,40 +124,40 @@ export default function CaseChatPage() {
     if (hasInitializedAttempt.current || !user) return;
     hasInitializedAttempt.current = true;
 
-    const existingAttemptId =
-      typeof window !== "undefined"
-        ? new URLSearchParams(window.location.search).get("attempt")
-        : null;
+    const existingAttemptId = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("attempt") : null;
 
     if (existingAttemptId) {
       setAttemptId(existingAttemptId);
 
       // Restore attempt state
-      getAttemptById(existingAttemptId).then(({ attempt, messages }) => {
-        if (attempt) {
-          const lastIndex = attempt.lastStageIndex || 0;
-          setCurrentStageIndex(lastIndex);
-          // Stage completion synchronization is now handled by a dedicated useEffect
-          // to avoid stale closure issues that were causing stages to disappear.
-        }
+      getAttemptById(existingAttemptId)
+        .then(({ attempt, messages }) => {
+          if (attempt) {
+            const lastIndex = attempt.lastStageIndex || 0;
+            setCurrentStageIndex(lastIndex);
+            // Stage completion synchronization is now handled by a dedicated useEffect
+            // to avoid stale closure issues that were causing stages to disappear.
+          }
 
-        if (messages) {
-          const mappedMessages: Message[] = messages.map((m) => ({
-            id: m.id,
-            role: m.role,
-            content: m.content,
-            timestamp: m.timestamp,
-            stageIndex: m.stageIndex,
-            displayRole: m.displayRole,
-            status: "sent",
-          }));
-          setInitialMessages(mappedMessages);
-        }
-      }).catch(err => {
-        console.error("Failed to restore attempt", err);
-      }).finally(() => {
-        setIsRestoring(false);
-      });
+          if (messages) {
+            const mappedMessages: Message[] = messages.map((m) => ({
+              id: m.id,
+              role: m.role,
+              content: m.content,
+              timestamp: m.timestamp,
+              stageIndex: m.stageIndex,
+              displayRole: m.displayRole,
+              status: "sent",
+            }));
+            setInitialMessages(mappedMessages);
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to restore attempt", err);
+        })
+        .finally(() => {
+          setIsRestoring(false);
+        });
 
       return;
     }
@@ -193,9 +187,7 @@ export default function CaseChatPage() {
   // Start Over: delete current attempt and create a fresh one
   const handleStartOver = async () => {
     if (!attemptId) return;
-    const ok = window.confirm(
-      "Start over? This will erase your current in-progress attempt and start a new one."
-    );
+    const ok = window.confirm("Start over? This will erase your current in-progress attempt and start a new one.");
     if (!ok) return;
 
     try {
@@ -250,18 +242,12 @@ export default function CaseChatPage() {
   const [followupDay, setFollowupDay] = useState<number>(1);
   const { timepoints, loading: timepointsLoading } = useCaseTimepoints(caseItem?.id ?? "");
 
-  const handleProceedToNextStage = async (
-    messages?: Message[],
-    timeSpentSeconds: number = 0
-  ) => {
+  const handleProceedToNextStage = async (messages?: Message[], timeSpentSeconds: number = 0) => {
     if (attemptId && messages && messages.length > 0) {
       try {
         await saveProgress(currentStageIndex, messages, timeSpentSeconds);
       } catch (saveError) {
-        console.error(
-          "Error saving attempt progress during stage transition:",
-          saveError
-        );
+        console.error("Error saving attempt progress during stage transition:", saveError);
       }
     }
 
@@ -297,35 +283,25 @@ export default function CaseChatPage() {
             try {
               await completeAttempt(attemptId, data.feedback || "");
             } catch (completeError) {
-              console.error(
-                "Error marking attempt as completed:",
-                completeError
-              );
+              console.error("Error marking attempt as completed:", completeError);
             }
           }
         } catch (error) {
           console.error("Error generating feedback:", error);
-          setFeedbackContent(
-            "<p>Unable to generate feedback at this time.</p>"
-          );
+          setFeedbackContent("<p>Unable to generate feedback at this time.</p>");
         } finally {
           setIsGeneratingFeedback(false);
         }
       } else {
         setShowCompletionDialog(true);
-        setFeedbackContent(
-          "<p>Examination completed! You've finished all stages.</p>"
-        );
+        setFeedbackContent("<p>Examination completed! You've finished all stages.</p>");
         // also capture messages if provided via param
         setLastMessagesForExport(messages ?? null);
         if (attemptId) {
           try {
             await completeAttempt(attemptId, "Examination completed!");
           } catch (completeError) {
-            console.error(
-              "Error marking attempt as completed (no feedback):",
-              completeError
-            );
+            console.error("Error marking attempt as completed (no feedback):", completeError);
           }
         }
       }
@@ -353,13 +329,10 @@ export default function CaseChatPage() {
   if (!caseItem) return notFound();
 
   return (
-    <div className="flex h-[calc(100vh-1rem)] overflow-hidden rounded-lg border shadow-sm relative">
+    <div className="flex h-[calc(100vh)] overflow-hidden relative">
       {/* Guided tour is provided inside the chat interface; avoid duplicate button here */}
       {isMobile && (
-        <button
-          onClick={() => setShowSidebar(!showSidebar)}
-          className="absolute left-4 top-4 z-50 rounded-md bg-primary p-2 text-primary-foreground"
-        >
+        <button onClick={() => setShowSidebar(!showSidebar)} className="absolute left-4 top-4 z-50 rounded-md bg-primary p-2 text-primary-foreground">
           {showSidebar ? "Hide Stages" : "Show Stages"}
         </button>
       )}
@@ -440,12 +413,7 @@ export default function CaseChatPage() {
             </select>
             <span className="text-sm text-gray-400">{timepoints.length} timepoints</span>
             {attemptId && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleStartOver}
-                className="ml-auto"
-              >
+              <Button variant="outline" size="sm" onClick={handleStartOver} className="ml-auto">
                 Start Over
               </Button>
             )}
@@ -453,7 +421,7 @@ export default function CaseChatPage() {
         )}
 
         <ChatInterface
-          key={`${attemptId ?? 'noattempt'}-${resetCounter}`}
+          key={`${attemptId ?? "noattempt"}-${resetCounter}`}
           caseId={caseItem.id}
           attemptId={attemptId || undefined}
           initialMessages={initialMessages}
