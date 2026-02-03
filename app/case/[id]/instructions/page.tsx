@@ -158,12 +158,20 @@ export default function CaseInstructionsPage() {
         <GuidedTour steps={tourSteps} tourId="case-instructions" />
       </div>
 
-      <div className="grid gap-8 md:grid-cols-[2fr_1fr]">
+      <div className="grid gap-8 lg:grid-cols-[2fr_1fr]">
         <div>
           <div className="mb-8">
             <div className="flex gap-3">
               <div className="relative w-40 h-40 mb-2">
-                <Image src={caseData?.imageUrl} alt={caseData?.title} fill className=" border p-1" sizes="250px " priority={true} />
+                <Image
+                  src={caseData?.imageUrl}
+                  alt={caseData?.title}
+                  className=" border p-1"
+                  sizes="200px"
+                  priority={true}
+                  width={200}
+                  height={200}
+                />
               </div>
               <div>
                 <div className="flex items-center gap-2 ">
