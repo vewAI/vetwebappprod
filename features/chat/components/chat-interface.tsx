@@ -2021,6 +2021,14 @@ export function ChatInterface({
               try {
                 isSuppressingSttRef.current = false;
               } catch {}
+              // After suppression clears, attempt to start listening immediately
+              try {
+                if (voiceModeRef.current && !userToggledOffRef.current && !isPlayingAudioRef.current && !isInDeafMode()) {
+                  safeStart();
+                }
+              } catch (e) {
+                // ignore start errors
+              }
             }, 300);
           } catch {}
         } catch (e) {}
@@ -2812,8 +2820,31 @@ export function ChatInterface({
 
   // sendUserMessage helper (used by manual submit and auto-send)
   const sendUserMessage = async (text: string, existingMessageId?: string, options?: { source?: "auto" | "manual" | "retry" }) => {
-    const trimmed = text.trim();
+    let trimmed = text.trim();
     if (!trimmed) return;
+
+    // Quick user-phoneme corrections: handle common STT misrecognitions
+    // (e.g., "buy a chemistry" -> "biochemistry") so downstream
+    // heuristics (lab vs physical) behave correctly.
+    try {
+      const corrections: Array<[RegExp, string]> = [
+        [/\bbuy a chemistry\b/i, "biochemistry"],
+        [/\bbuy chemistry\b/i, "biochemistry"],
+        [/\bby a chemistry\b/i, "biochemistry"],
+        [/\bbuy a chemistry results\b/i, "biochemistry results"],
+      ];
+      for (const [re, rep] of corrections) {
+        if (re.test(trimmed)) {
+          try {
+            debugEventBus.emitEvent?.("info", "STT", "correction_applied", { from: trimmed, to: rep });
+          } catch {}
+          trimmed = trimmed.replace(re, rep);
+          break;
+        }
+      }
+    } catch (e) {
+      // non-blocking
+    }
 
     // Detect explicit persona-switch requests (e.g., "can I talk with the owner")
     try {
