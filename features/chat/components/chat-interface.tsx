@@ -5466,10 +5466,11 @@ export function ChatInterface({
         appendAssistantMessage(assistantMsg);
         // Schedule persona switch to owner and show owner placeholder after 3s
         try {
-          // Delay UI switch and suppress auto-start to avoid accidental mic resume
+          // Delay UI switch and suppress auto-start briefly to avoid accidental mic resume
+          // Use a short suppress window so STT can restart promptly after the stage change.
           handleSetActivePersona("owner", {
             delayMs: 3000,
-            suppressAutoStartMs: 3000,
+            suppressAutoStartMs: 300,
           });
         } catch (e) {}
 
