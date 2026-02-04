@@ -29,6 +29,7 @@ import {
   isInDeafMode,
   canStartListening,
   scheduleClearSuppressionWhen,
+  forceClearSuppression,
 } from "@/features/speech/services/sttService";
 import { isSpeechRecognitionSupported } from "@/features/speech/services/sttService";
 import { ChatMessage } from "@/features/chat/components/chat-message";
@@ -1401,7 +1402,7 @@ export function ChatInterface({
         window.__stt_trace.push(e);
       }
       try {
-        debugEventBus?.emitEvent?.("stt_trace", e);
+        debugEventBus?.emitEvent?.("info", "STT_TRACE", "trace_entry", e);
       } catch {}
     } catch (err) {
       // ignore
@@ -2486,9 +2487,10 @@ export function ChatInterface({
             exitDeafMode();
           } catch {}
 
+          // CRITICAL FIX: Force-clear ALL suppression state (flag + timestamp) to guarantee STT can start.
+          // Previously we only called setSttSuppressed(false, true) which may leave sttSuppressedUntil set.
           try {
-            // Clear suppression and skip cooldown so startListening can proceed immediately
-            setSttSuppressed(false, true);
+            forceClearSuppression("tts-resume");
           } catch {}
 
           // Use a small deaf buffer upon resumption to avoid trailing echo but keep it
@@ -2659,7 +2661,7 @@ export function ChatInterface({
         try {
           if (!isListening && !isPlayingAudioRef.current) {
             try {
-              setSttSuppressed(false, true, "tts-forced");
+              forceClearSuppression("tts-forced");
             } catch {}
             try {
               exitDeafMode();
@@ -2731,7 +2733,7 @@ export function ChatInterface({
           try {
             if (voiceMode && !isListening && !userToggledOffRef.current && !isPlayingAudioRef.current) {
               try {
-                setSttSuppressed(false, true, "tts-fallback");
+                forceClearSuppression("tts-fallback");
               } catch {}
               try {
                 exitDeafMode();
@@ -2756,7 +2758,7 @@ export function ChatInterface({
             });
             if (voiceModeRef.current && !isListening && !userToggledOffRef.current && !isPlayingAudioRef.current && !isInDeafMode()) {
               try {
-                setSttSuppressed(false, true, "tts-final-fallback");
+                forceClearSuppression("tts-final-fallback");
               } catch {}
               safeStart();
             }

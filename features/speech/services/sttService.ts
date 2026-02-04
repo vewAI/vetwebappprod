@@ -622,6 +622,21 @@ export function isSttSuppressed() {
 }
 
 /**
+ * Force-clear ALL suppression state unconditionally.
+ * Use this in TTS resume paths to guarantee STT can start.
+ */
+export function forceClearSuppression(reason?: string) {
+  sttSuppressed = false;
+  sttSuppressedUntil = 0;
+  console.debug("sttService: forceClearSuppression", { reason });
+  try {
+    (debugEventBus as any).emitEvent?.("info", "STT", "force_clear_suppression", {
+      reason: reason ?? null,
+    });
+  } catch {}
+}
+
+/**
  * Returns true if starting STT is allowed right now (not suppressed, not deaf).
  */
 export function canStartListening(): boolean {
