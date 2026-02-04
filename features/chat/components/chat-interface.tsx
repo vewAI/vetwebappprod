@@ -3104,6 +3104,8 @@ export function ChatInterface({
     // only treat very short (<=2 words) voice fragments as potentially
     // incomplete and wait for continuation. This avoids false positives.
     // ALSO: check if the phrase ends with an incomplete marker (article, preposition, etc.)
+    // NOTE: when speaking to the veterinary nurse, do NOT treat very short
+    // one-word replies as incomplete (e.g., "temperature" is meaningful).
     if (voiceMode && !awaitingContinuationRef.current) {
       const tokenCount = String(trimmed).split(/\s+/).filter(Boolean).length;
       const lastWord = String(trimmed).split(/\s+/).pop()?.toLowerCase() || "";
@@ -3147,7 +3149,10 @@ export function ChatInterface({
       ];
       const endsIncomplete = endsWithIncompleteMarker(baseInputRef.current || "");
 
-      if (tokenCount <= 2 || endsIncomplete) {
+      const isTalkingToNurse = activePersona === "veterinary-nurse" || lastSentPersonaRef.current === "veterinary-nurse";
+
+      // Only apply the short-token incomplete heuristic when NOT talking to the nurse.
+      if ((tokenCount <= 2 && !isTalkingToNurse) || endsIncomplete) {
         // Insert assistant placeholder '...' and keep listening for continuation
         const stage = stages?.[currentStageIndex];
         const roleLabel = stage?.role
@@ -3360,6 +3365,8 @@ export function ChatInterface({
                   role: "veterinary-nurse",
                   caseId,
                   forceResume: true,
+                  // Mark nurse ACK as user-initiated so suppression is kept short
+                  userInitiated: true,
                 } as any,
                 personaMeta?.sex as any,
               );
@@ -3389,6 +3396,15 @@ export function ChatInterface({
       lastSentPersonaRef.current = activePersona;
       snapshot = [...messages, userMessage];
       setMessages(snapshot);
+
+      // Mark the final transcript as handled to avoid STT onFinal or transcript
+      // effects from appending the exact same text again while this send is
+      // in progress. This prevents double user messages in quick succession.
+      try {
+        lastFinalHandledRef.current = trimmed;
+        lastAppendedTextRef.current = trimmed;
+        lastAppendTimeRef.current = Date.now();
+      } catch (e) {}
     }
     setInput("");
     baseInputRef.current = "";
