@@ -2820,46 +2820,53 @@ export function ChatInterface({
       // If it's a lab request and we're a nurse before the lab stage, acknowledge locally.
       // Previously this ignored explicit manual sends; treat manual sends the same and provide
       // a clear acknowledgement so the student knows the request will be actioned in the Lab stage.
-      if (!isLabStage && activePersona === "veterinary-nurse" && looksLikeLabRequest(trimmed)) {
-        // Append the user's original request to the chat so it doesn't appear to disappear
-        try {
-          const userMsg = chatService.createUserMessage(trimmed, currentStageIndex);
-          setMessages((prev) => [...prev, userMsg]);
-        } catch (e) {
-          console.warn("Failed to append local user message for lab request", e);
-        }
-
-        const personaMeta = await ensurePersonaMetadata("veterinary-nurse");
-        const ack = "We'll request those tests; the results will be available in the Lab stage.";
-        const assistantMsg = chatService.createAssistantMessage(
-          ack,
-          currentStageIndex,
-          personaMeta?.displayName ?? "Nurse",
-          personaMeta?.portraitUrl,
-          personaMeta?.voiceId,
-          personaMeta?.sex as any,
-          "veterinary-nurse",
-        );
-        appendAssistantMessage(assistantMsg);
-        if (ttsEnabled) {
+      if (!isLabStage && activePersona === "veterinary-nurse") {
+        const isLab = looksLikeLabRequest(trimmed);
+        const isPhysical = looksLikePhysicalRequest(trimmed);
+        // If this is a pure lab-only request (no physical/exam intent), acknowledge locally.
+        if (isLab && !isPhysical) {
           try {
-            await playTtsAndPauseStt(
-              ack,
-              personaMeta?.voiceId,
-              {
-                roleKey: "veterinary-nurse",
-                displayRole: assistantMsg.displayRole,
-                role: "veterinary-nurse",
-                caseId,
-              } as any,
-              personaMeta?.sex as any,
-            );
-          } catch (e) {}
+            const userMsg = chatService.createUserMessage(trimmed, currentStageIndex);
+            setMessages((prev) => [...prev, userMsg]);
+          } catch (e) {
+            console.warn("Failed to append local user message for lab request", e);
+          }
+
+          const personaMeta = await ensurePersonaMetadata("veterinary-nurse");
+          const ack = "We'll request those tests; the results will be available in the Lab stage.";
+          const assistantMsg = chatService.createAssistantMessage(
+            ack,
+            currentStageIndex,
+            personaMeta?.displayName ?? "Nurse",
+            personaMeta?.portraitUrl,
+            personaMeta?.voiceId,
+            personaMeta?.sex as any,
+            "veterinary-nurse",
+          );
+          appendAssistantMessage(assistantMsg);
+          if (ttsEnabled) {
+            try {
+              await playTtsAndPauseStt(
+                ack,
+                personaMeta?.voiceId,
+                {
+                  roleKey: "veterinary-nurse",
+                  displayRole: assistantMsg.displayRole,
+                  role: "veterinary-nurse",
+                  caseId,
+                } as any,
+                personaMeta?.sex as any,
+              );
+            } catch (e) {}
+          }
+          // do not forward this request to the server
+          baseInputRef.current = "";
+          setInput("");
+          return;
         }
-        // do not forward this request to the server
-        baseInputRef.current = "";
-        setInput("");
-        return;
+        // If the request mixes physical and lab intents, fall through and forward
+        // the full student message to the server/LLM so the nurse reply can be
+        // generated with constraints (do not send the canned lab-only ack).
       }
     } catch (e) {
       // ignore
