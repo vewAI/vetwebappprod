@@ -2687,6 +2687,28 @@ export function ChatInterface({
           }
         }, RESUME_DELAY_AFTER_TTS_MS + 500);
       } catch {}
+      // Additional fallback: if nothing restarted after a longer grace period,
+      // try a final safe start. This helps in rare races where flags remained set.
+      try {
+        window.setTimeout(() => {
+          try {
+            debugEventBus.emitEvent?.("info", "TTS", "final_fallback_start_attempt", {
+              voiceMode: !!voiceMode,
+              isListening,
+              userToggledOff: !!userToggledOffRef.current,
+              isPlayingAudio: !!isPlayingAudioRef.current,
+            });
+            if (voiceModeRef.current && !isListening && !userToggledOffRef.current && !isPlayingAudioRef.current && !isInDeafMode()) {
+              try {
+                setSttSuppressed(false, true, "tts-final-fallback");
+              } catch {}
+              safeStart();
+            }
+          } catch (e) {
+            // ignore
+          }
+        }, 1500 + RESUME_DELAY_AFTER_TTS_MS);
+      } catch (e) {}
       // Clear the forced resume timer if it was set
       try {
         if (typeof forcedResumeTimer !== "undefined" && forcedResumeTimer) window.clearTimeout(forcedResumeTimer as number);
