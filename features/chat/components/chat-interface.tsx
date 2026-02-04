@@ -1382,6 +1382,48 @@ export function ChatInterface({
     },
   );
 
+  // Safe start wrapper: prevent starting STT while audio is playing or
+  // when suppression/deaf mode is active. Use this everywhere instead
+  // of calling `start()` directly to avoid races where STT records TTS.
+  const safeStart = useCallback(() => {
+    try {
+      if (isPlayingAudioRef.current) {
+        console.debug("safeStart blocked: audio playing");
+        return;
+      }
+      if (isSuppressingSttRef.current) {
+        console.debug("safeStart blocked: STT suppressed");
+        return;
+      }
+      if (tempVoiceDisabledRef.current) {
+        console.debug("safeStart blocked: temp voice disabled");
+        return;
+      }
+      if (userToggledOffRef.current) {
+        console.debug("safeStart blocked: user toggled mic off");
+        return;
+      }
+      try {
+        if (!canStartListening()) {
+          console.debug("safeStart blocked: canStartListening returned false");
+          return;
+        }
+      } catch (e) {
+        if (isSttSuppressed() || isInDeafMode()) {
+          console.debug("safeStart blocked: service-level suppression or deaf mode");
+          return;
+        }
+      }
+      try {
+        start();
+      } catch (e) {
+        console.debug("safeStart start() threw", e);
+      }
+    } catch (e) {
+      // swallow errors to avoid breaking callers
+    }
+  }, [start]);
+
   // Keep a reference to the latest error string for delayed checks
   useEffect(() => {
     latestSttErrorRef.current = sttError ?? null;
@@ -1417,7 +1459,7 @@ export function ChatInterface({
             try {
               if (!canStartListening()) return;
             } catch (e) {}
-            start();
+            safeStart();
           } catch (e) {
             console.warn("Failed to restart STT after error:", e);
           }
@@ -1452,7 +1494,7 @@ export function ChatInterface({
               try {
                 if (!canStartListening()) return;
               } catch (e) {}
-              start();
+              safeStart();
             } catch (e) {
               console.warn("Failed to restart STT after transient error:", e);
             }
@@ -2106,10 +2148,10 @@ export function ChatInterface({
                 try {
                   // Request permission to start; requestStart only checks guards.
                   const allowed = (require("@/features/chat/services/speechService") as any).requestStart?.("persona-ui-nurse") ?? false;
-                  if (allowed) start();
+                  if (allowed) safeStart();
                 } catch (e) {
                   // Fallback to conservative check
-                  if (canStartListening && canStartListening()) start();
+                  if (canStartListening && canStartListening()) safeStart();
                 }
               } catch (e) {
                 // ignore
@@ -2251,7 +2293,7 @@ export function ChatInterface({
             console.debug("attemptStartListening try", {
               attempt: attempts + 1,
             });
-            start();
+            safeStart();
           } catch (e) {
             console.debug("attemptStartListening start() threw", e);
           }
@@ -2416,7 +2458,7 @@ export function ChatInterface({
                     try {
                       if (!canStartListening()) return;
                     } catch (e) {}
-                    start();
+                    safeStart();
                   }
                 } catch (e) {
                   // ignore retry failures
@@ -2440,7 +2482,7 @@ export function ChatInterface({
                     try {
                       if (!canStartListening()) return;
                     } catch (e) {}
-                    start();
+                    safeStart();
                   }
                 } catch (e) {
                   // ignore retry failures
@@ -2998,7 +3040,10 @@ export function ChatInterface({
       const physicalStage = stageKey === "physical examination" || stageKey === "physical";
       const labRegex =
         /\b(lab|labs|bloodwork|bloods|blood|cbc|chemistry|biochemistry|hematology|urine|urinalysis|radiograph|x-?ray|xray|imaging|ultrasound|test|tests|results|culture|pcr|serology)\b/i;
-      if (physicalStage && labRegex.test(trimmed)) {
+      // Treat explicit temperature/temp requests as physical findings (not lab) during the
+      // Physical Examination stage so the nurse can return a temperature value.
+      const tempRegex = /\b(temp|temperature|temperature\s*reading)\b/i;
+      if (physicalStage && labRegex.test(trimmed) && !tempRegex.test(trimmed)) {
         const roleLabel = stage?.role
           ? stage.role === "owner"
             ? "Owner"
@@ -4362,7 +4407,7 @@ export function ChatInterface({
                 try {
                   if (!canStartListening()) return;
                 } catch (e) {}
-                start();
+                safeStart();
               } catch (e) {
                 /* ignore start failure */
               }
@@ -4472,7 +4517,7 @@ export function ChatInterface({
               try {
                 if (!canStartListening()) return;
               } catch (e) {}
-              start();
+              safeStart();
             } else {
               try {
                 debugEventBus.emitEvent?.("info", "STT", "deferred_manual_start_due_to_suppression");
@@ -4614,9 +4659,9 @@ export function ChatInterface({
           try {
             if (!canStartListening()) {
               console.debug("start prevented by service guard on user init click");
-            } else start();
+            } else safeStart();
           } catch (e) {
-            start();
+            safeStart();
           }
         } catch (e) {
           console.warn("Failed to start STT on click", e);
@@ -4915,9 +4960,9 @@ export function ChatInterface({
         try {
           if (!canStartListening()) {
             console.debug("auto-start suppressed by service guard when opening attempt");
-          } else start();
+          } else safeStart();
         } catch (e) {
-          start();
+          safeStart();
         }
         startedListeningRef.current = true;
       } catch (e) {
@@ -4935,9 +4980,9 @@ export function ChatInterface({
       try {
         if (!canStartListening()) {
           console.debug("auto-start suppressed by service guard (voiceMode change)");
-        } else start();
+        } else safeStart();
       } catch (e) {
-        start();
+        safeStart();
       }
       startedListeningRef.current = true;
     } catch (e) {
