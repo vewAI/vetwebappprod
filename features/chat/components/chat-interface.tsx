@@ -1385,39 +1385,70 @@ export function ChatInterface({
   // Safe start wrapper: prevent starting STT while audio is playing or
   // when suppression/deaf mode is active. Use this everywhere instead
   // of calling `start()` directly to avoid races where STT records TTS.
+  // Lightweight STT trace buffer for debugging STT/TTS start/resume stalls.
+  const pushSttTrace = useCallback((entry: Record<string, any>) => {
+    try {
+      const now = Date.now();
+      const e = { ts: now, ...entry };
+      // eslint-disable-next-line no-console
+      console.debug("[STT TRACE]", e);
+      // keep an in-page buffer for easy extraction during repros
+      // @ts-ignore
+      if (typeof window !== "undefined") {
+        // @ts-ignore
+        window.__stt_trace = window.__stt_trace || [];
+        // @ts-ignore
+        window.__stt_trace.push(e);
+      }
+      try {
+        debugEventBus?.emitEvent?.("stt_trace", e);
+      } catch {}
+    } catch (err) {
+      // ignore
+    }
+  }, []);
   const safeStart = useCallback(() => {
     try {
       if (isPlayingAudioRef.current) {
         console.debug("safeStart blocked: audio playing");
+        pushSttTrace({ event: "safeStart_blocked", reason: "audio_playing" });
         return;
       }
       if (isSuppressingSttRef.current) {
         console.debug("safeStart blocked: STT suppressed");
+        pushSttTrace({ event: "safeStart_blocked", reason: "stt_suppressed" });
         return;
       }
       if (tempVoiceDisabledRef.current) {
         console.debug("safeStart blocked: temp voice disabled");
+        pushSttTrace({ event: "safeStart_blocked", reason: "temp_voice_disabled" });
         return;
       }
       if (userToggledOffRef.current) {
         console.debug("safeStart blocked: user toggled mic off");
+        pushSttTrace({ event: "safeStart_blocked", reason: "user_toggled_off" });
         return;
       }
       try {
         if (!canStartListening()) {
           console.debug("safeStart blocked: canStartListening returned false");
+          pushSttTrace({ event: "safeStart_blocked", reason: "canStartListening_false" });
           return;
         }
       } catch (e) {
         if (isSttSuppressed() || isInDeafMode()) {
           console.debug("safeStart blocked: service-level suppression or deaf mode");
+          pushSttTrace({ event: "safeStart_blocked", reason: "service_suppressed_or_deaf" });
           return;
         }
       }
       try {
+        pushSttTrace({ event: "safeStart_starting" });
         start();
+        pushSttTrace({ event: "safeStart_started" });
       } catch (e) {
         console.debug("safeStart start() threw", e);
+        pushSttTrace({ event: "safeStart_start_error", err: String(e) });
       }
     } catch (e) {
       // swallow errors to avoid breaking callers
@@ -2246,6 +2277,7 @@ export function ChatInterface({
         // mic is restarted while assistant audio is playing and picked up.
         if (isSuppressingSttRef.current) {
           console.debug("attemptStartListening aborted: STT is suppressed (TTS active)");
+          pushSttTrace({ event: "attemptStart_aborted", reason: "stt_suppressed" });
           return;
         }
         // If voice mode is temporarily disabled for an assistant intro or
@@ -2255,14 +2287,17 @@ export function ChatInterface({
         // while we are guaranteeing the mic stays off for TTS.
         if (tempVoiceDisabledRef.current) {
           console.debug("attemptStartListening aborted: temp voice disable active (waiting for TTS)");
+          pushSttTrace({ event: "attemptStart_aborted", reason: "temp_voice_disabled" });
           return;
         }
         if (userToggledOffRef.current) {
           console.debug("attemptStartListening aborted: user toggled mic off");
+          pushSttTrace({ event: "attemptStart_aborted", reason: "user_toggled_off" });
           return;
         }
         if (!voiceModeRef.current) {
           console.debug("attemptStartListening aborted: voiceMode disabled");
+          pushSttTrace({ event: "attemptStart_aborted", reason: "voice_mode_disabled" });
           return;
         }
 
@@ -2276,6 +2311,7 @@ export function ChatInterface({
               until: suppressAutoStartUntilRef.current,
               now: Date.now(),
             });
+            pushSttTrace({ event: "attemptStart_suppressed_ui", until: suppressAutoStartUntilRef.current });
             return;
           }
           if (userToggledOffRef.current || !voiceModeRef.current) {
@@ -2301,9 +2337,11 @@ export function ChatInterface({
             console.debug("attemptStartListening try", {
               attempt: attempts + 1,
             });
+            pushSttTrace({ event: "attemptStart_try", attempt: attempts + 1 });
             safeStart();
           } catch (e) {
             console.debug("attemptStartListening start() threw", e);
+            pushSttTrace({ event: "attemptStart_error", err: String(e) });
           }
           attempts += 1;
           if (attempts < maxAttempts) {
@@ -2315,6 +2353,7 @@ export function ChatInterface({
             console.debug("attemptStartListening reached max attempts", {
               attempts,
             });
+            pushSttTrace({ event: "attemptStart_max_reached", attempts });
           }
         };
         tryOnce();
@@ -2378,6 +2417,12 @@ export function ChatInterface({
       setSttSuppressed(true, false, "tts");
     } catch {}
     isSuppressingSttRef.current = true;
+    pushSttTrace({
+      event: "tts_play_start",
+      snippet: (text || "").slice(0, 80),
+      forced: (meta as any)?.forceResume === true,
+      wasListening: !!isListening,
+    });
 
     // Track whether the mic was actively listening *before* we started TTS
     // so we can deterministically restore it when playback finishes. We consider
@@ -2390,6 +2435,7 @@ export function ChatInterface({
     // This avoids accidental restarts when voice-mode is enabled but mic
     // wasn't actively listening (edge conditions, paused state, etc.).
     resumeListeningRef.current = Boolean(wasMicPausedForTtsRef.current);
+    pushSttTrace({ event: "tts_mark_pause", wasMicPausedForTts: wasMicPausedForTtsRef.current, resumeListening: resumeListeningRef.current });
 
     // Local helpers to coordinate resume once TTS finishes. We may have two
     // triggers for TTS completion: the actual audio 'ended' event and our
@@ -2422,6 +2468,12 @@ export function ChatInterface({
           // Safe to resume now
           ttsResumeExecuted.current = true;
           isSuppressingSttRef.current = false;
+          pushSttTrace({
+            event: "tts_resume_execute",
+            skipResumeLocal,
+            wasMicPausedForTts: wasMicPausedForTtsRef.current,
+            resumeListening: resumeListeningRef.current,
+          });
           try {
             debugEventBus.emitEvent?.("info", "TTS", "resuming", {
               skipResumeLocal,
@@ -2455,6 +2507,7 @@ export function ChatInterface({
             resumeListeningRef.current = false;
             try {
               console.debug("playTtsAndPauseStt: resuming STT due to TTS-paused mic", { delay: RESUME_DELAY_AFTER_TTS_MS });
+              pushSttTrace({ event: "tts_resume_flow", path: "primary", delay: RESUME_DELAY_AFTER_TTS_MS });
             } catch (e) {}
             attemptStartListening(RESUME_DELAY_AFTER_TTS_MS);
             // Safety: if start doesn't take after a short grace period, try one more time
@@ -2463,6 +2516,7 @@ export function ChatInterface({
                 try {
                   if (voiceModeRef.current && !isListening && !userToggledOffRef.current) {
                     console.debug("playTtsAndPauseStt: retrying STT start after resume attempt");
+                    pushSttTrace({ event: "tts_retry_start_after_resume" });
                     try {
                       if (!canStartListening()) return;
                     } catch (e) {}
@@ -2480,6 +2534,7 @@ export function ChatInterface({
               console.debug("playTtsAndPauseStt: resuming STT (fallback)", {
                 delay: RESUME_DELAY_AFTER_TTS_MS,
               });
+              pushSttTrace({ event: "tts_resume_flow", path: "fallback", delay: RESUME_DELAY_AFTER_TTS_MS });
             } catch (e) {}
             attemptStartListening(RESUME_DELAY_AFTER_TTS_MS);
             try {
@@ -2487,6 +2542,7 @@ export function ChatInterface({
                 try {
                   if (voiceModeRef.current && !isListening && !userToggledOffRef.current) {
                     console.debug("playTtsAndPauseStt: retrying STT start after fallback resume attempt");
+                    pushSttTrace({ event: "tts_retry_start_after_fallback" });
                     try {
                       if (!canStartListening()) return;
                     } catch (e) {}
