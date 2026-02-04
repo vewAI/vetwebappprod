@@ -1,0 +1,48 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]: Sign in
+        - generic [ref=e7]: Enter your email and password to access your account
+      - generic [ref=e8]:
+        - generic [ref=e9]:
+          - generic [ref=e10]:
+            - generic [ref=e11]: Email
+            - textbox "Email" [ref=e12]:
+              - /placeholder: name@example.com
+          - generic [ref=e13]:
+            - generic [ref=e15]: Password
+            - textbox "Password" [ref=e16]
+        - generic [ref=e17]:
+          - button "Sign in" [ref=e18]
+          - generic [ref=e19]: Alpha version - Test accounts only
+  - contentinfo [ref=e20]:
+    - generic [ref=e21]:
+      - generic [ref=e22]:
+        - generic [ref=e23]:
+          - link "VEWAI" [ref=e24] [cursor=pointer]:
+            - /url: /
+            - generic [ref=e25]: VEWAI
+          - paragraph [ref=e26]: Veterinary Education Web Application with AI. An interactive learning platform for veterinary students to practice clinical case management.
+        - generic [ref=e27]:
+          - heading "Links" [level=3] [ref=e28]
+          - navigation [ref=e29]:
+            - link "Home" [ref=e30] [cursor=pointer]:
+              - /url: /
+            - link "Cases" [ref=e31] [cursor=pointer]:
+              - /url: /cases
+            - link "My Attempts" [ref=e32] [cursor=pointer]:
+              - /url: /attempts
+            - link "Professor Dashboard" [ref=e33] [cursor=pointer]:
+              - /url: /professor
+        - generic [ref=e34]:
+          - heading "About" [level=3] [ref=e35]
+          - paragraph [ref=e37]: Practice real-world veterinary case scenarios with AI-powered patient interactions and feedback.
+      - paragraph [ref=e39]: © 2026 VEWAI. All rights reserved.
+  - button "Open Next.js Dev Tools" [ref=e45] [cursor=pointer]:
+    - img [ref=e46]
+  - alert [ref=e49]: Create Next App
+```

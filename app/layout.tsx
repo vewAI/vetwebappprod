@@ -3,12 +3,11 @@ import { GeistSans, GeistMono } from "geist/font";
 import "./globals.css";
 import { AuthProvider } from "@/features/auth/services/authService";
 import { ProtectedRoute } from "@/features/auth/components/protected-route";
-import { Navbar } from "@/features/navigation/components/navbar";
-import { Footer } from "@/components/ui/footer";
 import { SpeechDeviceProvider } from "@/features/speech/context/audio-device-context";
 import { FontSizeProvider } from "@/features/navigation/context/FontSizeContext";
 import MobileSpeechControls from "@/features/speech/components/mobile-speech-controls";
 import { AdminDebugOverlay } from "@/features/admin/components/AdminDebugOverlay";
+import MainLayout from "@/components/layout/main-layout";
 
 const geistSans = GeistSans;
 
@@ -26,25 +25,19 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="h-full">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased h-full flex flex-col`}
-      >
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased h-full flex flex-col`}>
         <AuthProvider>
           <FontSizeProvider>
             <SpeechDeviceProvider>
               <AdminDebugOverlay />
               {process.env.NEXT_PUBLIC_ENABLE_AUTH_PROTECTION === "true" ? (
                 <ProtectedRoute>
-                  <Navbar />
-                  <main className="flex-1">{children}</main>
-                  <Footer />
+                  <MainLayout>{children}</MainLayout>
                   <MobileSpeechControls />
                 </ProtectedRoute>
               ) : (
                 <>
-                  <Navbar />
-                  <main className="flex-1">{children}</main>
-                  <Footer />
+                  <MainLayout>{children}</MainLayout>
                   <MobileSpeechControls />
                 </>
               )}

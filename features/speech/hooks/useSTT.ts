@@ -1,5 +1,13 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { startListening, stopListening, abortListening, isSttSuppressed, isInDeafMode, isGlobalPaused, canStartListening } from "../services/sttService";
+import {
+  startListening,
+  stopListening,
+  abortListening,
+  isSttSuppressed,
+  isInDeafMode,
+  isGlobalPaused,
+  canStartListening,
+} from "../services/sttService";
 
 type UseSttOptions = {
   inputDeviceId?: string | null;
@@ -11,7 +19,7 @@ type UseSttOptions = {
 export function useSTT(
   onFinal?: (text: string) => void,
   debounceMs = 700,
-  options: UseSttOptions = {}
+  options: UseSttOptions = {},
 ) {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
@@ -19,7 +27,11 @@ export function useSTT(
   const startInFlightRef = useRef(false);
 
   // Device detection for mobile optimizations
-  const isMobile = typeof window !== "undefined" && /Mobi|Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(window.navigator.userAgent);
+  const isMobile =
+    typeof window !== "undefined" &&
+    /Mobi|Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(
+      window.navigator.userAgent,
+    );
 
   // Buffer for final chunks and debounce timer to merge nearby final events
   const pendingFinalRef = useRef<string>("");
@@ -46,17 +58,21 @@ export function useSTT(
       if (document.visibilityState === "visible" && !isListening) {
         // SAFETY CHECK: Do not auto-restart if suppressed, in deaf mode, or globally paused
         if (isSttSuppressed() || isInDeafMode() || isGlobalPaused()) {
-          console.debug("useSTT: Visibility change ignored - suppressed/deaf/paused");
+          console.debug(
+            "useSTT: Visibility change ignored - suppressed/deaf/paused",
+          );
           return;
-        }        // Also consult the central service-level guard before starting
+        } // Also consult the central service-level guard before starting
         try {
           if (!canStartListening()) {
-            console.debug("useSTT: Visibility change start ignored - service guard");
+            console.debug(
+              "useSTT: Visibility change start ignored - service guard",
+            );
             return;
           }
         } catch (e) {
           // If the helper fails, fall back to the existing checks
-        }        // Try to restart listening if interrupted
+        } // Try to restart listening if interrupted
         start();
       }
     };
@@ -65,6 +81,8 @@ export function useSTT(
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [isMobile, isListening]);
+
+  // Desktop resume handling added after `start` is defined below.
 
   // Helper to schedule onFinal after debounceMs of silence
   const scheduleOnFinal = (chunk: string) => {
@@ -134,7 +152,7 @@ export function useSTT(
         setInterimTranscript(text);
       }
     },
-    [debounceMs]
+    [debounceMs],
   );
 
   // Start speech recognition
@@ -162,13 +180,17 @@ export function useSTT(
         });
         setIsListening(Boolean(ok));
 
-              // Start a health-check timer: if we don't see any interim/final results
+        // Start a health-check timer: if we don't see any interim/final results
         // or ambient activity within HEALTH_TIMEOUT_MS, try to restart once.
         // This check can be disabled at build-time by setting
         // NEXT_PUBLIC_ENABLE_STT_HEALTHCHECK=true in the environment. By
         // default it is disabled to avoid unwanted automatic mic shutdowns.
         try {
-          const HEALTH_CHECK_ENABLED = process.env.NEXT_PUBLIC_ENABLE_STT_HEALTHCHECK === 'true';
+          // Health checks previously allowed auto-restart/stop behavior when
+          // no audio frames were observed. Disable this by default to avoid
+          // automatic mic turn-off due to timeout. To re-enable for debugging,
+          // set NEXT_PUBLIC_ENABLE_STT_HEALTHCHECK=true in the environment.
+          const HEALTH_CHECK_ENABLED = false; // process.env.NEXT_PUBLIC_ENABLE_STT_HEALTHCHECK === 'true';
           if (HEALTH_CHECK_ENABLED) {
             const HEALTH_TIMEOUT_MS = 2500;
             clearListeningHealthTimer();
@@ -177,12 +199,16 @@ export function useSTT(
                 // If we're suppressed or in deaf mode, ignore this check
                 const { isInDeafMode } = require("../services/sttService");
                 // eslint-disable-next-line @typescript-eslint/no-var-requires
-                const sttSuppressed = require("../services/sttService").isSttSuppressed();
+                const sttSuppressed =
+                  require("../services/sttService").isSttSuppressed();
                 if (sttSuppressed || isInDeafMode()) return;
 
                 // No results seen - attempt a soft restart up to 3 times
                 listeningFailCountRef.current += 1;
-                console.warn("STT health check: no audio results detected, attempting restart", { attempt: listeningFailCountRef.current });
+                console.warn(
+                  "STT health check: no audio results detected, attempting restart",
+                  { attempt: listeningFailCountRef.current },
+                );
                 // Try a stop/start cycle
                 try {
                   stopListening();
@@ -200,7 +226,9 @@ export function useSTT(
                 if (listeningFailCountRef.current >= 3) {
                   // Escalate: set an error and give up auto-restarts until user action
                   setError("stt-unresponsive");
-                  console.error("STT health check: unresponsive after 3 attempts, please check microphone settings");
+                  console.error(
+                    "STT health check: unresponsive after 3 attempts, please check microphone settings",
+                  );
                   clearListeningHealthTimer();
                 }
               } catch (e) {
@@ -213,11 +241,16 @@ export function useSTT(
         // If microphone stream is available, create an analyser to measure ambient level
         try {
           if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const stream = await navigator.mediaDevices.getUserMedia({
+              audio: true,
+            });
             if (stream) {
-              const AudioContextCtor = (window as any).AudioContext || (window as any).webkitAudioContext;
+              const AudioContextCtor =
+                (window as any).AudioContext ||
+                (window as any).webkitAudioContext;
               if (AudioContextCtor) {
-                if (!audioCtxRef.current) audioCtxRef.current = new AudioContextCtor();
+                if (!audioCtxRef.current)
+                  audioCtxRef.current = new AudioContextCtor();
                 const ctx = audioCtxRef.current!;
                 const src = ctx.createMediaStreamSource(stream);
                 const analyser = ctx.createAnalyser();
@@ -231,7 +264,8 @@ export function useSTT(
                       const buf = new Float32Array(analyser.frequencyBinCount);
                       analyser.getFloatTimeDomainData(buf);
                       let sum = 0;
-                      for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+                      for (let i = 0; i < buf.length; i++)
+                        sum += buf[i] * buf[i];
                       const rms = Math.sqrt(sum / buf.length);
                       // normalize roughly to 0..1 (experimental)
                       const level = Math.min(1, rms * 10);
@@ -261,6 +295,45 @@ export function useSTT(
       }
     })();
   }, [handleResult, options?.inputDeviceId]);
+
+  // Desktop: ensure STT resumes when the page becomes visible again.
+  // We intentionally do NOT auto-pause when the page becomes hidden — the
+  // app-level logic controls pausing. On visibility -> visible, attempt to
+  // restart listening if appropriate (not suppressed, not deaf, service allows).
+  useEffect(() => {
+    const handleVisibilityResume = () => {
+      try {
+        if (document.visibilityState !== "visible") return;
+        // If already starting/started, nothing to do
+        if (startInFlightRef.current) return;
+        // Rely on service-level guards for suppression/deaf-mode
+        try {
+          if (isSttSuppressed()) return;
+        } catch {}
+        try {
+          if (isInDeafMode()) return;
+        } catch {}
+        try {
+          if (!canStartListening()) return;
+        } catch {}
+        // Small delay to avoid racing with other resume logic
+        setTimeout(() => {
+          try {
+            start();
+          } catch (e) {
+            // ignore
+          }
+        }, 100);
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityResume);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityResume);
+    };
+  }, [start]);
 
   // Stop speech recognition
   const stop = useCallback(() => {
@@ -358,6 +431,8 @@ export function useSTT(
     isListening,
     error, // Exposed to UI
     ambientLevel,
-    setDebounceMs: (ms: number) => { debounceRef.current = Math.max(100, Number(ms) || 100); }
+    setDebounceMs: (ms: number) => {
+      debounceRef.current = Math.max(100, Number(ms) || 100);
+    },
   };
 }

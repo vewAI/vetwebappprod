@@ -33,25 +33,10 @@ export default function CaseInstructionsPage() {
   const tourSteps = [
     {
       element: "#case-title",
-      popover: {
-        title: "Case Details",
-        description: "Review the case title, estimated time, and overview before starting.",
-      },
+      popover: { title: "Case Details", description: "Review the case title, estimated time, and overview before starting." },
     },
-    {
-      element: "#start-button",
-      popover: {
-        title: "Start Case",
-        description: "Click here to begin the simulation. A new attempt will be created.",
-      },
-    },
-    {
-      element: "#past-attempts",
-      popover: {
-        title: "Past Attempts",
-        description: "View your previous attempts and their status here.",
-      },
-    },
+    { element: "#start-button", popover: { title: "Start Case", description: "Click here to begin the simulation. A new attempt will be created." } },
+    { element: "#past-attempts", popover: { title: "Past Attempts", description: "View your previous attempts and their status here." } },
   ];
 
   useEffect(() => {
@@ -114,7 +99,7 @@ export default function CaseInstructionsPage() {
     setIsStarting(true);
     // Navigate directly to the case page
     // The case page will create a new attempt if needed
-    router.push(`/${id}`);
+    router.push(`/case/${id}/attempt`);
   };
 
   const handleStartOver = async () => {
@@ -173,12 +158,20 @@ export default function CaseInstructionsPage() {
         <GuidedTour steps={tourSteps} tourId="case-instructions" />
       </div>
 
-      <div className="grid gap-8 md:grid-cols-[2fr_1fr]">
+      <div className="grid gap-8 lg:grid-cols-[2fr_1fr]">
         <div>
           <div className="mb-8">
             <div className="flex gap-3">
               <div className="relative w-40 h-40 mb-2">
-                <Image src={caseData?.imageUrl} alt={caseData?.title} fill className=" border p-1" sizes="250px " priority={true} />
+                <Image
+                  src={caseData?.imageUrl}
+                  alt={caseData?.title}
+                  className=" border p-1"
+                  sizes="200px"
+                  priority={true}
+                  width={200}
+                  height={200}
+                />
               </div>
               <div>
                 <div className="flex items-center gap-2 ">
