@@ -2424,6 +2424,27 @@ export function ChatInterface({
       } catch (e) {
         // ignore failures to set suppression
       }
+
+      // Fast-fail safety: if resume hasn't occurred after a short window,
+      // force-clear suppression and attempt to restart STT. This protects
+      // against long TTS stalls or network issues.
+      const FORCED_RESUME_MS = 4000;
+      const forcedResumeTimer = window.setTimeout(() => {
+        try {
+          if (!isListening && !isPlayingAudioRef.current && voiceModeRef.current && !userToggledOffRef.current) {
+            pushSttTrace({ event: "forced_resume_safety_timer_fired" });
+            try {
+              forceClearSuppression("tts-forced");
+            } catch {}
+            safeStart();
+          }
+        } catch (e) {
+          // ignore
+        }
+      }, FORCED_RESUME_MS);
+
+      // Store the timer so we can clear it when TTS finishes normally
+      (ttsEstimatedEndTimerRef as any).forcedResumeTimer = forcedResumeTimer;
     } catch (e) {
       // ignore timer scheduling errors
     }
@@ -2465,6 +2486,14 @@ export function ChatInterface({
       // here so the single source of truth (the estimate) controls resumption when appropriate.
       try {
         debugEventBus.emitEvent?.("info", "TTS", "playback_finished", { estimatedMs });
+      } catch {}
+      // Clear the forced resume timer if it was set since TTS finished normally
+      try {
+        const forcedTimer = (ttsEstimatedEndTimerRef as any).forcedResumeTimer;
+        if (forcedTimer) {
+          window.clearTimeout(forcedTimer);
+          (ttsEstimatedEndTimerRef as any).forcedResumeTimer = null;
+        }
       } catch {}
       // Ensure we attempt resume now that audio actually ended; the resume
       // helper will check safety and only resume when appropriate.
@@ -3081,10 +3110,18 @@ export function ChatInterface({
           nurseAckGivenRef.current = true;
           if (ttsEnabled) {
             try {
+              // Force resume after this short ack so the mic/STT will be re-enabled
+              // for follow-up dictation even if it wasn't actively listening before.
               await playTtsAndPauseStt(
                 ackText,
                 personaMeta?.voiceId,
-                { roleKey: "veterinary-nurse", displayRole: personaMeta?.displayName ?? "Nurse", role: "veterinary-nurse", caseId } as any,
+                {
+                  roleKey: "veterinary-nurse",
+                  displayRole: personaMeta?.displayName ?? "Nurse",
+                  role: "veterinary-nurse",
+                  caseId,
+                  forceResume: true,
+                } as any,
                 personaMeta?.sex as any,
               );
             } catch (e) {
