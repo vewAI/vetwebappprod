@@ -2433,8 +2433,13 @@ export function ChatInterface({
         try {
           if (!isListening && !isPlayingAudioRef.current && voiceModeRef.current && !userToggledOffRef.current) {
             pushSttTrace({ event: "forced_resume_safety_timer_fired" });
+            // Clear local suppression ref FIRST so safeStart won't be blocked
+            isSuppressingSttRef.current = false;
             try {
               forceClearSuppression("tts-forced");
+            } catch {}
+            try {
+              exitDeafMode();
             } catch {}
             safeStart();
           }
@@ -4050,8 +4055,12 @@ export function ChatInterface({
               try {
                 pushSttTrace({ event: "voiceMode_start_attempt", canStart: canStartListening() });
                 // Force-clear any lingering suppression state before starting
+                isSuppressingSttRef.current = false;
                 try {
                   forceClearSuppression("voice-mode-enabled");
+                } catch (e) {}
+                try {
+                  exitDeafMode();
                 } catch (e) {}
                 safeStart();
               } catch (e) {
@@ -5507,7 +5516,11 @@ export function ChatInterface({
               try {
                 pushSttTrace({ event: "intro_dialog_voice_continue", isListening, voiceMode });
                 if (voiceModeRef.current && !isListening && !userToggledOffRef.current && !isPlayingAudioRef.current) {
+                  isSuppressingSttRef.current = false;
                   forceClearSuppression("intro-dialog-continue");
+                  try {
+                    exitDeafMode();
+                  } catch (e) {}
                   safeStart();
                 }
               } catch (e) {
@@ -5538,7 +5551,7 @@ export function ChatInterface({
         <div className="mx-auto max-w-3xl">
           {/* Persona filter is controlled by the big OWNER / VOICE MODE / NURSE controls above */}
           <div className="space-y-4">
-            {/* Group consecutive assistant messages by same persona/stage into a single visual entry */}
+            {/* Group consecutive messages by same role/persona/stage into a single visual entry */}
             {(() => {
               const visible = messages.filter((m) => {
                 const p = m.personaRoleKey ?? (m.displayRole ? resolveChatPersonaRoleKey(m.displayRole, m.displayRole) : null);
@@ -5548,6 +5561,7 @@ export function ChatInterface({
               const grouped: Message[] = [];
               for (const m of visible) {
                 const last = grouped.length ? grouped[grouped.length - 1] : null;
+                // Bundle consecutive assistant messages with same persona/stage
                 if (
                   last &&
                   last.role === "assistant" &&
@@ -5564,6 +5578,17 @@ export function ChatInterface({
                     const mSF = (m as any).structuredFindings || {};
                     const mergedSF = { ...lastSF, ...mSF };
                     if (Object.keys(mergedSF).length) (last as any).structuredFindings = mergedSF;
+                    // Keep earliest timestamp
+                    (last as any).timestamp = last.timestamp || m.timestamp;
+                  } catch (e) {
+                    grouped.push({ ...m });
+                  }
+                  // Bundle consecutive user messages with same persona
+                } else if (last && last.role === "user" && m.role === "user" && (last.personaRoleKey ?? null) === (m.personaRoleKey ?? null)) {
+                  try {
+                    // Merge user content de-duplicating overlapping text
+                    const mergedContent = mergeStringsNoDup(last.content, m.content);
+                    (last as any).content = mergedContent;
                     // Keep earliest timestamp
                     (last as any).timestamp = last.timestamp || m.timestamp;
                   } catch (e) {
