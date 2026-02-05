@@ -5022,8 +5022,9 @@ export function ChatInterface({
     // prompts). In that case, return a Nurse-centred intro instead.
     if (role.includes("owner") || role.includes("client")) {
       if (activePersona === "veterinary-nurse") {
-        // Nurse-focused intro (non-owner phrasing)
-        return `I'm the veterinary nurse supporting this case. I'm ready to share the documented findings for the ${title.toLowerCase()} whenever you need them.`;
+        // Nurse should not produce a canned intro; keep silent so the nurse
+        // remains listening and available to the student.
+        return "";
       }
       // A brief, natural owner prompt that invites the student to report
       // findings or ask follow-up questions. Keep it short so the student
@@ -5035,7 +5036,8 @@ export function ChatInterface({
       return "What are your indications and treatment plan, Doctor?";
     }
 
-    return `I'm the veterinary nurse supporting this case. I'm ready to share the documented findings for the ${title.toLowerCase()} whenever you need them.`;
+    // Default: no canned nurse intro; return empty to avoid auto-speaking.
+    return "";
   };
 
   const handleProceed = async () => {
@@ -5139,7 +5141,17 @@ export function ChatInterface({
 
     // Avoid repeating identical stage intro messages during the same attempt.
     const introKey = `${normalizedRoleKey}:${introText}`;
-    if (!sentStageIntroRef.current.has(introKey)) {
+    // If this is the default nurse intro phrasing (empty or canned), do NOT append or play it.
+    // The nurse should keep listening instead of producing a canned intro.
+    const nurseIntroMarker = "I'm the veterinary nurse";
+    const skipNurseIntro = (!introText || introText.includes(nurseIntroMarker)) && normalizedRoleKey === "veterinary-nurse";
+
+    if (skipNurseIntro) {
+      // Mark as sent so we don't trigger it again, but do not append or play TTS.
+      sentStageIntroRef.current.add(introKey);
+    }
+
+    if (!sentStageIntroRef.current.has(introKey) && !skipNurseIntro) {
       // Append assistant message immediately so user sees it
       // Special UX: if we're leaving the Physical Examination stage and
       // the intro is coming from the nurse, use a shorter prompt that
