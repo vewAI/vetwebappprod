@@ -863,6 +863,10 @@ export function ChatInterface({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Keep a base input buffer (committed text from prior finals or manual typing)
   const baseInputRef = useRef<string>("");
+  // Track whether the most recent input changes came from manual typing
+  // (true) or from STT updates (false). Used to avoid clearing manual
+  // drafts when STT inactivity timers fire.
+  const lastTypedByUserRef = useRef<boolean>(false);
   // Remember whether we've already started listening for this attempt to
   // avoid repeatedly calling `start()` due to hook identity changes.
   const startedListeningRef = useRef<boolean>(false);
@@ -1115,6 +1119,10 @@ export function ChatInterface({
         // pauses do not erase earlier content. Maintain spacing. Also
         // guard against the base already ending with the same text.
         baseInputRef.current = mergeStringsNoDup(baseInputRef.current, trimmed);
+        // Mark as STT input (not manual typing)
+        try {
+          lastTypedByUserRef.current = false;
+        } catch {}
         // Reflect in the visible textarea immediately
         setInput(baseInputRef.current);
 
@@ -3995,18 +4003,24 @@ export function ChatInterface({
           // service restarts when suppression clears.
           if (isSuppressingSttRef.current) {
             resumeListeningRef.current = true;
+            pushSttTrace({ event: "voiceMode_enabled", action: "deferred_resume_due_to_suppression" });
           } else if (!isPlayingAudioRef.current) {
             // small delay to allow permission prompt to finish processing
+            pushSttTrace({ event: "voiceMode_enabled", action: "scheduling_start" });
             setTimeout(() => {
               try {
+                pushSttTrace({ event: "voiceMode_start_attempt", canStart: canStartListening() });
+                // Force-clear any lingering suppression state before starting
                 try {
-                  if (!canStartListening()) return;
+                  forceClearSuppression("voice-mode-enabled");
                 } catch (e) {}
-                start();
+                safeStart();
               } catch (e) {
-                /* ignore start failure */
+                pushSttTrace({ event: "voiceMode_start_error", err: String(e) });
               }
             }, 150);
+          } else {
+            pushSttTrace({ event: "voiceMode_enabled", action: "blocked_audio_playing" });
           }
 
           // Show short toast indicating speak mode activated
@@ -4293,6 +4307,10 @@ export function ChatInterface({
           autoSendPendingTextRef.current = null;
         }
         const combined = mergeStringsNoDup(baseInputRef.current, interimTranscript.trim());
+        // Mark as STT input (not manual typing)
+        try {
+          lastTypedByUserRef.current = false;
+        } catch {}
         setInput(combined);
         return;
       }
@@ -4319,6 +4337,10 @@ export function ChatInterface({
         // the onFinal handler (safety), ensure it's reflected in baseInput.
         if (!baseInputRef.current || !baseInputRef.current.includes(finalTrim)) {
           baseInputRef.current = mergeStringsNoDup(baseInputRef.current, finalTrim);
+          // Mark as STT input (not manual typing)
+          try {
+            lastTypedByUserRef.current = false;
+          } catch {}
           lastAppendedTextRef.current = finalTrim;
           lastAppendTimeRef.current = now;
         }
@@ -4403,6 +4425,41 @@ export function ChatInterface({
       // ignore
     }
   }, [isListening, transcript, interimTranscript, currentStageIndex, stages, stopAndMaybeSend, stop]);
+
+  // Clear the writing/input box after 15s of STT inactivity.
+  // The timer resets on STT activity (`interimTranscript` or `transcript`) and
+  // will only clear input when the input content appears to have come from
+  // STT (i.e. when `lastTypedByUserRef` is false). This avoids erasing manual typing.
+  useEffect(() => {
+    const INACTIVITY_MS = 15000;
+    let t: number | null = null;
+
+    const clearIfStt = () => {
+      try {
+        // Only clear if there is input and it wasn't typed manually
+        if (typeof input === "string" && input.trim().length > 0) {
+          const lastTypedByUser = lastTypedByUserRef?.current;
+          if (!lastTypedByUser) {
+            setInput("");
+            baseInputRef.current = "";
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    // Schedule a clear timer whenever input exists
+    if (typeof input === "string" && input.trim().length > 0 && !lastTypedByUserRef.current) {
+      t = window.setTimeout(clearIfStt, INACTIVITY_MS);
+    }
+
+    return () => {
+      if (t) {
+        window.clearTimeout(t);
+      }
+    };
+  }, [input, transcript, interimTranscript, setInput]);
 
   // Adjust STT debounce adaptively based on ambient noise level to reduce
   // false positives in noisy environments.
@@ -4500,7 +4557,8 @@ export function ChatInterface({
         // Ignore high-volume speech debug events for the toast UI (they're still captured in trace)
         if (event.source === "TTS" || event.source === "STT") return;
         // Only show a toast for stage-related debug events so the UI isn't noisy
-        if (event.source && String(event.source).toLowerCase().startsWith("stage")) {
+        // AND only for admin users with debug enabled
+        if (event.source && String(event.source).toLowerCase().startsWith("stage") && role === "admin" && debugEnabled) {
           try {
             setTimepointToast({
               title: `${event.source} - ${event.message}`,
@@ -4534,7 +4592,7 @@ export function ChatInterface({
         debugEventBus.off("debug-event", handler);
       } catch {}
     };
-  }, []);
+  }, [role, debugEnabled]);
 
   // Ensure STT is active when an attempt is open. This effect covers cases
   // where `attemptId` didn't change but the component mounted or `isListening`
@@ -4584,33 +4642,55 @@ export function ChatInterface({
   }, [voiceMode, isListening, reset, start]);
 
   // Auto-pause attempt and show toast if user leaves the chat page
+  // Grace period: wait 60 seconds of inactivity before actually pausing
+  const pauseGraceTimerRef = useRef<number | null>(null);
+  const PAUSE_GRACE_PERIOD_MS = 60000; // 60 seconds
   useEffect(() => {
     if (!attemptId) return;
+
+    const doPause = () => {
+      setIsPaused(true);
+      // Set global pause flag to prevent STT auto-restart when window is refocused
+      setGlobalPaused(true);
+      // Turn off voice mode when auto-pausing - CRITICAL for stopping STT/TTS
+      try {
+        setVoiceModeEnabled(false);
+      } catch {
+        // fallback: ensure listeners and TTS are stopped
+        if (isListening) {
+          try {
+            stop();
+          } catch {}
+        }
+      }
+      stopActiveTtsPlayback();
+      setTtsEnabledState(false);
+      // Also enter deaf mode to ignore any pending STT results
+      enterDeafMode();
+      setTimepointToast({
+        title: "Attempt Paused",
+        body: "You left the case. Tap Resume to continue.",
+      });
+    };
+
     const handleVisibility = () => {
       if (document.visibilityState === "hidden") {
-        setIsPaused(true);
-        // Set global pause flag to prevent STT auto-restart when window is refocused
-        setGlobalPaused(true);
-        // Turn off voice mode when auto-pausing - CRITICAL for stopping STT/TTS
-        try {
-          setVoiceModeEnabled(false);
-        } catch {
-          // fallback: ensure listeners and TTS are stopped
-          if (isListening) {
-            try {
-              stop();
-            } catch {}
-          }
+        // Start grace period timer instead of pausing immediately
+        if (!pauseGraceTimerRef.current) {
+          pauseGraceTimerRef.current = window.setTimeout(() => {
+            pauseGraceTimerRef.current = null;
+            // Only pause if still hidden
+            if (document.visibilityState === "hidden") {
+              doPause();
+            }
+          }, PAUSE_GRACE_PERIOD_MS);
         }
-        stopActiveTtsPlayback();
-        setTtsEnabledState(false);
-        // Also enter deaf mode to ignore any pending STT results
-        enterDeafMode();
-        setTimepointToast({
-          title: "Attempt Paused",
-          body: "You left the case. The attempt is paused. Re-enter to unpause.",
-        });
       } else if (document.visibilityState === "visible") {
+        // Cancel grace period timer if user returns before 60s
+        if (pauseGraceTimerRef.current) {
+          window.clearTimeout(pauseGraceTimerRef.current);
+          pauseGraceTimerRef.current = null;
+        }
         // Clear any pause/deaf-mode status when the user returns to the tab
         setIsPaused(false);
         setGlobalPaused(false);
@@ -4672,6 +4752,11 @@ export function ChatInterface({
     window.addEventListener("vw:attempt-save-unauthorized", onSaveUnauthorized as EventListener);
 
     return () => {
+      // Clear grace period timer on cleanup
+      if (pauseGraceTimerRef.current) {
+        window.clearTimeout(pauseGraceTimerRef.current);
+        pauseGraceTimerRef.current = null;
+      }
       document.removeEventListener("visibilitychange", handleVisibility);
       document.removeEventListener("pointerdown", handleUserInteraction);
       document.removeEventListener("keydown", handleUserInteraction as EventListener);
@@ -5363,7 +5448,20 @@ export function ChatInterface({
           }
           if (mode === "voice") {
             // Ensure voice mode is enabled (this will request permission if needed)
-            setVoiceModeEnabled(true);
+            await setVoiceModeEnabled(true);
+            // Additional safety: after a short delay, ensure STT is actually started
+            // This handles edge cases where setVoiceModeEnabled's internal start might be blocked
+            setTimeout(() => {
+              try {
+                pushSttTrace({ event: "intro_dialog_voice_continue", isListening, voiceMode });
+                if (voiceModeRef.current && !isListening && !userToggledOffRef.current && !isPlayingAudioRef.current) {
+                  forceClearSuppression("intro-dialog-continue");
+                  safeStart();
+                }
+              } catch (e) {
+                // ignore
+              }
+            }, 300);
           } else {
             setVoiceModeEnabled(false);
           }
@@ -5454,10 +5552,10 @@ export function ChatInterface({
             {nextStageTitle}
           </Button>
 
-          <div className="grid grid-cols-1 sm:grid-cols-[auto_auto_1fr_auto] gap-4 items-center w-full p-2 bg-background/80 border border-border rounded-lg">
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr_auto] gap-4 items-center w-full p-2 bg-background/80 border border-border rounded-lg">
             {/* Left persona */}
             {/* OWNER button (left) with portrait above */}
-            <div className="flex flex-col items-center gap-1 flex-shrink-0">
+            <div className="flex flex-col items-center gap-1 flex-shrink-0 justify-self-center sm:justify-self-end">
               <button
                 type="button"
                 onClick={() => handleSetActivePersona("owner")}
@@ -5518,7 +5616,7 @@ export function ChatInterface({
             </div>
 
             {/* NURSE button (right) with portrait above */}
-            <div className="flex flex-col items-center gap-1 flex-shrink-0">
+            <div className="flex flex-col items-center gap-1 flex-shrink-0 justify-self-center sm:justify-self-start">
               <button
                 type="button"
                 onClick={() => handleSetActivePersona("veterinary-nurse")}
@@ -5617,6 +5715,18 @@ export function ChatInterface({
                   const val = e.target.value;
                   baseInputRef.current = val;
                   setInput(val);
+                  // Mark as manual typing (not STT)
+                  try {
+                    lastTypedByUserRef.current = true;
+                  } catch {}
+                  // If the user edits the input, allow re-submission of the
+                  // previously-blocked content by clearing the lastSubmissionRef
+                  // when the current input no longer matches the last submitted text.
+                  try {
+                    if (lastSubmissionRef.current && val !== lastSubmissionRef.current.content) {
+                      lastSubmissionRef.current = null;
+                    }
+                  } catch {}
                   if (showStartSpeakingPrompt) {
                     setShowStartSpeakingPrompt(false);
                     try {
@@ -5698,6 +5808,22 @@ export function ChatInterface({
           >
             <div className="font-bold text-lg mb-1">{timepointToast.title}</div>
             <div className="text-sm">{timepointToast.body}</div>
+            {/* Show RESUME button when attempt is paused */}
+            {isPaused && timepointToast.title === "Attempt Paused" && (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="mt-3 font-semibold"
+                onClick={() => {
+                  try {
+                    void togglePause();
+                    hideTimepointToastWithFade();
+                  } catch {}
+                }}
+              >
+                Resume
+              </Button>
+            )}
             <button
               onClick={() => hideTimepointToastWithFade()}
               className="absolute top-1 right-2 text-primary-foreground/80 hover:text-primary-foreground"
