@@ -2569,6 +2569,7 @@ export function ChatInterface({
             displayRole: assistantMsg.displayRole,
             role: roleName,
             caseId,
+            forceResume: true, // Restart mic after caution prompt
             metadata: {
               stageId: stage.id,
               stageGuard: true,
@@ -2696,7 +2697,7 @@ export function ChatInterface({
             await playTtsAndPauseStt(
               ack,
               personaMeta?.voiceId,
-              { roleKey: "veterinary-nurse", displayRole: assistantMsg.displayRole, role: "veterinary-nurse", caseId } as any,
+              { roleKey: "veterinary-nurse", displayRole: assistantMsg.displayRole, role: "veterinary-nurse", caseId, forceResume: true } as any,
               personaMeta?.sex as any,
             );
           } catch (e) {}
@@ -2840,7 +2841,7 @@ export function ChatInterface({
             await playTtsAndPauseStt(
               brief,
               voiceForRole,
-              { roleKey: normalizedRoleKey, displayRole: assistantMsg.displayRole, role: stage?.role ?? roleLabel, caseId } as any,
+              { roleKey: normalizedRoleKey, displayRole: assistantMsg.displayRole, role: stage?.role ?? roleLabel, caseId, forceResume: true } as any,
               personaMeta?.sex as any,
             );
           } catch (e) {
@@ -3468,6 +3469,7 @@ export function ChatInterface({
             role: stage?.role ?? roleName,
             caseId,
             messageId: aiMessage.id,
+            forceResume: true, // Always restart mic after assistant responses
             metadata: {
               stageId: stage?.id,
               attemptId: attemptId ?? undefined,
@@ -5238,6 +5240,7 @@ export function ChatInterface({
           displayRole: roleName,
           role: stageRole ?? roleName,
           caseId,
+          forceResume: true, // Restart mic after intro
           metadata: {
             stageId: stages[targetIndex]?.id,
             stageIntro: true,
