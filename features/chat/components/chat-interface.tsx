@@ -1199,17 +1199,24 @@ export function ChatInterface({
 
               // Extra validation when noise suppression is on: require at
               // least 3 words to reduce accidental sends from ambient noise
+              // EXCEPTION: When talking to the nurse, allow 1-2 word messages
               const textToSend = baseInputRef.current?.trim() || "";
               const wordCount = textToSend.split(/\s+/).filter(Boolean).length;
-              // Allow single-word requests during nurse-sensitive stages.
+              // Allow single-word requests during nurse-sensitive stages or when talking to nurse.
               const stage = stages?.[currentStageIndex];
               const stageTitle = (stage?.title ?? "").toLowerCase();
               const isSensitiveStage = /physical|laboratory|lab|treatment/.test(stageTitle);
+              const isTalkingToNurse = activePersona === "veterinary-nurse";
               // Minimum words required to auto-send during noise suppression.
-              // Lowered to 2 to allow concise two-word queries (e.g., "respiratory exam").
-              const minWordsWhenSuppressed = isSensitiveStage ? 1 : 2;
+              // Nurse accepts any length; owner requires 2 words normally, 1 in sensitive stages.
+              const minWordsWhenSuppressed = isTalkingToNurse ? 1 : isSensitiveStage ? 1 : 2;
               if (noiseSuppressionRef.current && wordCount < minWordsWhenSuppressed) {
-                console.debug("Auto-send skipped: too short during noise suppression", { wordCount, minWordsWhenSuppressed, text: textToSend });
+                console.debug("Auto-send skipped: too short during noise suppression", {
+                  wordCount,
+                  minWordsWhenSuppressed,
+                  text: textToSend,
+                  activePersona,
+                });
                 return;
               }
 
@@ -2911,7 +2918,12 @@ export function ChatInterface({
       ];
       const endsIncomplete = endsWithIncompleteMarker(baseInputRef.current || "");
 
-      if (tokenCount <= 2 || endsIncomplete) {
+      // When talking to the nurse, don't block short messages - nurses accept 1-2 word requests
+      // Only show placeholder for incomplete phrases when talking to the owner
+      const isNursePersona = activePersona === "veterinary-nurse";
+      const shouldWaitForContinuation = !isNursePersona && (tokenCount <= 2 || endsIncomplete);
+
+      if (shouldWaitForContinuation) {
         // Insert assistant placeholder '...' and keep listening for continuation
         const stage = stages?.[currentStageIndex];
         const roleLabel = stage?.role
