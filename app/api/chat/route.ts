@@ -3,28 +3,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRoleInfoPrompt } from "@/features/role-info/services/roleInfoService";
 import { getStagesForCase } from "@/features/stages/services/stageService";
 import { resolveChatPersonaRoleKey, isAllowedChatPersonaKey } from "@/features/chat/utils/persona-guardrails";
-import {
-  buildPersonaSeeds,
-  buildSharedPersonaSeeds,
-} from "@/features/personas/services/personaSeedService";
-import type {
-  PersonaIdentity,
-  PersonaSeed,
-} from "@/features/personas/models/persona";
+import { buildPersonaSeeds, buildSharedPersonaSeeds } from "@/features/personas/services/personaSeedService";
+import type { PersonaIdentity, PersonaSeed } from "@/features/personas/models/persona";
 import { CHAT_SYSTEM_GUIDELINE } from "@/features/chat/prompts/systemGuideline";
 import { resolvePromptValue } from "@/features/prompts/services/promptService";
 // dynamic import used for casePromptAutomation to avoid Turbopack static export checks
-// (see usage sites where we `await import()` the module) 
+// (see usage sites where we `await import()` the module)
 import { requireUser } from "@/app/api/_lib/auth";
-import {
-  parseRequestedKeys,
-  matchPhysicalFindings,
-  PHYS_SYNONYMS,
-} from "@/features/chat/services/physFinder";
-import {
-  normalizeCaseMedia,
-  type CaseMediaItem,
-} from "@/features/cases/models/caseMedia";
+import { parseRequestedKeys, matchPhysicalFindings, PHYS_SYNONYMS } from "@/features/chat/services/physFinder";
+import { normalizeCaseMedia, type CaseMediaItem } from "@/features/cases/models/caseMedia";
 import { searchMerckManual } from "@/features/external-resources/services/merckService";
 import { debugEventBus } from "@/lib/debug-events-fixed";
 
@@ -43,22 +30,15 @@ export async function POST(request: NextRequest) {
 
     // Validate that messages is an array
     if (!messages || !Array.isArray(messages)) {
-      return NextResponse.json(
-        { error: "Messages array is required" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "Messages array is required" }, { status: 400 });
     }
 
-    const lastUserMessage = [...messages]
-      .reverse()
-      .find((msg) => msg.role === "user");
+    const lastUserMessage = [...messages].reverse().find((msg) => msg.role === "user");
     // Sanitize incoming message array by removing any prior system messages
     // injected during earlier turns. This prevents stale persona-specific
     // system instructions (like a previously set canonical persona name)
     // from leaking into subsequent stage responses.
-    const enhancedMessages = (messages || []).filter(
-      (m: any) => m.role !== "system",
-    );
+    const enhancedMessages = (messages || []).filter((m: any) => m.role !== "system");
 
     // Parallel Fetching: RAG is intentionally disabled. All case information
     // must be retrieved directly via Supabase DB queries to avoid external
@@ -76,11 +56,7 @@ export async function POST(request: NextRequest) {
 
       if (caseId) {
         try {
-          const { data: caseRow, error: caseErr } = await supabase
-            .from("cases")
-            .select("*")
-            .eq("id", caseId)
-            .maybeSingle();
+          const { data: caseRow, error: caseErr } = await supabase.from("cases").select("*").eq("id", caseId).maybeSingle();
 
           if (caseErr) {
             console.warn("Could not fetch case:", caseErr.message);
@@ -94,19 +70,13 @@ export async function POST(request: NextRequest) {
               // Strip all owner naming - persona display_name from case_personas is the source of truth
               const ownerPlaceholder = "the owner";
               ownerInfo = ownerInfo.replace(/\[Your Name\]/g, ownerPlaceholder);
-              ownerInfo = ownerInfo.replace(
-                /\{owner_name\}/g,
-                ownerPlaceholder,
-              );
+              ownerInfo = ownerInfo.replace(/\{owner_name\}/g, ownerPlaceholder);
               // Remove "Role: <Name>" lines - will be replaced by persona display_name
               ownerInfo = ownerInfo.replace(/^Role:\s*.+$/gim, "");
               // Remove "Name: <Name>" lines
               ownerInfo = ownerInfo.replace(/^Name:\s*.+$/gim, "");
               // Remove common name patterns like "I am <Name>" or "My name is <Name>"
-              ownerInfo = ownerInfo.replace(
-                /\b(I am|I'm|My name is|Call me)\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*/gi,
-                "I am the owner",
-              );
+              ownerInfo = ownerInfo.replace(/\b(I am|I'm|My name is|Call me)\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*/gi, "I am the owner");
               // Clean up extra blank lines
               ownerInfo = ownerInfo.replace(/\n{3,}/g, "\n\n").trim();
             }
@@ -135,12 +105,7 @@ export async function POST(request: NextRequest) {
     const [ragContext, dbResult] = await Promise.all([ragPromise, dbPromise]);
 
     // Deconstruct DB results.
-    let {
-      ownerInfo: ownerBackground,
-      timepointInfo: timepointPrompt,
-      dbRecord: caseRecord,
-      mediaItems: caseMedia,
-    } = dbResult;
+    let { ownerInfo: ownerBackground, timepointInfo: timepointPrompt, dbRecord: caseRecord, mediaItems: caseMedia } = dbResult;
 
     // Normalize patient sex from the case record so the client can prefer
     // patient sex (for pronouns/voice) when present.
@@ -149,36 +114,16 @@ export async function POST(request: NextRequest) {
       try {
         const s = String(raw).toLowerCase().trim();
         if (!s) return undefined;
-        if (
-          s.includes("gelding") ||
-          s.includes("stallion") ||
-          s.includes("male")
-        )
-          return "male";
-        if (
-          s.includes("mare") ||
-          s.includes("filly") ||
-          s.includes("cow") ||
-          s.includes("female")
-        )
-          return "female";
-        if (
-          s.includes("unknown") ||
-          s.includes("other") ||
-          s.includes("neutral")
-        )
-          return "neutral";
+        if (s.includes("gelding") || s.includes("stallion") || s.includes("male")) return "male";
+        if (s.includes("mare") || s.includes("filly") || s.includes("cow") || s.includes("female")) return "female";
+        if (s.includes("unknown") || s.includes("other") || s.includes("neutral")) return "neutral";
       } catch (e) {
         // ignore and fall through
       }
       return undefined;
     };
 
-    const patientSex = normalizePatientSex(
-      caseRecord && typeof caseRecord === "object"
-        ? (caseRecord as any)["patient_sex"]
-        : undefined,
-    );
+    const patientSex = normalizePatientSex(caseRecord && typeof caseRecord === "object" ? (caseRecord as any)["patient_sex"] : undefined);
 
     if (!caseId) {
       console.warn("No caseId provided");
@@ -190,11 +135,7 @@ export async function POST(request: NextRequest) {
     // Role Info Prompt logic (restored and correctly scoped)
     let roleInfoPromptContent: string | null = null;
     if (caseId && stageIndex !== undefined && lastUserMessage) {
-      const roleInfoPrompt = await getRoleInfoPrompt(
-        caseId,
-        stageIndex,
-        lastUserMessage.content,
-      );
+      const roleInfoPrompt = await getRoleInfoPrompt(caseId, stageIndex, lastUserMessage.content);
 
       if (roleInfoPrompt) {
         roleInfoPromptContent = roleInfoPrompt;
@@ -203,8 +144,7 @@ export async function POST(request: NextRequest) {
 
     let displayRole: string | undefined = undefined;
     let stageRole: string | undefined = undefined;
-    let stageDescriptor: { id?: string; title?: string; role?: string } | null =
-      null;
+    let stageDescriptor: { id?: string; title?: string; role?: string } | null = null;
     let personaRoleKey: string | undefined = undefined;
     let personaIdentity: PersonaIdentity | undefined = undefined;
     if (caseId && typeof stageIndex === "number") {
@@ -224,9 +164,7 @@ export async function POST(request: NextRequest) {
           // The persona display_name from case_personas is the source of truth
           // Just use the stage role as a fallback; persona will override if found
           displayRole = stage.role;
-          console.log(
-            `[chat] Initial displayRole from stage.role: "${displayRole}"`,
-          );
+          console.log(`[chat] Initial displayRole from stage.role: "${displayRole}"`);
         }
       } catch (stageErr) {
         console.warn("Failed to resolve stage role for case", caseId, stageErr);
@@ -240,13 +178,8 @@ export async function POST(request: NextRequest) {
       console.log(`[chat] Fallback displayRole: "${displayRole}"`);
     }
 
-    personaRoleKey = resolveChatPersonaRoleKey(
-      stageDescriptor?.title ?? stageRole,
-      displayRole,
-    );
-    console.log(
-      `[chat] Persona resolution: stageRole="${stageRole}" displayRole="${displayRole}" → personaRoleKey="${personaRoleKey}"`,
-    );
+    personaRoleKey = resolveChatPersonaRoleKey(stageDescriptor?.title ?? stageRole, displayRole);
+    console.log(`[chat] Persona resolution: stageRole="${stageRole}" displayRole="${displayRole}" → personaRoleKey="${personaRoleKey}"`);
 
     // Prefer explicit persona selected by the client message (if present)
     try {
@@ -264,9 +197,7 @@ export async function POST(request: NextRequest) {
     // Make this behavior opt-in via server env var `FORCE_STAGE_PERSONA_OVERRIDE` to
     // allow disabling stage-to-persona coercion during testing or configuration changes.
     const FORCE_STAGE_PERSONA_OVERRIDE = process.env.FORCE_STAGE_PERSONA_OVERRIDE === "true";
-    const stageTitleLower = String(
-      stageDescriptor?.title ?? stageRole ?? "",
-    ).toLowerCase();
+    const stageTitleLower = String(stageDescriptor?.title ?? stageRole ?? "").toLowerCase();
     if (FORCE_STAGE_PERSONA_OVERRIDE) {
       if (
         /physical/.test(stageTitleLower) ||
@@ -294,24 +225,16 @@ export async function POST(request: NextRequest) {
         /\b(findings|vitals|results|diagnostic results|test results|what\b.*\b(vitals|findings|results)|show\b.*\b(findings|results|vitals))\b/i.test(
           userQ,
         );
-      const personaEligible =
-        personaRoleKey === "veterinary-nurse" ||
-        /nurse|lab|laboratory/i.test(String(stageRole ?? ""));
+      const personaEligible = personaRoleKey === "veterinary-nurse" || /nurse|lab|laboratory/i.test(String(stageRole ?? ""));
       // Inject role behavior prompt for nurse/lab personas when either the user explicitly requested
       // findings OR the current stage/role indicates Physical/Laboratory/Treatment context. This
       // guarantees the LLM will always have persona-specific instructions when generating nurse replies.
-      if (
-        personaEligible &&
-        (looksLikeFindingsRequest ||
-          /physical|laboratory|lab|treatment/i.test(String(stageRole ?? "")))
-      ) {
+      if (personaEligible && (looksLikeFindingsRequest || /physical|laboratory|lab|treatment/i.test(String(stageRole ?? "")))) {
         enhancedMessages.unshift({
           role: "system",
           content: roleInfoPromptContent,
         });
-        console.log(
-          `[chat] Injected roleInfoPrompt for personaRoleKey="${personaRoleKey}" due to persona and stage or explicit request.`,
-        );
+        console.log(`[chat] Injected roleInfoPrompt for personaRoleKey="${personaRoleKey}" due to persona and stage or explicit request.`);
         try {
           debugEventBus.emitEvent("info", "ChatInjection", "roleInfoInjected", {
             caseId,
@@ -327,60 +250,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Enforce on_demand findings release after persona resolution so we know
-    // which persona is answering. If the case is configured for 'on_demand'
-    // release and the student asked a general findings/results question,
-    // return a clarifying prompt instead of releasing all findings.
-    try {
-      const strategy =
-        caseRecord && typeof caseRecord === "object"
-          ? (caseRecord as any)["findings_release_strategy"]
-          : undefined;
-      const isOnDemand = strategy === "on_demand";
-      const q = lastUserMessage?.content ?? "";
-      const looksLikeGeneralFindingsRequest =
-        /\b(findings|vitals|results|diagnostic results|test results)\b/i.test(
-          q,
-        ) ||
-        /what\b.*\b(findings|results|vitals)\b/i.test(q) ||
-        /show\b.*\b(findings|results|vitals)\b/i.test(q);
-      const personaIsNurseOrLab =
-        Boolean(
-          personaRoleKey &&
-          (personaRoleKey === "veterinary-nurse" ||
-            personaRoleKey === "lab-technician"),
-        ) ||
-        Boolean(
-          stageDescriptor &&
-          /nurse|laboratory|lab/i.test(String(stageDescriptor.role ?? "")),
-        );
-      if (
-        isOnDemand &&
-        looksLikeGeneralFindingsRequest &&
-        personaIsNurseOrLab
-      ) {
-        const clarifying =
-          "Please request a specific finding or system (for example: 'vitals', 'cardiovascular exam', 'CBC'). Which would you like to see?";
-        try {
-          debugEventBus.emitEvent("info", "ChatDBMatch", "on_demand-clarify", {
-            caseId,
-            q,
-          });
-        } catch {}
-        // Must match the standard response shape (including 'role')
-        return NextResponse.json({
-          role: "assistant",
-          content: clarifying,
-          displayRole: displayRole,
-          roleKey: personaRoleKey,
-          portraitUrl: undefined,
-          voiceId: undefined,
-          personaSex: undefined,
-          personaRoleKey: personaRoleKey ?? undefined,
-        });
-      }
-    } catch (e) {
-      console.warn("Error enforcing on_demand findings guard", e);
-    }
+    // NOTE: The on_demand clarifying prompt ("Please request a specific finding...")
+    // has been removed. Previously it would intercept general findings requests and
+    // return a canned message. Now the LLM handles these requests naturally, which
+    // also avoids STT hearing the TTS playback of canned messages.
 
     // Filter media relevant to the current stage
     const stageTokens = new Set<string>();
@@ -403,8 +276,7 @@ export async function POST(request: NextRequest) {
 
     // GUARDRAIL: RAG context injection - filter CASE_DATA for owner personas
     // Owner personas must NEVER receive case facts (diagnosis, lab results, etc.)
-    const isOwnerForRag =
-      personaRoleKey === "owner" || /owner|client/i.test(stageRole ?? "");
+    const isOwnerForRag = personaRoleKey === "owner" || /owner|client/i.test(stageRole ?? "");
     if (ragContext && !isOwnerForRag) {
       // Non-owner personas get full RAG context including case data
       enhancedMessages.unshift({
@@ -414,21 +286,15 @@ export async function POST(request: NextRequest) {
     } else if (ragContext && isOwnerForRag) {
       // Owner personas only get scientific references, NOT case facts
       // The ragContext may contain both - we need to strip CASE FACTS section
-      const caseFactsMatch = ragContext.match(
-        /^CASE FACTS \(from database\):[\s\S]*?(?=SCIENTIFIC REFERENCES|$)/,
-      );
-      const sanitizedRagContext = caseFactsMatch
-        ? ragContext.replace(caseFactsMatch[0], "").trim()
-        : ragContext;
+      const caseFactsMatch = ragContext.match(/^CASE FACTS \(from database\):[\s\S]*?(?=SCIENTIFIC REFERENCES|$)/);
+      const sanitizedRagContext = caseFactsMatch ? ragContext.replace(caseFactsMatch[0], "").trim() : ragContext;
 
       if (sanitizedRagContext) {
         enhancedMessages.unshift({
           role: "system",
           content: sanitizedRagContext,
         });
-        console.log(
-          `[chat] RAG: Owner persona - stripped CASE FACTS, retained scientific refs only`,
-        );
+        console.log(`[chat] RAG: Owner persona - stripped CASE FACTS, retained scientific refs only`);
       }
     }
 
@@ -456,10 +322,7 @@ export async function POST(request: NextRequest) {
     if (relevantMedia.length > 0) {
       const mediaList = relevantMedia
         .map(
-          (m) =>
-            `- [MEDIA:${m.id}] ${m.type.toUpperCase()} [${
-              m.trigger === "auto" ? "AUTO-SHOW" : "ON-DEMAND"
-            }]: ${m.caption || "No description"}`,
+          (m) => `- [MEDIA:${m.id}] ${m.type.toUpperCase()} [${m.trigger === "auto" ? "AUTO-SHOW" : "ON-DEMAND"}]: ${m.caption || "No description"}`,
         )
         .join("\n");
 
@@ -523,9 +386,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       try {
         const { data: row, error } = await supabase
           .from("case_personas")
-          .select(
-            "role_key, display_name, behavior_prompt, metadata, image_url, status, sex",
-          )
+          .select("role_key, display_name, behavior_prompt, metadata, image_url, status, sex")
           .eq("case_id", caseId)
           .eq("role_key", personaRoleKey)
           .maybeSingle();
@@ -540,33 +401,22 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
         }
 
         if (!personaRow) {
-          console.warn(
-            `No persona found for case=${caseId} role=${personaRoleKey}. Persona will use default behavior.`,
-          );
+          console.warn(`No persona found for case=${caseId} role=${personaRoleKey}. Persona will use default behavior.`);
         }
       } catch (personaErr) {
         console.warn("Failed to ensure persona row for chat", personaErr);
       }
     } else if (personaRoleKey) {
-      console.warn(
-        `[chat] Chat request without caseId - persona "${personaRoleKey}" will use default seed behavior`,
-      );
+      console.warn(`[chat] Chat request without caseId - persona "${personaRoleKey}" will use default seed behavior`);
     }
 
     if (personaRow?.display_name) {
-      console.log(
-        `[chat] Overriding displayRole with persona display_name: "${personaRow.display_name}" (was "${displayRole}")`,
-      );
+      console.log(`[chat] Overriding displayRole with persona display_name: "${personaRow.display_name}" (was "${displayRole}")`);
       displayRole = personaRow.display_name;
     } else if (personaRow) {
-      console.log(
-        `[chat] Persona row found but display_name is empty. personaRow:`,
-        JSON.stringify(personaRow),
-      );
+      console.log(`[chat] Persona row found but display_name is empty. personaRow:`, JSON.stringify(personaRow));
     } else {
-      console.log(
-        `[chat] No persona row found for roleKey="${personaRoleKey}" caseId="${caseId}". displayRole remains "${displayRole}"`,
-      );
+      console.log(`[chat] No persona row found for roleKey="${personaRoleKey}" caseId="${caseId}". displayRole remains "${displayRole}"`);
     }
 
     // Inject a concise persona identity message for the answering persona so the LLM
@@ -579,19 +429,13 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
           role: "system",
           content: personaIdentityMsg,
         });
-        console.log(
-          `[chat] Injected persona identity system message for roleKey="${personaRoleKey}" displayRole="${displayRole}"`,
-        );
+        console.log(`[chat] Injected persona identity system message for roleKey="${personaRoleKey}" displayRole="${displayRole}"`);
       } catch (e) {
         console.warn("Failed to inject persona identity system message", e);
       }
     }
 
-    if (
-      personaRow?.metadata &&
-      typeof personaRow.metadata === "object" &&
-      !Array.isArray(personaRow.metadata)
-    ) {
+    if (personaRow?.metadata && typeof personaRow.metadata === "object" && !Array.isArray(personaRow.metadata)) {
       personaMetadata = personaRow.metadata as Record<string, unknown>;
     }
 
@@ -607,20 +451,13 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
 
     if (!personaIdentity && personaMetadata) {
       const identityCandidate = personaMetadata["identity"];
-      if (
-        identityCandidate &&
-        typeof identityCandidate === "object" &&
-        identityCandidate !== null
-      ) {
+      if (identityCandidate && typeof identityCandidate === "object" && identityCandidate !== null) {
         personaIdentity = identityCandidate as PersonaIdentity;
       }
     }
 
     personaImageUrl = personaRow?.image_url ?? undefined;
-    if (
-      personaRow?.behavior_prompt &&
-      typeof personaRow.behavior_prompt === "string"
-    ) {
+    if (personaRow?.behavior_prompt && typeof personaRow.behavior_prompt === "string") {
       const trimmedBehavior = personaRow.behavior_prompt.trim();
       if (trimmedBehavior) {
         personaBehaviorPrompt = trimmedBehavior;
@@ -632,20 +469,11 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     if (personaBehaviorPrompt && personaRow?.display_name) {
       const personaDisplayName = personaRow.display_name;
       // Replace "You are <Name>," patterns at the start
-      personaBehaviorPrompt = personaBehaviorPrompt.replace(
-        /^You are [A-Z][a-z]+(\s+[A-Z][a-z]+)*,/i,
-        `You are ${personaDisplayName},`,
-      );
+      personaBehaviorPrompt = personaBehaviorPrompt.replace(/^You are [A-Z][a-z]+(\s+[A-Z][a-z]+)*,/i, `You are ${personaDisplayName},`);
       // Replace "I am <Name>" patterns
-      personaBehaviorPrompt = personaBehaviorPrompt.replace(
-        /\bI am [A-Z][a-z]+(\s+[A-Z][a-z]+)*/gi,
-        `I am ${personaDisplayName}`,
-      );
+      personaBehaviorPrompt = personaBehaviorPrompt.replace(/\bI am [A-Z][a-z]+(\s+[A-Z][a-z]+)*/gi, `I am ${personaDisplayName}`);
       // Replace "My name is <Name>" patterns
-      personaBehaviorPrompt = personaBehaviorPrompt.replace(
-        /\bMy name is [A-Z][a-z]+(\s+[A-Z][a-z]+)*/gi,
-        `My name is ${personaDisplayName}`,
-      );
+      personaBehaviorPrompt = personaBehaviorPrompt.replace(/\bMy name is [A-Z][a-z]+(\s+[A-Z][a-z]+)*/gi, `My name is ${personaDisplayName}`);
     }
 
     // Sanitize persona behavior prompts to prevent fabrication instructions
@@ -657,15 +485,11 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     let personaVoiceId: string | undefined = undefined;
     let personaSex: string | undefined = undefined;
 
-    const resolveVoiceFromMetadata = (
-      metadata: Record<string, unknown>,
-    ): string | undefined => {
+    const resolveVoiceFromMetadata = (metadata: Record<string, unknown>): string | undefined => {
       const direct = metadata["voiceId"];
       if (typeof direct === "string" && direct.trim()) return direct;
       const identityVoice =
-        metadata["identity"] &&
-        typeof metadata["identity"] === "object" &&
-        metadata["identity"] !== null
+        metadata["identity"] && typeof metadata["identity"] === "object" && metadata["identity"] !== null
           ? (metadata["identity"] as { voiceId?: unknown }).voiceId
           : undefined;
       if (typeof identityVoice === "string" && identityVoice.trim()) {
@@ -674,24 +498,16 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       return undefined;
     };
 
-    const resolveSexFromMetadata = (
-      metadata: Record<string, unknown>,
-    ): string | undefined => {
+    const resolveSexFromMetadata = (metadata: Record<string, unknown>): string | undefined => {
       const direct = metadata["sex"];
       if (direct === "male" || direct === "female" || direct === "neutral") {
         return direct;
       }
       const identitySex =
-        metadata["identity"] &&
-        typeof metadata["identity"] === "object" &&
-        metadata["identity"] !== null
+        metadata["identity"] && typeof metadata["identity"] === "object" && metadata["identity"] !== null
           ? (metadata["identity"] as { sex?: unknown }).sex
           : undefined;
-      if (
-        identitySex === "male" ||
-        identitySex === "female" ||
-        identitySex === "neutral"
-      ) {
+      if (identitySex === "male" || identitySex === "female" || identitySex === "neutral") {
         return identitySex;
       }
       return undefined;
@@ -699,12 +515,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
 
     // PRIMARY: Read voice and sex from persona row (case_personas table is the source of truth)
     // First check the direct sex column on the row
-    if (
-      personaRow?.sex &&
-      (personaRow.sex === "male" ||
-        personaRow.sex === "female" ||
-        personaRow.sex === "neutral")
-    ) {
+    if (personaRow?.sex && (personaRow.sex === "male" || personaRow.sex === "female" || personaRow.sex === "neutral")) {
       personaSex = personaRow.sex;
       console.log(`[chat] personaSex from row.sex: "${personaSex}"`);
     }
@@ -728,21 +539,14 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     // FALLBACK: Only use seeds if no persona row data was found
     // Seeds are legacy and should not override case-viewer persona manager settings
     if (personaRoleKey && !personaRow) {
-      console.log(
-        `[chat] No persona row found, falling back to seeds for roleKey="${personaRoleKey}"`,
-      );
+      console.log(`[chat] No persona row found, falling back to seeds for roleKey="${personaRoleKey}"`);
       try {
         const seeds =
           personaRoleKey === "owner" && caseId && typeof caseId === "string"
-            ? buildPersonaSeeds(
-                caseId,
-                (caseRecord ?? {}) as Record<string, unknown>,
-              )
+            ? buildPersonaSeeds(caseId, (caseRecord ?? {}) as Record<string, unknown>)
             : buildSharedPersonaSeeds();
 
-        const matchedSeed = seeds.find(
-          (seed) => seed.roleKey === personaRoleKey,
-        );
+        const matchedSeed = seeds.find((seed) => seed.roleKey === personaRoleKey);
 
         if (!personaBehaviorPrompt && matchedSeed?.behaviorPrompt) {
           const trimmedBehavior = matchedSeed.behaviorPrompt.trim();
@@ -752,41 +556,25 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
         }
 
         if (!personaIdentity && matchedSeed?.metadata) {
-          const identityCandidate = (
-            matchedSeed.metadata as { identity?: unknown }
-          ).identity;
-          if (
-            identityCandidate &&
-            typeof identityCandidate === "object" &&
-            identityCandidate !== null
-          ) {
+          const identityCandidate = (matchedSeed.metadata as { identity?: unknown }).identity;
+          if (identityCandidate && typeof identityCandidate === "object" && identityCandidate !== null) {
             personaIdentity = identityCandidate as PersonaIdentity;
             if (!personaVoiceId) {
-              const candidateVoice = (
-                identityCandidate as { voiceId?: unknown }
-              ).voiceId;
+              const candidateVoice = (identityCandidate as { voiceId?: unknown }).voiceId;
               if (typeof candidateVoice === "string") {
                 personaVoiceId = candidateVoice;
               }
             }
             if (!personaSex) {
               const candidateSex = (identityCandidate as { sex?: unknown }).sex;
-              if (
-                candidateSex === "male" ||
-                candidateSex === "female" ||
-                candidateSex === "neutral"
-              ) {
+              if (candidateSex === "male" || candidateSex === "female" || candidateSex === "neutral") {
                 personaSex = candidateSex;
               }
             }
           }
         }
       } catch (seedErr) {
-        console.warn(
-          "Failed to resolve persona seed data",
-          { caseId, personaRoleKey },
-          seedErr,
-        );
+        console.warn("Failed to resolve persona seed data", { caseId, personaRoleKey }, seedErr);
       }
     }
 
@@ -812,13 +600,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       return false;
     });
 
-    if (
-      matchingMedia.length &&
-      typeof attemptId === "string" &&
-      attemptId.trim() &&
-      typeof caseId === "string" &&
-      caseId.trim()
-    ) {
+    if (matchingMedia.length && typeof attemptId === "string" && attemptId.trim() && typeof caseId === "string" && caseId.trim()) {
       try {
         const attemptIdSafe = attemptId.trim();
         const caseIdSafe = caseId.trim();
@@ -845,11 +627,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       const normalizedDisplay = displayRole?.trim().toLowerCase();
       if (!displayRole) {
         displayRole = personaIdentity.fullName;
-      } else if (
-        normalizedStage &&
-        normalizedDisplay &&
-        normalizedStage === normalizedDisplay
-      ) {
+      } else if (normalizedStage && normalizedDisplay && normalizedStage === normalizedDisplay) {
         displayRole = personaIdentity.fullName;
       }
     }
@@ -883,11 +661,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     //    case record and the student requests a specific test/value, return the
     //    recorded value directly from the DB to avoid hallucination.
     const userText = (lastUserMessage?.content ?? "").toLowerCase();
-    const physicalStageKeywords = [
-      "physical",
-      "physical exam",
-      "physical examination",
-    ];
+    const physicalStageKeywords = ["physical", "physical exam", "physical examination"];
 
     // Synonym maps for diagnostic and physical queries. Keys are canonical tokens.
     const DIAG_SYNONYMS: Record<string, string[]> = {
@@ -930,19 +704,10 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       }
     }
 
-    const stripLeadingPersonaIntro = (
-      text: string | null | undefined,
-      labels: Array<string | undefined>,
-    ): string => {
+    const stripLeadingPersonaIntro = (text: string | null | undefined, labels: Array<string | undefined>): string => {
       if (!text) return "";
 
-      const uniqueLabels = Array.from(
-        new Set(
-          labels
-            .map((label) => (label ? label.trim() : ""))
-            .filter((label) => label.length > 0),
-        ),
-      );
+      const uniqueLabels = Array.from(new Set(labels.map((label) => (label ? label.trim() : "")).filter((label) => label.length > 0)));
 
       let output: string = text ?? "";
 
@@ -950,10 +715,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       for (const label of uniqueLabels) {
         if (!label) continue;
         const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const pattern = new RegExp(
-          `^\\s*(?:${escaped})(?:\\s*\\([^)]*\\))?\\s*[:\-–—]?\\s*`,
-          "i",
-        );
+        const pattern = new RegExp(`^\\s*(?:${escaped})(?:\\s*\\([^)]*\\))?\\s*[:\-–—]?\\s*`, "i");
         if (pattern.test(output)) {
           output = output.replace(pattern, "");
           break;
@@ -975,17 +737,12 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       }
 
       // General cleanup of obvious prefixes
-      output = output
-        .replace(/^(assistant|nurse|doctor|lab|veterinary nurse)[:\s\-]+/i, "")
-        .trimStart();
+      output = output.replace(/^(assistant|nurse|doctor|lab|veterinary nurse)[:\s\-]+/i, "").trimStart();
 
       return output.trimStart();
     };
 
-    function findSynonymKey(
-      text: string,
-      groups: Record<string, string[]>,
-    ): string | null {
+    function findSynonymKey(text: string, groups: Record<string, string[]>): string | null {
       const tNorm = normalizeForMatching(text);
       for (const [key, syns] of Object.entries(groups)) {
         for (const s of syns) {
@@ -1039,11 +796,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       const pathLower = path.toLowerCase();
       // Check exact match or if path starts with a blocked field
       for (const blocked of INTERNAL_FIELD_BLOCKLIST) {
-        if (
-          pathLower === blocked ||
-          pathLower.startsWith(blocked + ".") ||
-          pathLower.startsWith(blocked + "[")
-        ) {
+        if (pathLower === blocked || pathLower.startsWith(blocked + ".") || pathLower.startsWith(blocked + "[")) {
           return true;
         }
       }
@@ -1056,10 +809,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
 
     // Search across all fields of the case record (recursively) for any matches
     // IMPORTANT: Excludes internal fields like prompts and feedback instructions
-    function searchCaseRecordForQuery(
-      query: string,
-      record: Record<string, unknown> | null,
-    ): string[] {
+    function searchCaseRecordForQuery(query: string, record: Record<string, unknown> | null): string[] {
       const results: string[] = [];
       if (!record) return results;
       const qNorm = normalizeForMatching(query);
@@ -1099,9 +849,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
             }
             const keyNorm = normalizeForMatching(keyPath);
             if (qNorm && keyNorm.includes(qNorm)) {
-              results.push(
-                `${keyPath}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`,
-              );
+              results.push(`${keyPath}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`);
             }
             visit(v, keyPath);
           }
@@ -1115,10 +863,7 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
       return results;
     }
 
-    async function llmCautiousFallback(
-      ragContext: string,
-      userQuery: string,
-    ): Promise<string | null> {
+    async function llmCautiousFallback(ragContext: string, userQuery: string): Promise<string | null> {
       if (!ragContext || !ragContext.trim()) return null;
       try {
         const prompt = `You are an assistant that should not hallucinate medical facts. Using ONLY the following reference context, provide a short, cautious reply to the student's request. If the requested test/result is not recorded, say so first, then if the references provide a clear, evidence-backed statement about typical/expected findings, include a single concise, hedged sentence such as "We didn't run that test but available references suggest it is within normal limits." If no evidence exists, say that no inference can be made.
@@ -1130,8 +875,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
           messages: [
             {
               role: "system",
-              content:
-                "You are a cautious clinical assistant. Answer concisely and hedge clearly; do not invent tests or values.",
+              content: "You are a cautious clinical assistant. Answer concisely and hedge clearly; do not invent tests or values.",
             },
             { role: "user", content: prompt },
           ],
@@ -1149,19 +893,11 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
     const stageTitle = stageDescriptor?.title ?? "";
     // IMPORTANT: Only allow data retrieval for nurse/tech personas, NOT owners
     // The owner should NEVER see diagnostic data, physical exam findings, or lab results
-    const isOwnerPersona =
-      personaRoleKey === "owner" || /owner|client/i.test(stageRole ?? "");
+    const isOwnerPersona = personaRoleKey === "owner" || /owner|client/i.test(stageRole ?? "");
     const isPhysicalStage =
-      !isOwnerPersona &&
-      (/physical/i.test(stageTitle) ||
-        physicalStageKeywords.some((k) =>
-          stageTitle.toLowerCase().includes(k),
-        ));
+      !isOwnerPersona && (/physical/i.test(stageTitle) || physicalStageKeywords.some((k) => stageTitle.toLowerCase().includes(k)));
     // Exclude "Diagnostic Planning" which is an owner stage despite having "diagnostic" in the name
-    const isLabStage =
-      !isOwnerPersona &&
-      /laboratory|lab/i.test(stageTitle) &&
-      !/planning/i.test(stageTitle);
+    const isLabStage = !isOwnerPersona && /laboratory|lab/i.test(stageTitle) && !/planning/i.test(stageTitle);
 
     // NOTE: Early short-circuit removed: forward physical-stage queries to the LLM
     // so the nurse persona's behavior prompt and instructions are applied. If the
@@ -1181,21 +917,10 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
     // the user asked directly. Process physical-stage requests here.
     if (isPhysicalStage) {
       try {
-        debugEventBus.emitEvent(
-          "info",
-          "ChatDBMatch",
-          "Physical stage - forwarding to LLM",
-          { userText, stageTitle, matchedDiagKeyInUser },
-        );
+        debugEventBus.emitEvent("info", "ChatDBMatch", "Physical stage - forwarding to LLM", { userText, stageTitle, matchedDiagKeyInUser });
       } catch {}
-      const diagField =
-        caseRecord && typeof caseRecord === "object"
-          ? (caseRecord as Record<string, unknown>)["diagnostic_findings"]
-          : null;
-      const physField =
-        caseRecord && typeof caseRecord === "object"
-          ? (caseRecord as Record<string, unknown>)["physical_exam_findings"]
-          : null;
+      const diagField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["diagnostic_findings"] : null;
+      const physField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["physical_exam_findings"] : null;
       const diagText = typeof diagField === "string" ? diagField : "";
       const physText = typeof physField === "string" ? physField : "";
 
@@ -1204,51 +929,25 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
       // However, when the case's findings_release_strategy is 'on_demand', do NOT inject the full
       // dataset unless the student explicitly requested specific parameters. Instead return a
       // clarifying prompt for general requests.
-      const strategy =
-        caseRecord && typeof caseRecord === "object"
-          ? (caseRecord as any)["findings_release_strategy"]
-          : undefined;
+      const strategy = caseRecord && typeof caseRecord === "object" ? (caseRecord as any)["findings_release_strategy"] : undefined;
       const isOnDemand = strategy === "on_demand";
       const personaIsNurseOrLab =
-        Boolean(
-          personaRoleKey &&
-          (personaRoleKey === "veterinary-nurse" ||
-            personaRoleKey === "lab-technician"),
-        ) ||
-        Boolean(
-          stageDescriptor &&
-          /nurse|laboratory|lab/i.test(String(stageDescriptor.role ?? "")),
-        );
+        Boolean(personaRoleKey && (personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician")) ||
+        Boolean(stageDescriptor && /nurse|laboratory|lab/i.test(String(stageDescriptor.role ?? "")));
 
       // If on-demand and the user asked generally for findings earlier, the request
       // should have been handled above. As an additional safeguard, do not inject
       // full findings here when strategy is on_demand unless specific keys were requested.
-      const requested = parseRequestedKeys(
-        lastUserMessage?.content ?? userText,
-      );
+      const requested = parseRequestedKeys(lastUserMessage?.content ?? userText);
       const allowedPhysKeys = new Set(Object.keys(PHYS_SYNONYMS));
-      const requestedPhys = (requested?.canonical ?? []).filter((k: string) =>
-        allowedPhysKeys.has(k),
-      );
+      const requestedPhys = (requested?.canonical ?? []).filter((k: string) => allowedPhysKeys.has(k));
       const matchedPhysicalKey = findSynonymKey(userText, PHYS_SYNONYMS);
 
       if (personaIsNurseOrLab) {
-        if (
-          physText &&
-          (!isOnDemand ||
-            (isOnDemand && (requestedPhys.length > 0 || matchedPhysicalKey)))
-        ) {
+        if (physText && (!isOnDemand || (isOnDemand && (requestedPhys.length > 0 || matchedPhysicalKey)))) {
           if (isOnDemand && (requestedPhys.length > 0 || matchedPhysicalKey)) {
-            const subsetKeys =
-              requestedPhys.length > 0
-                ? requestedPhys
-                : matchedPhysicalKey
-                  ? [matchedPhysicalKey]
-                  : [];
-            const subset = matchPhysicalFindings(
-              { ...requested, canonical: subsetKeys },
-              physText,
-            );
+            const subsetKeys = requestedPhys.length > 0 ? requestedPhys : matchedPhysicalKey ? [matchedPhysicalKey] : [];
+            const subset = matchPhysicalFindings({ ...requested, canonical: subsetKeys }, physText);
             const displayNames: Record<string, string> = {
               heart_rate: "Heart rate",
               respiratory_rate: "Respiratory rate",
@@ -1274,9 +973,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
             for (const m of subset) {
               const name = displayNames[m.canonicalKey] ?? m.canonicalKey;
               if (m.lines && m.lines.length > 0) {
-                const vals = uniq(m.lines.map((l) => cleanValue(l))).filter(
-                  Boolean,
-                );
+                const vals = uniq(m.lines.map((l) => cleanValue(l))).filter(Boolean);
                 const combined = vals.length > 0 ? vals.join(" | ") : null;
                 if (combined) {
                   const converted = convertCelsiusToFahrenheitInText(combined);
@@ -1288,8 +985,8 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
                   try {
                     const cpa = (await import("@/features/prompts/services/casePromptAutomation")) as any;
                     const defaults = cpa.getConditionPhysicalExamDefaults(condition, species || "");
-                    const match = (defaults.vitals || []).find((v: any) =>
-                      v.toLowerCase().startsWith(name.toLowerCase()) || v.toLowerCase().includes(name.toLowerCase()),
+                    const match = (defaults.vitals || []).find(
+                      (v: any) => v.toLowerCase().startsWith(name.toLowerCase()) || v.toLowerCase().includes(name.toLowerCase()),
                     );
                     if (match) {
                       phrases.push(`${name}: NOT_AVAILABLE (no recorded value; typical: ${match})`);
@@ -1304,12 +1001,10 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
                 // No matching lines found for this requested canonical key.
                 // Emit telemetry for triage so we can inspect physText and requested keys.
                 try {
-                  debugEventBus.emitEvent(
-                    "warning",
-                    "ChatDBMatch",
-                    "phys-key-no-match",
-                    { key: m.canonicalKey, physSnippet: String(physText).substring(0, 200) },
-                  );
+                  debugEventBus.emitEvent("warning", "ChatDBMatch", "phys-key-no-match", {
+                    key: m.canonicalKey,
+                    physSnippet: String(physText).substring(0, 200),
+                  });
                 } catch {}
                 // Mark missing values as NOT_AVAILABLE so the LLM can craft a helpful reply (see guidance below)
                 const species = caseRecord && typeof caseRecord === "object" ? String((caseRecord as any).species ?? "").trim() : "";
@@ -1317,8 +1012,8 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
                 try {
                   const cpa = (await import("@/features/prompts/services/casePromptAutomation")) as any;
                   const defaults = cpa.getConditionPhysicalExamDefaults(condition, species || "");
-                  const match = (defaults.vitals || []).find((v: any) =>
-                    v.toLowerCase().startsWith(name.toLowerCase()) || v.toLowerCase().includes(name.toLowerCase()),
+                  const match = (defaults.vitals || []).find(
+                    (v: any) => v.toLowerCase().startsWith(name.toLowerCase()) || v.toLowerCase().includes(name.toLowerCase()),
                   );
                   if (match) {
                     phrases.push(`${name}: NOT_AVAILABLE (no recorded value; typical: ${match})`);
@@ -1332,7 +1027,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
             }
             const snippet = phrases.join(", ");
             // If any requested key was NOT_AVAILABLE, add guidance so the LLM responds helpfully
-            if (snippet.includes('NOT_AVAILABLE')) {
+            if (snippet.includes("NOT_AVAILABLE")) {
               enhancedMessages.unshift({
                 role: "system",
                 content:
@@ -1344,12 +1039,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
               content: `PHYSICAL_EXAM_FINDINGS (requested subset):\n${snippet}`,
             });
             try {
-              debugEventBus.emitEvent(
-                "info",
-                "ChatDBMatch",
-                "inject-phys-snippet",
-                { len: snippet.length, keys: subsetKeys },
-              );
+              debugEventBus.emitEvent("info", "ChatDBMatch", "inject-phys-snippet", { len: snippet.length, keys: subsetKeys });
             } catch {}
           } else if (physText && !isOnDemand) {
             enhancedMessages.unshift({
@@ -1357,12 +1047,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
               content: `PHYSICAL_EXAM_FINDINGS (from DB):\n${physText}`,
             });
             try {
-              debugEventBus.emitEvent(
-                "info",
-                "ChatDBMatch",
-                "inject-phys-text",
-                { len: physText.length },
-              );
+              debugEventBus.emitEvent("info", "ChatDBMatch", "inject-phys-text", { len: physText.length });
             } catch {}
           }
         }
@@ -1382,9 +1067,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
     }
 
     if (isLabStage && caseRecord && typeof caseRecord === "object") {
-      const diag = (caseRecord as Record<string, unknown>)[
-        "diagnostic_findings"
-      ];
+      const diag = (caseRecord as Record<string, unknown>)["diagnostic_findings"];
       if (typeof diag === "string" && diag.trim().length > 0) {
         // If user asked specifically for a test or value, try to return the matching lines
         const diagText = diag as string;
@@ -1396,9 +1079,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
             .map((l) => l.trim())
             .filter(Boolean);
           const syns = DIAG_SYNONYMS[matchedDiagKey] ?? [];
-          const matchingLines = lines.filter((l) =>
-            lineMatchesSynonym(l, syns),
-          );
+          const matchingLines = lines.filter((l) => lineMatchesSynonym(l, syns));
           if (matchingLines.length > 0) {
             // Deduplicate and return only requested matching lines
             const uniqLines = Array.from(new Set(matchingLines));
@@ -1434,25 +1115,17 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
               for (const s of syns) {
                 if (!s) continue;
                 for (const k of Object.keys(parsed)) {
-                  if (
-                    normalizeForMatching(k).includes(normalizeForMatching(s))
-                  ) {
+                  if (normalizeForMatching(k).includes(normalizeForMatching(s))) {
                     const v = (parsed as any)[k];
-                    results.push(
-                      `${k}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`,
-                    );
+                    results.push(`${k}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`);
                   }
                 }
               }
               if (results.length > 0) {
                 const uniqResults = Array.from(new Set(results));
-                const cleaned = uniqResults
-                  .map((r) => r.replace(/^[^:\n]+:\s*/, "").trim())
-                  .filter(Boolean);
+                const cleaned = uniqResults.map((r) => r.replace(/^[^:\n]+:\s*/, "").trim()).filter(Boolean);
                 return NextResponse.json({
-                  content: convertCelsiusToFahrenheitInText(
-                    cleaned.join(" | "),
-                  ),
+                  content: convertCelsiusToFahrenheitInText(cleaned.join(" | ")),
                   displayRole,
                   portraitUrl: personaImageUrl,
                   voiceId: personaVoiceId,
@@ -1482,8 +1155,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
             calcium: "Calcium",
           };
 
-          const requestedDisplay =
-            DIAG_DISPLAY[matchedDiagKey] ?? matchedDiagKey;
+          const requestedDisplay = DIAG_DISPLAY[matchedDiagKey] ?? matchedDiagKey;
 
           const available: string[] = [];
           try {
@@ -1551,31 +1223,19 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
     // requested. Do not prematurely summarize or provide full diagnostic
     // conclusions unless the student asks; when asked for a summary produce
     // a concise bulleted list or a markdown table on request.
-    let systemGuideline = await resolvePromptValue(
-      supabase,
-      "chat.system.guideline",
-      CHAT_SYSTEM_GUIDELINE,
-    );
+    let systemGuideline = await resolvePromptValue(supabase, "chat.system.guideline", CHAT_SYSTEM_GUIDELINE);
 
     const candidatePersonaName =
-      (typeof displayRole === "string" && displayRole.trim() !== ""
-        ? displayRole.trim()
-        : undefined) ?? personaIdentity?.fullName;
+      (typeof displayRole === "string" && displayRole.trim() !== "" ? displayRole.trim() : undefined) ?? personaIdentity?.fullName;
 
     // Only expose a canonical persona name to the assistant when the
     // resolved answering persona is the `owner`. This prevents non-owner
     // personas (e.g., nurse) from being instructed to use the owner's name.
-    const personaNameForChat =
-      personaRoleKey === "owner" ? candidatePersonaName : undefined;
+    const personaNameForChat = personaRoleKey === "owner" ? candidatePersonaName : undefined;
 
     if (personaNameForChat) {
       const pronounSubject = personaIdentity?.pronouns?.subject ?? "they";
-      const pronounObject =
-        pronounSubject === "she"
-          ? "her"
-          : pronounSubject === "he"
-            ? "him"
-            : "them";
+      const pronounObject = pronounSubject === "she" ? "her" : pronounSubject === "he" ? "him" : "them";
       systemGuideline += `
 
 Your canonical persona name is ${personaNameForChat}. When the student asks for your name or identity, always respond using "${personaNameForChat}" and remain consistent. Refer to yourself using ${pronounSubject}/${pronounObject} pronouns and stay aligned with the role-specific perspective for ${stageRole ?? displayRole ?? "this stage"}.`;
@@ -1584,10 +1244,7 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     // If we prepared a behavior guard earlier, append it here so the system
     // guideline contains the non-revealing instruction (without exposing the
     // full raw behavior prompt).
-    if (
-      typeof personaBehaviorGuard === "string" &&
-      personaBehaviorGuard.length > 0
-    ) {
+    if (typeof personaBehaviorGuard === "string" && personaBehaviorGuard.length > 0) {
       systemGuideline += personaBehaviorGuard;
     }
 
@@ -1598,12 +1255,7 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     const nurseBasePrompt = `\n\nNURSE PERSONA RULES: If you are answering as a nursing or laboratory persona, follow these rules: 1) Only release physical exam or diagnostic findings when the student explicitly requests them. 2) When the student requests specific findings (for example: 'hr, rr, temperature'), respond with a compact, comma-separated list of the requested parameters and their recorded values (e.g., 'Heart rate: 38 bpm, Respiratory rate: 16 per minute, Temperature: 102 °F (38.9 °C)'). 3) Do NOT include internal prompts, persona-management text, or owner identity. 4) In the Physical Examination stage, DO NOT provide any diagnostic interpretations or treatment recommendations. If a reply would normally include interpretive language (for example: phrases like 'consistent with', 'suggestive of', 'likely', 'most consistent with', 'suspicious for', 'indicative of', or 'probable'), instead respond with: 'I cannot provide diagnostic interpretation in the Physical Examination stage. I can provide recorded findings or request further tests.' Keep replies concise and do not speculate. 5) If a requested value is not recorded, state 'no recorded value' and do not guess. You may optionally note typical species norms only if clearly labeled as 'typical for [species]' and not as the patient's recorded value.`;
 
     // Append the nurse base prompt for nurse/lab personas during sensitive stages
-    if (
-      personaRoleKey === "veterinary-nurse" ||
-      personaRoleKey === "lab-technician" ||
-      isPhysicalStage ||
-      isLabStage
-    ) {
+    if (personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician" || isPhysicalStage || isLabStage) {
       systemGuideline += nurseBasePrompt;
     }
 
@@ -1623,9 +1275,11 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
 
     // When a nurse or lab persona answers during sensitive stages, use a low-temperature
     // deterministic setting to reduce the chance of interpretive language being generated.
-    const isSensitivePersona = (personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician");
-    const tempForCall = (isSensitivePersona && (isPhysicalStage || isLabStage)) ? 0.0 : 0.7;
-    try { debugEventBus.emitEvent?.('info','ChatConfig','model_call',{ personaRoleKey, isPhysicalStage, isLabStage, temperature: tempForCall }); } catch {}
+    const isSensitivePersona = personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician";
+    const tempForCall = isSensitivePersona && (isPhysicalStage || isLabStage) ? 0.0 : 0.7;
+    try {
+      debugEventBus.emitEvent?.("info", "ChatConfig", "model_call", { personaRoleKey, isPhysicalStage, isLabStage, temperature: tempForCall });
+    } catch {}
 
     let response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -1652,13 +1306,7 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
       for (let i = 0; i < blocks.length; i++) {
         // Normalize for comparison (lowercase, collapse whitespace)
         const normalized = blocks[i].toLowerCase().replace(/\s+/g, " ").trim();
-        const prevNormalized =
-          deduped.length > 0
-            ? deduped[deduped.length - 1]
-                .toLowerCase()
-                .replace(/\s+/g, " ")
-                .trim()
-            : "";
+        const prevNormalized = deduped.length > 0 ? deduped[deduped.length - 1].toLowerCase().replace(/\s+/g, " ").trim() : "";
 
         // Skip if this block is identical to the previous one
         if (normalized && normalized === prevNormalized) {
@@ -1688,12 +1336,7 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
             // remove exact verbatim occurrences and long substrings
             out = out.split(safe).join("[redacted]");
             try {
-              debugEventBus.emitEvent(
-                "warning",
-                "ChatRedaction",
-                "redactedPersonaBehavior",
-                { len: safe.length },
-              );
+              debugEventBus.emitEvent("warning", "ChatRedaction", "redactedPersonaBehavior", { len: safe.length });
             } catch {}
           }
         }
@@ -1708,12 +1351,7 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
           if (safeRolePrompt.length > 0) {
             out = out.split(safeRolePrompt).join("[redacted]");
             try {
-              debugEventBus.emitEvent(
-                "warning",
-                "ChatRedaction",
-                "redactedRoleInfoPrompt",
-                { len: safeRolePrompt.length },
-              );
+              debugEventBus.emitEvent("warning", "ChatRedaction", "redactedRoleInfoPrompt", { len: safeRolePrompt.length });
             } catch {}
           }
         }
@@ -1736,12 +1374,7 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
           if (safeOwner.length > 0) {
             out = out.split(safeOwner).join("[redacted]");
             try {
-              debugEventBus.emitEvent(
-                "warning",
-                "ChatRedaction",
-                "redactedOwner",
-                { len: safeOwner.length },
-              );
+              debugEventBus.emitEvent("warning", "ChatRedaction", "redactedOwner", { len: safeOwner.length });
             } catch {}
           }
         }
@@ -1767,22 +1400,12 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
       const lines = out.split(/\r?\n/);
       let removedCount = 0;
       const cleaned = lines
-        .map((l) =>
-          /^\s*(the student\b|you should\b|you must\b)/i.test(l) ||
-          /\bthe student should\b/i.test(l)
-            ? (removedCount++, "")
-            : l,
-        )
+        .map((l) => (/^\s*(the student\b|you should\b|you must\b)/i.test(l) || /\bthe student should\b/i.test(l) ? (removedCount++, "") : l))
         .filter(Boolean)
         .join("\n");
       if (removedCount > 0) {
         try {
-          debugEventBus.emitEvent(
-            "warning",
-            "ChatAudit",
-            "removedStudentInstructions",
-            { caseId, personaRoleKey, removedCount },
-          );
+          debugEventBus.emitEvent("warning", "ChatAudit", "removedStudentInstructions", { caseId, personaRoleKey, removedCount });
         } catch {}
       }
 
@@ -1799,13 +1422,21 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
       const diagRegex = /\b(consistent with|suggestive of|likely|most consistent with|suspicious for|indicative of|probable|diagnos)\b/i;
       const sanitized = sanitizeAssistantContent(content);
       if (isPhysicalStage && nurseOrLabAnswering && diagRegex.test(sanitized)) {
-        const lines = sanitized.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+        const lines = sanitized
+          .split(/\n+/)
+          .map((l) => l.trim())
+          .filter(Boolean);
         const findings = lines.filter((l) => /:/.test(l)).slice(0, 10);
         const findingsText = findings.length > 0 ? findings.join(", ") : "";
-        const fallback = "I cannot provide diagnostic interpretations during the Physical Examination stage. I can provide recorded findings or request further tests. Would you like me to request the test(s) or see more details?";
+        const fallback =
+          "I cannot provide diagnostic interpretations during the Physical Examination stage. I can provide recorded findings or request further tests. Would you like me to request the test(s) or see more details?";
         content = findingsText ? `${findingsText}\n\n${fallback}` : fallback;
         try {
-          debugEventBus.emitEvent("warning", "ChatPostFilter", "diagnosticFiltered", { caseId, personaRoleKey, snippet: String(content).substring(0, 200) });
+          debugEventBus.emitEvent("warning", "ChatPostFilter", "diagnosticFiltered", {
+            caseId,
+            personaRoleKey,
+            snippet: String(content).substring(0, 200),
+          });
         } catch {}
       } else {
         content = sanitized;
@@ -1825,25 +1456,36 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
       // Remove nurse treatment-refusal sentence unless the user explicitly
       // asked about treatment or recommendations. This prevents the nurse
       // from replying with a pre-emptive refusal when treatment wasn't asked.
-      const treatmentRefusalRegex = /I(?:'m| am)\s+unable to provide treatment recommendations[\s\S]*?(?:Would you like to discuss treatment options[\s\S]*?)?\.?$/i;
-      const treatmentKeywordsReg = /\b(treat|treatment|recommend|recommendation|therapy|prescribe|prescription|antibiotic|antimicrobial|medication|dose|dosing)\b/i;
+      const treatmentRefusalRegex =
+        /I(?:'m| am)\s+unable to provide treatment recommendations[\s\S]*?(?:Would you like to discuss treatment options[\s\S]*?)?\.?$/i;
+      const treatmentKeywordsReg =
+        /\b(treat|treatment|recommend|recommendation|therapy|prescribe|prescription|antibiotic|antimicrobial|medication|dose|dosing)\b/i;
       if (treatmentRefusalRegex.test(content) && !(lastUserMessage?.content && treatmentKeywordsReg.test(String(lastUserMessage.content)))) {
         content = content.replace(treatmentRefusalRegex, "").trim();
-        try { debugEventBus.emitEvent?.('info','ChatPostFilter','removedTreatmentRefusal',{ caseId, personaRoleKey, snippet: String(content).substring(0,200) }); } catch {}
+        try {
+          debugEventBus.emitEvent?.("info", "ChatPostFilter", "removedTreatmentRefusal", {
+            caseId,
+            personaRoleKey,
+            snippet: String(content).substring(0, 200),
+          });
+        } catch {}
       }
 
       // Owner guardrail: owners must not claim that tests/results are available
       // or ready. Replace any such claims with a neutral, safe suggestion to
       // check with the nurse/lab for availability.
-      if (personaRoleKey === 'owner') {
-        const ownerResultsRegex = /(?:\bresults?\b[\s\S]{0,60}?\b(?:available|ready)\b(?:\s*for[^\.\n]*)?|\btest results?\b[\s\S]{0,60}?\b(?:available|ready)\b(?:\s*for[^\.\n]*)?)/gi;
+      if (personaRoleKey === "owner") {
+        const ownerResultsRegex =
+          /(?:\bresults?\b[\s\S]{0,60}?\b(?:available|ready)\b(?:\s*for[^\.\n]*)?|\btest results?\b[\s\S]{0,60}?\b(?:available|ready)\b(?:\s*for[^\.\n]*)?)/gi;
         if (ownerResultsRegex.test(content)) {
           content = content.replace(ownerResultsRegex, "Please check with the nurse or laboratory for test availability.");
           // Normalize accidental duplicated punctuation or spacing left after replacement
-          content = content.replace(/\.\s*\./g, '.');
-          content = content.replace(/\.{2,}/g, '.');
-          content = content.replace(/\s+([.,!?;:])/g, '$1');
-          try { debugEventBus.emitEvent?.('warning','ChatPostFilter','ownerResultsClaim',{ caseId, snippet: String(content).substring(0,200) }); } catch {}
+          content = content.replace(/\.\s*\./g, ".");
+          content = content.replace(/\.{2,}/g, ".");
+          content = content.replace(/\s+([.,!?;:])/g, "$1");
+          try {
+            debugEventBus.emitEvent?.("warning", "ChatPostFilter", "ownerResultsClaim", { caseId, snippet: String(content).substring(0, 200) });
+          } catch {}
         }
       }
     } catch (e) {
@@ -1861,21 +1503,13 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
 
     const requestedMedia = caseMedia.filter((m) => mediaIds.includes(m.id));
 
-    const assistantContent = stripLeadingPersonaIntro(content, [
-      personaNameForChat,
-      displayRole,
-      stageRole,
-    ]);
+    const assistantContent = stripLeadingPersonaIntro(content, [personaNameForChat, displayRole, stageRole]);
     const portraitUrl = personaImageUrl;
 
     // If this is a stage-entry greeting for nurse/lab personas, do not
     // synthesize the greeting via TTS. The client will render text-only
     // immediately. We use `skipTts` to signal the client to avoid playback.
-    const isSensitiveStageGreeting = Boolean(
-      timepointPrompt &&
-      (personaRoleKey === "veterinary-nurse" ||
-        personaRoleKey === "lab-technician"),
-    );
+    const isSensitiveStageGreeting = Boolean(timepointPrompt && (personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician"));
 
     return NextResponse.json({
       content: assistantContent,
@@ -1890,9 +1524,6 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     });
   } catch (error) {
     console.error("Error in chat API:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
