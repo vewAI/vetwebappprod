@@ -874,6 +874,8 @@ export function ChatInterface({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Forward-declaration ref for sendOwnerRefocusGreeting (defined later in component)
+  const sendOwnerRefocusGreetingRef = useRef<(() => Promise<void>) | null>(null);
   // Keep a base input buffer (committed text from prior finals or manual typing)
   const baseInputRef = useRef<string>("");
   // Track whether the most recent input changes came from manual typing
@@ -1972,6 +1974,24 @@ export function ChatInterface({
             })();
           }
         }
+
+        // Owner refocus greeting when switching TO owner via UI click
+        if (next === "owner") {
+          // Use a ref call to sendOwnerRefocusGreeting (defined later in the component)
+          // This sends "Do you have any news for me, Doc?" if conversation is in progress
+          try {
+            // Suppress immediate auto-starts briefly to avoid accidental mic restarts
+            suppressAutoStart(1200);
+          } catch {}
+          // Defer the greeting call to allow the ref to be populated
+          setTimeout(() => {
+            try {
+              (sendOwnerRefocusGreetingRef as any).current?.();
+            } catch (e) {
+              // ignore
+            }
+          }, 100);
+        }
       } catch (e) {
         // non-blocking
       }
@@ -2774,102 +2794,9 @@ export function ChatInterface({
       // ignore normalization errors and proceed
     }
 
-    // If we're in the Physical Examination stage and the user is asking
-    // about lab tests/results, reply very briefly client-side and do not
-    // forward the query to the server. This keeps the UX tight and avoids
-    // the assistant inventing diagnostic data during the physical exam.
-    try {
-      const stage = stages?.[currentStageIndex];
-      const stageKey = stage?.title?.toLowerCase().trim() ?? "";
-      const physicalStage = stageKey === "physical examination" || stageKey === "physical";
-      const labRegex =
-        /\b(lab|labs|bloodwork|bloods|blood|cbc|chemistry|biochemistry|hematology|urine|urinalysis|radiograph|x-?ray|xray|imaging|ultrasound|test|tests|results|culture|pcr|serology)\b/i;
-      if (physicalStage && labRegex.test(trimmed)) {
-        const roleLabel = stage?.role
-          ? stage.role === "owner"
-            ? "Owner"
-            : stage.role.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
-          : "Assistant";
-
-        const normalizedRoleKey = resolveChatPersonaRoleKey(stage?.role, roleLabel);
-        const personaMeta = await ensurePersonaMetadata(normalizedRoleKey);
-        const voiceSex: "male" | "female" | "neutral" =
-          personaMeta?.sex === "male" || personaMeta?.sex === "female" || personaMeta?.sex === "neutral"
-            ? (personaMeta.sex as "male" | "female" | "neutral")
-            : "neutral";
-        try {
-          console.debug("physical-stage personaMeta", { normalizedRoleKey, personaMeta, voiceSex });
-        } catch (e) {}
-        try {
-          console.debug("physical-stage personaMeta", { normalizedRoleKey, personaMeta });
-        } catch (e) {}
-        const voiceForRole = getOrAssignVoiceForRole(normalizedRoleKey, attemptId, {
-          preferredVoice: personaMeta?.voiceId,
-          sex: personaMeta?.sex as any,
-        });
-
-        const brief = "We'll request that and we'll get the results in the Lab stage";
-        const assistantMsg = chatService.createAssistantMessage(
-          brief,
-          currentStageIndex,
-          personaMeta?.displayName ?? roleLabel,
-          personaMeta?.portraitUrl,
-          voiceForRole,
-          voiceSex,
-          normalizedRoleKey,
-        );
-        appendAssistantMessage(assistantMsg);
-        // If the mic is currently listening, mark it so the TTS helper knows
-        // to resume it when playback finishes. This is a defensive set in case
-        // the helper runs slightly later.
-        try {
-          wasMicPausedForTtsRef.current = !!isListening && !userToggledOffRef.current;
-          console.debug("physical-stage: wasMicPausedForTts set", { wasListening: isListening, marker: wasMicPausedForTtsRef.current });
-        } catch (e) {}
-
-        if (ttsEnabled && brief) {
-          try {
-            await playTtsAndPauseStt(
-              brief,
-              voiceForRole,
-              { roleKey: normalizedRoleKey, displayRole: assistantMsg.displayRole, role: stage?.role ?? roleLabel, caseId, forceResume: true } as any,
-              personaMeta?.sex as any,
-            );
-          } catch (e) {
-            /* ignore TTS errors for this brief prompt */
-          }
-        }
-
-        // Ensure voice-mode is re-enabled after this brief assistant message
-        // unless the user explicitly toggled voice off. We schedule a short
-        // delayed check so it doesn't race with playTtsAndPauseStt's resume.
-        try {
-          if (!userToggledOffRef.current) {
-            setTimeout(() => {
-              try {
-                if (!userToggledOffRef.current && !isListening && voiceModeRef.current) {
-                  console.debug("physical-stage: forcing voice mode enable after brief assistant message");
-                  setVoiceModeEnabled(true);
-                }
-              } catch (e) {
-                console.warn("Failed to force voice mode enable after assistant brief", e);
-              }
-            }, 800);
-          }
-        } catch (e) {
-          // ignore
-        }
-
-        // Mark base input empty and return without sending to server
-        baseInputRef.current = "";
-        setInput("");
-        reset();
-        return;
-      }
-    } catch (e) {
-      // If detection or TTS fails, fall back to normal send behavior
-      console.warn("Physical-stage lab-query handler failed", e);
-    }
+    // NOTE: Previously we had a canned response for lab queries during the Physical stage.
+    // This has been removed so the LLM handles these requests naturally, and the student's
+    // message is always displayed in the chat.
 
     // Simplified behavior: instead of a general LLM-based completeness check,
     // only treat very short (<=2 words) voice fragments as potentially
@@ -4162,6 +4089,8 @@ export function ChatInterface({
 
   const ownerGreetingSentRef = useRef<boolean>(false);
   const nurseGreetingSentRef = useRef<boolean>(false);
+  // Track the last time we sent an owner refocus greeting to prevent rapid-fire greetings
+  const lastOwnerRefocusGreetingRef = useRef<number>(0);
   // Track which stage-intro strings we've already appended during this attempt
   // to avoid repeating the same intro (e.g., nurse intro) multiple times.
   const sentStageIntroRef = useRef<Set<string>>(new Set());
@@ -4204,6 +4133,54 @@ export function ChatInterface({
       // non-blocking
     }
   }, [messages, currentStageIndex, ensurePersonaMetadata, appendAssistantMessage, ttsEnabled, playTtsAndPauseStt, caseId]);
+
+  // Send owner refocus greeting when user clicks on owner avatar (after initial greeting)
+  // Only sends if at least 10 seconds have passed since the last refocus greeting.
+  const sendOwnerRefocusGreeting = useCallback(async () => {
+    try {
+      const now = Date.now();
+      // Throttle: don't send if less than 10 seconds since last refocus greeting
+      if (now - lastOwnerRefocusGreetingRef.current < 10000) return;
+      // Don't send if there's no conversation yet (initial greeting handles that)
+      const hasConversation = messages.some((m) => m.role === "user" || m.role === "assistant");
+      if (!hasConversation) return;
+      lastOwnerRefocusGreetingRef.current = now;
+
+      const personaMeta = await ensurePersonaMetadata("owner");
+      const greeting = "Do you have any news for me, Doc?";
+      const voiceForOwner = getOrAssignVoiceForRole("owner", attemptId, {
+        preferredVoice: personaMeta?.voiceId,
+        sex: (personaMeta?.sex as any) ?? "neutral",
+      });
+      const assistantMsg = chatService.createAssistantMessage(
+        greeting,
+        currentStageIndex,
+        personaMeta?.displayName ?? "Owner",
+        personaMeta?.portraitUrl,
+        voiceForOwner,
+        personaMeta?.sex as any,
+        "owner",
+      );
+      appendAssistantMessage(assistantMsg);
+      if (ttsEnabled) {
+        try {
+          const forceResume = Boolean(voiceModeRef.current && !userToggledOffRef.current);
+          await playTtsAndPauseStt(
+            greeting,
+            voiceForOwner,
+            { roleKey: "owner", displayRole: assistantMsg.displayRole, role: "owner", caseId, forceResume } as any,
+            personaMeta?.sex as any,
+          );
+        } catch {
+          // ignore TTS errors
+        }
+      }
+    } catch (e) {
+      // non-blocking
+    }
+  }, [messages, currentStageIndex, ensurePersonaMetadata, appendAssistantMessage, ttsEnabled, playTtsAndPauseStt, caseId, attemptId]);
+  // Update the forward-declared ref so it can be called from earlier hooks
+  sendOwnerRefocusGreetingRef.current = sendOwnerRefocusGreeting;
 
   const handleStartSpeakingPrompt = useCallback(async () => {
     if (startSequenceActive) {
