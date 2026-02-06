@@ -46,6 +46,7 @@ import { chooseSafePersonaKey } from "@/features/chat/utils/persona-selection";
 import type { AllowedChatPersonaKey } from "@/features/chat/utils/persona-guardrails";
 import { useSpeechDevices } from "@/features/speech/context/audio-device-context";
 import PersonaTabs from "@/features/chat/components/PersonaTabs";
+import PersonaButton from "@/features/chat/components/PersonaButton";
 import { estimateTtsDurationMs } from "@/features/chat/utils/ttsEstimate";
 import VoiceModeControl from "@/features/chat/components/VoiceModeControl";
 import { AudioDeviceSelector } from "@/features/speech/components/audio-device-selector";
@@ -5630,32 +5631,16 @@ export function ChatInterface({
           </Button>
 
           <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr_auto] gap-4 items-center w-full p-2 bg-background/80 border border-border rounded-lg">
-            {/* Left persona */}
-            {/* OWNER button (left) with portrait above */}
-            <div className="flex flex-col items-center gap-1 flex-shrink-0 justify-self-center sm:justify-self-end">
-              <button
-                type="button"
-                onClick={() => handleSetActivePersona("owner")}
-                aria-pressed={activePersona === "owner"}
-                className={`rounded-full overflow-hidden border bg-muted focus:outline-none focus:ring-2 focus:ring-blue-500 transition-transform ${activePersona === "owner" ? "h-20 w-20 scale-100" : "h-10 w-10 scale-100"}`}
-                aria-label="Select Owner persona"
-              >
-                {personaDirectory?.owner?.portraitUrl ? (
-                  <img src={personaDirectory.owner.portraitUrl} alt="OWNER portrait" className="h-full w-full object-cover" loading="lazy" />
-                ) : (
-                  <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">OWN</div>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSetActivePersona("owner")}
-                className={`px-2 py-0.5 text-sm rounded-md ${activePersona === "owner" ? "bg-blue-600 text-white" : "bg-muted"}`}
-                aria-pressed={activePersona === "owner"}
-                data-testid="owner-tab"
-              >
-                OWNER
-              </button>
-            </div>
+            {/* Left persona - OWNER button with portrait */}
+            <PersonaButton
+              roleKey="owner"
+              label="OWNER"
+              portraitUrl={personaDirectory?.owner?.portraitUrl}
+              fallbackText="OWN"
+              isActive={activePersona === "owner"}
+              onClick={() => handleSetActivePersona("owner")}
+              testId="owner-tab"
+            />
 
             {/* Central voice control with a single status button below showing current mode */}
             <div className="flex flex-col items-center gap-2 justify-center flex-shrink-0">
@@ -5692,36 +5677,16 @@ export function ChatInterface({
               )}
             </div>
 
-            {/* NURSE button (right) with portrait above */}
-            <div className="flex flex-col items-center gap-1 flex-shrink-0 justify-self-center sm:justify-self-start">
-              <button
-                type="button"
-                onClick={() => handleSetActivePersona("veterinary-nurse")}
-                aria-pressed={activePersona === "veterinary-nurse"}
-                className={`rounded-full overflow-hidden border bg-muted focus:outline-none focus:ring-2 focus:ring-blue-500 transition-transform ${activePersona === "veterinary-nurse" ? "h-20 w-20 scale-100" : "h-10 w-10 scale-100"}`}
-                aria-label="Select Nurse persona"
-              >
-                {personaDirectory?.["veterinary-nurse"]?.portraitUrl ? (
-                  <img
-                    src={personaDirectory!["veterinary-nurse"].portraitUrl}
-                    alt="NURSE portrait"
-                    className="h-full w-full object-cover"
-                    loading="lazy"
-                  />
-                ) : (
-                  <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">NUR</div>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSetActivePersona("veterinary-nurse")}
-                className={`px-2 py-0.5 text-sm rounded-md ${activePersona === "veterinary-nurse" ? "bg-blue-600 text-white" : "bg-muted"}`}
-                aria-pressed={activePersona === "veterinary-nurse"}
-                data-testid="nurse-tab"
-              >
-                NURSE
-              </button>
-            </div>
+            {/* Right persona - NURSE button with portrait */}
+            <PersonaButton
+              roleKey="veterinary-nurse"
+              label="NURSE"
+              portraitUrl={personaDirectory?.["veterinary-nurse"]?.portraitUrl}
+              fallbackText="NUR"
+              isActive={activePersona === "veterinary-nurse"}
+              onClick={() => handleSetActivePersona("veterinary-nurse")}
+              testId="nurse-tab"
+            />
 
             {/* Next stage control (large button) */}
             <div className="relative flex items-center justify-end gap-2">
