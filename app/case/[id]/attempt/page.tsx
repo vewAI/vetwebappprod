@@ -430,6 +430,7 @@ export default function CaseChatPage() {
           onProceedToNextStage={handleProceedToNextStage}
           caseMedia={caseItem.media}
           followupDay={followupDay}
+          species={caseItem.species}
         />
       </div>
 

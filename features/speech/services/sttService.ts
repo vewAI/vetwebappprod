@@ -30,6 +30,26 @@ let starting = false;
 let restartAttempts = 0;
 const MAX_RESTARTS = 6; // after this many rapid restarts, stop and surface a warning
 
+// Case context for species-specific corrections (e.g., only replace 'other' -> 'udder' for bovine)
+let currentCaseSpecies: string | null = null;
+
+/**
+ * Set the current case species for STT post-processing.
+ * Call this when entering a case to enable species-aware corrections.
+ * Pass null to clear the context.
+ */
+export function setSttCaseSpecies(species: string | null): void {
+  currentCaseSpecies = species?.toLowerCase().trim() || null;
+}
+
+/**
+ * Check if current case is bovine (cow)
+ */
+function isBovineCase(): boolean {
+  if (!currentCaseSpecies) return false;
+  return /\b(cow|bovine|cattle|calf|heifer|bull|steer)\b/i.test(currentCaseSpecies);
+}
+
 // Global error handler type
 type ErrorHandler = (error: string) => void;
 let globalOnError: ErrorHandler | null = null;
@@ -118,6 +138,9 @@ const PHRASE_CORRECTIONS: Record<string, string> = {
 // Common mis-hearing where users say something that sounds like 'ask quotation'
 // but actually mean 'auscultation'.
 PHRASE_CORRECTIONS["ask quotation"] = "auscultation";
+// Common mis-hearing: 'buy a chemistry' -> 'biochemistry'
+PHRASE_CORRECTIONS["buy a chemistry"] = "biochemistry";
+PHRASE_CORRECTIONS["buy chemistry"] = "biochemistry";
 // Common mis-hearing: 'baseball fields' -> 'basophils'
 PHRASE_CORRECTIONS["baseball fields"] = "basophils";
 PHRASE_CORRECTIONS["baseball field"] = "basophils";
@@ -170,24 +193,26 @@ export function postProcessTranscript(text: string): string {
   const substitutions: Array<{ from: string; to: string }> = [];
 
   // Prefer veterinary sense for ambiguous tokens (e.g., 'other' -> 'udder').
+  // ONLY apply for bovine cases (cow, cattle, etc.) - not for canine, feline, etc.
   // Be conservative: only map standalone 'other' to 'udder' for short
   // transcripts (likely a single-field response) or when symptom words are
   // present (e.g., 'other swelling'). This avoids mangling longer sentences
   // where 'other' is used generically.
-  const beforeOther = processed;
-  const wordCount = processed.trim() ? processed.trim().split(/\s+/).length : 0;
-  const symptomPattern = /\b(swelling|edema|pain|heat|swollen|inflamed)\b/i;
-  if (wordCount <= 6 || symptomPattern.test(processed)) {
-    processed = processed.replace(/\bother\b/gi, "udder");
-    if (processed !== beforeOther) substitutions.push({ from: "other", to: "udder" });
+  if (isBovineCase()) {
+    const beforeOther = processed;
+    const wordCount = processed.trim() ? processed.trim().split(/\s+/).length : 0;
+    const symptomPattern = /\b(swelling|edema|pain|heat|swollen|inflamed)\b/i;
+    if (wordCount <= 6 || symptomPattern.test(processed)) {
+      processed = processed.replace(/\bother\b/gi, "udder");
+      if (processed !== beforeOther) substitutions.push({ from: "other", to: "udder" });
+    }
+    const beforeOther2 = processed;
+    processed = processed.replace(/\b(the|my|her|cow's|left|right|front|rear)\s+other\b/gi, "$1 udder");
+    if (processed !== beforeOther2) substitutions.push({ from: "other (positional)", to: "udder" });
+    const beforeOther3 = processed;
+    processed = processed.replace(/\bother\s+(swelling|edema|pain|heat)\b/gi, "udder $1");
+    if (processed !== beforeOther3) substitutions.push({ from: "other <symptom>", to: "udder <symptom>" });
   }
-  const beforeOther2 = processed;
-  processed = processed.replace(/\b(the|my|her|cow's|left|right|front|rear)\s+other\b/gi, "$1 udder");
-  if (processed !== beforeOther2) substitutions.push({ from: "other (positional)", to: "udder" });
-  const beforeOther3 = processed;
-  processed = processed.replace(/\bother\s+(swelling|edema|pain|heat)\b/gi, "udder $1");
-  if (processed !== beforeOther3) substitutions.push({ from: "other <symptom>", to: "udder <symptom>" });
-
   // If the recognized text contains common-language tokens that map to
   // veterinary terms, apply those corrections.
   // First apply phrase-level corrections to handle multi-word mis-hearings

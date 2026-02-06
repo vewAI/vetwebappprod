@@ -30,7 +30,7 @@ export const INCOMPLETE_MARKERS = new Set<string>([
   "so",
   "yet",
   "nor",
-  // Removed "is" and "to" per request
+  // Removed "is", "to", "do" per request
   // Verb continuations
   "are",
   "was",
@@ -40,7 +40,7 @@ export const INCOMPLETE_MARKERS = new Set<string>([
   "being",
   "has",
   "had",
-  "do",
+  // "do", - removed per request
   "does",
   "did",
   "will",

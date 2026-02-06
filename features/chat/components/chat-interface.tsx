@@ -30,6 +30,7 @@ import {
   canStartListening,
   scheduleClearSuppressionWhen,
   forceClearSuppression,
+  setSttCaseSpecies,
 } from "@/features/speech/services/sttService";
 import { isSpeechRecognitionSupported } from "@/features/speech/services/sttService";
 import { ChatMessage } from "@/features/chat/components/chat-message";
@@ -202,6 +203,7 @@ type ChatInterfaceProps = {
   initialTimeSpentSeconds?: number;
   caseMedia?: CaseMediaItem[];
   followupDay?: number;
+  species?: string; // Case species for species-aware STT corrections (e.g., only 'other' -> 'udder' for bovine)
 };
 
 type PersonaDirectoryEntry = {
@@ -227,6 +229,7 @@ export function ChatInterface({
   initialTimeSpentSeconds = 0,
   caseMedia = [],
   followupDay = 1,
+  species,
 }: ChatInterfaceProps) {
   // State for timepoint progression dialog
   const [showTimepointDialog, setShowTimepointDialog] = useState(false);
@@ -250,6 +253,15 @@ export function ChatInterface({
       // ignore
     }
   }, [autoSendStt]);
+
+  // Set species context for STT post-processing (e.g., only 'other' -> 'udder' for bovine)
+  useEffect(() => {
+    setSttCaseSpecies(species ?? null);
+    return () => {
+      // Clear species context when unmounting
+      setSttCaseSpecies(null);
+    };
+  }, [species]);
 
   // Handlers for dialog actions (implement as no-ops or TODOs for now)
   const handleSnoozeTimepoint = () => setShowTimepointDialog(false);
@@ -1161,13 +1173,27 @@ export function ChatInterface({
             autoSendFinalTimerRef.current = null;
             autoSendPendingTextRef.current = null;
             try {
-              // GUARD: If we're in deaf mode (TTS playing or just ended), skip auto-send
+              // GUARD: If we're in deaf mode (TTS playing or just ended), delay auto-send
               // This prevents the mic from "auto-sending" captured TTS audio
+              // But schedule a retry so the message isn't lost
               if (isInDeafMode()) {
-                console.debug("Auto-send BLOCKED: in deaf mode (TTS playing or recently ended)", { source: "final-auto" });
+                console.debug("Auto-send DELAYED: in deaf mode (TTS playing or recently ended)", { source: "final-auto" });
                 try {
-                  debugEventBus.emitEvent?.("info", "AutoSend", "blocked_deaf_mode", { source: "final-auto" });
+                  debugEventBus.emitEvent?.("info", "AutoSend", "delayed_deaf_mode", { source: "final-auto" });
                 } catch {}
+                // Schedule a retry in 1.5s to send the message after deaf mode clears
+                autoSendFinalTimerRef.current = window.setTimeout(() => {
+                  autoSendFinalTimerRef.current = null;
+                  const textToRetry = baseInputRef.current?.trim() || "";
+                  if (textToRetry && voiceModeRef.current && !isPlayingAudioRef.current && !isInDeafMode()) {
+                    console.debug("Auto-send RETRY after deaf mode cleared", { text: textToRetry });
+                    try {
+                      void triggerAutoSend(textToRetry);
+                    } catch (e) {
+                      console.warn("Auto-send retry failed:", e);
+                    }
+                  }
+                }, 1500);
                 return;
               }
 
@@ -2665,54 +2691,9 @@ export function ChatInterface({
       // non-blocking
     }
 
-    // If the user asks the nurse for lab/tests before the Laboratory stage has started,
-    // have the nurse acknowledge the request rather than forwarding to the server.
-    try {
-      const stage = stages?.[currentStageIndex];
-      const stageKey = stage?.title?.toLowerCase().trim() ?? "";
-      const isLabStage = /laboratory|lab|tests/.test(stageKey);
-      // If it's a lab request and we're a nurse before the lab stage, acknowledge locally.
-      // Previously this ignored explicit manual sends; treat manual sends the same and provide
-      // a clear acknowledgement so the student knows the request will be actioned in the Lab stage.
-      if (!isLabStage && activePersona === "veterinary-nurse" && looksLikeLabRequest(trimmed)) {
-        // Append the user's original request to the chat so it doesn't appear to disappear
-        try {
-          const userMsg = chatService.createUserMessage(trimmed, currentStageIndex);
-          setMessages((prev) => [...prev, userMsg]);
-        } catch (e) {
-          console.warn("Failed to append local user message for lab request", e);
-        }
-
-        const personaMeta = await ensurePersonaMetadata("veterinary-nurse");
-        const ack = "We'll request those tests; the results will be available in the Lab stage.";
-        const assistantMsg = chatService.createAssistantMessage(
-          ack,
-          currentStageIndex,
-          personaMeta?.displayName ?? "Nurse",
-          personaMeta?.portraitUrl,
-          personaMeta?.voiceId,
-          personaMeta?.sex as any,
-          "veterinary-nurse",
-        );
-        appendAssistantMessage(assistantMsg);
-        if (ttsEnabled) {
-          try {
-            await playTtsAndPauseStt(
-              ack,
-              personaMeta?.voiceId,
-              { roleKey: "veterinary-nurse", displayRole: assistantMsg.displayRole, role: "veterinary-nurse", caseId, forceResume: true } as any,
-              personaMeta?.sex as any,
-            );
-          } catch (e) {}
-        }
-        // do not forward this request to the server
-        baseInputRef.current = "";
-        setInput("");
-        return;
-      }
-    } catch (e) {
-      // ignore
-    }
+    // NOTE: Previously we had a canned response for lab requests before lab stage.
+    // This has been removed so the LLM can intelligently handle combined requests
+    // (e.g., physical exam + lab tests in the same message) and provide contextual responses.
 
     // Robust duplication check using ref (ignores slow state updates)
     // If the exact same content is submitted within 2.5 seconds, block it.
