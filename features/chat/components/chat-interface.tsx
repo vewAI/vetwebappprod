@@ -1290,14 +1290,7 @@ export function ChatInterface({
       // restart voice mode 2s after fade completes
       sttErrorRestartTimerRef.current = window.setTimeout(() => {
         if (voiceModeRef.current && !isListening && !userToggledOffRef.current && !isPaused && !isPlayingAudioRef.current) {
-          try {
-            try {
-              if (!canStartListening()) return;
-            } catch (e) {}
-            start();
-          } catch (e) {
-            console.warn("Failed to restart STT after error:", e);
-          }
+          safeStart(); // Use safeStart to respect TTS suppression
         }
         sttErrorRestartTimerRef.current = null;
       }, 2000);
@@ -1325,14 +1318,7 @@ export function ChatInterface({
         }
         sttErrorRestartTimerRef.current = window.setTimeout(() => {
           if (voiceModeRef.current && !isListening && !userToggledOffRef.current && !isPaused && !isPlayingAudioRef.current) {
-            try {
-              try {
-                if (!canStartListening()) return;
-              } catch (e) {}
-              start();
-            } catch (e) {
-              console.warn("Failed to restart STT after transient error:", e);
-            }
+            safeStart(); // Use safeStart to respect TTS suppression
           }
           sttErrorRestartTimerRef.current = null;
         }, 1000);
@@ -3087,59 +3073,12 @@ export function ChatInterface({
     // conditions where the server reply might be attributed to another role.
     selectedPersonaAtSendRef.current = activePersona;
 
-    // If the current active persona is the nurse and the user is sending a message,
-    // emit a brief nurse acknowledgement message immediately so the user sees a
-    // responsive acknowledgement from the chosen persona before the server reply.
-    // However, avoid sending the pre-lab acknowledgement when the user's message
-    // is clearly a physical-exam request (e.g., "results of cardiovascular exam").
-    if (!existingMessageId && activePersona === "veterinary-nurse" && !looksLikePhysicalRequest(trimmed)) {
-      (async () => {
-        try {
-          // Do not repeat the same nurse acknowledgement phrase more than once per attempt
-          if (nurseAckGivenRef.current) return;
-          const personaMeta = await ensurePersonaMetadata("veterinary-nurse");
-          const ackText = NURSE_ACK;
-          const ackMsg = chatService.createAssistantMessage(
-            ackText,
-            currentStageIndex,
-            personaMeta?.displayName ?? "Nurse",
-            personaMeta?.portraitUrl,
-            personaMeta?.voiceId,
-            personaMeta?.sex as any,
-            "veterinary-nurse",
-          );
-          // Mark as ephemeral placeholder so it doesn't block or dedupe
-          // the real assistant response that will arrive from the server.
-          try {
-            (ackMsg as any).ephemeral = true;
-          } catch {}
-          appendAssistantMessage(ackMsg);
-          nurseAckGivenRef.current = true;
-          if (ttsEnabled) {
-            try {
-              // Force resume after this short ack so the mic/STT will be re-enabled
-              // for follow-up dictation even if it wasn't actively listening before.
-              await playTtsAndPauseStt(
-                ackText,
-                personaMeta?.voiceId,
-                {
-                  roleKey: "veterinary-nurse",
-                  displayRole: personaMeta?.displayName ?? "Nurse",
-                  role: "veterinary-nurse",
-                  caseId,
-                  forceResume: true,
-                } as any,
-                personaMeta?.sex as any,
-              );
-            } catch (e) {
-              /* ignore TTS errors for ack */
-            }
-          }
-        } catch (e) {
-          // ignore: non-blocking ack
-        }
-      })();
-    }
+    // NOTE: The nurse canned acknowledgement ("Let me check that Doc...") has been
+    // disabled. It was causing issues:
+    // 1. Showing for ALL nurse messages instead of only for unavailable lab tests
+    // 2. STT not resuming properly after the canned TTS
+    // 3. Nurse listening to its own TTS output and responding to itself
+    // The real assistant response from the server will provide natural responses.
 
     if (existingMessageId) {
       // Mark existing message as pending and reuse it
@@ -4164,20 +4103,7 @@ export function ChatInterface({
       if (voiceModeRef.current && !isListening) {
         // Small delay to ensure state is fully cleared before starting
         setTimeout(() => {
-          try {
-            if (!isPlayingAudioRef.current && !isSttSuppressed() && !isInDeafMode()) {
-              try {
-                if (!canStartListening()) return;
-              } catch (e) {}
-              start();
-            } else {
-              try {
-                debugEventBus.emitEvent?.("info", "STT", "deferred_manual_start_due_to_suppression");
-              } catch {}
-            }
-          } catch (e) {
-            // ignore
-          }
+          safeStart(); // Use safeStart to respect TTS suppression
         }, 100);
       }
       // fade out the "Attempt Paused" toast when resuming
@@ -4301,17 +4227,7 @@ export function ChatInterface({
       // Ensure we start listening immediately
       userToggledOffRef.current = false;
       if (!isListening) {
-        try {
-          try {
-            if (!canStartListening()) {
-              console.debug("start prevented by service guard on user init click");
-            } else start();
-          } catch (e) {
-            start();
-          }
-        } catch (e) {
-          console.warn("Failed to start STT on click", e);
-        }
+        safeStart(); // Use safeStart to respect TTS suppression
       }
       setShowStartSpeakingPrompt(false);
 
@@ -4651,23 +4567,13 @@ export function ChatInterface({
     if (!attemptId) return;
     if (userToggledOffRef.current) return;
     if (speechSupported && voiceMode && !isListening && !startedListeningRef.current && !isPlayingAudioRef.current) {
-      try {
-        // Auto-start listening for the attempt. We clear the input and the
-        // committed base buffer so dictation starts fresh.
-        reset();
-        setInput("");
-        baseInputRef.current = "";
-        try {
-          if (!canStartListening()) {
-            console.debug("auto-start suppressed by service guard when opening attempt");
-          } else start();
-        } catch (e) {
-          start();
-        }
-        startedListeningRef.current = true;
-      } catch (e) {
-        console.error("Failed to auto-start STT:", e);
-      }
+      // Auto-start listening for the attempt. We clear the input and the
+      // committed base buffer so dictation starts fresh.
+      reset();
+      setInput("");
+      baseInputRef.current = "";
+      safeStart(); // Use safeStart to respect TTS suppression
+      startedListeningRef.current = true;
     }
   }, [attemptId, voiceMode, isListening, reset, start]);
 
@@ -4675,19 +4581,9 @@ export function ChatInterface({
     if (!voiceMode || !speechSupported) return;
     if (userToggledOffRef.current) return;
     if (isListening || startedListeningRef.current || isPlayingAudioRef.current) return;
-    try {
-      reset();
-      try {
-        if (!canStartListening()) {
-          console.debug("auto-start suppressed by service guard (voiceMode change)");
-        } else start();
-      } catch (e) {
-        start();
-      }
-      startedListeningRef.current = true;
-    } catch (e) {
-      console.error("Failed to auto-start STT:", e);
-    }
+    reset();
+    safeStart(); // Use safeStart to respect TTS suppression
+    startedListeningRef.current = true;
   }, [voiceMode, isListening, reset, start]);
 
   // Auto-pause attempt and show toast if user leaves the chat page
