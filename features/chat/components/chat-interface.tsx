@@ -2221,8 +2221,10 @@ export function ChatInterface({
     // a mic 'paused for TTS' only if it was actively listening and the user
     // hadn't explicitly toggled it off.
     // Consider mic-start-in-flight or an explicit forceResume marker in meta
+    // Also consider if voice mode is active - if so, we should always resume
     const forced = (meta as any)?.forceResume === true;
-    wasMicPausedForTtsRef.current = Boolean((isListening || forced) && !userToggledOffRef.current);
+    const voiceModeActive = voiceModeRef.current === true;
+    wasMicPausedForTtsRef.current = Boolean((isListening || forced || voiceModeActive) && !userToggledOffRef.current);
     // Only mark for resume if we actually paused the mic due to TTS.
     // This avoids accidental restarts when voice-mode is enabled but mic
     // wasn't actively listening (edge conditions, paused state, etc.).
@@ -2337,10 +2339,19 @@ export function ChatInterface({
                 }
               }, 800);
             } catch (e) {}
-          } else {
-            // Do not auto-start merely because voiceMode is enabled if the mic was idle at TTS start.
+          } else if (voiceModeRef.current && !userToggledOffRef.current) {
+            // Voice mode is active but neither primary nor fallback path was taken.
+            // This can happen if wasMicPausedForTtsRef was false due to timing issues.
+            // Still try to resume since voice mode implies the user wants STT active.
             try {
-              console.debug("playTtsAndPauseStt: not resuming STT because mic was idle before TTS and no resume marker set");
+              console.debug("playTtsAndPauseStt: resuming STT (voiceMode active fallback)");
+              pushSttTrace({ event: "tts_resume_flow", path: "voiceMode_fallback" });
+            } catch (e) {}
+            attemptStartListening(RESUME_DELAY_AFTER_TTS_MS);
+          } else {
+            // Do not auto-start if voice mode is off and mic was idle at TTS start.
+            try {
+              console.debug("playTtsAndPauseStt: not resuming STT because voiceMode off and mic was idle before TTS");
             } catch (e) {}
           }
         } catch (e) {

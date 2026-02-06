@@ -87,6 +87,8 @@ const CORRECTIONS: Record<string, string> = {
   baseball: "basophils",
   // Common mis-transcription: 'finance' -> 'findings'
   finance: "findings",
+  // Common mis-hearing of 'nurse' as 'north'
+  north: "nurse",
 };
 
 // Phrase-level corrections for multi-word mis-transcriptions.
