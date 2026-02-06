@@ -17,6 +17,8 @@ export type PersonaButtonProps = {
   onClick: () => void;
   /** Optional test ID */
   testId?: string;
+  /** Grid alignment: "end" for left items, "start" for right items */
+  align?: "start" | "end";
 };
 
 /**
@@ -33,6 +35,7 @@ export const PersonaButton = memo(function PersonaButton({
   isActive,
   onClick,
   testId,
+  align = "end",
 }: PersonaButtonProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
@@ -47,9 +50,10 @@ export const PersonaButton = memo(function PersonaButton({
 
   const showImage = portraitUrl && !imageError;
   const sizeClasses = isActive ? "h-20 w-20" : "h-10 w-10";
+  const alignClass = align === "start" ? "sm:justify-self-start" : "sm:justify-self-end";
 
   return (
-    <div className="flex flex-col items-center gap-1 flex-shrink-0 justify-self-center sm:justify-self-end">
+    <div className={`flex flex-col items-center gap-1 flex-shrink-0 justify-self-center ${alignClass}`}>
       {/* Portrait button */}
       <button
         type="button"

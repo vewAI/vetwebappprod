@@ -5686,6 +5686,7 @@ export function ChatInterface({
               isActive={activePersona === "veterinary-nurse"}
               onClick={() => handleSetActivePersona("veterinary-nurse")}
               testId="nurse-tab"
+              align="start"
             />
 
             {/* Next stage control (large button) */}
