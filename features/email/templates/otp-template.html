@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VewAi - Verify Your Account</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Helvetica Neue', sans-serif;
+      line-height: 1.6;
+      color: #1f2937;
+      background-color: #f3f4f6;
+    }
+    
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #ffffff;
+    }
+    
+    .header {
+      background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+      padding: 40px 20px;
+      text-align: center;
+      color: white;
+    }
+    
+    .logo {
+      display: inline-block;
+      margin-bottom: 16px;
+    }
+    
+    .logo-img {
+      width: 60px;
+      height: 60px;
+    }
+    
+    .company-name {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin-top: 12px;
+    }
+    
+    .content {
+      padding: 40px 30px;
+    }
+    
+    .hero-title {
+      font-size: 24px;
+      font-weight: 600;
+      color: #1f2937;
+      margin-bottom: 16px;
+    }
+    
+    .hero-description {
+      font-size: 16px;
+      color: #6b7280;
+      margin-bottom: 32px;
+      line-height: 1.5;
+    }
+    
+    .otp-section {
+      background-color: #f9fafb;
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 32px;
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    
+    .otp-label {
+      font-size: 14px;
+      font-weight: 600;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+    }
+    
+    .otp-code {
+      font-size: 48px;
+      font-weight: 700;
+      letter-spacing: 8px;
+      color: #2563eb;
+      font-family: 'Monaco', 'Courier New', monospace;
+      margin-bottom: 16px;
+      word-spacing: 4px;
+    }
+    
+    .otp-expiry {
+      font-size: 13px;
+      color: #9ca3af;
+      margin-top: 12px;
+    }
+    
+    .fallback-section {
+      background-color: #f3f4f6;
+      border-left: 4px solid #2563eb;
+      padding: 16px;
+      margin-bottom: 32px;
+      border-radius: 4px;
+    }
+    
+    .fallback-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1f2937;
+      margin-bottom: 8px;
+    }
+    
+    .fallback-code {
+      font-size: 14px;
+      color: #2563eb;
+      font-family: 'Monaco', 'Courier New', monospace;
+      word-break: break-all;
+    }
+    
+    .info-box {
+      background-color: #dbeafe;
+      border: 1px solid #93c5fd;
+      border-radius: 6px;
+      padding: 16px;
+      margin-bottom: 32px;
+      font-size: 14px;
+      color: #1e40af;
+      line-height: 1.5;
+    }
+    
+    .security-note {
+      font-size: 13px;
+      color: #9ca3af;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid #e5e7eb;
+    }
+    
+    .footer {
+      background-color: #f9fafb;
+      padding: 32px 30px;
+      border-top: 1px solid #e5e7eb;
+      text-align: center;
+      font-size: 13px;
+      color: #6b7280;
+    }
+    
+    .footer-link {
+      color: #2563eb;
+      text-decoration: none;
+    }
+    
+    .footer-link:hover {
+      text-decoration: underline;
+    }
+    
+    .divider {
+      height: 1px;
+      background-color: #e5e7eb;
+      margin: 24px 0;
+    }
+    
+    @media (max-width: 600px) {
+      .container {
+        width: 100%;
+      }
+      
+      .content {
+        padding: 24px 16px;
+      }
+      
+      .header {
+        padding: 32px 16px;
+      }
+      
+      .hero-title {
+        font-size: 20px;
+      }
+      
+      .otp-code {
+        font-size: 36px;
+        letter-spacing: 6px;
+      }
+      
+      .footer {
+        padding: 24px 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div class="logo">
+        <img src="https://vetwebappprod.com/vewai_logo.png" alt="VewAi Logo" class="logo-img">
+      </div>
+      <div class="company-name">VewAi</div>
+    </div>
+    
+    <!-- Content -->
+    <div class="content">
+      <h1 class="hero-title">Verify Your Account</h1>
+      <p class="hero-description">
+        We've received a request to sign in to your VewAi account. Use the verification code below to complete your login.
+      </p>
+      
+      <!-- OTP Display -->
+      <div class="otp-section">
+        <div class="otp-label">Your Verification Code</div>
+        <div class="otp-code">{{ .Token }}</div>
+        <div class="otp-expiry">This code expires in 24 hours</div>
+      </div>
+      
+      <!-- Fallback -->
+      <div class="fallback-section">
+        <div class="fallback-title">Can't see the code above?</div>
+        <div class="fallback-code">{{ .Token }}</div>
+      </div>
+      
+      <!-- Info Box -->
+      <div class="info-box">
+        <strong>Didn't request this code?</strong> If you didn't attempt to sign in, you can safely ignore this email. Your account remains secure.
+      </div>
+      
+      <!-- Security Note -->
+      <p class="security-note">
+        <strong>Never share this code with anyone.</strong> VewAi support staff will never ask for your verification code.
+      </p>
+    </div>
+    
+    <!-- Footer -->
+    <div class="footer">
+      <p>VewAi Veterinary OSCE Simulator</p>
+      <p style="margin-top: 12px; color: #9ca3af;">
+        Questions? <a href="mailto:support@vetwebappprod.com" class="footer-link">Contact Support</a>
+      </p>
+      <div class="divider"></div>
+      <p>© 2026 VewAi. All rights reserved.</p>
+    </div>
+  </div>
+</body>
+</html>

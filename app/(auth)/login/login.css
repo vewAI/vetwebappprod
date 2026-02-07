@@ -1,0 +1,26 @@
+@keyframes typewriter {
+  0% {
+    width: 0;
+  }
+  100% {
+    width: 100%;
+  }
+}
+
+@keyframes blink {
+  0%, 49% {
+    border-right-color: rgba(255, 255, 255, 0.75);
+  }
+  50%, 100% {
+    border-right-color: transparent;
+  }
+}
+
+.typewriter-text {
+  display: inline-block;
+  max-width: 100%;
+  width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  animation: typewriter 3.5s steps(50, end) 0.5s forwards;
+}
