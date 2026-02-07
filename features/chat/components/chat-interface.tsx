@@ -48,6 +48,7 @@ import type { AllowedChatPersonaKey } from "@/features/chat/utils/persona-guardr
 import { useSpeechDevices } from "@/features/speech/context/audio-device-context";
 import PersonaTabs from "@/features/chat/components/PersonaTabs";
 import PersonaButton from "@/features/chat/components/PersonaButton";
+import usePersonaDirectory from "@/features/chat/hooks/usePersonaDirectory";
 import { estimateTtsDurationMs } from "@/features/chat/utils/ttsEstimate";
 import VoiceModeControl from "@/features/chat/components/VoiceModeControl";
 import { AudioDeviceSelector } from "@/features/speech/components/audio-device-selector";
@@ -520,11 +521,8 @@ export function ChatInterface({
   }, []);
   const { role } = useAuth();
   const [startSequenceActive, setStartSequenceActive] = useState(false);
-  const [personaDirectory, setPersonaDirectory] = useState<Record<string, PersonaDirectoryEntry>>({});
-  const personaDirectoryRef = useRef<Record<string, PersonaDirectoryEntry>>({});
-  useEffect(() => {
-    personaDirectoryRef.current = personaDirectory;
-  }, [personaDirectory]);
+  // Persona directory is managed by the extracted hook for stability and caching
+  const { personaDirectory, isReady: personaDirectoryReady, getPersonaMetadata, upsertPersona, waitForReady } = usePersonaDirectory(caseId);
 
   const voiceModeRef = useRef(voiceMode);
 
@@ -549,22 +547,6 @@ export function ChatInterface({
 
   const { inputDevices, selectedInputId, permissionError, isSupported: audioDevicesSupported } = useSpeechDevices();
   const [audioNotice, setAudioNotice] = useState<string | null>(null);
-
-  const personaDirectoryResolveRef = useRef<(() => void) | null>(null);
-  const personaDirectoryReadyPromiseRef = useRef<Promise<void> | null>(null);
-
-  const resetPersonaDirectoryReady = useCallback(() => {
-    personaDirectoryReadyPromiseRef.current = new Promise<void>((resolve) => {
-      personaDirectoryResolveRef.current = resolve;
-    });
-  }, []);
-
-  const resolvePersonaDirectoryReady = useCallback(() => {
-    if (personaDirectoryResolveRef.current) {
-      personaDirectoryResolveRef.current();
-      personaDirectoryResolveRef.current = null;
-    }
-  }, []);
   const [stageIndicator, setStageIndicator] = useState<{ title: string; body: string } | null>(null);
   const [advanceGuard, setAdvanceGuard] = useState<{ stageIndex: number; askedAt: number; metrics: StageCompletionMetrics } | null>(() => {
     if (typeof window !== "undefined") {
@@ -622,19 +604,20 @@ export function ChatInterface({
       setPaperSearchLoading(false);
     }
   };
-  const ensurePersonaMetadata = useCallback(async (roleKey: string | null | undefined) => {
-    if (!roleKey) return undefined;
-    const existing = personaDirectoryRef.current[roleKey];
-    if (existing) return existing;
-    if (personaDirectoryReadyPromiseRef.current) {
+  const ensurePersonaMetadata = useCallback(
+    async (roleKey: string | null | undefined) => {
+      if (!roleKey) return undefined;
+      const existing = getPersonaMetadata(roleKey);
+      if (existing) return existing;
       try {
-        await personaDirectoryReadyPromiseRef.current;
+        await waitForReady();
       } catch (e) {
         console.warn("Persona directory wait failed", e);
       }
-    }
-    return personaDirectoryRef.current[roleKey];
-  }, []);
+      return getPersonaMetadata(roleKey);
+    },
+    [getPersonaMetadata, waitForReady],
+  );
   const stageKeywordSets = useMemo(() => {
     return stages.map((stage, index) => {
       const keywords = new Set<string>();
@@ -855,22 +838,13 @@ export function ChatInterface({
     rollbackRequestedRef.current = false;
   };
 
-  const upsertPersonaDirectory = useCallback((roleKey: string | null | undefined, entry: PersonaDirectoryEntry) => {
-    const normalized = resolveDirectoryPersonaKey(roleKey);
-    if (!normalized) return;
-    setPersonaDirectory((prev) => {
-      const existing = prev[normalized] ?? {};
-      const nextDir = {
-        ...prev,
-        [normalized]: {
-          ...existing,
-          ...entry,
-        },
-      };
-      personaDirectoryRef.current = nextDir;
-      return nextDir;
-    });
-  }, []);
+  // Backwards-compatible wrapper that delegates to the extracted hook
+  const upsertPersonaDirectory = useCallback(
+    (roleKey: string | null | undefined, entry: PersonaDirectoryEntry) => {
+      upsertPersona(roleKey, entry);
+    },
+    [upsertPersona],
+  );
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -1584,187 +1558,9 @@ export function ChatInterface({
     };
   }, [resetNextStageIntent]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setPersonaDirectory({});
-    personaDirectoryRef.current = {};
-    resetPersonaDirectoryReady();
-
-    async function loadPersonaDirectory() {
-      try {
-        const token = await (async () => {
-          try {
-            const { getAccessToken } = await import("@/lib/auth-headers");
-            return await getAccessToken();
-          } catch (e) {
-            return null;
-          }
-        })();
-
-        const fetchOpts: RequestInit = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
-
-        let response = await fetch(`/api/personas?caseId=${encodeURIComponent(caseId)}`, fetchOpts);
-
-        let personasToProcess: any[] | undefined;
-
-        // If case-specific personas are unauthorized or otherwise fail, fall back to global personas
-        if (!response.ok) {
-          if (response.status === 401 || response.status === 403) {
-            try {
-              console.warn(`/api/personas returned ${response.status} — attempting /api/global-personas fallback`);
-              const globalResp = await fetch(`/api/global-personas`, fetchOpts);
-              if (globalResp.ok) {
-                const globalPayload = await globalResp.json().catch(() => ({ personas: [] }));
-                personasToProcess = Array.isArray(globalPayload?.personas) ? globalPayload.personas : [];
-              } else {
-                console.warn(`/api/global-personas also returned ${globalResp.status}; using empty directory`);
-                personasToProcess = [];
-              }
-            } catch (globalErr) {
-              console.warn("Fallback to global personas failed", globalErr);
-              personasToProcess = [];
-            }
-          } else {
-            throw new Error(`Failed to load personas: ${response.status}`);
-          }
-        }
-
-        // If we didn't already set personasToProcess from global fallback, parse the case response
-        if (typeof personasToProcess === "undefined") {
-          const payload = await response.json().catch(() => ({ personas: [] }));
-          personasToProcess = Array.isArray(payload?.personas) ? payload.personas : [];
-        }
-        const personas = personasToProcess || [];
-        const next: Record<string, PersonaDirectoryEntry> = {};
-
-        for (const row of personas) {
-          const rawKey = typeof row?.role_key === "string" ? row.role_key : "";
-          const normalizedKey = isAllowedChatPersonaKey(rawKey) ? rawKey : classifyChatPersonaLabel(rawKey);
-          if (!normalizedKey) {
-            continue;
-          }
-          const metadata = row && typeof row.metadata === "object" && row.metadata !== null ? (row.metadata as Record<string, unknown>) : {};
-          const identity =
-            metadata && typeof metadata.identity === "object"
-              ? (metadata.identity as {
-                  fullName?: string;
-                  voiceId?: string;
-                  sex?: string;
-                })
-              : undefined;
-
-          // Build candidate entry from this row
-          const candidateDisplayName = typeof row?.display_name === "string" ? row.display_name : identity?.fullName;
-          const candidatePortraitUrl = typeof row?.image_url === "string" ? row.image_url : undefined;
-          const candidateVoiceId =
-            typeof metadata?.voiceId === "string"
-              ? (metadata.voiceId as string)
-              : typeof identity?.voiceId === "string"
-                ? identity.voiceId
-                : undefined;
-          const candidateSex =
-            normalizeSex(typeof row?.sex === "string" ? row.sex : undefined) ??
-            normalizeSex(typeof metadata?.sex === "string" ? (metadata.sex as string) : undefined) ??
-            normalizeSex(typeof identity?.sex === "string" ? identity.sex : undefined);
-
-          // Merge with existing entry - prefer values that exist (don't let nulls overwrite data)
-          const existing = next[normalizedKey];
-          next[normalizedKey] = {
-            displayName: candidateDisplayName ?? existing?.displayName,
-            portraitUrl: candidatePortraitUrl ?? existing?.portraitUrl,
-            voiceId: candidateVoiceId ?? existing?.voiceId,
-            sex: candidateSex ?? existing?.sex,
-          };
-          // lightweight diagnostic: log resolved persona sex and key
-          try {
-            console.debug("personaDirectory load", {
-              key: normalizedKey,
-              sex: next[normalizedKey].sex,
-              displayName: next[normalizedKey].displayName,
-            });
-          } catch (e) {
-            /* ignore logging errors */
-          }
-        }
-
-        /*
-        try {
-          const globalResponse = await fetch("/api/global-personas");
-          if (!globalResponse.ok) {
-            throw new Error(`Failed to load shared personas: ${globalResponse.status}`);
-          }
-          const globalPayload = await globalResponse
-            .json()
-            .catch(() => ({ personas: [] }));
-          const globalPersonas = Array.isArray(globalPayload?.personas)
-            ? globalPayload.personas
-            : [];
-  
-          for (const row of globalPersonas) {
-            const rawKey = typeof row?.role_key === "string" ? row.role_key : "";
-            const normalizedKey = isAllowedChatPersonaKey(rawKey)
-              ? rawKey
-              : classifyChatPersonaLabel(rawKey);
-            if (!normalizedKey || next[normalizedKey]) {
-              continue;
-            }
-            const metadata =
-              row && typeof row.metadata === "object" && row.metadata !== null
-                ? (row.metadata as Record<string, unknown>)
-                : {};
-            const identity =
-              metadata && typeof metadata.identity === "object"
-                ? (metadata.identity as {
-                    fullName?: string;
-                    voiceId?: string;
-                    sex?: string;
-                  })
-                : undefined;
-            next[normalizedKey] = {
-              displayName:
-                typeof row?.display_name === "string"
-                  ? row.display_name
-                  : identity?.fullName,
-              portraitUrl:
-                typeof row?.image_url === "string" ? row.image_url : undefined,
-              voiceId:
-                typeof metadata?.voiceId === "string"
-                  ? (metadata.voiceId as string)
-                  : typeof identity?.voiceId === "string"
-                    ? identity.voiceId
-                    : undefined,
-              sex:
-                typeof row?.sex === "string"
-                  ? row.sex
-                  : typeof metadata?.sex === "string"
-                  ? (metadata.sex as string)
-                  : typeof identity?.sex === "string"
-                    ? identity.sex
-                    : undefined,
-            };
-          }
-        } catch (globalErr) {
-          console.warn("Failed to load shared personas", globalErr);
-        }
-        */
-        if (!cancelled) {
-          setPersonaDirectory(next);
-          personaDirectoryRef.current = next;
-          resolvePersonaDirectoryReady();
-        }
-      } catch (err) {
-        console.warn("Failed to load persona directory", err);
-        if (!cancelled) {
-          resolvePersonaDirectoryReady();
-        }
-      }
-    }
-
-    void loadPersonaDirectory();
-    return () => {
-      cancelled = true;
-    };
-  }, [caseId, resetPersonaDirectoryReady, resolvePersonaDirectoryReady]);
+  // Persona directory loading and caching is handled by `usePersonaDirectory(caseId)` hook
+  // (implemented in `features/chat/hooks/usePersonaDirectory.ts`). The hook will fetch
+  // `/api/personas` and fall back to `/api/global-personas` as needed. No local effect required here.
 
   // Text-to-speech
   const { available: ttsAvailable, isSpeaking, speak, speakAsync, cancel } = useTTS();
@@ -1866,7 +1662,7 @@ export function ChatInterface({
       } catch (e) {}
 
       // show a short toast to confirm persona switch
-      const displayName = personaDirectoryRef.current?.[next]?.displayName ?? (next === "owner" ? "OWNER" : "NURSE");
+      const displayName = personaDirectory?.[next]?.displayName ?? (next === "owner" ? "OWNER" : "NURSE");
       const toastTitle = next === "veterinary-nurse" ? "Hello Doc" : `Talking to ${displayName}`;
       setTimepointToast({ title: toastTitle, body: "" });
       // Hide after 2s (clear any prior timer first)
@@ -3242,7 +3038,7 @@ export function ChatInterface({
       const normalizedPersonaKey = safePersonaRoleKey;
       // If we forced a persona (e.g., active persona or last-sent), prefer the persona directory
       // metadata (displayName, portrait, voice) for visual consistency.
-      const personaEntry = normalizedPersonaKey ? personaDirectoryRef.current?.[normalizedPersonaKey] : undefined;
+      const personaEntry = normalizedPersonaKey ? personaDirectory?.[normalizedPersonaKey] : undefined;
 
       const portraitUrl = response.portraitUrl;
       const serverVoiceId = normalizeVoiceId(response.voiceId);
@@ -3266,7 +3062,7 @@ export function ChatInterface({
 
       // Use the specific persona name and portrait if available in the directory, otherwise fall back
       // to server-provided or role name to guarantee the assistant appears as the selected persona.
-      const existingPersona = normalizedPersonaKey ? personaDirectoryRef.current[normalizedPersonaKey] : undefined;
+      const existingPersona = normalizedPersonaKey ? personaDirectory?.[normalizedPersonaKey] : undefined;
       // Prefer persona directory displayName when available. If not available,
       // avoid using a server-provided displayName that belongs to a different
       // persona (e.g., owner name shown when nurse was selected). Instead
