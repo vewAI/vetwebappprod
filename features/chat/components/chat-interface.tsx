@@ -618,6 +618,14 @@ export function ChatInterface({
     },
     [getPersonaMetadata, waitForReady],
   );
+  const ownerPortraitUrl = useMemo(
+    () => getPersonaMetadata("owner")?.portraitUrl ?? personaDirectory?.owner?.portraitUrl,
+    [getPersonaMetadata, personaDirectory],
+  );
+  const nursePortraitUrl = useMemo(
+    () => getPersonaMetadata("veterinary-nurse")?.portraitUrl ?? personaDirectory?.["veterinary-nurse"]?.portraitUrl,
+    [getPersonaMetadata, personaDirectory],
+  );
   const stageKeywordSets = useMemo(() => {
     return stages.map((stage, index) => {
       const keywords = new Set<string>();
@@ -5308,7 +5316,7 @@ export function ChatInterface({
             <PersonaButton
               roleKey="owner"
               label="OWNER"
-              portraitUrl={personaDirectory?.owner?.portraitUrl}
+              portraitUrl={ownerPortraitUrl}
               fallbackText="OWN"
               isActive={activePersona === "owner"}
               onClick={() => handleSetActivePersona("owner")}
@@ -5354,7 +5362,7 @@ export function ChatInterface({
             <PersonaButton
               roleKey="veterinary-nurse"
               label="NURSE"
-              portraitUrl={personaDirectory?.["veterinary-nurse"]?.portraitUrl}
+              portraitUrl={nursePortraitUrl}
               fallbackText="NUR"
               isActive={activePersona === "veterinary-nurse"}
               onClick={() => handleSetActivePersona("veterinary-nurse")}

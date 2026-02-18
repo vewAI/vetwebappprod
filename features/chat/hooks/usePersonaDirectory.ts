@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { isAllowedChatPersonaKey, classifyChatPersonaLabel } from "@/features/chat/utils/persona-guardrails";
+
+export const PERSONA_DIRECTORY_READY_EVENT = "personaDirectoryReady";
 
 /**
  * Persona metadata entry for owner, nurse, or other chat personas.
@@ -61,6 +63,23 @@ export function usePersonaDirectory(caseId: string): UsePersonaDirectoryResult {
   const directoryRef = useRef<Record<string, PersonaEntry>>({});
   const readyResolveRef = useRef<(() => void) | null>(null);
   const readyPromiseRef = useRef<Promise<void> | null>(null);
+
+  const emitReadyEvent = useCallback((entryCount: number) => {
+    if (typeof window === "undefined") return;
+    try {
+      window.dispatchEvent(
+        new CustomEvent(PERSONA_DIRECTORY_READY_EVENT, {
+          detail: {
+            caseId,
+            entryCount,
+            at: Date.now(),
+          },
+        }),
+      );
+    } catch (err) {
+      // non-blocking
+    }
+  }, [caseId]);
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -182,6 +201,7 @@ export function usePersonaDirectory(caseId: string): UsePersonaDirectoryResult {
           setIsReady(true);
           readyResolveRef.current?.();
           readyResolveRef.current = null;
+          emitReadyEvent(Object.keys(next).length);
         }
       } catch (err) {
         console.warn("Failed to load persona directory", err);
@@ -189,6 +209,7 @@ export function usePersonaDirectory(caseId: string): UsePersonaDirectoryResult {
           setIsReady(true);
           readyResolveRef.current?.();
           readyResolveRef.current = null;
+          emitReadyEvent(0);
         }
       }
     }
@@ -197,7 +218,7 @@ export function usePersonaDirectory(caseId: string): UsePersonaDirectoryResult {
     return () => {
       cancelled = true;
     };
-  }, [caseId]);
+  }, [caseId, emitReadyEvent]);
 
   // Stable getter that uses ref (doesn't cause re-renders on read)
   const getPersonaMetadata = useCallback((roleKey: string | null | undefined): PersonaEntry | undefined => {
