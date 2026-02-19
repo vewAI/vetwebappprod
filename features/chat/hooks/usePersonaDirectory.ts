@@ -12,7 +12,7 @@ export type PersonaEntry = {
   displayName?: string;
   portraitUrl?: string;
   voiceId?: string;
-  sex?: "male" | "female";
+  sex?: "male" | "female" | "neutral";
 };
 
 export type UsePersonaDirectoryResult = {
@@ -31,11 +31,12 @@ export type UsePersonaDirectoryResult = {
 /**
  * Normalize sex value to "male" | "female" | undefined
  */
-function normalizeSex(value: string | undefined | null): "male" | "female" | undefined {
+function normalizeSex(value: string | undefined | null): "male" | "female" | "neutral" | undefined {
   if (!value) return undefined;
   const lower = String(value).toLowerCase().trim();
   if (lower === "male" || lower === "m") return "male";
   if (lower === "female" || lower === "f") return "female";
+  if (lower === "neutral" || lower === "n") return "neutral";
   return undefined;
 }
 
