@@ -424,7 +424,9 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     // prevents stale or prior-stage identities from influencing the assistant.
     if (personaRoleKey) {
       try {
-        const personaIdentityMsg = `PERSONA IDENTITY: You will answer as "${displayRole ?? personaRoleKey}" (role: ${personaRoleKey}). Do NOT impersonate or claim to be any other persona. Use the display name "${displayRole ?? personaRoleKey}" when asked for your name.`;
+        const otherPersonaLabel = personaRoleKey === "owner" ? "Veterinary Nurse" : "Owner";
+        const currentPersonaLabel = personaRoleKey === "owner" ? "Owner" : "Veterinary Nurse";
+        const personaIdentityMsg = `PERSONA IDENTITY (STRICT): You are EXCLUSIVELY answering as "${displayRole ?? personaRoleKey}" (role: ${personaRoleKey}, the ${currentPersonaLabel}). Do NOT impersonate, adopt the tone of, or claim to be any other persona. The conversation history may contain messages from the ${otherPersonaLabel} persona — those are clearly labeled as [${otherPersonaLabel.toUpperCase()} PERSONA] and are provided for context only. You MUST NOT continue their voice, their concerns, or their perspective. Use the display name "${displayRole ?? personaRoleKey}" when asked for your name. Stay strictly in character as the ${currentPersonaLabel}.`;
         enhancedMessages.unshift({
           role: "system",
           content: personaIdentityMsg,
@@ -1281,9 +1283,66 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
       debugEventBus.emitEvent?.("info", "ChatConfig", "model_call", { personaRoleKey, isPhysicalStage, isLabStage, temperature: tempForCall });
     } catch {}
 
+    // ── Persona-boundary annotation ──────────────────────────────────────
+    // The conversation history may contain assistant messages from a DIFFERENT
+    // persona (e.g., owner messages in a nurse conversation). Without annotation
+    // the LLM picks up the dominant tone of prior assistant messages and may
+    // respond in the wrong persona's voice. We fix this by:
+    //  1. Labeling assistant messages from other personas
+    //  2. Injecting persona-switch boundary markers
+    //  3. Using the OpenAI `name` field for multi-participant disambiguation
+    try {
+      let prevMsgPersona: string | null = null;
+      for (let i = 0; i < enhancedMessages.length; i++) {
+        const msg = enhancedMessages[i];
+        if (msg.role === "system") continue;
+
+        const msgPersona: string | undefined = (msg as any).personaRoleKey;
+
+        if (msg.role === "assistant" && msgPersona && msgPersona !== personaRoleKey) {
+          // Label assistant messages from OTHER personas so the LLM knows
+          // these were spoken by a different character.
+          const otherLabel = msgPersona === "owner" ? "OWNER PERSONA" : "NURSE PERSONA";
+          enhancedMessages[i] = {
+            ...msg,
+            content: `[${otherLabel} — NOT your current role]: ${msg.content}`,
+          };
+        }
+
+        // Detect persona switch in user messages and inject a boundary marker
+        if (msg.role === "user" && msgPersona && prevMsgPersona && msgPersona !== prevMsgPersona) {
+          const switchLabel = msgPersona === "owner" ? "Owner" : "Veterinary Nurse";
+          enhancedMessages.splice(i, 0, {
+            role: "system" as const,
+            content: `--- The student has now switched to the ${switchLabel} persona. Respond ONLY as the ${switchLabel} from this point forward. ---`,
+          });
+          i++; // skip the inserted system message
+        }
+
+        if (msgPersona) prevMsgPersona = msgPersona;
+      }
+    } catch (annotationErr) {
+      console.warn("Persona boundary annotation failed (non-blocking)", annotationErr);
+    }
+
+    // Build final messages array for OpenAI with `name` field for
+    // multi-participant disambiguation and strip extra properties.
+    const messagesForLLM = enhancedMessages.map((msg: any) => {
+      const base: Record<string, unknown> = { role: msg.role, content: msg.content };
+      // Add `name` field to help the LLM distinguish participants
+      if (msg.role === "assistant") {
+        const p = msg.personaRoleKey;
+        if (p === "owner") base.name = "pet_owner";
+        else if (p === "veterinary-nurse") base.name = "veterinary_nurse";
+      } else if (msg.role === "user") {
+        base.name = "student";
+      }
+      return base;
+    });
+
     let response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      messages: enhancedMessages as any[],
+      messages: messagesForLLM as any[],
       temperature: tempForCall,
       max_tokens: 1000,
     });
