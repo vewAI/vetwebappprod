@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Badge } from "@/components/ui/badge";
 import { AdminTour } from "@/components/admin/AdminTour";
 import { HelpTip } from "@/components/ui/help-tip";
+import { InstitutionDomainsModal } from "@/features/admin/components/InstitutionDomainsModal";
 
 type Institution = {
   id: string;
@@ -66,6 +67,9 @@ export default function UserManagementPage() {
   const [isInstDialogOpen, setIsInstDialogOpen] = useState(false);
   const [instName, setInstName] = useState("");
   const [instSubmitting, setInstSubmitting] = useState(false);
+  // Institution domains modal
+  const [domainsModalInstitution, setDomainsModalInstitution] = useState<Institution | null>(null);
+  const [isDomainsModalOpen, setIsDomainsModalOpen] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -555,6 +559,7 @@ export default function UserManagementPage() {
                   <tr>
                     <th className="p-3 font-medium">Name</th>
                     <th className="p-3 font-medium">Created</th>
+                    {userRole === "admin" && <th className="p-3 font-medium text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -562,11 +567,25 @@ export default function UserManagementPage() {
                     <tr key={inst.id} className="border-t hover:bg-muted/50">
                       <td className="p-3 font-medium">{inst.name}</td>
                       <td className="p-3">{new Date(inst.created_at).toLocaleDateString()}</td>
+                      {userRole === "admin" && (
+                        <td className="p-3 text-right">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setDomainsModalInstitution(inst);
+                              setIsDomainsModalOpen(true);
+                            }}
+                          >
+                            Manage domains
+                          </Button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                   {institutions.length === 0 && (
                     <tr>
-                      <td colSpan={2} className="p-8 text-center text-muted-foreground">No institutions found.</td>
+                      <td colSpan={userRole === "admin" ? 3 : 2} className="p-8 text-center text-muted-foreground">No institutions found.</td>
                     </tr>
                   )}
                 </tbody>
@@ -575,6 +594,15 @@ export default function UserManagementPage() {
           </CardContent>
         </Card>
       )}
+
+      <InstitutionDomainsModal
+        institution={domainsModalInstitution}
+        open={isDomainsModalOpen}
+        onOpenChange={(open) => {
+          setIsDomainsModalOpen(open);
+          if (!open) setDomainsModalInstitution(null);
+        }}
+      />
     </div>
   );
 }
