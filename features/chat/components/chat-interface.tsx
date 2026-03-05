@@ -50,6 +50,7 @@ import PersonaTabs from "@/features/chat/components/PersonaTabs";
 import PersonaButton from "@/features/chat/components/PersonaButton";
 import usePersonaDirectory from "@/features/chat/hooks/usePersonaDirectory";
 import useSpeechOrchestration, { type TtsPlaybackMeta } from "@/features/chat/hooks/useSpeechOrchestration";
+import useVoiceMode from "@/features/chat/hooks/useVoiceMode";
 import { estimateTtsDurationMs } from "@/features/chat/utils/ttsEstimate";
 import VoiceModeControl from "@/features/chat/components/VoiceModeControl";
 import { AudioDeviceSelector } from "@/features/speech/components/audio-device-selector";
@@ -3373,117 +3374,28 @@ export function ChatInterface({
   }, []);
 
   const { requestPermission } = useSpeechDevices();
-
-  const setVoiceModeEnabled = useCallback(
-    async (next: boolean) => {
-      // If enabling, ensure we have microphone permission first
-      if (next) {
-        try {
-          await requestPermission();
-        } catch (e) {
-          showMicToast("Microphone access required — please allow access", 4000);
-          console.warn("Microphone permission denied or failed", e);
-          // Do not proceed to start STT without permission
-          // Still toggle the UI state so the caller sees the intent
-          setVoiceMode(true);
-          return;
-        }
-      }
-
-      setVoiceMode((current) => {
-        if (current === next) {
-          return current;
-        }
-        if (next) {
-          // User enabled voice mode -> clear the "user toggled off" flag
-          userToggledOffRef.current = false;
-          reset();
-          setInput("");
-          baseInputRef.current = "";
-          // Also enable TTS (speaker) when voice mode is turned on
-          setTtsEnabledState(true);
-
-          // If STT is currently suppressed (TTS playback), do not call
-          // start() immediately — instead mark for resume so the STT
-          // service restarts when suppression clears.
-          if (isSuppressingSttRef.current) {
-            resumeListeningRef.current = true;
-            pushSttTrace({ event: "voiceMode_enabled", action: "deferred_resume_due_to_suppression" });
-          } else if (!isPlayingAudioRef.current) {
-            // small delay to allow permission prompt to finish processing
-            pushSttTrace({ event: "voiceMode_enabled", action: "scheduling_start" });
-            setTimeout(() => {
-              try {
-                pushSttTrace({ event: "voiceMode_start_attempt", canStart: canStartListening() });
-                // Force-clear any lingering suppression state before starting
-                isSuppressingSttRef.current = false;
-                try {
-                  forceClearSuppression("voice-mode-enabled");
-                } catch (e) {}
-                try {
-                  exitDeafMode();
-                } catch (e) {}
-                safeStart();
-              } catch (e) {
-                pushSttTrace({ event: "voiceMode_start_error", err: String(e) });
-              }
-            }, 150);
-          } else {
-            pushSttTrace({ event: "voiceMode_enabled", action: "blocked_audio_playing" });
-          }
-
-          // Show short toast indicating speak mode activated
-          try {
-            setTimepointToast({ title: "SPEAK - Voice Mode Activated", body: "" });
-            if (voiceModeToastTimerRef.current) {
-              window.clearTimeout(voiceModeToastTimerRef.current);
-              voiceModeToastTimerRef.current = null;
-            }
-            voiceModeToastTimerRef.current = window.setTimeout(() => {
-              hideTimepointToastWithFade(300);
-              voiceModeToastTimerRef.current = null;
-            }, 2000);
-          } catch (e) {
-            // ignore toast errors
-          }
-        } else {
-          // User disabled voice mode -> mark and stop any active capture
-          userToggledOffRef.current = true;
-          stopAndMaybeSend();
-          // Explicitly stop listening to ensure mic is off
-          stop();
-          setTtsEnabledState(false);
-
-          // Show short toast indicating write mode activated
-          try {
-            setTimepointToast({ title: "WRITE - Write Mode Activated", body: "" });
-            if (voiceModeToastTimerRef.current) {
-              window.clearTimeout(voiceModeToastTimerRef.current);
-              voiceModeToastTimerRef.current = null;
-            }
-            voiceModeToastTimerRef.current = window.setTimeout(() => {
-              hideTimepointToastWithFade(300);
-              voiceModeToastTimerRef.current = null;
-            }, 2000);
-          } catch (e) {
-            // ignore toast errors
-          }
-        }
-        return next;
-      });
-    },
-    [reset, start, stopAndMaybeSend, stop, setTtsEnabledState, requestPermission],
-  );
-
-  // Toggle voice mode (persistent listening until toggled off)
-  const [showModeControls, setShowModeControls] = useState<boolean>(true);
-  const toggleVoiceMode = useCallback(() => {
-    // Hide the SPEAK/WRITE and LEARN controls after user interaction
-    try {
-      setShowModeControls(false);
-    } catch (e) {}
-    setVoiceModeEnabled(!voiceModeRef.current);
-  }, [setVoiceModeEnabled]);
+  const { showModeControls, setShowModeControls, setVoiceModeEnabled, toggleVoiceMode } = useVoiceMode({
+    voiceMode,
+    setVoiceMode,
+    voiceModeRef,
+    requestPermission,
+    showMicToast,
+    userToggledOffRef,
+    reset,
+    setInput,
+    baseInputRef,
+    setTtsEnabledState,
+    isSuppressingSttRef,
+    resumeListeningRef,
+    isPlayingAudioRef,
+    pushSttTrace,
+    safeStart,
+    stopAndMaybeSend,
+    stop,
+    voiceModeToastTimerRef,
+    setTimepointToast,
+    hideTimepointToastWithFade,
+  });
 
   const togglePause = useCallback(async () => {
     if (isPaused) {
