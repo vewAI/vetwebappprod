@@ -8,6 +8,33 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+function resolveSpeakerLabel(msg: Message): string {
+  if (msg.role === "user") {
+    return "Student";
+  }
+
+  const display = typeof msg.displayRole === "string" ? msg.displayRole.trim() : "";
+  const persona = typeof msg.personaRoleKey === "string" ? msg.personaRoleKey.trim() : "";
+
+  if (persona === "veterinary-nurse") {
+    return display && !/nurse/i.test(display) ? `Veterinary Nurse (${display})` : "Veterinary Nurse";
+  }
+
+  if (persona === "owner") {
+    return display && !/owner|client/i.test(display) ? `Client (Owner: ${display})` : "Client (Owner)";
+  }
+
+  if (persona === "lab-technician") {
+    return display && !/lab|technician/i.test(display) ? `Laboratory Technician (${display})` : "Laboratory Technician";
+  }
+
+  if (display) {
+    return display;
+  }
+
+  return "Assistant";
+}
+
 export async function POST(request: Request) {
   try {
     const auth = await requireUser(request);
@@ -21,10 +48,10 @@ export async function POST(request: Request) {
 
     // Format messages into a context string for the feedback prompt
     const context = messages
-      .map((msg: Message) => {
-        const role =
-          msg.role === "user" ? "Student" : msg.displayRole || "Assistant";
-        return `${role}: ${msg.content}`;
+      .map((msg: Message, index: number) => {
+        const speaker = resolveSpeakerLabel(msg);
+        const turn = index + 1;
+        return `Turn ${turn} | ${speaker}: ${msg.content}`;
       })
       .join("\n\n");
 
@@ -89,9 +116,7 @@ export async function POST(request: Request) {
     // Generate feedback using OpenAI (wrapped in try/catch to allow fallback)
     let feedbackContent = "";
     try {
-      const promptToSend =
-        feedbackPrompt ??
-        `Please provide constructive feedback for the student's performance using the context below:\n\n${context}`;
+      const promptToSend = `${feedbackPrompt ?? `Please provide constructive feedback for the student's performance using the context below:\n\n${context}`}\n\nTRANSCRIPT ROLE INTERPRETATION (STRICT):\n- Treat "Student" as the learner.\n- Treat "Client (Owner...)" as owner/client persona turns.\n- Treat "Veterinary Nurse (...)" as nurse persona turns, NOT as owner/client.\n- Do not merge owner and nurse into a single "client" role when evaluating communication.`;
       const response = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [{ role: "system", content: promptToSend }],

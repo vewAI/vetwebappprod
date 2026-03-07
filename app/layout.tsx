@@ -6,7 +6,6 @@ import { ProtectedRoute } from "@/features/auth/components/protected-route";
 import { SpeechDeviceProvider } from "@/features/speech/context/audio-device-context";
 import { FontSizeProvider } from "@/features/navigation/context/FontSizeContext";
 import MobileSpeechControls from "@/features/speech/components/mobile-speech-controls";
-import { AdminDebugOverlay } from "@/features/admin/components/AdminDebugOverlay";
 import MainLayout from "@/components/layout/main-layout";
 
 const geistSans = GeistSans;
@@ -29,7 +28,6 @@ export default function RootLayout({
         <AuthProvider>
           <FontSizeProvider>
             <SpeechDeviceProvider>
-              <AdminDebugOverlay />
               {process.env.NEXT_PUBLIC_ENABLE_AUTH_PROTECTION === "true" ? (
                 <ProtectedRoute>
                   <MainLayout>{children}</MainLayout>

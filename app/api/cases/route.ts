@@ -114,11 +114,27 @@ export async function GET(req: Request) {
     return auth.error;
   }
   const { supabase } = auth;
+  const url = new URL(req.url);
+  const includeArchived = url.searchParams.get("includeArchived") === "true";
   const { data, error } = await supabase.from("cases").select("*");
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  return NextResponse.json(data);
+
+  const rows = Array.isArray(data) ? data : [];
+  if (includeArchived) {
+    return NextResponse.json(rows);
+  }
+
+  const activeRows = rows.filter((row) => {
+    const settings = row && typeof row === "object" ? (row as Record<string, unknown>).settings : null;
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+      return true;
+    }
+    return (settings as Record<string, unknown>).archived !== true;
+  });
+
+  return NextResponse.json(activeRows);
 }
 
 export async function POST(req: Request) {
@@ -317,15 +333,96 @@ export async function DELETE(req: Request) {
   if ("error" in auth) {
     return auth.error;
   }
-  const { supabase } = auth;
+  const { supabase, user } = auth;
   try {
     const url = new URL(req.url);
     const id = url.searchParams.get("id");
+    const mode = url.searchParams.get("mode");
     if (!id) {
       return NextResponse.json(
         { error: "id query param is required" },
         { status: 400 }
       );
+    }
+
+    // Restore mode: remove archive markers and keep the case available in admin lists.
+    if (mode === "restore") {
+      const { data: row, error: fetchError } = await supabase
+        .from("cases")
+        .select("settings")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (fetchError) {
+        return NextResponse.json({ error: fetchError.message }, { status: 500 });
+      }
+
+      if (!row) {
+        return NextResponse.json({ error: "Case not found" }, { status: 404 });
+      }
+
+      const baseSettings =
+        row && typeof row === "object" && row.settings && typeof row.settings === "object" && !Array.isArray(row.settings)
+          ? ({ ...(row.settings as Record<string, unknown>) } as Record<string, unknown>)
+          : {};
+
+      delete baseSettings.archived;
+      delete baseSettings.archivedAt;
+      delete baseSettings.archivedBy;
+
+      const { error: restoreError } = await supabase
+        .from("cases")
+        .update({ settings: baseSettings })
+        .eq("id", id);
+
+      if (restoreError) {
+        return NextResponse.json({ error: restoreError.message }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, restored: true });
+    }
+
+    // Soft archive mode: keep row but mark it archived and unpublished.
+    if (mode === "archive") {
+      const { data: row, error: fetchError } = await supabase
+        .from("cases")
+        .select("settings")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (fetchError) {
+        return NextResponse.json({ error: fetchError.message }, { status: 500 });
+      }
+
+      if (!row) {
+        return NextResponse.json({ error: "Case not found" }, { status: 404 });
+      }
+
+      const baseSettings =
+        row && typeof row === "object" && row.settings && typeof row.settings === "object" && !Array.isArray(row.settings)
+          ? (row.settings as Record<string, unknown>)
+          : {};
+
+      const nextSettings: Record<string, unknown> = {
+        ...baseSettings,
+        archived: true,
+        archivedAt: new Date().toISOString(),
+        archivedBy: user.id,
+      };
+
+      const { error: archiveError } = await supabase
+        .from("cases")
+        .update({
+          is_published: false,
+          settings: nextSettings,
+        })
+        .eq("id", id);
+
+      if (archiveError) {
+        return NextResponse.json({ error: archiveError.message }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, archived: true });
     }
 
     const { error } = await supabase.from("cases").delete().eq("id", id);

@@ -1,5 +1,4 @@
 import type { Message } from "@/features/chat/models/chat";
-import { debugEventBus } from "@/lib/debug-events-fixed";
 
 export type StageEvalResult = {
   status: "ready" | "insufficient";
@@ -33,10 +32,10 @@ export function emitStageEvaluation(caseId: string | null | undefined, stageInde
     };
 
     // Emit richer telemetry including counts for both user and assistant keyword matches
-    try { debugEventBus.emitEvent?.("info", "StageEval", "evaluation", { caseId, stageIndex, result, matchedUserKeywords, matchedAssistantKeywords }); } catch {}
+    
     return result;
   } catch (e) {
-    try { debugEventBus.emitEvent?.("error", "StageEval", "failed", { error: String(e) }); } catch {}
+    
     return { status: "insufficient", metrics: { userTurns: 0, assistantTurns: 0, matchedAssistantKeywords: 0 } };
   }
 }

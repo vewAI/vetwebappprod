@@ -104,6 +104,9 @@ async function getProfessorStudentAttemptsNeedingFeedback(professorId: string): 
 
 export default function HomePage() {
   const { user, role } = useAuth() as { user: any; role: Role };
+  const logoSrc = process.env.NEXT_PUBLIC_SUPABASE_URL
+    ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/img/logo.png`
+    : "/placeholder.svg";
   const [studentAttempts, setStudentAttempts] = useState<AttemptSummary[]>([]);
   const [professorAttempts, setProfessorAttempts] = useState<AttemptSummary[]>([]);
   const [latestCases, setLatestCases] = useState<Case[]>([]);
@@ -239,7 +242,7 @@ export default function HomePage() {
             <div className="relative h-28 w-32 self-end motion-safe:animate-in motion-safe:fade-in-50 motion-safe:slide-in-from-right-6 md:h-32 md:w-40 lg:h-40 lg:w-48">
               <div className="absolute inset-0 rounded-3xl bg-black/10 blur-2xl" />
               <div className="relative flex h-full w-full items-center justify-center rounded-3xl border border-white/10 bg-white/10 shadow-2xl backdrop-blur-md">
-                <Image src="/logo.png" alt="Veterinary OSCE Simulator logo" width={120} height={120} className="h-16 w-auto md:h-20" priority />
+                <Image src={logoSrc} alt="Veterinary OSCE Simulator logo" width={120} height={120} className="h-16 w-auto md:h-20" priority />
               </div>
             </div>
           </div>

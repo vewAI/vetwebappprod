@@ -2,7 +2,6 @@ import axios from "axios";
 import type { LabResultsPayload, Message } from "@/features/chat/models/chat";
 import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
 import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
-import { debugEventBus } from "@/lib/debug-events-fixed";
 
 /**
  * Service for handling chat API communication
@@ -33,12 +32,6 @@ export const chatService = {
   }> => {
     const startTime = Date.now();
     try {
-      debugEventBus.emitEvent("info", "ChatService", "Sending message to API", {
-        messageCount: messages.length,
-        stageIndex,
-        caseId,
-      });
-
       // Format messages for the API
       const apiMessages = messages.map((msg) => ({
         role: msg.role as "system" | "user" | "assistant",
@@ -75,7 +68,6 @@ export const chatService = {
           const response = await axios.post("/api/chat", payload, {
             headers: authHeaders,
           });
-          debugEventBus.emitEvent("success", "ChatService", `Response received in ${Date.now() - startTime}ms`);
           return response.data as {
             content: string;
             displayRole?: string;
@@ -108,10 +100,6 @@ export const chatService = {
       const msg = lastErr && (lastErr as any)?.message ? String((lastErr as any).message) : "Network Error";
       throw new Error(msg);
     } catch (error) {
-      debugEventBus.emitEvent("error", "ChatService", "Failed to send message", {
-        error: error instanceof Error ? error.message : String(error),
-        duration: Date.now() - startTime,
-      });
       console.error("Error getting chat response:", error);
       // Normalize to Error for callers
       if (error instanceof Error) throw error;

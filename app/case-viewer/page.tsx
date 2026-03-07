@@ -13,7 +13,6 @@ import CasePapersUploader from "@/features/cases/components/case-papers-uploader
 import { AvatarSelector } from "@/features/cases/components/avatar-selector";
 import { PersonaEditor, type PersonaConfig } from "@/features/personas/components/PersonaEditor";
 import { normalizeCaseMedia, type CaseMediaItem } from "@/features/cases/models/caseMedia";
-import { AdminDebugPanel } from "@/features/admin/components/AdminDebugPanel";
 import { TimeProgressionEditor } from "@/features/cases/components/case-time-progression-editor";
 import { getActiveStagesForCase, getStagesForCase } from "@/features/stages/services/stageService";
 import { resolveChatPersonaRoleKey } from "@/features/chat/utils/persona-guardrails";
@@ -57,6 +56,7 @@ export default function CaseViewerPage() {
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [editable, setEditable] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [formState, setFormState] = useState<CaseRecord | null>(null);
   const [expandedField, setExpandedField] = useState<CaseFieldKey | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -233,6 +233,9 @@ export default function CaseViewerPage() {
       try {
         const response = await axios.get("/api/cases", {
           headers: authHeaders,
+          params: {
+            includeArchived: showArchived ? "true" : undefined,
+          },
         });
         const data = response.data as unknown;
         const parsed = Array.isArray(data) ? (data as CaseRecord[]) : ([] as CaseRecord[]);
@@ -259,7 +262,7 @@ export default function CaseViewerPage() {
 
     if (authLoading) return;
     void fetchCases();
-  }, [authHeaders, authLoading, loadCaseIntoForm, loadPersonas]);
+  }, [authHeaders, authLoading, loadCaseIntoForm, loadPersonas, showArchived]);
 
   useEffect(() => {
     if (!cases.length) {
@@ -610,6 +613,15 @@ export default function CaseViewerPage() {
     return String(value);
   };
 
+  const isArchivedCase = (record: CaseRecord | null): boolean => {
+    if (!record) return false;
+    const settings = record["settings"];
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+      return false;
+    }
+    return (settings as Record<string, unknown>)["archived"] === true;
+  };
+
   const extraEntries = useMemo(() => {
     if (!formState) return [] as [string, unknown][];
     return Object.entries(formState).filter(([key]) => key !== "media" && !knownFieldKeys.has(key as CaseFieldKey));
@@ -630,6 +642,7 @@ export default function CaseViewerPage() {
 
   const imageUrl = formState ? formatValue(formState["image_url"]) : "";
   const caseIdValue = formState ? formatValue(formState["id"]).trim() : "";
+  const currentCaseArchived = isArchivedCase(formState);
 
   const baseFieldClasses =
     "w-full rounded-md border border-input px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background transition-colors";
@@ -667,6 +680,10 @@ export default function CaseViewerPage() {
           <Button onClick={handleNext} disabled={currentIndex === cases.length - 1}>
             Next →
           </Button>
+          <label className="ml-2 inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+            Show archived
+          </label>
         </div>
 
         <div className="flex items-center gap-2">
@@ -752,14 +769,72 @@ export default function CaseViewerPage() {
           >
             Save
           </Button>
+          {currentCaseArchived && (
+            <Button
+              variant="outline"
+              onClick={async () => {
+                const id = formatValue(formState["id"]);
+                if (!id) return;
+                if (!authHeaders) {
+                  alert("You must be signed in to restore cases.");
+                  return;
+                }
+                try {
+                  const resp = await axios.delete(`/api/cases?id=${encodeURIComponent(id)}&mode=restore`, {
+                    headers: authHeaders,
+                  });
+                  const respObj = (resp.data ?? {}) as Record<string, unknown>;
+                  if (!respObj.success) {
+                    throw new Error(typeof respObj.error === "string" ? respObj.error : "Restore failed");
+                  }
+
+                  setCases((prev) =>
+                    prev.map((entry) => {
+                      if (formatValue(entry["id"]) !== id) return entry;
+                      const settings =
+                        entry["settings"] && typeof entry["settings"] === "object" && !Array.isArray(entry["settings"])
+                          ? ({ ...(entry["settings"] as Record<string, unknown>) } as Record<string, unknown>)
+                          : {};
+                      delete settings.archived;
+                      delete settings.archivedAt;
+                      delete settings.archivedBy;
+                      return {
+                        ...entry,
+                        settings,
+                      };
+                    }),
+                  );
+                  setFormState((prev) => {
+                    if (!prev || formatValue(prev["id"]) !== id) return prev;
+                    const settings =
+                      prev["settings"] && typeof prev["settings"] === "object" && !Array.isArray(prev["settings"])
+                        ? ({ ...(prev["settings"] as Record<string, unknown>) } as Record<string, unknown>)
+                        : {};
+                    delete settings.archived;
+                    delete settings.archivedAt;
+                    delete settings.archivedBy;
+                    return {
+                      ...prev,
+                      settings,
+                    };
+                  });
+                } catch (err) {
+                  console.error("Error restoring case:", err);
+                  alert("Error restoring case. See console for details.");
+                }
+              }}
+            >
+              Restore
+            </Button>
+          )}
           <Button
-            className="bg-red-600 text-white hover:bg-red-700"
+            className="bg-amber-500 text-black hover:bg-amber-600"
             onClick={() => {
               setDeleteStep(1);
               setShowDeleteModal(true);
             }}
           >
-            Delete
+            Archive
           </Button>
         </div>
       </div>
@@ -1251,26 +1326,26 @@ export default function CaseViewerPage() {
         {/* Delete confirmation modal (two-step) */}
         {showDeleteModal && formState && (
           <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-            <div className={`rounded-lg shadow-lg max-w-md w-full p-6 ${deleteStep === 2 ? "bg-red-600 text-white" : "bg-white text-black"}`}>
+            <div className={`rounded-lg shadow-lg max-w-md w-full p-6 ${deleteStep === 2 ? "bg-amber-500 text-black" : "bg-white text-black"}`}>
               {deleteStep === 1 ? (
                 <>
-                  <h3 className="text-xl font-bold mb-2">Confirm Delete</h3>
+                  <h3 className="text-xl font-bold mb-2">Confirm Archive</h3>
                   <p className="mb-4">
-                    Are you sure you want to delete the case <strong>{formatValue(formState["id"])}</strong>?
+                    Are you sure you want to archive the case <strong>{formatValue(formState["id"])}</strong>?
                   </p>
                   <div className="flex justify-end gap-2">
                     <Button variant="ghost" onClick={() => setShowDeleteModal(false)}>
                       Cancel
                     </Button>
                     <Button className="bg-yellow-500 text-black hover:bg-yellow-600" onClick={() => setDeleteStep(2)}>
-                      Proceed to Delete
+                      Proceed to Archive
                     </Button>
                   </div>
                 </>
               ) : (
                 <>
                   <h3 className="text-xl font-bold mb-2">Final Confirmation</h3>
-                  <p className="mb-4">This action is irreversible. Deleting the case will remove it from the system permanently.</p>
+                  <p className="mb-4">This case will be archived and removed from the active list. You can restore it later from the database if needed.</p>
                   <div className="flex gap-2">
                     <Button
                       variant="ghost"
@@ -1286,12 +1361,12 @@ export default function CaseViewerPage() {
                         const id = formatValue(formState["id"]);
                         if (!id) return;
                         if (!authHeaders) {
-                          alert("You must be signed in to delete cases.");
+                          alert("You must be signed in to archive cases.");
                           return;
                         }
                         try {
                           setIsDeleting(true);
-                          const resp = await axios.delete(`/api/cases?id=${encodeURIComponent(id)}`, {
+                          const resp = await axios.delete(`/api/cases?id=${encodeURIComponent(id)}&mode=archive`, {
                             headers: authHeaders,
                           });
                           const respData = resp.data as unknown;
@@ -1307,18 +1382,18 @@ export default function CaseViewerPage() {
                             setExpandedField(null);
                           } else {
                             const errMsg = typeof respObj["error"] === "string" ? respObj["error"] : undefined;
-                            throw new Error(errMsg ?? "Delete failed");
+                            throw new Error(errMsg ?? "Archive failed");
                           }
                         } catch (err) {
-                          console.error("Error deleting case:", err);
-                          alert("Error deleting case. See console for details.");
+                          console.error("Error archiving case:", err);
+                          alert("Error archiving case. See console for details.");
                         } finally {
                           setIsDeleting(false);
                         }
                       }}
                       disabled={isDeleting}
                     >
-                      {isDeleting ? "Deleting..." : "Delete Case"}
+                      {isDeleting ? "Archiving..." : "Archive Case"}
                     </Button>
                   </div>
                 </>
@@ -1327,8 +1402,6 @@ export default function CaseViewerPage() {
           </div>
         )}
       </form>
-      {/* Inline admin debug panel (visible only to admins) */}
-      <AdminDebugPanel />
     </div>
   );
 }

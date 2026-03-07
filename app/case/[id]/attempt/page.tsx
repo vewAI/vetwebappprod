@@ -437,6 +437,7 @@ export default function CaseChatPage() {
           caseMedia={caseItem.media}
           followupDay={followupDay}
           species={caseItem.species}
+          isAttemptCompleting={Boolean(isGeneratingFeedback || showCompletionDialog)}
         />
       </div>
 

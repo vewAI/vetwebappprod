@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/app/api/_lib/auth";
 import { supabase } from "@/lib/supabase";
-import { debugEventBus } from "@/lib/debug-events-fixed";
 
 export async function POST(req: Request) {
   const auth = await requireUser(req);
@@ -26,7 +25,6 @@ export async function POST(req: Request) {
       .single();
 
     if (attemptError || !attemptData) {
-      debugEventBus.emitEvent("error", "api/followups", "Attempt not found for followup creation", { attemptId, attemptError });
       return NextResponse.json({ error: "attempt_not_found" }, { status: 404 });
     }
 
@@ -41,12 +39,8 @@ export async function POST(req: Request) {
     }).select().single();
 
     if (error) {
-      debugEventBus.emitEvent("error", "api/followups", "Failed to create followup", { error });
       return NextResponse.json({ error: "insert_failed", detail: String(error) }, { status: 500 });
     }
-
-    debugEventBus.emitEvent("info", "api/followups", "Followup created", { followupId: data.id, attemptId, followupDay });
-
     return NextResponse.json({ success: true, followup: data });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

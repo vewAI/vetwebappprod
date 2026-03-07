@@ -112,7 +112,7 @@ export function ProfessorDashboard() {
                       </p>
                     </div>
                     <Button variant="outline" size="sm" asChild>
-                      <Link href={`/case/${item.case_id}`}>View</Link>
+                      <Link href={`/case/${item.case_id}/instructions`}>View</Link>
                     </Button>
                   </li>
                 ))}

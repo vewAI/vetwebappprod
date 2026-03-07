@@ -176,6 +176,10 @@ function clone(items: CaseMediaItem[]): CaseMediaItem[] {
   }));
 }
 
+function getEditorItemKey(item: Pick<CaseMediaItem, "id">, index: number): string {
+  return `${item.id}::${index}`;
+}
+
 export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: CaseMediaEditorProps) {
   const [uploadState, setUploadState] = useState<UploadState>({ uploadingIndex: null, error: null });
   const [advancedOpen, setAdvancedOpen] = useState<Record<string, boolean>>({});
@@ -233,12 +237,14 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
   const removeItem = (index: number) => {
     if (readOnly) return;
     const next = clone(items);
-    const [removed] = next.splice(index, 1);
+    const removed = next[index];
+    const removedKey = removed ? getEditorItemKey(removed, index) : null;
+    next.splice(index, 1);
     if (removed) {
       setAdvancedOpen((prev) => {
-        if (!prev[removed.id]) return prev;
+        if (!removedKey || !prev[removedKey]) return prev;
         const nextState = { ...prev };
-        delete nextState[removed.id];
+        delete nextState[removedKey];
         return nextState;
       });
     }
@@ -308,11 +314,12 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
         <div className="space-y-4">
           {items.map((item, index) => {
             const stage = ensureStageRef(item.stage);
+            const editorKey = getEditorItemKey(item, index);
             const advancedHasValue = Boolean(stage.stageId || stage.roleKey || item.mimeType || item.durationMs || item.loop || item.thumbnailUrl);
-            const showAdvanced = advancedOpen[item.id] ?? advancedHasValue;
+            const showAdvanced = advancedOpen[editorKey] ?? advancedHasValue;
 
             return (
-              <div key={item.id} className="space-y-4 rounded border border-border p-4">
+              <div key={editorKey} className="space-y-4 rounded border border-border p-4">
                 <div className="flex items-center justify-between">
                   <div className="font-medium">Item {index + 1}</div>
                   {!readOnly && (
@@ -335,7 +342,7 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                     <div className="space-y-3">
                       <Label htmlFor={`media-type-${item.id}`}>Type</Label>
                       <select
-                        id={`media-type-${item.id}`}
+                        id={`media-type-${editorKey}`}
                         className="w-full rounded border border-input bg-card text-card-foreground px-2 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-60"
                         value={item.type}
                         onChange={(event) =>
@@ -375,7 +382,7 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                       <div className="flex flex-col gap-2">
                         <Label htmlFor={`media-trigger-${item.id}`}>Display Mode</Label>
                         <select
-                          id={`media-trigger-${item.id}`}
+                          id={`media-trigger-${editorKey}`}
                           className="w-full rounded border border-input bg-card text-card-foreground px-2 py-1 text-sm"
                           value={item.trigger ?? "on_demand"}
                           onChange={(e) =>
@@ -414,9 +421,9 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                     </div>
 
                     <div className="space-y-3">
-                      <Label htmlFor={`media-stage-key-${item.id}`}>Stage Assignment</Label>
+                      <Label htmlFor={`media-stage-key-${editorKey}`}>Stage Assignment</Label>
                       <select
-                        id={`media-stage-key-${item.id}`}
+                        id={`media-stage-key-${editorKey}`}
                         className="w-full rounded border border-input bg-card text-card-foreground px-2 py-1 text-sm"
                         value={stage.stageId ?? ""}
                         disabled={readOnly}
@@ -459,9 +466,9 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                   </div>
 
                   <div className="space-y-3">
-                    <Label htmlFor={`media-caption-${item.id}`}>Caption</Label>
+                    <Label htmlFor={`media-caption-${editorKey}`}>Caption</Label>
                     <Textarea
-                      id={`media-caption-${item.id}`}
+                      id={`media-caption-${editorKey}`}
                       value={item.caption ?? ""}
                       readOnly={readOnly}
                       onChange={(event) =>
@@ -475,9 +482,9 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                   </div>
 
                   <div className="space-y-3">
-                    <Label htmlFor={`media-transcript-${item.id}`}>Transcript / accessibility notes</Label>
+                    <Label htmlFor={`media-transcript-${editorKey}`}>Transcript / accessibility notes</Label>
                     <Textarea
-                      id={`media-transcript-${item.id}`}
+                      id={`media-transcript-${editorKey}`}
                       value={item.transcript ?? ""}
                       readOnly={readOnly}
                       onChange={(event) =>
@@ -491,7 +498,7 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                   </div>
 
                   <div className="flex justify-end">
-                    <Button type="button" variant="ghost" size="sm" onClick={() => toggleAdvanced(item.id)} disabled={readOnly && !advancedHasValue}>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => toggleAdvanced(editorKey)} disabled={readOnly && !advancedHasValue}>
                       {showAdvanced ? "Hide advanced fields" : "Show advanced fields"}
                     </Button>
                   </div>
@@ -500,9 +507,9 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                     <div className="space-y-4 border-t border-border/40 pt-3">
                       <div className="grid gap-3 lg:grid-cols-2">
                         <div className="space-y-3">
-                          <Label htmlFor={`media-stage-id-${item.id}`}>Stage id (optional)</Label>
+                          <Label htmlFor={`media-stage-id-${editorKey}`}>Stage id (optional)</Label>
                           <Input
-                            id={`media-stage-id-${item.id}`}
+                            id={`media-stage-id-${editorKey}`}
                             value={stage.stageId ?? ""}
                             readOnly={readOnly}
                             onChange={(event) =>
@@ -516,9 +523,9 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                             }
                           />
 
-                          <Label htmlFor={`media-role-key-${item.id}`}>Persona role key</Label>
+                          <Label htmlFor={`media-role-key-${editorKey}`}>Persona role key</Label>
                           <Input
-                            id={`media-role-key-${item.id}`}
+                            id={`media-role-key-${editorKey}`}
                             value={stage.roleKey ?? ""}
                             readOnly={readOnly}
                             onChange={(event) =>
@@ -532,9 +539,9 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                             }
                           />
 
-                          <Label htmlFor={`media-mime-${item.id}`}>MIME type</Label>
+                          <Label htmlFor={`media-mime-${editorKey}`}>MIME type</Label>
                           <Input
-                            id={`media-mime-${item.id}`}
+                            id={`media-mime-${editorKey}`}
                             value={item.mimeType ?? ""}
                             readOnly={readOnly}
                             onChange={(event) =>
@@ -548,9 +555,9 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                         </div>
 
                         <div className="space-y-3">
-                          <Label htmlFor={`media-duration-${item.id}`}>Duration (ms)</Label>
+                          <Label htmlFor={`media-duration-${editorKey}`}>Duration (ms)</Label>
                           <Input
-                            id={`media-duration-${item.id}`}
+                            id={`media-duration-${editorKey}`}
                             type="number"
                             min={0}
                             value={item.durationMs ?? ""}
@@ -565,7 +572,7 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
 
                           <div className="flex items-center gap-2">
                             <Checkbox
-                              id={`media-loop-${item.id}`}
+                              id={`media-loop-${editorKey}`}
                               checked={Boolean(item.loop)}
                               onCheckedChange={(checked) =>
                                 updateItem(index, (current) => ({
@@ -575,15 +582,15 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                               }
                               disabled={readOnly}
                             />
-                            <Label htmlFor={`media-loop-${item.id}`}>Loop playback</Label>
+                            <Label htmlFor={`media-loop-${editorKey}`}>Loop playback</Label>
                           </div>
 
-                          <Label htmlFor={`media-thumbnail-${item.id}`}>Thumbnail / waveform URL</Label>
+                          <Label htmlFor={`media-thumbnail-${editorKey}`}>Thumbnail / waveform URL</Label>
                           {item.thumbnailUrl ? (
                             <img src={item.thumbnailUrl} alt="Thumbnail preview" className="h-20 w-full rounded object-cover" />
                           ) : null}
                           <Input
-                            id={`media-thumbnail-${item.id}`}
+                            id={`media-thumbnail-${editorKey}`}
                             value={item.thumbnailUrl ?? ""}
                             readOnly={readOnly}
                             onChange={(event) =>

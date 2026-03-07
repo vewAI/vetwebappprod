@@ -108,25 +108,11 @@ export function canStartListening() {
   }
 }
 
-import { debugEventBus } from "../../../lib/debug-events-fixed";
-
 export function requestStart(caller?: string) {
   try {
     // Expose a single check entry so callers don't directly bypass suppression
-    const ok = canStartListening();
-    try {
-      (debugEventBus as any)?.emitEvent?.(
-        "info",
-        "speechService",
-        "requestStart",
-        {
-          caller: caller ?? null,
-          allowed: ok,
-          ts: Date.now(),
-        },
-      );
-    } catch {}
-    return ok;
+    void caller;
+    return canStartListening();
   } catch {
     return false;
   }

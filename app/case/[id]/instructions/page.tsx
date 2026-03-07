@@ -107,7 +107,7 @@ export default function CaseInstructionsPage() {
     const inProgress = attempts.filter((a) => a.completionStatus === "in_progress");
     if (inProgress.length === 0) {
       // nothing to clear; just navigate to start
-      router.push(`/${id}`);
+      router.push(`/case/${id}/attempt`);
       return;
     }
 
@@ -129,7 +129,7 @@ export default function CaseInstructionsPage() {
         }
       }
       // Navigate to case page to initialize a fresh attempt
-      router.push(`/${id}`);
+      router.push(`/case/${id}/attempt`);
     } finally {
       setIsStartingOver(false);
     }

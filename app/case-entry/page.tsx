@@ -14,8 +14,6 @@ import {
   type CaseFieldKey,
   getFieldMeta,
 } from "@/features/cases/fieldMeta";
-import { AdminDebugPanel } from "@/features/admin/components/AdminDebugPanel";
-import { debugEventBus } from "@/lib/debug-events-fixed";
 import { CaseMediaEditor, uploadFile } from "@/features/cases/components/case-media-editor";
 import { TimeProgressionEditor } from "@/features/cases/components/case-time-progression-editor";
 import { AvatarSelector } from "@/features/cases/components/avatar-selector";
@@ -68,39 +66,17 @@ export default function CaseEntryForm() {
       if (mediaItems.length > 0) {
         body.references = mediaItems.map((m) => ({ url: m.url, caption: m.caption ?? null }));
       }
-      console.log("API Request Body (generate-random):", body);
       const response = await axios.post("/api/cases/generate-random", body, { headers });
       const data = response.data as any;
       if (data && !data.error) {
         setForm((prev) => ({ ...prev, ...(data as any) }));
         const msg = body.references ? "Case successfully generated from uploaded papers!" : "Random case generated from expert knowledge!";
         setSuccess(msg);
-        const sourceForDebug = body.references ? "uploaded references" : "expert knowledge";
-        try {
-          debugEventBus.emitEvent(
-            "info",
-            "cases/generate-random",
-            `Case generated from ${sourceForDebug}`,
-            { title: data.title ?? null }
-          );
-        } catch (e) {
-          // ignore client-side emit failures
-        }
       } else {
         throw new Error(data?.error || "No data returned");
       }
     } catch (err) {
       console.error("Remote generation failed", err);
-      try {
-        debugEventBus.emitEvent(
-          "error",
-          "cases/generate-random",
-          "Case generation failed",
-          { error: String((err as any)?.message ?? err) }
-        );
-      } catch (e) {
-        // ignore
-      }
       setError(
         "Unable to generate case from expert knowledge. Please try again later. No local fallback is used."
       );
@@ -546,8 +522,6 @@ Remain collaborative, use everyday language, and avoid offering your own medical
         {success && <div className="text-green-600 mt-2">{success}</div>}
         {error && <div className="text-red-600 mt-2">{error}</div>}
       </form>
-      {/* Inline admin debug panel (visible only to admins) */}
-      <AdminDebugPanel />
       {/* Modal for expanded field */}
       {expandedField && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">

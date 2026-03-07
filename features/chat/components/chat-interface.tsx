@@ -70,7 +70,6 @@ import {
   type StageReadinessIntent,
 } from "@/features/chat/utils/stage-readiness-intent";
 import { dispatchStageIntentEvent } from "@/features/chat/models/stage-intent-events";
-import { debugEventBus } from "@/lib/debug-events-fixed";
 import { dispatchStageReadinessEvent } from "@/features/chat/models/stage-readiness-events";
 import { useCaseTimepoints } from "@/features/cases/hooks/useCaseTimepoints";
 import type { CaseTimepoint } from "@/features/cases/models/caseTimepoint";
@@ -207,6 +206,7 @@ type ChatInterfaceProps = {
   caseMedia?: CaseMediaItem[];
   followupDay?: number;
   species?: string; // Case species for species-aware STT corrections (e.g., only 'other' -> 'udder' for bovine)
+  isAttemptCompleting?: boolean;
 };
 
 type PersonaDirectoryEntry = {
@@ -233,6 +233,7 @@ export function ChatInterface({
   caseMedia = [],
   followupDay = 1,
   species,
+  isAttemptCompleting = false,
 }: ChatInterfaceProps) {
   // State for timepoint progression dialog
   const [showTimepointDialog, setShowTimepointDialog] = useState(false);
@@ -1030,11 +1031,9 @@ export function ChatInterface({
     setDebounceMs,
   } = useSTT(
     (finalText: string) => {
-      console.debug("STT onFinal fired, voiceMode=", voiceMode, "finalText=", finalText);
       // DEAF MODE CHECK: If we're in deaf mode, completely ignore all results
       // This is a client-side backup in case the service-level check missed it
       if (isInDeafMode()) {
-        console.debug("STT onFinal ignored - in deaf mode (TTS playing or recently ended)");
         lastFinalHandledRef.current = finalText;
         return;
       }
@@ -1048,7 +1047,6 @@ export function ChatInterface({
 
       // Also check isPlayingAudioRef directly - belt and suspenders
       if (isPlayingAudioRef.current) {
-        console.debug("STT onFinal ignored - audio is playing");
         lastFinalHandledRef.current = finalText;
         return;
       }
@@ -1074,12 +1072,9 @@ export function ChatInterface({
 
             // Check for exact match
             if (normFinal && normAssistant && normFinal === normAssistant && recentTts) {
-              console.debug("STT onFinal ignored - exact TTS echo detected");
               lastFinalHandledRef.current = trimmed;
               // helpful UX hint when auto-send would have been triggered but was suppressed by TTS echo
-              try {
-                debugEventBus.emitEvent?.("info", "AutoSend", "blocked_echo", { text: trimmed });
-              } catch {}
+              
               return;
             }
 
@@ -1096,7 +1091,6 @@ export function ChatInterface({
                 }
                 const matchRatio = matchCount / finalWords.length;
                 if (matchRatio > 0.8) {
-                  console.debug("STT onFinal ignored - fuzzy TTS echo detected", { matchRatio });
                   lastFinalHandledRef.current = trimmed;
                   return;
                 }
@@ -1177,16 +1171,12 @@ export function ChatInterface({
               // This prevents the mic from "auto-sending" captured TTS audio
               // But schedule a retry so the message isn't lost
               if (isInDeafMode()) {
-                console.debug("Auto-send DELAYED: in deaf mode (TTS playing or recently ended)", { source: "final-auto" });
-                try {
-                  debugEventBus.emitEvent?.("info", "AutoSend", "delayed_deaf_mode", { source: "final-auto" });
-                } catch {}
+                
                 // Schedule a retry in 1.5s to send the message after deaf mode clears
                 autoSendFinalTimerRef.current = window.setTimeout(() => {
                   autoSendFinalTimerRef.current = null;
                   const textToRetry = baseInputRef.current?.trim() || "";
                   if (textToRetry && voiceModeRef.current && !isPlayingAudioRef.current && !isInDeafMode()) {
-                    console.debug("Auto-send RETRY after deaf mode cleared", { text: textToRetry });
                     try {
                       void triggerAutoSend(textToRetry);
                     } catch (e) {
@@ -1211,12 +1201,6 @@ export function ChatInterface({
               // Nurse accepts any length; owner requires 2 words normally, 1 in sensitive stages.
               const minWordsWhenSuppressed = isTalkingToNurse ? 1 : isSensitiveStage ? 1 : 2;
               if (noiseSuppressionRef.current && wordCount < minWordsWhenSuppressed) {
-                console.debug("Auto-send skipped: too short during noise suppression", {
-                  wordCount,
-                  minWordsWhenSuppressed,
-                  text: textToSend,
-                  activePersona,
-                });
                 return;
               }
 
@@ -1261,14 +1245,7 @@ export function ChatInterface({
                 "those",
               ];
               if (incompleteBlockers.includes(finalLastWord)) {
-                console.debug("Auto-send BLOCKED: message ends with incomplete marker", { finalLastWord, text: textToSend, source: "final-auto" });
-                try {
-                  debugEventBus.emitEvent?.("info", "AutoSend", "blocked_incomplete_marker", {
-                    finalLastWord,
-                    text: textToSend,
-                    source: "final-auto",
-                  });
-                } catch {}
+                
                 // show a brief hint so users understand why auto-send didn't fire
                 try {
                   setTimepointToast({ title: "Auto-send blocked", body: "Message looks incomplete — tap Send to send it anyway." });
@@ -1276,8 +1253,6 @@ export function ChatInterface({
                 } catch {}
                 return;
               }
-
-              console.debug("Auto-send (final) firing with text:", baseInputRef.current);
               void triggerAutoSend(baseInputRef.current);
             } catch (e) {
               console.error("Failed to auto-send final transcript:", e);
@@ -1344,7 +1319,6 @@ export function ChatInterface({
       const isTransient = transientErrors.some((e) => sttError.toLowerCase().includes(e));
 
       if (isTransient) {
-        console.debug("STT transient error (not showing toast):", sttError);
         // Still try to restart for transient errors, but silently
         if (sttErrorRestartTimerRef.current) {
           window.clearTimeout(sttErrorRestartTimerRef.current);
@@ -1365,7 +1339,6 @@ export function ChatInterface({
       if (sttError.includes("not-allowed")) {
         const suppressUntil = sttBlockedSuppressUntilRef.current;
         if (suppressUntil && now < suppressUntil) {
-          console.debug("Suppressing immediate 'Microphone Blocked' toast until", suppressUntil);
           if (sttBlockedDelayedToastTimerRef.current) {
             window.clearTimeout(sttBlockedDelayedToastTimerRef.current);
             sttBlockedDelayedToastTimerRef.current = null;
@@ -1399,53 +1372,7 @@ export function ChatInterface({
     }
   }, [sttError]);
 
-  // Debug tracing: last LLM payload and response for admin debug window
-  const [lastLlmPayload, setLastLlmPayload] = useState<any | null>(null);
-  const [lastLlmResponse, setLastLlmResponse] = useState<any | null>(null);
-  const [showDebugPanel, setShowDebugPanel] = useState(false);
-  // Admin-only debug toast controls
-  const [debugEnabled, setDebugEnabled] = useState<boolean>(() => {
-    try {
-      return typeof window !== "undefined" && window.localStorage.getItem("vw_debug") === "true";
-    } catch (e) {
-      return false;
-    }
-  });
-  const [debugToastVisible, setDebugToastVisible] = useState(false);
-  const [debugToastText, setDebugToastText] = useState<string | null>(null);
-  const debugToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Show a 10s debug toast when last LLM payload/response updates and
-  // debug mode is enabled for an admin user.
-  useEffect(() => {
-    try {
-      const isAdmin = role === "admin";
-      if (!isAdmin || !debugEnabled) return;
-      if (!lastLlmPayload && !lastLlmResponse) return;
-
-      // Build a compact display string
-      const prettyPayload = Array.isArray(lastLlmPayload)
-        ? lastLlmPayload.map((p: any) => `${p.role}: ${String(p.content).slice(0, 240)}`).join(" \n")
-        : String(JSON.stringify(lastLlmPayload || "")).slice(0, 800);
-      const prettyResp = String(JSON.stringify(lastLlmResponse || "")).slice(0, 800);
-      const text = `LLM Prompt:\n${prettyPayload}\n\nLLM Response:\n${prettyResp}`;
-      setDebugToastText(text);
-      setDebugToastVisible(true);
-
-      // Clear any previous timer
-      if (debugToastTimerRef.current) {
-        window.clearTimeout(debugToastTimerRef.current);
-        debugToastTimerRef.current = null;
-      }
-      debugToastTimerRef.current = setTimeout(() => {
-        setDebugToastVisible(false);
-        setDebugToastText(null);
-        debugToastTimerRef.current = null;
-      }, 10000);
-    } catch (e) {
-      // ignore
-    }
-  }, [lastLlmPayload, lastLlmResponse, debugEnabled, role]);
+  // Removed temporary prompt/response debug overlays.
 
   // Noise detection effect - monitors ambient sound when voice mode is on
   // Placed after useSTT so that isListening is available
@@ -1712,9 +1639,7 @@ export function ChatInterface({
             const stage = stages?.[currentStageIndex];
             const stageTitle = (stage?.title ?? "").toLowerCase();
             // Emit event for QA tracing
-            try {
-              debugEventBus.emitEvent?.("info", "StageIntent", "persona-ui-switch", { stageIndex: currentStageIndex, stageTitle });
-            } catch {}
+            
 
             const attemptAdvanceTo = async (predicate: (label: string) => boolean) => {
               for (let i = 0; i < 6; i++) {
@@ -1730,16 +1655,12 @@ export function ChatInterface({
             };
 
             if (/history/.test(stageTitle) || /history taking/.test(stageTitle)) {
-              try {
-                debugEventBus.emitEvent?.("info", "StageIntent", "persona-ui-trigger-advance", { from: stageTitle, to: "physical examination" });
-              } catch {}
+              
               void attemptAdvanceTo((l) => /physical/.test(l));
             }
 
             if (/diagnostic/.test(stageTitle) || /diagnostic planning/.test(stageTitle)) {
-              try {
-                debugEventBus.emitEvent?.("info", "StageIntent", "persona-ui-trigger-advance", { from: stageTitle, to: "laboratory" });
-              } catch {}
+              
               void attemptAdvanceTo((l) => /laboratory|lab|tests/.test(l));
             }
           } catch (e) {
@@ -1877,60 +1798,37 @@ export function ChatInterface({
     return undefined;
   };
 
-  // Lightweight STT trace buffer for debugging STT/TTS start/resume stalls.
+  // No-op trace hook retained for compatibility with voice helpers.
   const pushSttTrace = useCallback((entry: Record<string, any>) => {
-    try {
-      const now = Date.now();
-      const e = { ts: now, ...entry };
-      console.debug("[STT TRACE]", e);
-      // keep an in-page buffer for easy extraction during repros
-      if (typeof window !== "undefined") {
-        const w = window as Window & {
-          __stt_trace?: Array<Record<string, unknown>>;
-        };
-        w.__stt_trace = w.__stt_trace || [];
-        w.__stt_trace.push(e);
-      }
-      try {
-        debugEventBus?.emitEvent?.("info", "STT_TRACE", "trace_entry", e);
-      } catch {}
-    } catch (err) {
-      // ignore
-    }
+    void entry;
   }, []);
 
   // Safe wrapper to start STT only when conditions allow
   const safeStart = useCallback(() => {
     try {
       if (isPlayingAudioRef.current) {
-        console.debug("safeStart blocked: audio playing");
         pushSttTrace({ event: "safeStart_blocked", reason: "audio_playing" });
         return;
       }
       if (isSuppressingSttRef.current) {
-        console.debug("safeStart blocked: STT suppressed");
         pushSttTrace({ event: "safeStart_blocked", reason: "stt_suppressed" });
         return;
       }
       if (tempVoiceDisabledRef.current) {
-        console.debug("safeStart blocked: temp voice disabled");
         pushSttTrace({ event: "safeStart_blocked", reason: "temp_voice_disabled" });
         return;
       }
       if (userToggledOffRef.current) {
-        console.debug("safeStart blocked: user toggled mic off");
         pushSttTrace({ event: "safeStart_blocked", reason: "user_toggled_off" });
         return;
       }
       try {
         if (!canStartListening()) {
-          console.debug("safeStart blocked: canStartListening returned false");
           pushSttTrace({ event: "safeStart_blocked", reason: "canStartListening_false" });
           return;
         }
       } catch (e) {
         if (isSttSuppressed() || isInDeafMode()) {
-          console.debug("safeStart blocked: service-level suppression or deaf mode");
           pushSttTrace({ event: "safeStart_blocked", reason: "service_suppressed_or_deaf" });
           return;
         }
@@ -1940,7 +1838,6 @@ export function ChatInterface({
         start();
         pushSttTrace({ event: "safeStart_started" });
       } catch (e) {
-        console.debug("safeStart start() threw", e);
         pushSttTrace({ event: "safeStart_start_error", err: String(e) });
       }
     } catch (e) {
@@ -1954,12 +1851,10 @@ export function ChatInterface({
     (initialDelay = 0) => {
       // schedule the initial attempt after the given delay
       window.setTimeout(() => {
-        console.debug("attemptStartListening scheduled", { initialDelay });
         // If STT is currently suppressed (e.g., we're about to play TTS),
         // do not attempt to start listening. This avoids races where the
         // mic is restarted while assistant audio is playing and picked up.
         if (isSuppressingSttRef.current) {
-          console.debug("attemptStartListening aborted: STT is suppressed (TTS active)");
           return;
         }
         // If voice mode is temporarily disabled for an assistant intro or
@@ -1968,15 +1863,12 @@ export function ChatInterface({
         // STT suppression flag and prevents retries from re-enabling the mic
         // while we are guaranteeing the mic stays off for TTS.
         if (tempVoiceDisabledRef.current) {
-          console.debug("attemptStartListening aborted: temp voice disable active (waiting for TTS)");
           return;
         }
         if (userToggledOffRef.current) {
-          console.debug("attemptStartListening aborted: user toggled mic off");
           return;
         }
         if (!voiceModeRef.current) {
-          console.debug("attemptStartListening aborted: voiceMode disabled");
           return;
         }
 
@@ -1986,47 +1878,36 @@ export function ChatInterface({
           // Respect a global suppression window to avoid automatically starting
           // STT immediately after UI interactions like persona switch.
           if (Date.now() < suppressAutoStartUntilRef.current) {
-            console.debug("attemptStartListening suppressed due to recent UI interaction", {
-              until: suppressAutoStartUntilRef.current,
-              now: Date.now(),
-            });
             return;
           }
           if (userToggledOffRef.current || !voiceModeRef.current) {
-            console.debug("attemptStartListening stopping retries", { attempts });
             return;
           }
           // Central check: ask service whether we can start now
           try {
             if (!canStartListening()) {
-              console.debug("attemptStartListening aborted: service-level suppression or deaf mode active");
               pushSttTrace({ event: "attemptStart_aborted", reason: "canStartListening_false" });
               return;
             }
           } catch (e) {
             // If helper fails for any reason, fall back to old guards
             if (isSttSuppressed() || isInDeafMode()) {
-              console.debug("attemptStartListening aborted: fallback suppression/deaf mode guard");
               pushSttTrace({ event: "attemptStart_aborted", reason: "service_suppressed_or_deaf" });
               return;
             }
           }
           try {
-            console.debug("attemptStartListening try", { attempt: attempts + 1 });
             pushSttTrace({ event: "attemptStart_try", attempt: attempts + 1 });
             safeStart();
           } catch (e) {
-            console.debug("attemptStartListening start() threw", e);
             pushSttTrace({ event: "attemptStart_error", err: String(e) });
           }
           attempts += 1;
           if (attempts < maxAttempts) {
             window.setTimeout(() => {
               if (!isListening && !userToggledOffRef.current && voiceModeRef.current) tryOnce();
-              else console.debug("attemptStartListening stopping further retries: isListening or toggled off", { isListening: !!isListening });
             }, 700);
           } else {
-            console.debug("attemptStartListening reached max attempts", { attempts });
             pushSttTrace({ event: "attemptStart_max_reached", attempts });
           }
         };
@@ -2044,6 +1925,43 @@ export function ChatInterface({
   useEffect(() => {
     resetRef.current = reset;
   }, [reset]);
+
+  // Hard-stop all speech activity when the attempt is being completed and
+  // feedback generation has started. Once completion begins, no STT/TTS
+  // should continue running.
+  useEffect(() => {
+    if (!isAttemptCompleting) return;
+
+    try {
+      userToggledOffRef.current = true;
+      setGlobalPaused(true);
+      setIsPaused(true);
+    } catch {}
+
+    try {
+      stopActiveTtsPlayback();
+    } catch {}
+
+    try {
+      cancelRef.current?.();
+    } catch {}
+
+    try {
+      setTtsEnabledState(false);
+      setVoiceMode(false);
+    } catch {}
+
+    try {
+      stopRef.current?.();
+      resetRef.current?.();
+    } catch {}
+
+    try {
+      forceClearSuppression();
+      setSttSuppressed(false, true, "attempt-complete");
+      exitDeafMode();
+    } catch {}
+  }, [isAttemptCompleting, setTtsEnabledState, setVoiceMode]);
 
   const { playTtsAndPauseStt } = useSpeechOrchestration({
     abort,
@@ -2091,9 +2009,7 @@ export function ChatInterface({
       const roleName = stage.role ?? "Virtual Assistant";
       const normalizedRoleKey = stage.personaRoleKey ?? resolveChatPersonaRoleKey(stage.role, roleName);
       const personaMeta = await ensurePersonaMetadata(normalizedRoleKey);
-      try {
-        console.debug("emitStageReadinessPrompt personaMeta", { normalizedRoleKey, personaMeta });
-      } catch (e) {}
+      
 
       let voiceSex: "male" | "female" | "neutral" =
         personaMeta?.sex === "male" || personaMeta?.sex === "female" || personaMeta?.sex === "neutral"
@@ -2237,9 +2153,7 @@ export function ChatInterface({
     const now = Date.now();
     if (lastSubmissionRef.current && lastSubmissionRef.current.content === trimmed && now - lastSubmissionRef.current.timestamp < 2500) {
       console.warn("Duplicate submission blocked by ref-check:", { text: trimmed, source: options?.source ?? "unknown" });
-      try {
-        debugEventBus.emitEvent?.("info", "AutoSend", "blocked_duplicate_ref", { text: trimmed, source: options?.source ?? "unknown" });
-      } catch {}
+      
       // If this was an auto-send, show a small hint to the user explaining why it was blocked
       if (options?.source === "auto") {
         try {
@@ -2254,9 +2168,7 @@ export function ChatInterface({
     // Record the UI-selected persona at the moment of send to avoid race
     // conditions where the server reply might be attributed to another role.
     selectedPersonaAtSendRef.current = activePersona;
-    try {
-      console.debug("sendUserMessage: selectedPersonaAtSend", { selectedPersonaAtSend: selectedPersonaAtSendRef.current, activePersona });
-    } catch (e) {}
+    
 
     // Update submission tracker immediately
     lastSubmissionRef.current = { content: trimmed, timestamp: now };
@@ -2268,7 +2180,6 @@ export function ChatInterface({
         currentStageIndex,
         messages.concat([{ role: "user", content: trimmed, stageIndex: currentStageIndex } as any]),
       );
-      console.debug("Stage evaluation on sendUserMessage", stageEval);
     } catch (e) {
       // non-blocking
     }
@@ -2289,7 +2200,6 @@ export function ChatInterface({
         const recent = Number.isFinite(lastTs) ? Date.now() - lastTs < 3000 : false;
         if (normLast && normTrim && normLast === normTrim && recent) {
           // duplicate detected; do not re-send
-          console.debug("Duplicate detected against last user message - skipping send", { text: trimmed, source: options?.source ?? "unknown" });
           if (options?.source === "auto") {
             try {
               setTimepointToast({ title: "Auto-send blocked", body: "Duplicate of your previous message — tap Send to force it." });
@@ -2374,7 +2284,6 @@ export function ChatInterface({
         // reflect in input but do not send to server yet
         baseInputRef.current = trimmed;
         setInput(trimmed);
-        console.debug("Waiting for continuation - incomplete phrase detected", { tokenCount, lastWord, endsWithIncompleteMarker, trimmed });
         // schedule an auto-send if no continuation arrives within 6s
         if (autoSendSttRef.current) {
           if (placeholderAutoSendTimerRef.current) {
@@ -2387,7 +2296,6 @@ export function ChatInterface({
               const currentText = baseInputRef.current?.trim() || "";
               const currentLastWord = currentText.split(/\s+/).pop()?.toLowerCase() || "";
               if (incompleteMarkers.includes(currentLastWord)) {
-                console.debug("Still incomplete after wait, keeping placeholder", { currentLastWord });
                 // Extend the wait - don't send yet
                 placeholderAutoSendTimerRef.current = window.setTimeout(() => {
                   if (awaitingContinuationRef.current) {
@@ -2442,7 +2350,6 @@ export function ChatInterface({
           const assistantTimestamp = lastAssistant.timestamp ? Date.parse(lastAssistant.timestamp) : NaN;
           const assistantIsRecent = Number.isFinite(assistantTimestamp) ? Math.abs(Date.now() - assistantTimestamp) < 8000 : true;
           if (normalizedAssistant && normalizedAssistant === normalizedInput && assistantIsRecent) {
-            console.debug("Skipping auto-send: detected echo of assistant speech", trimmed);
             baseInputRef.current = "";
             setInput("");
             reset();
@@ -2491,13 +2398,7 @@ export function ChatInterface({
             newText: trimmed,
             source: options?.source ?? "unknown",
           });
-          try {
-            debugEventBus.emitEvent?.("info", "AutoSend", "blocked_consecutive_user", {
-              lastId: lastMsg.id,
-              text: trimmed,
-              source: options?.source ?? "unknown",
-            });
-          } catch {}
+          
           if (options?.source === "auto") {
             try {
               setTimepointToast({ title: "Auto-send blocked", body: "A recent message was already sent — tap Send to force it." });
@@ -2594,13 +2495,7 @@ export function ChatInterface({
         const nextIndex = Math.min(currentStageIndex + 1, stages.length - 1);
         const nextTitle = stages[nextIndex]?.title ?? `Stage ${nextIndex + 1}`;
         setPendingStageAdvance({ stageIndex: nextIndex, title: nextTitle });
-        try {
-          debugEventBus.emitEvent?.("info", "StageIntent", "pendingAdvance", {
-            nextStageIndex: nextIndex,
-            nextStageTitle: nextTitle,
-            heuristics: readinessSignal?.heuristics,
-          });
-        } catch (e) {}
+        
       } else if (stageResult.status !== "ready") {
         // Allow a high-confidence user request to move into Physical Examination
         // even if assistant findings are not yet present. This supports students
@@ -2612,14 +2507,7 @@ export function ChatInterface({
             const nextIndex = Math.min(currentStageIndex + 1, stages.length - 1);
             const nextTitle = stages[nextIndex]?.title ?? `Stage ${nextIndex + 1}`;
             setPendingStageAdvance({ stageIndex: nextIndex, title: nextTitle });
-            try {
-              debugEventBus.emitEvent?.("info", "StageIntent", "forcedAdvance", {
-                nextStageIndex: nextIndex,
-                nextStageTitle: nextTitle,
-                heuristics: readinessSignal?.heuristics,
-                reason: "user-high-confidence-physical",
-              });
-            } catch (e) {}
+            
             reset();
             baseInputRef.current = "";
             return;
@@ -2665,17 +2553,12 @@ export function ChatInterface({
     // Prevent double-sends for the same message id when multiple triggers fire simultaneously
     if (!sendingMessageIdsRef.current) sendingMessageIdsRef.current = new Set<string>();
     if (userMessage && sendingMessageIdsRef.current.has(userMessage.id)) {
-      console.debug("sendUserMessage: send already in progress for this message id, skipping duplicate send", { id: userMessage.id });
-      try {
-        debugEventBus.emitEvent?.("info", "UI", "send_skipped_duplicate_inflight", { messageId: userMessage.id });
-      } catch {}
+      
       return;
     }
 
     setIsLoading(true);
-    try {
-      debugEventBus.emitEvent?.("info", "UI", "send_started", { stageIndex: currentStageIndex, activePersona, ts: Date.now() });
-    } catch {}
+    
 
     try {
       // If we previously inserted a '...' placeholder waiting for continuation,
@@ -2690,19 +2573,12 @@ export function ChatInterface({
         }
       }
 
-      // Capture payload for debug tracing (admin panel)
-      try {
-        setLastLlmPayload(snapshot.map((m) => ({ role: m.role, content: m.content })));
-      } catch {}
       // Mark message as 'in-flight' to prevent duplicate sends
       try {
         if (userMessage && sendingMessageIdsRef.current) sendingMessageIdsRef.current.add(userMessage.id);
       } catch (e) {}
 
       const response = await chatService.sendMessage(snapshot, currentStageIndex, caseId, { attemptId });
-      try {
-        setLastLlmResponse(response);
-      } catch {}
 
       // Mark user message as sent immediately upon server receipt
       if (userMessage) {
@@ -2714,10 +2590,6 @@ export function ChatInterface({
       if ((response as any)?.suppress) {
         return;
       }
-      // If server returned structuredFindings but no content, ensure lastLlmResponse still set
-      try {
-        if (!lastLlmResponse) setLastLlmResponse(response);
-      } catch {}
       const stage = stages[currentStageIndex] ?? stages[0];
       const roleName = response.displayRole ?? stage?.role ?? "assistant";
       // Prefer the persona that sent the user message (if present) so an explicit
@@ -2891,7 +2763,6 @@ export function ChatInterface({
                   false, // Let playTtsAndPauseStt handle mic resume when audio actually ends
                 );
               } else {
-                console.debug("Skipping TTS for suppressed nurse message (voice-first)");
               }
               ttsCompleted = true;
             } catch (streamErr) {
@@ -2900,7 +2771,6 @@ export function ChatInterface({
             } finally {
               // Only replace placeholder with real content AFTER TTS completes or errors
               // This ensures text appears after audio finishes
-              console.debug("Voice-first: replacing placeholder with content", { ttsCompleted, playbackError: !!playbackError });
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === placeholderMessage.id
@@ -2932,7 +2802,6 @@ export function ChatInterface({
                   true, // skip internal resume; let sendUserMessage handle it
                 );
               } else {
-                console.debug("Skipping TTS for suppressed nurse message (default)");
               }
             } catch (err) {
               console.error("TTS failed:", err);
@@ -2961,7 +2830,6 @@ export function ChatInterface({
           } else if (resumeListeningRef.current && isPlayingAudioRef.current) {
             // Audio still playing (timeout fired early), don't clear the flag
             // The playTtsAndPauseStt finally block will handle resumption when audio actually ends
-            console.debug("TTS timeout fired but audio still playing, deferring mic resume");
           }
           // Mark the user message as sent (clear pending)
           if (userMessage) {
@@ -3010,9 +2878,7 @@ export function ChatInterface({
       } catch (e) {}
 
       setIsLoading(false);
-      try {
-        debugEventBus.emitEvent?.("info", "UI", "send_finished", { stageIndex: currentStageIndex, activePersona, ts: Date.now() });
-      } catch {}
+      
       // Reset interim transcripts after a send
       reset();
       // Clear base input buffer after a send so future dictation starts
@@ -3112,21 +2978,8 @@ export function ChatInterface({
           messageSample: trimmed.slice(0, 280),
         });
       }
-
-      // Emit a debug event so stage detection is visible in debug overlays/toasts
       try {
-        debugEventBus.emitEvent?.("info", "StageDetection", "Stage readiness detected", {
-          attemptId,
-          caseId,
-          stageIndex: currentStageIndex,
-          nextStageTitle: nextStage?.title,
-          intent: detection.intent,
-          confidence: detection.confidence,
-          heuristics: detection.heuristics,
-          reason: detection.reason,
-          messageSample: trimmed.slice(0, 280),
-        });
-      } catch (e) {
+} catch (e) {
         // non-fatal
       }
 
@@ -3155,7 +3008,6 @@ export function ChatInterface({
   const [autoSendFlash, setAutoSendFlash] = useState(false);
   const triggerAutoSend = async (text: string) => {
     try {
-      console.debug("triggerAutoSend invoked", { text });
       // flash briefly
       setAutoSendFlash(true);
       window.setTimeout(() => setAutoSendFlash(false), 600);
@@ -3420,9 +3272,7 @@ export function ChatInterface({
           setSttSuppressed(false, true); // skip cooldown
           exitDeafMode(); // clear deaf mode timestamp
         } else {
-          try {
-            debugEventBus.emitEvent?.("info", "STT", "defer_clear_suppression_due_to_playback");
-          } catch {}
+          
           // Schedule a safe clear: service will clear suppression once it sees playback ended
           try {
             scheduleClearSuppressionWhen(() => !isPlayingAudioRef.current, 200, 8000);
@@ -3710,10 +3560,7 @@ export function ChatInterface({
             try {
               // GUARD: If we're in deaf mode (TTS playing or just ended), skip auto-send
               if (isInDeafMode()) {
-                console.debug("Auto-send (transcript) BLOCKED: in deaf mode", { source: "transcript-auto" });
-                try {
-                  debugEventBus.emitEvent?.("info", "AutoSend", "blocked_deaf_mode", { source: "transcript-auto" });
-                } catch {}
+                
                 // show a short hint for transcript-auto blocked sends
                 try {
                   setTimepointToast({ title: "Auto-send blocked", body: "Audio playback detected — tap Send to force your message." });
@@ -3721,7 +3568,6 @@ export function ChatInterface({
                 } catch {}
                 return;
               }
-              console.debug("Auto-send (final via transcript) firing with text:", baseInputRef.current);
               void triggerAutoSend(baseInputRef.current);
             } catch (err) {
               console.error("Failed to auto-send final transcript (via transcript):", err);
@@ -3889,64 +3735,7 @@ export function ChatInterface({
     };
   }, [attemptId]);
 
-  // Listen for debug events and surface stage-detection events as a subtle toast for quick visibility
-  useEffect(() => {
-    const handler = (ev: any) => {
-      try {
-        const event = ev as any;
-        // If trace capture is enabled, store events for later inspection (QA only)
-        try {
-          const enabled =
-            typeof window !== "undefined" && (window.localStorage?.getItem?.("sttTrace") === "1" || (window as any).__stt_trace_enabled);
-          if (enabled) {
-            try {
-              (window as any).__stt_trace = (window as any).__stt_trace || [];
-              (window as any).__stt_trace.push({ ts: Date.now(), event });
-              // Keep trace bounded
-              if ((window as any).__stt_trace.length > 500) (window as any).__stt_trace.shift();
-            } catch {}
-          }
-        } catch {}
-
-        // Ignore high-volume speech debug events for the toast UI (they're still captured in trace)
-        if (event.source === "TTS" || event.source === "STT") return;
-        // Only show a toast for stage-related debug events so the UI isn't noisy
-        // AND only for admin users with debug enabled
-        if (event.source && String(event.source).toLowerCase().startsWith("stage") && role === "admin" && debugEnabled) {
-          try {
-            setTimepointToast({
-              title: `${event.source} - ${event.message}`,
-              body: event.details ? JSON.stringify(event.details, null, 0).slice(0, 220) : "",
-            });
-            // Content visible briefly
-            setTimeout(() => hideTimepointToastWithFade(300), 3000);
-          } catch {}
-        }
-      } catch (e) {
-        // ignore
-      }
-    };
-    try {
-      debugEventBus.on("debug-event", handler);
-    } catch {}
-    // Expose simple helpers for QA: enable trace capture with localStorage.setItem('sttTrace','1') or set window.__stt_trace_enabled = true
-    try {
-      (window as any).dumpSttTrace = () => {
-        try {
-          console.log("__stt_trace length:", (window as any).__stt_trace?.length ?? 0);
-          console.log((window as any).__stt_trace?.slice(-200) ?? []);
-        } catch (e) {
-          console.warn("Failed to dump STT trace", e);
-        }
-      };
-    } catch {}
-
-    return () => {
-      try {
-        debugEventBus.off("debug-event", handler);
-      } catch {}
-    };
-  }, [role, debugEnabled]);
+  // Removed temporary stage debug toast/listener wiring.
 
   // Ensure STT is active when an attempt is open. This effect covers cases
   // where `attemptId` didn't change but the component mounted or `isListening`
@@ -4262,19 +4051,11 @@ export function ChatInterface({
   const handleSubmit = async (e: React.FormEvent) => {
     try {
       e.preventDefault();
-      try {
-        debugEventBus.emitEvent?.("info", "UI", "submit_clicked", {
-          stageIndex: currentStageIndex,
-          activePersona,
-          inputSample: (input || "").slice(0, 140),
-        });
-      } catch {}
+      
       // Delegate to shared sendUserMessage helper and mark as manual so it bypasses auto-send blocks
       await sendUserMessage(input, undefined, { source: "manual" });
     } finally {
-      try {
-        debugEventBus.emitEvent?.("info", "UI", "submit_complete", { stageIndex: currentStageIndex, activePersona });
-      } catch {}
+      
       // Clear the base input buffer and visible input when the user clicks Send
       try {
         baseInputRef.current = "";
@@ -4527,9 +4308,7 @@ export function ChatInterface({
           // so that the resume logic knows this was a TTS-paused mic and will
           // deterministically attempt to restart it after playback completes.
           wasMicPausedForTtsRef.current = !userToggledOffRef.current && wasListening;
-          try {
-            console.debug("Intro TTS: marking wasMicPausedForTts", { wasListening, userToggledOff: userToggledOffRef.current });
-          } catch (e) {}
+          
 
           // Do NOT stop the mic or toggle the visible mic UI here. The
           // `playTtsAndPauseStt` helper will handle suppression/abort and
@@ -4556,9 +4335,7 @@ export function ChatInterface({
         // For non-sensitive intros allow auto-resume so the mic is
         // reliably restarted after playback when it was previously listening.
         // Use skipResume=false (explicit) to avoid leaving the mic disabled.
-        try {
-          console.debug("Intro TTS: allowing playTtsAndPauseStt to auto-resume STT for non-sensitive intro", { targetIndex });
-        } catch (e) {}
+        
         await playTtsAndPauseStt(introText, assistantMsg.voiceId ?? voiceForRole, introMeta, personaMeta?.sex as any, false);
       } catch (e) {
         try {
@@ -4655,9 +4432,7 @@ export function ChatInterface({
         } else {
           // If we intentionally skipped TTS for this intro, log for diagnostics.
           if (skipIntroTts) {
-            try {
-              console.debug("Skipping intro TTS for nurse in sensitive stage", { targetIndex, introStageTitleLower });
-            } catch (e) {}
+            
 
             // Ensure voice mode is available after the intro when TTS is intentionally skipped.
             // Activate voice mode unless the user explicitly toggled it off previously.
@@ -4712,9 +4487,7 @@ export function ChatInterface({
     if (!pendingStageAdvance) return;
     const { stageIndex } = pendingStageAdvance;
     setPendingStageAdvance(null);
-    try {
-      debugEventBus.emitEvent?.("success", "StageIntent", "confirmed", { stageIndex });
-    } catch (e) {}
+    
     // If a direct proceed handler is available, call it immediately.
     if (handleProceedRef.current && !isAdvancingRef.current) {
       try {
@@ -4733,32 +4506,58 @@ export function ChatInterface({
     const declined = pendingStageAdvance;
     setPendingStageAdvance(null);
     lockStageIntent("stay");
-    try {
-      debugEventBus.emitEvent?.("info", "StageIntent", "declined", { stageIndex: declined.stageIndex });
-    } catch (e) {}
+    
   };
+
+  const groupedVisibleMessages = useMemo(() => {
+    const visible = messages.filter((m) => {
+      const persona = m.personaRoleKey ?? (m.displayRole ? resolveChatPersonaRoleKey(m.displayRole, m.displayRole) : null);
+      return persona === activePersona;
+    });
+
+    const grouped: Message[] = [];
+    for (const message of visible) {
+      const last = grouped.length ? grouped[grouped.length - 1] : null;
+      if (
+        last &&
+        last.role === "assistant" &&
+        message.role === "assistant" &&
+        (last.displayRole ?? last.role ?? "assistant") === (message.displayRole ?? message.role ?? "assistant") &&
+        last.stageIndex === message.stageIndex
+      ) {
+        try {
+          const mergedContent = mergeStringsNoDup(last.content, message.content);
+          (last as any).content = mergedContent;
+          const lastSF = (last as any).structuredFindings || {};
+          const messageSF = (message as any).structuredFindings || {};
+          const mergedSF = { ...lastSF, ...messageSF };
+          if (Object.keys(mergedSF).length) (last as any).structuredFindings = mergedSF;
+          if ((message as any).labResults) (last as any).labResults = (message as any).labResults;
+          (last as any).timestamp = last.timestamp || message.timestamp;
+        } catch (e) {
+          grouped.push({ ...message });
+        }
+      } else if (last && last.role === "user" && message.role === "user" && (last.personaRoleKey ?? null) === (message.personaRoleKey ?? null)) {
+        try {
+          const mergedContent = mergeStringsNoDup(last.content, message.content);
+          (last as any).content = mergedContent;
+          (last as any).timestamp = last.timestamp || message.timestamp;
+        } catch (e) {
+          grouped.push({ ...message });
+        }
+      } else {
+        grouped.push({ ...message });
+      }
+    }
+
+    return grouped;
+  }, [messages, activePersona]);
 
   return (
     <div className="relative flex h-full flex-col">
       <div className="absolute top-16 right-4 z-50">
         <div className="flex items-center gap-2">
           <GuidedTour steps={tourSteps} tourId="chat-interface" autoStart={true} />
-          {role === "admin" && (
-            <label className="flex items-center space-x-2 text-xs text-gray-200">
-              <input
-                type="checkbox"
-                checked={debugEnabled}
-                onChange={(e) => {
-                  try {
-                    const v = Boolean(e.target.checked);
-                    setDebugEnabled(v);
-                    if (typeof window !== "undefined") window.localStorage.setItem("vw_debug", v ? "true" : "false");
-                  } catch {}
-                }}
-              />
-              <span className="select-none">Debug</span>
-            </label>
-          )}
         </div>
       </div>
       {/* Connection notice banner */}
@@ -4770,15 +4569,6 @@ export function ChatInterface({
         <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none">
           <div className="bg-gray-900/90 text-white text-xs px-3 py-1.5 rounded-full shadow-lg backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2 duration-200">
             {micToast}
-          </div>
-        </div>
-      )}
-
-      {/* Admin debug toast (shows last LLM prompt + response for 10s when enabled) */}
-      {debugToastVisible && debugToastText && role === "admin" && debugEnabled && (
-        <div className="fixed bottom-36 left-1/2 transform -translate-x-1/2 z-50 pointer-events-auto">
-          <div className="bg-black/90 text-white text-xs px-4 py-2 rounded-lg shadow-lg backdrop-blur-sm whitespace-pre-wrap max-w-2xl">
-            {debugToastText}
           </div>
         </div>
       )}
@@ -4838,56 +4628,9 @@ export function ChatInterface({
           {/* Persona filter is controlled by the big OWNER / VOICE MODE / NURSE controls above */}
           <div className="space-y-4">
             {/* Group consecutive messages by same role/persona/stage into a single visual entry */}
-            {(() => {
-              const visible = messages.filter((m) => {
-                const p = m.personaRoleKey ?? (m.displayRole ? resolveChatPersonaRoleKey(m.displayRole, m.displayRole) : null);
-                return p === activePersona;
-              });
-
-              const grouped: Message[] = [];
-              for (const m of visible) {
-                const last = grouped.length ? grouped[grouped.length - 1] : null;
-                // Bundle consecutive assistant messages with same persona/stage
-                if (
-                  last &&
-                  last.role === "assistant" &&
-                  m.role === "assistant" &&
-                  (last.displayRole ?? last.role ?? "assistant") === (m.displayRole ?? m.role ?? "assistant") &&
-                  last.stageIndex === m.stageIndex
-                ) {
-                  try {
-                    // Merge content de-duplicating overlapping text
-                    const mergedContent = mergeStringsNoDup(last.content, m.content);
-                    (last as any).content = mergedContent;
-                    // Merge structured findings shallowly
-                    const lastSF = (last as any).structuredFindings || {};
-                    const mSF = (m as any).structuredFindings || {};
-                    const mergedSF = { ...lastSF, ...mSF };
-                    if (Object.keys(mergedSF).length) (last as any).structuredFindings = mergedSF;
-                    if ((m as any).labResults) (last as any).labResults = (m as any).labResults;
-                    // Keep earliest timestamp
-                    (last as any).timestamp = last.timestamp || m.timestamp;
-                  } catch (e) {
-                    grouped.push({ ...m });
-                  }
-                  // Bundle consecutive user messages with same persona
-                } else if (last && last.role === "user" && m.role === "user" && (last.personaRoleKey ?? null) === (m.personaRoleKey ?? null)) {
-                  try {
-                    // Merge user content de-duplicating overlapping text
-                    const mergedContent = mergeStringsNoDup(last.content, m.content);
-                    (last as any).content = mergedContent;
-                    // Keep earliest timestamp
-                    (last as any).timestamp = last.timestamp || m.timestamp;
-                  } catch (e) {
-                    grouped.push({ ...m });
-                  }
-                } else {
-                  grouped.push({ ...m });
-                }
-              }
-
-              return grouped.map((message) => <ChatMessage key={message.id} message={message} stages={stages} onRetry={retryUserMessage} />);
-            })()}
+            {groupedVisibleMessages.map((message) => (
+              <ChatMessage key={message.id} message={message} stages={stages} onRetry={retryUserMessage} />
+            ))}
 
             {isLoading && (
               <div className="flex items-center space-x-2 text-sm text-muted-foreground">

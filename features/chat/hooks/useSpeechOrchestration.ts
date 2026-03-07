@@ -1,6 +1,6 @@
 "use client";
 
-import type { MutableRefObject } from "react";
+import { useRef, type MutableRefObject } from "react";
 import type { TtsEventDetail } from "@/features/speech/models/tts-events";
 import {
   setSttSuppressed,
@@ -12,7 +12,6 @@ import {
 } from "@/features/speech/services/sttService";
 import { speakRemote, speakRemoteStream, stopActiveTtsPlayback } from "@/features/speech/services/ttsService";
 import { estimateTtsDurationMs } from "@/features/chat/utils/ttsEstimate";
-import { debugEventBus } from "@/lib/debug-events-fixed";
 
 export type TtsPlaybackMeta = Omit<TtsEventDetail, "audio"> | undefined;
 
@@ -43,6 +42,8 @@ type UseSpeechOrchestrationDeps = {
 };
 
 export function useSpeechOrchestration(deps: UseSpeechOrchestrationDeps) {
+  const playbackRunIdRef = useRef(0);
+
   const playTtsAndPauseStt = async (text: string, voice?: string, meta?: TtsPlaybackMeta, gender?: "male" | "female", skipResume?: boolean) => {
     const ensureSttSuppressedDuringPlayback = () => {
       try {
@@ -51,15 +52,10 @@ export function useSpeechOrchestration(deps: UseSpeechOrchestrationDeps) {
       } catch {}
     };
     ensureSttSuppressedDuringPlayback();
-    try {
-      debugEventBus.emitEvent?.("info", "TTS", "play_start", {
-        snippet: (text || "").slice(0, 80),
-        forced: (meta as any)?.forceResume === true,
-        ts: Date.now(),
-      });
-    } catch {}
+    
     if (!text) return;
     stopActiveTtsPlayback();
+    const runId = ++playbackRunIdRef.current;
     deps.isPlayingAudioRef.current = true;
 
     if (deps.autoSendFinalTimerRef.current) {
@@ -97,6 +93,7 @@ export function useSpeechOrchestration(deps: UseSpeechOrchestrationDeps) {
     const doTtsResume = (skipResumeLocal = false) => {
       const tryResumeWhenSafe = () => {
         try {
+          if (playbackRunIdRef.current !== runId) return;
           if (ttsResumeExecuted.current) return;
           if (deps.isPlayingAudioRef.current) {
             window.setTimeout(tryResumeWhenSafe, 200);
@@ -105,14 +102,7 @@ export function useSpeechOrchestration(deps: UseSpeechOrchestrationDeps) {
 
           ttsResumeExecuted.current = true;
           deps.isSuppressingSttRef.current = false;
-          try {
-            debugEventBus.emitEvent?.("info", "TTS", "resuming", {
-              skipResumeLocal,
-              wasMicPausedForTts: deps.wasMicPausedForTtsRef.current,
-              resumeListening: deps.resumeListeningRef.current,
-              ts: Date.now(),
-            });
-          } catch {}
+          
           try {
             exitDeafMode();
           } catch {}
@@ -134,7 +124,6 @@ export function useSpeechOrchestration(deps: UseSpeechOrchestrationDeps) {
             deps.wasMicPausedForTtsRef.current = false;
             deps.resumeListeningRef.current = false;
             try {
-              console.debug("playTtsAndPauseStt: resuming STT due to TTS-paused mic", { delay: RESUME_DELAY_AFTER_TTS_MS });
               deps.pushSttTrace({ event: "tts_resume_flow", path: "primary", delay: RESUME_DELAY_AFTER_TTS_MS });
             } catch (e) {}
             deps.attemptStartListening(RESUME_DELAY_AFTER_TTS_MS);
@@ -142,7 +131,6 @@ export function useSpeechOrchestration(deps: UseSpeechOrchestrationDeps) {
               window.setTimeout(() => {
                 try {
                   if (deps.voiceModeRef.current && !deps.isListening && !deps.userToggledOffRef.current) {
-                    console.debug("playTtsAndPauseStt: retrying STT start after resume attempt");
                     deps.pushSttTrace({ event: "tts_retry_start_after_resume" });
                     try {
                       if (!canStartListening()) return;
@@ -157,7 +145,6 @@ export function useSpeechOrchestration(deps: UseSpeechOrchestrationDeps) {
           } else if (deps.resumeListeningRef.current) {
             deps.resumeListeningRef.current = false;
             try {
-              console.debug("playTtsAndPauseStt: resuming STT (fallback)", { delay: RESUME_DELAY_AFTER_TTS_MS });
               deps.pushSttTrace({ event: "tts_resume_flow", path: "fallback", delay: RESUME_DELAY_AFTER_TTS_MS });
             } catch (e) {}
             deps.attemptStartListening(RESUME_DELAY_AFTER_TTS_MS);
@@ -165,7 +152,6 @@ export function useSpeechOrchestration(deps: UseSpeechOrchestrationDeps) {
               window.setTimeout(() => {
                 try {
                   if (deps.voiceModeRef.current && !deps.isListening && !deps.userToggledOffRef.current) {
-                    console.debug("playTtsAndPauseStt: retrying STT start after fallback resume attempt");
                     deps.pushSttTrace({ event: "tts_retry_start_after_fallback" });
                     try {
                       if (!canStartListening()) return;
@@ -179,14 +165,11 @@ export function useSpeechOrchestration(deps: UseSpeechOrchestrationDeps) {
             } catch (e) {}
           } else if (deps.voiceModeRef.current && !deps.userToggledOffRef.current) {
             try {
-              console.debug("playTtsAndPauseStt: resuming STT (voiceMode active fallback)");
               deps.pushSttTrace({ event: "tts_resume_flow", path: "voiceMode_fallback" });
             } catch (e) {}
             deps.attemptStartListening(RESUME_DELAY_AFTER_TTS_MS);
           } else {
-            try {
-              console.debug("playTtsAndPauseStt: not resuming STT because voiceMode off and mic was idle before TTS");
-            } catch (e) {}
+            
           }
         } catch (e) {
           console.error("Error while attempting safe resume after TTS:", e);
@@ -222,13 +205,9 @@ export function useSpeechOrchestration(deps: UseSpeechOrchestrationDeps) {
       const ESTIMATE_RESUME_BUFFER_MS = 50;
       const TTS_ESTIMATE_MULTIPLIER = 1.35;
       const resumeDelay = Math.round(estimatedMs * TTS_ESTIMATE_MULTIPLIER) + ESTIMATE_RESUME_BUFFER_MS;
-      try {
-        debugEventBus.emitEvent?.("info", "TTS", "estimated_resume_scheduled", { estimatedMs, resumeDelay, multiplier: TTS_ESTIMATE_MULTIPLIER });
-      } catch {}
+      
       ttsEstimatedEndTimerRef.current = window.setTimeout(() => {
-        try {
-          debugEventBus.emitEvent?.("info", "TTS", "estimated_resume_fired", { estimatedMs, resumeDelay, multiplier: TTS_ESTIMATE_MULTIPLIER });
-        } catch {}
+        
         doTtsResume();
       }, resumeDelay);
 
@@ -279,6 +258,9 @@ export function useSpeechOrchestration(deps: UseSpeechOrchestrationDeps) {
               await deps.speakAsync(ttsText, "en-US", gender);
             } else if (deps.ttsAvailable) {
               deps.speak(ttsText, "en-US", gender);
+              // speak() is fire-and-forget; wait roughly the expected duration
+              // to avoid re-enabling STT while browser TTS is still speaking.
+              await new Promise((resolve) => setTimeout(resolve, Math.max(estimateTtsDurationMs(ttsText), 1500)));
             }
           } catch (e) {
             console.error("TTS playback failed:", e);
@@ -286,11 +268,12 @@ export function useSpeechOrchestration(deps: UseSpeechOrchestrationDeps) {
         }
       }
     } finally {
+      if (playbackRunIdRef.current !== runId) {
+        return;
+      }
       deps.isPlayingAudioRef.current = false;
       deps.lastTtsEndRef.current = Date.now();
-      try {
-        debugEventBus.emitEvent?.("info", "TTS", "playback_finished", { estimatedMs });
-      } catch {}
+      
       try {
         const forcedTimer = (ttsEstimatedEndTimerRef as any).forcedResumeTimer;
         if (forcedTimer) {

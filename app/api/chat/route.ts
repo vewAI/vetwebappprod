@@ -1,13 +1,15 @@
 // Helper: Format diagnostic findings as conversational text
 function formatDiagnosticFinding(key: string, value: any): string {
   if (typeof value === "string" || typeof value === "number") {
-    return `The ${key.replace(/_/g, ' ')} is ${value}.`;
+    return `The ${key.replace(/_/g, " ")} is ${value}.`;
   }
   if (Array.isArray(value)) {
-    return `The ${key.replace(/_/g, ' ')} values are: ${value.join(", ")}.`;
+    return `The ${key.replace(/_/g, " ")} values are: ${value.join(", ")}.`;
   }
   if (typeof value === "object" && value !== null) {
-    return `The ${key.replace(/_/g, ' ')} findings are: ${Object.entries(value).map(([k, v]) => `${k}: ${v}`).join(", ")}.`;
+    return `The ${key.replace(/_/g, " ")} findings are: ${Object.entries(value)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(", ")}.`;
   }
   return String(value);
 }
@@ -29,7 +31,6 @@ import { parseRequestedKeys, matchPhysicalFindings, PHYS_SYNONYMS } from "@/feat
 import { parseLabResults } from "../../../features/chat/services/labResultsParser";
 import { normalizeCaseMedia, type CaseMediaItem } from "@/features/cases/models/caseMedia";
 import { searchMerckManual } from "@/features/external-resources/services/merckService";
-import { debugEventBus } from "@/lib/debug-events-fixed";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 const openai = new OpenAi({
@@ -213,7 +214,13 @@ export async function POST(request: NextRequest) {
       if (currentStage?.stagePrompt) {
         roleInfoPromptContent = currentStage.stagePrompt;
       } else {
-        const roleInfoPrompt = await getRoleInfoPrompt(caseId, stageIndex, lastUserMessage.content, currentStage);
+        const roleInfoPrompt = await getRoleInfoPrompt(
+          caseId,
+          stageIndex,
+          lastUserMessage.content,
+          currentStage,
+          caseRecord as Record<string, unknown> | null,
+        );
         if (roleInfoPrompt) {
           roleInfoPromptContent = roleInfoPrompt;
         }
@@ -261,7 +268,6 @@ export async function POST(request: NextRequest) {
         }
       }
     } else {
-      console.debug("FORCE_STAGE_PERSONA_OVERRIDE disabled - not forcing persona by stage");
     }
 
     // Inject the role-specific prompt only when the answering persona is the
@@ -284,13 +290,7 @@ export async function POST(request: NextRequest) {
           content: roleInfoPromptContent,
         });
         console.log(`[chat] Injected roleInfoPrompt for personaRoleKey="${personaRoleKey}" due to persona and stage or explicit request.`);
-        try {
-          debugEventBus.emitEvent("info", "ChatInjection", "roleInfoInjected", {
-            caseId,
-            personaRoleKey,
-            snippet: String(roleInfoPromptContent).substring(0, 200),
-          });
-        } catch {}
+        
       } else {
         console.log(
           `[chat] Skipped roleInfoPrompt injection for personaRoleKey="${personaRoleKey}" looksLikeFindingsRequest=${looksLikeFindingsRequest}`,
@@ -967,9 +967,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
     // physical findings (e.g. 'rumen turnover') from being detected when
     // the user asked directly. Process physical-stage requests here.
     if (isPhysicalStage) {
-      try {
-        debugEventBus.emitEvent("info", "ChatDBMatch", "Physical stage - forwarding to LLM", { userText, stageTitle, matchedDiagKeyInUser });
-      } catch {}
+      
       const diagField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["diagnostic_findings"] : null;
       const physField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["physical_exam_findings"] : null;
       const diagText = typeof diagField === "string" ? diagField : "";
@@ -1051,12 +1049,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
               } else {
                 // No matching lines found for this requested canonical key.
                 // Emit telemetry for triage so we can inspect physText and requested keys.
-                try {
-                  debugEventBus.emitEvent("warning", "ChatDBMatch", "phys-key-no-match", {
-                    key: m.canonicalKey,
-                    physSnippet: String(physText).substring(0, 200),
-                  });
-                } catch {}
+                
                 // Mark missing values as NOT_AVAILABLE so the LLM can craft a helpful reply (see guidance below)
                 const species = caseRecord && typeof caseRecord === "object" ? String((caseRecord as any).species ?? "").trim() : "";
                 const condition = caseRecord && typeof caseRecord === "object" ? String((caseRecord as any).condition ?? "").trim() : "";
@@ -1089,17 +1082,13 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
               role: "system",
               content: `PHYSICAL_EXAM_FINDINGS (requested subset):\n${snippet}`,
             });
-            try {
-              debugEventBus.emitEvent("info", "ChatDBMatch", "inject-phys-snippet", { len: snippet.length, keys: subsetKeys });
-            } catch {}
+            
           } else if (physText && !isOnDemand) {
             enhancedMessages.unshift({
               role: "system",
               content: `PHYSICAL_EXAM_FINDINGS (from DB):\n${physText}`,
             });
-            try {
-              debugEventBus.emitEvent("info", "ChatDBMatch", "inject-phys-text", { len: physText.length });
-            } catch {}
+            
           }
         }
       }
@@ -1381,18 +1370,11 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     // deterministic setting to reduce the chance of interpretive language being generated.
     const isSensitivePersona = personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician";
     const tempForCall = isSensitivePersona && (isPhysicalStage || isLabStage) ? 0.0 : 0.7;
-    try {
-      debugEventBus.emitEvent?.("info", "ChatConfig", "model_call", { personaRoleKey, isPhysicalStage, isLabStage, temperature: tempForCall });
-    } catch {}
 
-    // ── Persona-boundary annotation ──────────────────────────────────────
-    // The conversation history may contain assistant messages from a DIFFERENT
-    // persona (e.g., owner messages in a nurse conversation). Without annotation
-    // the LLM picks up the dominant tone of prior assistant messages and may
-    // respond in the wrong persona's voice. We fix this by:
-    //  1. Labeling assistant messages from other personas
-    //  2. Injecting persona-switch boundary markers
-    //  3. Using the OpenAI `name` field for multi-participant disambiguation
+    // Persona-boundary annotation
+    // The conversation history may contain assistant messages from a different
+    // persona (e.g., owner messages in a nurse conversation). Without annotation,
+    // the LLM may adopt the wrong persona voice.
     try {
       let prevMsgPersona: string | null = null;
       for (let i = 0; i < enhancedMessages.length; i++) {
@@ -1402,23 +1384,20 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
         const msgPersona: string | undefined = (msg as any).personaRoleKey;
 
         if (msg.role === "assistant" && msgPersona && msgPersona !== personaRoleKey) {
-          // Label assistant messages from OTHER personas so the LLM knows
-          // these were spoken by a different character.
           const otherLabel = msgPersona === "owner" ? "OWNER PERSONA" : "NURSE PERSONA";
           enhancedMessages[i] = {
             ...msg,
-            content: `[${otherLabel} — NOT your current role]: ${msg.content}`,
+            content: `[${otherLabel} - NOT your current role]: ${msg.content}`,
           };
         }
 
-        // Detect persona switch in user messages and inject a boundary marker
         if (msg.role === "user" && msgPersona && prevMsgPersona && msgPersona !== prevMsgPersona) {
           const switchLabel = msgPersona === "owner" ? "Owner" : "Veterinary Nurse";
           enhancedMessages.splice(i, 0, {
             role: "system" as const,
             content: `--- The student has now switched to the ${switchLabel} persona. Respond ONLY as the ${switchLabel} from this point forward. ---`,
           });
-          i++; // skip the inserted system message
+          i++;
         }
 
         if (msgPersona) prevMsgPersona = msgPersona;
@@ -1431,7 +1410,6 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     // multi-participant disambiguation and strip extra properties.
     const messagesForLLM = enhancedMessages.map((msg: any) => {
       const base: Record<string, unknown> = { role: msg.role, content: msg.content };
-      // Add `name` field to help the LLM distinguish participants
       if (msg.role === "assistant") {
         const p = msg.personaRoleKey;
         if (p === "owner") base.name = "pet_owner";
@@ -1442,34 +1420,27 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
       return base;
     });
 
-    let response = await openai.chat.completions.create({
+    const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: messagesForLLM as any[],
       temperature: tempForCall,
       max_tokens: 1000,
     });
 
-    let message = response.choices[0].message;
-
+    const message = response.choices[0].message;
     const assistantRawContent = message.content ?? "";
 
-    // Post-process to remove consecutive duplicate blocks (LLM sometimes repeats itself)
-    // This detects when the same paragraph/block is repeated back-to-back and dedupes it.
     const deduplicateConsecutiveBlocks = (text: string): string => {
-      // Split into blocks by double newlines or single newlines
       const blocks = text
         .split(/\n{2,}/)
-        .map((b) => b.trim())
+        .map((block) => block.trim())
         .filter(Boolean);
       if (blocks.length < 2) return text;
 
       const deduped: string[] = [];
       for (let i = 0; i < blocks.length; i++) {
-        // Normalize for comparison (lowercase, collapse whitespace)
         const normalized = blocks[i].toLowerCase().replace(/\s+/g, " ").trim();
         const prevNormalized = deduped.length > 0 ? deduped[deduped.length - 1].toLowerCase().replace(/\s+/g, " ").trim() : "";
-
-        // Skip if this block is identical to the previous one
         if (normalized && normalized === prevNormalized) {
           continue;
         }
@@ -1478,55 +1449,40 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
       return deduped.join("\n\n");
     };
 
-    // Parse on-demand media tags
-    // First, dedupe repeated blocks then sanitize assistant output so that
-    // any accidental echoing of internal prompts or owner background is removed.
     let content = deduplicateConsecutiveBlocks(assistantRawContent);
 
-    // Sanitize assistant content by removing any verbatim occurrences of
-    // internal prompts (personaBehaviorPrompt, roleInfoPromptContent) or ownerBackground
-    // unless the answering persona is the owner. Also strip obvious internal-instruction
-    // lines (e.g., starting with "You are" or containing "MUST" in uppercase).
     const sanitizeAssistantContent = (txt: string): string => {
       if (!txt) return txt;
       let out = String(txt);
+
       try {
         if (personaBehaviorPrompt) {
           const safe = String(personaBehaviorPrompt).trim();
           if (safe.length > 0) {
-            // remove exact verbatim occurrences and long substrings
             out = out.split(safe).join("[redacted]");
-            try {
-              debugEventBus.emitEvent("warning", "ChatRedaction", "redactedPersonaBehavior", { len: safe.length });
-            } catch {}
           }
         }
-      } catch (e) {
+      } catch {
         // ignore
       }
+
       try {
-        // Redact role-specific prompt content injected earlier so the assistant
-        // cannot accidentally echo it back to the user as a chat message.
         if (roleInfoPromptContent) {
           const safeRolePrompt = String(roleInfoPromptContent).trim();
           if (safeRolePrompt.length > 0) {
             out = out.split(safeRolePrompt).join("[redacted]");
-            try {
-              debugEventBus.emitEvent("warning", "ChatRedaction", "redactedRoleInfoPrompt", { len: safeRolePrompt.length });
-            } catch {}
           }
         }
-      } catch (e) {
+      } catch {
         // ignore
       }
 
-      // Strip obviously internal-instruction lines
       out = out
         .split(/\n+/)
-        .map((ln) => ln.trim())
+        .map((line) => line.trim())
         .filter(Boolean)
-        .filter((ln) => !/^you are\b/i.test(ln))
-        .filter((ln) => !/\bMUST\b/.test(ln))
+        .filter((line) => !/^you are\b/i.test(line))
+        .filter((line) => !/\bMUST\b/.test(line))
         .join("\n\n");
 
       try {
@@ -1534,20 +1490,17 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
           const safeOwner = String(ownerBackground).trim();
           if (safeOwner.length > 0) {
             out = out.split(safeOwner).join("[redacted]");
-            try {
-              debugEventBus.emitEvent("warning", "ChatRedaction", "redactedOwner", { len: safeOwner.length });
-            } catch {}
           }
         }
-      } catch (e) {}
+      } catch {
+        // ignore
+      }
 
-      // Remove lines that look like system instructions
       out = out
         .split(/\r?\n/)
         .map((line) => {
           const trimmed = line.trim();
           if (!trimmed) return trimmed;
-          // Heuristic: drop lines that begin with internal-instruction phrases
           if (/^you are\b/i.test(trimmed)) return "";
           if (/\bMUST\b/.test(trimmed)) return "";
           if (/^behavior[:\-]/i.test(trimmed)) return "";
@@ -1556,28 +1509,17 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
         .filter(Boolean)
         .join("\n");
 
-      // Guard: remove lines that inappropriately instruct the student or
-      // suggest actions (e.g., "The student should..." or "You should...").
       const lines = out.split(/\r?\n/);
-      let removedCount = 0;
       const cleaned = lines
-        .map((l) => (/^\s*(the student\b|you should\b|you must\b)/i.test(l) || /\bthe student should\b/i.test(l) ? (removedCount++, "") : l))
+        .map((line) => (/^\s*(the student\b|you should\b|you must\b)/i.test(line) || /\bthe student should\b/i.test(line) ? "" : line))
         .filter(Boolean)
         .join("\n");
-      if (removedCount > 0) {
-        try {
-          debugEventBus.emitEvent("warning", "ChatAudit", "removedStudentInstructions", { caseId, personaRoleKey, removedCount });
-        } catch {}
-      }
 
       return cleaned;
     };
 
     content = sanitizeAssistantContent(content);
 
-    // If the LLM produced diagnostic-leaning phrasing during the Physical stage
-    // when a nurse/lab persona is answering, transform into a safe fallback to
-    // prevent accidental diagnostic interpretation leaking from the assistant.
     try {
       const nurseOrLabAnswering = personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician";
       const diagRegex = /\b(consistent with|suggestive of|likely|most consistent with|suspicious for|indicative of|probable|diagnos)\b/i;
@@ -1585,72 +1527,45 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
       if (isPhysicalStage && nurseOrLabAnswering && diagRegex.test(sanitized)) {
         const lines = sanitized
           .split(/\n+/)
-          .map((l) => l.trim())
+          .map((line) => line.trim())
           .filter(Boolean);
-        const findings = lines.filter((l) => /:/.test(l)).slice(0, 10);
+        const findings = lines.filter((line) => /:/.test(line)).slice(0, 10);
         const findingsText = findings.length > 0 ? findings.join(", ") : "";
         const fallback =
           "I cannot provide diagnostic interpretations during the Physical Examination stage. I can provide recorded findings or request further tests. Would you like me to request the test(s) or see more details?";
         content = findingsText ? `${findingsText}\n\n${fallback}` : fallback;
-        try {
-          debugEventBus.emitEvent("warning", "ChatPostFilter", "diagnosticFiltered", {
-            caseId,
-            personaRoleKey,
-            snippet: String(content).substring(0, 200),
-          });
-        } catch {}
       } else {
         content = sanitized;
       }
-    } catch (e) {
-      // In case of any error, fall back to the sanitized content
+    } catch {
       try {
         content = sanitizeAssistantContent(content);
-      } catch (ee) {
+      } catch {
         content = String(content);
       }
     }
 
-    // Post-filters to remove or adjust persona-specific boilerplate that
-    // the assistant sometimes adds even when not relevant to the user's request.
     try {
-      // Remove nurse treatment-refusal sentence unless the user explicitly
-      // asked about treatment or recommendations. This prevents the nurse
-      // from replying with a pre-emptive refusal when treatment wasn't asked.
       const treatmentRefusalRegex =
         /I(?:'m| am)\s+unable to provide treatment recommendations[\s\S]*?(?:Would you like to discuss treatment options[\s\S]*?)?\.?$/i;
       const treatmentKeywordsReg =
         /\b(treat|treatment|recommend|recommendation|therapy|prescribe|prescription|antibiotic|antimicrobial|medication|dose|dosing)\b/i;
       if (treatmentRefusalRegex.test(content) && !(lastUserMessage?.content && treatmentKeywordsReg.test(String(lastUserMessage.content)))) {
         content = content.replace(treatmentRefusalRegex, "").trim();
-        try {
-          debugEventBus.emitEvent?.("info", "ChatPostFilter", "removedTreatmentRefusal", {
-            caseId,
-            personaRoleKey,
-            snippet: String(content).substring(0, 200),
-          });
-        } catch {}
       }
 
-      // Owner guardrail: owners must not claim that tests/results are available
-      // or ready. Replace any such claims with a neutral, safe suggestion to
-      // check with the nurse/lab for availability.
       if (personaRoleKey === "owner") {
         const ownerResultsRegex =
           /(?:\bresults?\b[\s\S]{0,60}?\b(?:available|ready)\b(?:\s*for[^\.\n]*)?|\btest results?\b[\s\S]{0,60}?\b(?:available|ready)\b(?:\s*for[^\.\n]*)?)/gi;
         if (ownerResultsRegex.test(content)) {
           content = content.replace(ownerResultsRegex, "Please check with the nurse or laboratory for test availability.");
-          // Normalize accidental duplicated punctuation or spacing left after replacement
           content = content.replace(/\.\s*\./g, ".");
           content = content.replace(/\.{2,}/g, ".");
           content = content.replace(/\s+([.,!?;:])/g, "$1");
-          try {
-            debugEventBus.emitEvent?.("warning", "ChatPostFilter", "ownerResultsClaim", { caseId, snippet: String(content).substring(0, 200) });
-          } catch {}
         }
       }
-    } catch (e) {
-      // If post-filtering fails for any reason, continue with the sanitized content
+    } catch {
+      // Continue with sanitized content if post-filtering fails.
     }
 
     const mediaIds: string[] = [];

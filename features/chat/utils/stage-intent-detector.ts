@@ -12,8 +12,6 @@ export type StageIntentDetectionResult = {
   reason?: string;
 };
 
-import { debugEventBus } from "@/lib/debug-events-fixed";
-
 const DIRECTION_WORDS = [
   "proceed",
   "advance",
@@ -176,9 +174,7 @@ export function detectStageIntentLegacy(content: string, context: StageIntentCon
 
   const positiveResult = (confidence: "low" | "medium" | "high", reason: string) => {
     const details = { heuristics: Array.from(heuristics), reason, confidence, snippet: normalized.slice(0, 280), context };
-    try {
-      debugEventBus.emitEvent?.("info", "StageIntent", "detection", details);
-    } catch {}
+    
     return {
       matched: true,
       confidence,

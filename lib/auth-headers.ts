@@ -1,4 +1,8 @@
 import { supabase } from "./supabase";
+import {
+  clearInvalidRefreshTokenState,
+  isRefreshTokenAuthError,
+} from "./supabase-auth-error-utils";
 
 export async function getAccessToken(): Promise<string | null> {
   try {
@@ -6,7 +10,15 @@ export async function getAccessToken(): Promise<string | null> {
     if (supabase?.auth && typeof supabase.auth.getSession === "function") {
       const {
         data: { session },
+        error,
       } = await supabase.auth.getSession();
+      if (error) {
+        if (isRefreshTokenAuthError(error)) {
+          await clearInvalidRefreshTokenState(supabase);
+          return null;
+        }
+        return null;
+      }
       if (session?.access_token) return session.access_token;
     }
 
@@ -18,7 +30,13 @@ export async function getAccessToken(): Promise<string | null> {
 
     // Backup: try refreshing if available
     if (supabase?.auth && typeof supabase.auth.refreshSession === "function") {
-      const { data: refreshData } = await supabase.auth.refreshSession();
+      const { data: refreshData, error } = await supabase.auth.refreshSession();
+      if (error) {
+        if (isRefreshTokenAuthError(error)) {
+          await clearInvalidRefreshTokenState(supabase);
+        }
+        return null;
+      }
       return refreshData?.session?.access_token ?? null;
     }
   } catch (err) {

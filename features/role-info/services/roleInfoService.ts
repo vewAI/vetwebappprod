@@ -85,8 +85,8 @@ function buildPhysicalExamFallback(caseRow: CaseRow): string {
       "Use these instructions to report the completed exam:",
       "- Provide exact vital signs (temperature, heart rate, respiratory rate, perfusion metrics) as recorded.",
       "- List every abnormal finding tied to this scenario—lymph node enlargement, discharges, pain responses, hydration status, gastrointestinal changes, or other pertinent systems.",
-      "- Mention a system as normal only when the case details justify it; otherwise supply physiologically plausible abnormal measurements that match this context."
-    ].join("\n")
+      "- Mention a system as normal only when the case details justify it; otherwise supply physiologically plausible abnormal measurements that match this context.",
+    ].join("\n"),
   );
 
   return contextLines.join("\n");
@@ -173,8 +173,9 @@ Student request: {{STUDENT_REQUEST}}`,
     ],
     buildReplacements: ({ caseRow, userMessage }) => {
       const strategy = getText(caseRow, "findings_release_strategy", "immediate");
-      const instruction = strategy === "on_demand"
-        ? `CRITICAL: Only reveal findings for the EXACT body system or parameter the student requested. DO NOT provide findings from other systems.
+      const instruction =
+        strategy === "on_demand"
+          ? `CRITICAL: Only reveal findings for the EXACT body system or parameter the student requested. DO NOT provide findings from other systems.
 
 Example correct behavior:
 - Student asks: "What are the vitals?" → Only provide vital signs (temperature, heart rate, respiratory rate, blood pressure). Do NOT include other physical exam findings.
@@ -184,14 +185,10 @@ Example correct behavior:
 If the student has not yet requested a specific system, ask them to specify before revealing any data.
 
 When asked to 'double-check' or confirm a previous statement, DO NOT invent or change findings. Re-check only the recorded data and respond exactly with what is present in the record. If a requested item is not recorded, reply clearly: "That finding was not recorded during the exam." Do not fill gaps by guessing or revising earlier assertions.`
-        : "If the student asks for findings generally, provide the complete list of available findings immediately.";
-      
+          : "If the student asks for findings generally, provide the complete list of available findings immediately.";
+
       return {
-        FINDINGS: getText(
-          caseRow,
-          "physical_exam_findings",
-          buildPhysicalExamFallback(caseRow)
-        ),
+        FINDINGS: getText(caseRow, "physical_exam_findings", buildPhysicalExamFallback(caseRow)),
         STUDENT_REQUEST: userMessage,
         RELEASE_STRATEGY_INSTRUCTION: instruction,
       };
@@ -229,8 +226,9 @@ Student request: {{STUDENT_REQUEST}}`,
     ],
     buildReplacements: ({ caseRow, userMessage }) => {
       const strategy = getText(caseRow, "findings_release_strategy", "immediate");
-      const instruction = strategy === "on_demand"
-        ? `CRITICAL: Only reveal results for the EXACT test or category the student requested. DO NOT provide results from other tests.
+      const instruction =
+        strategy === "on_demand"
+          ? `CRITICAL: Only reveal results for the EXACT test or category the student requested. DO NOT provide results from other tests.
 
 Example correct behavior:
 - Student asks: "What are the biochemistry results?" → Only provide biochemistry/chemistry panel values. Do NOT include CBC, urinalysis, ultrasound, x-ray, or any other tests.
@@ -240,14 +238,10 @@ Example correct behavior:
 If the student has not yet requested a specific category, ask them to specify before revealing any data.
 
 If asked to re-check or confirm previous output, DO NOT fabricate or alter results. Review only the recorded diagnostic data and state exactly what is present. If a specific value is absent, say: "That result is not available in the record." Do not invent values or contradict earlier messages.`
-        : "If the student asks for results generally, provide all available diagnostic findings immediately.";
+          : "If the student asks for results generally, provide all available diagnostic findings immediately.";
 
       return {
-        DIAGNOSTIC_RESULTS: getText(
-          caseRow,
-          "diagnostic_findings",
-          "No diagnostic tests have been performed yet."
-        ),
+        DIAGNOSTIC_RESULTS: getText(caseRow, "diagnostic_findings", "No diagnostic tests have been performed yet."),
         STUDENT_REQUEST: userMessage,
         RELEASE_STRATEGY_INSTRUCTION: instruction,
       };
@@ -366,11 +360,7 @@ Student instructions: {{STUDENT_REQUEST}}`,
   },
 };
 
-function getText(
-  caseRow: CaseRow,
-  key: string,
-  fallback: string
-): string {
+function getText(caseRow: CaseRow, key: string, fallback: string): string {
   const data = caseRow && typeof caseRow === "object" ? (caseRow as Record<string, unknown>) : null;
   const value = data?.[key];
   if (typeof value === "string" && value.trim().length > 0) {
@@ -387,16 +377,12 @@ function getText(
 }
 
 function getCaseTitle(caseRow: CaseRow): string {
-  const rawTitle =
-    typeof caseRow?.["title"] === "string" ? (caseRow?.["title"] as string) : "the patient";
+  const rawTitle = typeof caseRow?.["title"] === "string" ? (caseRow?.["title"] as string) : "the patient";
   const trimmed = rawTitle.trim();
   return trimmed.length > 0 ? trimmed : "the patient";
 }
 
-function getPresentingComplaint(
-  caseRow: CaseRow,
-  title: string
-): string {
+function getPresentingComplaint(caseRow: CaseRow, title: string): string {
   const data = caseRow && typeof caseRow === "object" ? (caseRow as Record<string, unknown>) : null;
   const direct = typeof data?.presenting_complaint === "string" ? data.presenting_complaint : null;
   if (direct && direct.trim().length > 0) {
@@ -409,20 +395,14 @@ function getPresentingComplaint(
       return candidate.trim();
     }
   }
-  const condition =
-    typeof data?.condition === "string" && data.condition.trim().length > 0
-      ? data.condition.trim()
-      : null;
+  const condition = typeof data?.condition === "string" && data.condition.trim().length > 0 ? data.condition.trim() : null;
   if (condition) {
     return `Owner reports concerns consistent with ${condition}.`;
   }
   return `Owner reports initial concerns about ${title}.`;
 }
 
-function applyTemplate(
-  template: string,
-  replacements: Record<string, string>
-): string {
+function applyTemplate(template: string, replacements: Record<string, string>): string {
   let output = template;
   for (const [token, value] of Object.entries(replacements)) {
     const pattern = new RegExp(`{{\s*${token}\s*}}`, "g");
@@ -441,8 +421,7 @@ function extractRolePromptsFromMetadata(metadata: unknown): Record<string, strin
   const direct = record.rolePrompts;
   const snake = record.role_prompts;
   const source = [direct, snake].find(
-    (candidate): candidate is Record<string, unknown> =>
-      candidate !== null && typeof candidate === "object" && !Array.isArray(candidate)
+    (candidate): candidate is Record<string, unknown> => candidate !== null && typeof candidate === "object" && !Array.isArray(candidate),
   );
   if (!source) return {};
   const entries: Record<string, string> = {};
@@ -454,20 +433,11 @@ function extractRolePromptsFromMetadata(metadata: unknown): Record<string, strin
   return entries;
 }
 
-async function loadRolePromptOverride(
-  caseId: string,
-  roleKey: string | null,
-  roleInfoKey: string
-): Promise<string | null> {
+async function loadRolePromptOverride(caseId: string, roleKey: string | null, roleInfoKey: string): Promise<string | null> {
   if (!roleKey) return null;
   try {
     if (roleKey === "owner") {
-      const { data, error } = await supabase
-        .from("case_personas")
-        .select("metadata")
-        .eq("case_id", caseId)
-        .eq("role_key", "owner")
-        .maybeSingle();
+      const { data, error } = await supabase.from("case_personas").select("metadata").eq("case_id", caseId).eq("role_key", "owner").maybeSingle();
       if (error) {
         console.warn("Failed to load owner persona metadata for role prompt override", error);
         return null;
@@ -476,12 +446,7 @@ async function loadRolePromptOverride(
       return prompts[roleInfoKey] ?? null;
     }
     // For non-owner roles, still query case_personas but look for the specific role
-    const { data, error } = await supabase
-      .from("case_personas")
-      .select("metadata")
-      .eq("case_id", caseId)
-      .eq("role_key", roleKey)
-      .maybeSingle();
+    const { data, error } = await supabase.from("case_personas").select("metadata").eq("case_id", caseId).eq("role_key", roleKey).maybeSingle();
     if (error) {
       console.warn("Failed to load case persona metadata for role prompt override", error);
       return null;
@@ -511,7 +476,8 @@ export async function getRoleInfoPrompt(
   caseId: string,
   stageIndex: number,
   userMessage: string,
-  stageOverride?: Stage
+  stageOverride?: Stage,
+  caseRowOverride?: Record<string, unknown> | null,
 ): Promise<string | null> {
   // Check if the caseId is valid
   if (!isCaseIdValid(caseId)) {
@@ -533,35 +499,32 @@ export async function getRoleInfoPrompt(
 
   const roleInfoKey = stage.roleInfoKey as RolePromptKey | string;
 
-  // Fetch case-specific row from Supabase in case templates want injected data
-  let caseRow: Record<string, any> | null = null;
-  const adminSupabase = getSupabaseAdminClient();
-  const supabaseClient = adminSupabase ?? supabase;
-  try {
-    const { data, error } = await supabaseClient
-      .from("cases")
-      .select("*")
-      .eq("id", caseId)
-      .maybeSingle();
-    if (error) {
-      console.warn("Failed to fetch case row for role info prompts", error);
-    } else if (data) {
-      caseRow = data as Record<string, any>;
-    } else {
-      const rlsHint = adminSupabase ? "" : " (anon client may be blocked by RLS)";
-      console.warn(`No case row returned for ${caseId}${rlsHint}`);
+  // Reuse preloaded case row when available to avoid duplicate DB round-trips.
+  let caseRow: Record<string, any> | null = caseRowOverride && typeof caseRowOverride === "object" ? (caseRowOverride as Record<string, any>) : null;
+
+  if (!caseRow) {
+    const adminSupabase = getSupabaseAdminClient();
+    const supabaseClient = adminSupabase ?? supabase;
+    try {
+      const { data, error } = await supabaseClient.from("cases").select("*").eq("id", caseId).maybeSingle();
+      if (error) {
+        console.warn("Failed to fetch case row for role info prompts", error);
+      } else if (data) {
+        caseRow = data as Record<string, any>;
+      } else {
+        const rlsHint = adminSupabase ? "" : " (anon client may be blocked by RLS)";
+        console.warn(`No case row returned for ${caseId}${rlsHint}`);
+      }
+    } catch (e) {
+      console.warn("Error fetching case row for role info prompts:", e);
     }
-  } catch (e) {
-    console.warn("Error fetching case row for role info prompts:", e);
   }
 
   if (!caseRow) {
     const seedCase = loadSeedCase(caseId);
     if (seedCase) {
       caseRow = seedCase;
-      console.info(
-        `Using seed data for case ${caseId} while building role info prompts.`
-      );
+      console.info(`Using seed data for case ${caseId} while building role info prompts.`);
     }
   }
 
@@ -585,10 +548,7 @@ export async function getRoleInfoPrompt(
     try {
       // If the prompt function declares two parameters (caseData, context), call with caseRow
       if ((promptFunction as Function).length >= 2) {
-        return (promptFunction as (caseData: Record<string, unknown> | null, input: string) => string)(
-          caseRow,
-          userMessage
-        );
+        return (promptFunction as (caseData: Record<string, unknown> | null, input: string) => string)(caseRow, userMessage);
       }
       // Otherwise call with the old single-argument signature
       return (promptFunction as (input: string) => string)(userMessage);
@@ -599,9 +559,7 @@ export async function getRoleInfoPrompt(
   }
   // check if the key exists but is not a function
   if (promptFunction !== undefined) {
-    console.warn(
-      `roleInfoKey "${stage.roleInfoKey}" exists but is not a function in role info for case "${caseId}".`
-    );
+    console.warn(`roleInfoKey "${stage.roleInfoKey}" exists but is not a function in role info for case "${caseId}".`);
   }
 
   return null;
