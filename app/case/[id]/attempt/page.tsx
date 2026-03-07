@@ -203,7 +203,13 @@ export default function CaseChatPage() {
       // Reset local UI state
       setAttemptId(null);
       setInitialMessages([]);
-      setStages(initializeStages(getStagesForCase(id)));
+      try {
+        const mod = await import("@/features/stages/services/stageService");
+        const active = mod.getActiveStagesForCase ? await mod.getActiveStagesForCase(id) : mod.getStagesForCase(id);
+        setStages(initializeStages(active));
+      } catch {
+        setStages(initializeStages(getStagesForCase(id)));
+      }
       setCurrentStageIndex(0);
       // bump resetCounter to force ChatInterface remount and stop any active STT/TTS
       setResetCounter((c) => c + 1);

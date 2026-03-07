@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
+// DEPRECATED: Stage activation now lives in public.case_stages.is_active.
+// This endpoint remains for backward compatibility with existing admin flows.
+
 function resolveCaseIdFromCtx(ctx: any): Promise<string | undefined> | string | undefined {
   try {
     if (!ctx) return undefined;

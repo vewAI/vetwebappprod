@@ -37,7 +37,10 @@ export function ProgressSidebar({ caseItem, stages, currentStageIndex, onStageSe
       <div className="flex-1 overflow-y-auto p-4">
         <h3 className="mb-3 text-sm font-medium">Case Progress</h3>
         <div className="space-y-1">
-          {stages.map((stage, index) => (
+          {stages.map((stage, index) => {
+            const isFuture = index > currentStageIndex;
+            const visibleLabel = isFuture ? "Upcoming Stage" : stage.title;
+            return (
             <button
               key={stage.id}
               onClick={() => onStageSelect(index)}
@@ -47,9 +50,10 @@ export function ProgressSidebar({ caseItem, stages, currentStageIndex, onStageSe
               )}
             >
               {stage.completed ? <CheckCircle className="mr-2 h-4 w-4 text-green-500" /> : <Circle className="mr-2 h-4 w-4" />}
-              <span className="text-left">{stage.title}</span>
+              <span className="text-left">{visibleLabel}</span>
             </button>
-          ))}
+            );
+          })}
         </div>
       </div>
 

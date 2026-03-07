@@ -8,15 +8,7 @@ import { uploadFile } from "@/features/cases/components/case-media-editor";
 import { buildAuthHeaders } from "@/lib/auth-headers";
 import axios from "axios";
 import { isCaseMediaItem } from "@/features/cases/models/caseMedia";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-  DialogClose,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 
 type Props = {
   caseId: string;
@@ -84,7 +76,6 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
         const headers = await buildAuthHeaders({ "Content-Type": "application/json" });
         const resp = await axios.post(`/api/cases/media`, { caseId, media: mediaItem }, { headers });
         if (resp.status === 200) {
-
           // Trigger Ingestion if requested
           if (processForAi) {
             setIngesting(true);
@@ -102,7 +93,7 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
             } catch (ingestErr) {
               console.error("Ingestion failed", ingestErr);
               // Extract and display specific error message if available
-              if (ingestErr instanceof Error || (typeof ingestErr === 'object' && ingestErr !== null)) {
+              if (ingestErr instanceof Error || (typeof ingestErr === "object" && ingestErr !== null)) {
                 const errorObj = ingestErr as any;
                 const errorMsg = errorObj?.response?.data?.error || errorObj?.message || "AI processing failed";
                 const errorCode = errorObj?.response?.data?.code;
@@ -157,17 +148,19 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Embedding Model Access Error</DialogTitle>
-            <DialogDescription>
-              The AI ingestion service couldn't access the preferred embedding model.
-            </DialogDescription>
+            <DialogDescription>The AI ingestion service couldn&apos;t access the preferred embedding model.</DialogDescription>
           </DialogHeader>
           <div className="mt-2 text-sm space-y-2">
             {modelAccessInfo?.message ? <div className="text-sm">{modelAccessInfo.message}</div> : null}
             {modelAccessInfo?.model ? (
-              <div className="text-sm">Preferred model: <strong>{modelAccessInfo.model}</strong></div>
+              <div className="text-sm">
+                Preferred model: <strong>{modelAccessInfo.model}</strong>
+              </div>
             ) : null}
             {modelAccessInfo?.attemptedModels ? (
-              <div className="text-sm">Attempted models: <strong>{modelAccessInfo.attemptedModels.join(", ")}</strong></div>
+              <div className="text-sm">
+                Attempted models: <strong>{modelAccessInfo.attemptedModels.join(", ")}</strong>
+              </div>
             ) : null}
             <div className="text-sm">
               Actions you can take:
@@ -175,7 +168,7 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
                 <li>Set `OPENAI_EMBEDDING_MODEL` to a model your OpenAI project can access.</li>
                 <li>Or set `OPENAI_EMBEDDING_FALLBACKS` to a comma-separated list of alternative models.</li>
                 <li>Ask your OpenAI account admin to grant model access to the project key.</li>
-                <li>Uncheck "Process for AI Knowledge Base" to skip ingestion for now.</li>
+                <li>Uncheck &quot;Process for AI Knowledge Base&quot; to skip ingestion for now.</li>
               </ul>
             </div>
 
@@ -183,12 +176,29 @@ export function CasePapersUploader({ caseId, onUploaded }: Props) {
               <div className="text-sm font-medium">Commands to list models for your key</div>
               <div className="mt-2 grid grid-cols-1 gap-2">
                 <div className="flex items-start gap-2">
-                  <pre className="rounded bg-muted p-2 text-xs flex-1 overflow-auto">curl https://api.openai.com/v1/models -H "Authorization: Bearer $OPENAI_API_KEY"</pre>
-                  <Button size="sm" onClick={() => copyToClipboard('curl https://api.openai.com/v1/models -H "Authorization: Bearer $OPENAI_API_KEY"', 'bash')}>{copiedFlag === 'bash' ? 'Copied' : 'Copy curl'}</Button>
+                  <pre className="rounded bg-muted p-2 text-xs flex-1 overflow-auto">
+                    curl https://api.openai.com/v1/models -H &quot;Authorization: Bearer $OPENAI_API_KEY&quot;
+                  </pre>
+                  <Button
+                    size="sm"
+                    onClick={() => copyToClipboard('curl https://api.openai.com/v1/models -H "Authorization: Bearer $OPENAI_API_KEY"', "bash")}
+                  >
+                    {copiedFlag === "bash" ? "Copied" : "Copy curl"}
+                  </Button>
                 </div>
                 <div className="flex items-start gap-2">
                   <pre className="rounded bg-muted p-2 text-xs flex-1 overflow-auto">{`Invoke-RestMethod -Uri "https://api.openai.com/v1/models" -Headers @{{ Authorization = "Bearer $env:OPENAI_API_KEY" }}`}</pre>
-                  <Button size="sm" onClick={() => copyToClipboard('Invoke-RestMethod -Uri "https://api.openai.com/v1/models" -Headers @{{ Authorization = "Bearer $env:OPENAI_API_KEY" }}', 'ps')}>{copiedFlag === 'ps' ? 'Copied' : 'Copy PowerShell'}</Button>
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      copyToClipboard(
+                        'Invoke-RestMethod -Uri "https://api.openai.com/v1/models" -Headers @{{ Authorization = "Bearer $env:OPENAI_API_KEY" }}',
+                        "ps",
+                      )
+                    }
+                  >
+                    {copiedFlag === "ps" ? "Copied" : "Copy PowerShell"}
+                  </Button>
                 </div>
               </div>
             </div>

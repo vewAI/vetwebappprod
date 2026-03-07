@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import type { Stage } from "@/features/stages/types";
 import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
 import { Button } from "@/components/ui/button";
+import { LabResultsTable } from "./lab-results-table";
 
 // Match any [MEDIA:...] token (allow dots, underscores, hyphens, digits, and more)
 const MEDIA_TAG_REGEX = /\[MEDIA:([^\]]+)\]/g;
@@ -12,7 +13,10 @@ const MEDIA_TAG_REGEX = /\[MEDIA:([^\]]+)\]/g;
 function stripMediaTags(text: string): string {
   if (!text) return text;
   // Remove [MEDIA:123] tokens and collapse extra whitespace left behind
-  return text.replace(MEDIA_TAG_REGEX, "").replace(/\s{2,}/g, " ").trim();
+  return text
+    .replace(MEDIA_TAG_REGEX, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 type MediaRendererProps = {
@@ -32,15 +36,8 @@ function MediaRenderer({ items }: MediaRendererProps) {
         if (item.type === "image") {
           return (
             <figure key={key} className="space-y-2">
-              <img
-                src={item.url}
-                alt={caption || "Case media"}
-                className="max-h-80 w-full rounded-lg object-contain"
-                loading="lazy"
-              />
-              {caption ? (
-                <figcaption className="text-xs text-muted-foreground">{caption}</figcaption>
-              ) : null}
+              <img src={item.url} alt={caption || "Case media"} className="max-h-80 w-full rounded-lg object-contain" loading="lazy" />
+              {caption ? <figcaption className="text-xs text-muted-foreground">{caption}</figcaption> : null}
             </figure>
           );
         }
@@ -48,15 +45,8 @@ function MediaRenderer({ items }: MediaRendererProps) {
         if (item.type === "video") {
           return (
             <figure key={key} className="space-y-2">
-              <video
-                className="w-full rounded-lg"
-                src={item.url}
-                controls
-                preload="metadata"
-              />
-              {caption ? (
-                <figcaption className="text-xs text-muted-foreground">{caption}</figcaption>
-              ) : null}
+              <video className="w-full rounded-lg" src={item.url} controls preload="metadata" />
+              {caption ? <figcaption className="text-xs text-muted-foreground">{caption}</figcaption> : null}
               {transcript ? (
                 <details className="text-xs text-muted-foreground">
                   <summary className="cursor-pointer">Transcript</summary>
@@ -70,23 +60,10 @@ function MediaRenderer({ items }: MediaRendererProps) {
         if (item.type === "audio") {
           return (
             <figure key={key} className="space-y-2">
-              <audio
-                className="w-full"
-                src={item.url}
-                controls
-                loop={Boolean(item.loop)}
-                preload="metadata"
-              />
-              {caption ? (
-                <figcaption className="text-xs text-muted-foreground">{caption}</figcaption>
-              ) : null}
+              <audio className="w-full" src={item.url} controls loop={Boolean(item.loop)} preload="metadata" />
+              {caption ? <figcaption className="text-xs text-muted-foreground">{caption}</figcaption> : null}
               {item.thumbnailUrl ? (
-                <img
-                  src={item.thumbnailUrl}
-                  alt="Waveform preview"
-                  className="h-16 w-full rounded object-cover"
-                  loading="lazy"
-                />
+                <img src={item.thumbnailUrl} alt="Waveform preview" className="h-16 w-full rounded object-cover" loading="lazy" />
               ) : null}
               {transcript ? (
                 <details className="text-xs text-muted-foreground">
@@ -99,19 +76,9 @@ function MediaRenderer({ items }: MediaRendererProps) {
         }
 
         return (
-          <div
-            key={key}
-            className="rounded border border-border bg-muted/20 p-3 text-xs text-muted-foreground"
-          >
-            <div className="font-semibold uppercase tracking-wide text-[0.65rem] text-muted-foreground/80">
-              {item.mimeType || item.type}
-            </div>
-            <a
-              className="text-sm text-primary underline"
-              href={item.url}
-              target="_blank"
-              rel="noreferrer"
-            >
+          <div key={key} className="rounded border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
+            <div className="font-semibold uppercase tracking-wide text-[0.65rem] text-muted-foreground/80">{item.mimeType || item.type}</div>
+            <a className="text-sm text-primary underline" href={item.url} target="_blank" rel="noreferrer">
               Open resource
             </a>
             {caption ? <p className="mt-1 whitespace-pre-wrap">{caption}</p> : null}
@@ -149,9 +116,7 @@ function CollapsibleContent({ content }: { content: string }) {
     <div className="space-y-2">
       <div className={cn("whitespace-pre-wrap text-sm", !isExpanded && "line-clamp-6 max-h-40 overflow-hidden relative")}>
         {safeContent}
-        {!isExpanded && (
-          <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-background to-transparent" />
-        )}
+        {!isExpanded && <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-background to-transparent" />}
       </div>
       <Button
         variant="ghost"
@@ -185,19 +150,14 @@ export function ChatMessage({ message, stages, onRetry }: ChatMessageProps) {
       date.toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
-      })
+      }),
     );
   }, [message.timestamp]);
 
   // Use displayRole if available, otherwise fall back to the previous logic
   let roleName = message.displayRole || (isUser ? "You" : "Virtual Examiner");
 
-  if (
-    !message.displayRole &&
-    !isUser &&
-    message.role === "assistant" &&
-    message.stageIndex !== undefined
-  ) {
+  if (!message.displayRole && !isUser && message.role === "assistant" && message.stageIndex !== undefined) {
     if (message.stageIndex >= 0 && message.stageIndex < stages.length) {
       roleName = stages[message.stageIndex].role;
     }
@@ -208,12 +168,7 @@ export function ChatMessage({ message, stages, onRetry }: ChatMessageProps) {
   roleName = roleName.replace(/\s*\(.*\)\s*$/, "");
 
   return (
-    <div
-      className={cn(
-        "flex items-start gap-3 rounded-lg p-4",
-        isUser ? "bg-muted/50" : "bg-background"
-      )}
-    >
+    <div className={cn("flex items-start gap-3 rounded-lg p-4", isUser ? "bg-muted/50" : "bg-background")}>
       {message.portraitUrl && !isUser ? (
         <div className="relative h-[4.5rem] w-[4.5rem] shrink-0 overflow-hidden rounded-lg border bg-muted">
           <img
@@ -228,14 +183,10 @@ export function ChatMessage({ message, stages, onRetry }: ChatMessageProps) {
         <div
           className={cn(
             "flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
-            isUser ? "bg-primary text-primary-foreground" : "bg-muted"
+            isUser ? "bg-primary text-primary-foreground" : "bg-muted",
           )}
         >
-          {isUser ? (
-            <User className="h-5 w-5" />
-          ) : (
-            <Bot className="h-5 w-5" />
-          )}
+          {isUser ? <User className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
         </div>
       )}
       <div className="flex-1 space-y-2">
@@ -243,28 +194,20 @@ export function ChatMessage({ message, stages, onRetry }: ChatMessageProps) {
           <div className="font-medium">{roleName}</div>
           <div className="text-xs text-muted-foreground">{formattedTime}</div>
           {isUser && message.status === "failed" && (
-            <button
-              className="ml-2 text-xs text-red-600 hover:underline"
-              onClick={() => onRetry && onRetry(message.id)}
-            >
+            <button className="ml-2 text-xs text-red-600 hover:underline" onClick={() => onRetry && onRetry(message.id)}>
               Retry
             </button>
           )}
-          {isUser && message.status === "pending" && (
-            <div className="ml-2 text-xs text-muted-foreground">Sending…</div>
-          )}
-          {isUser && message.status === "sent" && (
-            <div className="ml-2 text-xs text-muted-foreground">Sent</div>
-          )}
+          {isUser && message.status === "pending" && <div className="ml-2 text-xs text-muted-foreground">Sending…</div>}
+          {isUser && message.status === "sent" && <div className="ml-2 text-xs text-muted-foreground">Sent</div>}
         </div>
         {isUser ? (
           <div className="whitespace-pre-wrap text-sm">{stripMediaTags(message.content)}</div>
         ) : (
           <CollapsibleContent content={stripMediaTags(message.content)} />
         )}
-        {Array.isArray(message.media) && message.media.length > 0 ? (
-          <MediaRenderer items={message.media} />
-        ) : null}
+        {Array.isArray(message.media) && message.media.length > 0 ? <MediaRenderer items={message.media} /> : null}
+        {message.labResults && message.labResults.panels.length > 0 ? <LabResultsTable data={message.labResults} /> : null}
       </div>
     </div>
   );

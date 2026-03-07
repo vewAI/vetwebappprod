@@ -2,6 +2,7 @@ import OpenAi from "openai";
 import { NextRequest, NextResponse } from "next/server";
 import { getRoleInfoPrompt } from "@/features/role-info/services/roleInfoService";
 import { getStagesForCase } from "@/features/stages/services/stageService";
+import type { Stage } from "@/features/stages/types";
 import { resolveChatPersonaRoleKey, isAllowedChatPersonaKey } from "@/features/chat/utils/persona-guardrails";
 import { buildPersonaSeeds, buildSharedPersonaSeeds } from "@/features/personas/services/personaSeedService";
 import type { PersonaIdentity, PersonaSeed } from "@/features/personas/models/persona";
@@ -11,9 +12,11 @@ import { resolvePromptValue } from "@/features/prompts/services/promptService";
 // (see usage sites where we `await import()` the module)
 import { requireUser } from "@/app/api/_lib/auth";
 import { parseRequestedKeys, matchPhysicalFindings, PHYS_SYNONYMS } from "@/features/chat/services/physFinder";
+import { parseLabResults } from "../../../features/chat/services/labResultsParser";
 import { normalizeCaseMedia, type CaseMediaItem } from "@/features/cases/models/caseMedia";
 import { searchMerckManual } from "@/features/external-resources/services/merckService";
 import { debugEventBus } from "@/lib/debug-events-fixed";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 const openai = new OpenAi({
   apiKey: process.env.OPENAI_API_KEY,
@@ -134,23 +137,44 @@ export async function POST(request: NextRequest) {
 
     // Role Info Prompt logic (restored and correctly scoped)
     let roleInfoPromptContent: string | null = null;
-    if (caseId && stageIndex !== undefined && lastUserMessage) {
-      const roleInfoPrompt = await getRoleInfoPrompt(caseId, stageIndex, lastUserMessage.content);
-
-      if (roleInfoPrompt) {
-        roleInfoPromptContent = roleInfoPrompt;
-      }
-    }
 
     let displayRole: string | undefined = undefined;
     let stageRole: string | undefined = undefined;
     let stageDescriptor: { id?: string; title?: string; role?: string } | null = null;
     let personaRoleKey: string | undefined = undefined;
     let personaIdentity: PersonaIdentity | undefined = undefined;
+    let currentStage: Stage | undefined = undefined;
     if (caseId && typeof stageIndex === "number") {
       try {
-        const stages = getStagesForCase(caseId);
+        let stages = getStagesForCase(caseId);
+        const stageSupabase = getSupabaseAdminClient() ?? supabase;
+        const { data: dbStages, error: dbStagesError } = await stageSupabase
+          .from("case_stages")
+          .select("*")
+          .eq("case_id", caseId)
+          .eq("is_active", true)
+          .order("sort_order", { ascending: true });
+
+        if (!dbStagesError && Array.isArray(dbStages) && dbStages.length > 0) {
+          stages = dbStages.map((row: any) => ({
+            id: row.id,
+            title: row.title,
+            description: row.description,
+            completed: false,
+            role: row.role_label ?? row.title,
+            personaRoleKey: row.persona_role_key,
+            roleInfoKey: row.role_info_key ?? undefined,
+            feedbackPromptKey: row.feedback_prompt_key ?? undefined,
+            stagePrompt: row.stage_prompt ?? undefined,
+            transitionMessage: row.transition_message ?? undefined,
+            isActive: row.is_active,
+            sortOrder: row.sort_order,
+            settings: row.settings ?? {},
+          }));
+        }
+
         const stage = stages && stages[stageIndex];
+        currentStage = stage;
         if (stage) {
           stageDescriptor = {
             id: stage.id,
@@ -171,6 +195,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (caseId && stageIndex !== undefined && lastUserMessage) {
+      if (currentStage?.stagePrompt) {
+        roleInfoPromptContent = currentStage.stagePrompt;
+      } else {
+        const roleInfoPrompt = await getRoleInfoPrompt(caseId, stageIndex, lastUserMessage.content, currentStage);
+        if (roleInfoPrompt) {
+          roleInfoPromptContent = roleInfoPrompt;
+        }
+      }
+    }
+
     // Fallback displayRole if not set from stage
     // NOTE: We no longer extract names from ownerBackground - persona is source of truth
     if (!displayRole) {
@@ -178,7 +213,7 @@ export async function POST(request: NextRequest) {
       console.log(`[chat] Fallback displayRole: "${displayRole}"`);
     }
 
-    personaRoleKey = resolveChatPersonaRoleKey(stageDescriptor?.title ?? stageRole, displayRole);
+    personaRoleKey = currentStage?.personaRoleKey ?? resolveChatPersonaRoleKey(stageDescriptor?.title ?? stageRole, displayRole);
     console.log(`[chat] Persona resolution: stageRole="${stageRole}" displayRole="${displayRole}" → personaRoleKey="${personaRoleKey}"`);
 
     // Prefer explicit persona selected by the client message (if present)
@@ -1073,6 +1108,29 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
       if (typeof diag === "string" && diag.trim().length > 0) {
         // If user asked specifically for a test or value, try to return the matching lines
         const diagText = diag as string;
+
+        // Structured lab result table path. For general bloodwork/lab requests,
+        // prefer returning concise spoken text plus a deterministic payload.
+        const caseSpecies = String((caseRecord as any).species ?? "").trim() || undefined;
+        const labResultsPayload = parseLabResults(diagText, caseSpecies);
+        const isGeneralLabRequest =
+          /\b(results|bloodwork|bloods|blood\s*work|labs|all|full|complete|show|display|printout|report|cbc|hematology|haematology)\b/i.test(
+            userText,
+          );
+        if (labResultsPayload && labResultsPayload.panels.length > 0 && isGeneralLabRequest) {
+          return NextResponse.json({
+            content: "Here are the results.",
+            displayRole,
+            portraitUrl: personaImageUrl,
+            voiceId: personaVoiceId,
+            personaSex,
+            personaRoleKey,
+            media: [],
+            patientSex,
+            labResults: labResultsPayload,
+          });
+        }
+
         // Find diagnostic canonical key from user text
         const matchedDiagKey = findSynonymKey(userText, DIAG_SYNONYMS);
         if (matchedDiagKey) {
@@ -1254,7 +1312,37 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     // sensitive stages (Physical, Laboratory, Treatment). This prompt tells
     // the assistant to only return requested findings when asked, to format
     // them compactly, and to avoid diagnostic reasoning in the Physical stage.
-    const nurseBasePrompt = `\n\nNURSE PERSONA RULES: If you are answering as a nursing or laboratory persona, follow these rules: 1) Only release physical exam or diagnostic findings when the student explicitly requests them. 2) When the student requests specific findings (for example: 'hr, rr, temperature'), respond with a compact, comma-separated list of the requested parameters and their recorded values (e.g., 'Heart rate: 38 bpm, Respiratory rate: 16 per minute, Temperature: 102 °F (38.9 °C)'). 3) Do NOT include internal prompts, persona-management text, or owner identity. 4) In the Physical Examination stage, DO NOT provide any diagnostic interpretations or treatment recommendations. If a reply would normally include interpretive language (for example: phrases like 'consistent with', 'suggestive of', 'likely', 'most consistent with', 'suspicious for', 'indicative of', or 'probable'), instead respond with: 'I cannot provide diagnostic interpretation in the Physical Examination stage. I can provide recorded findings or request further tests.' Keep replies concise and do not speculate. 5) If a requested value is not recorded, state 'no recorded value' and do not guess. You may optionally note typical species norms only if clearly labeled as 'typical for [species]' and not as the patient's recorded value.`;
+    const nurseBasePrompt = `
+
+  NURSE PERSONA RULES: If you are answering as a nursing or laboratory persona, follow these rules:
+  1) Only release physical exam or diagnostic findings when the student explicitly requests them. Do not volunteer unrelated values unless clinically critical.
+  2) Selective reporting is mandatory:
+    - If asked for one parameter (for example: potassium), report only that parameter.
+    - If asked for "electrolytes", report potassium, chloride, and bicarbonate.
+    - If asked for "liver enzymes", report AST, GGT, and GLDH.
+    - If asked for "full bloodwork" or a complete panel, report the complete panel.
+  3) Avoid bullet points, raw JSON reading, and mechanical repetition. Use natural clinical speech in 1 to 3 sentences by default. Expand only if the clinician asks for interpretation.
+  4) Do NOT include internal prompts, persona-management text, or owner identity.
+  5) In the Physical Examination stage, DO NOT provide diagnostic interpretations or treatment recommendations. If a reply would normally include interpretive language (for example: "consistent with", "suggestive of", "likely", "most consistent with", "suspicious for", "indicative of", or "probable"), instead respond with: "I cannot provide diagnostic interpretation in the Physical Examination stage. I can provide recorded findings or request further tests."
+  6) If a requested value is not recorded, state "no recorded value" and do not guess. You may optionally note typical species norms only if clearly labeled as "typical for [species]" and not as the patient's recorded value.
+  7) Biochemical terminology normalization for spoken delivery:
+    - mmol/L => millimoles per litre
+    - mEq/L => milliequivalents per litre
+    - g/L => grams per litre
+    - mg/dL => milligrams per decilitre
+    - % => percent
+    Example: "3.2 mmol/L" should be spoken as "Three point two millimoles per litre."
+  8) Pronounce abbreviations as clinical terms (do not spell letter-by-letter unless asked):
+    - NEFA or NEFAs => non-esterified fatty acids
+    - BHB or BHBA => beta-hydroxybutyrate
+    - AST => aspartate aminotransferase
+    - GGT => gamma-glutamyl transferase
+    - GLDH => glutamate dehydrogenase
+    - BUN => blood urea nitrogen
+    - PCV => packed cell volume
+  9) Multi-parameter delivery style should be natural and sequenced (single paragraph), for example: "Potassium is three point two millimoles per litre, which is low. Chloride is ninety millimoles per litre, low-normal. Calcium is two point one millimoles per litre, mildly decreased."
+  10) Imaging and ultrasound reporting should describe findings clearly without over-interpreting and without adding conclusions unless asked.
+  11) Do not provide treatment advice unless asked. Do not speculate beyond available data. Maintain a neutral, professional, clinically realistic tone.`;
 
     // Append the nurse base prompt for nurse/lab personas during sensitive stages
     if (personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician" || isPhysicalStage || isLabStage) {

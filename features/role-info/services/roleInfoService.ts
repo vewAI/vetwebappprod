@@ -510,7 +510,8 @@ const caseRoleInfoMap: Record<string, RoleInfo> = {
 export async function getRoleInfoPrompt(
   caseId: string,
   stageIndex: number,
-  userMessage: string
+  userMessage: string,
+  stageOverride?: Stage
 ): Promise<string | null> {
   // Check if the caseId is valid
   if (!isCaseIdValid(caseId)) {
@@ -521,13 +522,11 @@ export async function getRoleInfoPrompt(
   // Get the role info object for this case (with type assertion)
   const roleInfo = caseRoleInfoMap[caseId] ?? dbRoleInfo;
 
-  // Get the stages for this case from the config
-  const caseStages = caseConfig[caseId];
-  if (!caseStages || !caseStages[stageIndex]) {
+  const stage = stageOverride ?? caseConfig[caseId]?.[stageIndex];
+  if (!stage) {
     return null;
   }
 
-  const stage = caseStages[stageIndex];
   if (!stage.roleInfoKey) {
     return null;
   }

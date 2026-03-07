@@ -15,7 +15,7 @@ import { PersonaEditor, type PersonaConfig } from "@/features/personas/component
 import { normalizeCaseMedia, type CaseMediaItem } from "@/features/cases/models/caseMedia";
 import { AdminDebugPanel } from "@/features/admin/components/AdminDebugPanel";
 import { TimeProgressionEditor } from "@/features/cases/components/case-time-progression-editor";
-import { caseConfig } from "@/features/config/case-config";
+import { getActiveStagesForCase, getStagesForCase } from "@/features/stages/services/stageService";
 import { resolveChatPersonaRoleKey } from "@/features/chat/utils/persona-guardrails";
 
 type CaseRecord = Record<string, unknown>;
@@ -176,8 +176,13 @@ export default function CaseViewerPage() {
           console.warn("Failed to load shared personas in case viewer", sharedErr);
         }
 
-        // Filter personas based on the roles defined in caseConfig for this case
-        const stages = caseConfig[caseId] || [];
+        // Filter personas based on stage roles configured for this case.
+        let stages = [] as Array<{ role?: string }>;
+        try {
+          stages = await getActiveStagesForCase(caseId);
+        } catch {
+          stages = getStagesForCase(caseId);
+        }
         const allowedRoles = new Set<string>();
 
         // Always include owner

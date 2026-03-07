@@ -25,6 +25,10 @@ export function coalesceMessages(messages: AppMessage[]): AppMessage[] {
           ...m.structuredFindings,
         };
       }
+      // Preserve the newest labResults payload when present.
+      if (m.labResults) {
+        last.labResults = m.labResults;
+      }
       // Prefer the newest portrait/voice info if present
       if (m.portraitUrl) last.portraitUrl = m.portraitUrl;
       if (m.voiceId) last.voiceId = m.voiceId;

@@ -442,6 +442,7 @@ export function ChatInterface({
             const lastSF = (last as any).structuredFindings || {};
             const msgSF = (msg as any).structuredFindings || {};
             const mergedSF = { ...lastSF, ...msgSF };
+            const mergedLabResults = (msg as any).labResults ?? (last as any).labResults;
             const merged: Message = {
               ...last,
               content: mergedContent,
@@ -451,6 +452,7 @@ export function ChatInterface({
               status: msg.status === "sent" ? "sent" : last.status,
               // attach merged structured findings permissively
               ...(Object.keys(mergedSF).length ? { structuredFindings: mergedSF } : {}),
+              ...(mergedLabResults ? { labResults: mergedLabResults } : {}),
             } as Message & { structuredFindings?: any };
             return [...prev.slice(0, -1), merged];
           } catch (e) {
@@ -469,7 +471,9 @@ export function ChatInterface({
   useEffect(() => {
     const stage = stages?.[currentStageIndex];
     try {
-      const normalized = resolveChatPersonaRoleKey(stage?.role, stage?.role ?? "");
+      const normalized = isAllowedChatPersonaKey(stage?.personaRoleKey)
+        ? stage.personaRoleKey
+        : resolveChatPersonaRoleKey(stage?.role, stage?.role ?? "");
       setActivePersona(normalized);
     } catch (e) {
       // ignore
@@ -1880,12 +1884,12 @@ export function ChatInterface({
       const e = { ts: now, ...entry };
       console.debug("[STT TRACE]", e);
       // keep an in-page buffer for easy extraction during repros
-      // @ts-ignore
       if (typeof window !== "undefined") {
-        // @ts-ignore
-        window.__stt_trace = window.__stt_trace || [];
-        // @ts-ignore
-        window.__stt_trace.push(e);
+        const w = window as Window & {
+          __stt_trace?: Array<Record<string, unknown>>;
+        };
+        w.__stt_trace = w.__stt_trace || [];
+        w.__stt_trace.push(e);
       }
       try {
         debugEventBus?.emitEvent?.("info", "STT_TRACE", "trace_entry", e);
@@ -2085,7 +2089,7 @@ export function ChatInterface({
       setShowProceedHint(true);
 
       const roleName = stage.role ?? "Virtual Assistant";
-      const normalizedRoleKey = resolveChatPersonaRoleKey(stage.role, roleName);
+      const normalizedRoleKey = stage.personaRoleKey ?? resolveChatPersonaRoleKey(stage.role, roleName);
       const personaMeta = await ensurePersonaMetadata(normalizedRoleKey);
       try {
         console.debug("emitStageReadinessPrompt personaMeta", { normalizedRoleKey, personaMeta });
@@ -2810,6 +2814,7 @@ export function ChatInterface({
         responseVoiceSex,
         safePersonaRoleKey,
         response.media,
+        (response as any)?.labResults,
       );
       // Client-side guard: suppress long nurse findings dumps unless user requested specific params
       const lastUser = [...messages].reverse().find((m) => m.role === "user");
@@ -3306,6 +3311,7 @@ export function ChatInterface({
           resolvedResponseSex,
           safePersonaRoleKey,
           response.media,
+          (response as any)?.labResults,
         );
         // Client-side nurse transform for pending flush responses
         const lastUser = [...messages].reverse().find((m) => m.role === "user");
@@ -4376,7 +4382,7 @@ export function ChatInterface({
     // labels the speaker appropriately (e.g., Owner, Laboratory Technician)
     const stageRole = stages[targetIndex]?.role ?? "Virtual Assistant";
     const roleName = String(stageRole);
-    let normalizedRoleKey = resolveChatPersonaRoleKey(stageRole, roleName);
+    let normalizedRoleKey = stages[targetIndex]?.personaRoleKey ?? resolveChatPersonaRoleKey(stageRole, roleName);
 
     // Fix: If the intro text explicitly claims to be the veterinary nurse,
     // but the stage role is generic (e.g. "Veterinarian"), force the nurse persona.
@@ -4858,6 +4864,7 @@ export function ChatInterface({
                     const mSF = (m as any).structuredFindings || {};
                     const mergedSF = { ...lastSF, ...mSF };
                     if (Object.keys(mergedSF).length) (last as any).structuredFindings = mergedSF;
+                    if ((m as any).labResults) (last as any).labResults = (m as any).labResults;
                     // Keep earliest timestamp
                     (last as any).timestamp = last.timestamp || m.timestamp;
                   } catch (e) {

@@ -1,5 +1,5 @@
 import { caseConfig } from "@/features/config/case-config";
-import type { Stage } from "../types";
+import { caseStageRowToStage, type CaseStageRow, type Stage } from "../types";
 import type { Message } from "@/features/chat/models/chat";
 import { getTransitionMessage as getCase1TransitionMessage } from "../case1";
 
@@ -19,37 +19,39 @@ export function getStagesForCase(caseId: string): Stage[] {
   return stages;
 }
 
-// Fetch stages for a case and apply server-side activation overrides when available.
-export async function getActiveStagesForCase(caseId: string): Promise<Stage[]> {
-  const stages = getStagesForCase(caseId) ?? [];
+export async function getStagesForCaseAsync(caseId: string): Promise<Stage[]> {
+  if (!caseId) return [];
+
   try {
-    const resp = await fetch(`/api/cases/${encodeURIComponent(caseId)}/stage-settings`);
-    if (!resp.ok) return stages;
-    const payload = await resp.json().catch(() => ({}));
-    const activation = payload?.stageActivation || {};
-    const filtered = stages.filter((s, idx) => {
-      const key = String(idx);
-      if (activation.hasOwnProperty(key)) {
-        const v = (activation as any)[key];
-        // Accept booleans or string booleans from DB/APIs
-        return v === true || v === "true";
-      }
-      // default: present
-      return true;
+    const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/stages`, {
+      cache: "no-store",
     });
-    
-    // Safety net: if filtering removed everything, return the full list.
-    // This prevents the UI from showing an empty sidebar if configuration is corrupted.
-    if (stages.length > 0 && filtered.length === 0) {
-      console.warn(`Stage activation filter removed all stages for case ${caseId}. Falling back to default.`);
-      return stages;
+    if (!response.ok) {
+      return getStagesForCase(caseId);
     }
-    
-    return filtered;
-  } catch (e) {
-    console.warn("Failed to load active stage settings", e);
+    const payload = (await response.json().catch(() => null)) as {
+      stages?: CaseStageRow[];
+    } | null;
+    const rows = Array.isArray(payload?.stages) ? payload!.stages : [];
+    if (!rows.length) {
+      return getStagesForCase(caseId);
+    }
+    return rows.map(caseStageRowToStage);
+  } catch (error) {
+    console.warn("Failed to load stages from /api/cases/[caseId]/stages", error);
+    return getStagesForCase(caseId);
+  }
+}
+
+// Fetch stages for a case and apply active filtering from DB-backed rows.
+export async function getActiveStagesForCase(caseId: string): Promise<Stage[]> {
+  const stages = (await getStagesForCaseAsync(caseId)) ?? [];
+  const filtered = stages.filter((stage) => stage.isActive !== false);
+  if (stages.length > 0 && filtered.length === 0) {
+    console.warn(`Active stage filtering removed all stages for case ${caseId}. Falling back to full list.`);
     return stages;
   }
+  return filtered;
 }
 
 /**
