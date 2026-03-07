@@ -337,11 +337,18 @@ export default function HomePage() {
               title="Attempts awaiting feedback"
               description="Support your students with timely feedback on their completed attempts."
               action={
-                <Link href="/professor">
-                  <Button variant="ghost" size="sm">
-                    Open professor dashboard
-                  </Button>
-                </Link>
+                <div className="flex gap-2">
+                  <Link href="/case-entry">
+                    <Button variant="outline" size="sm">
+                      Add New Case
+                    </Button>
+                  </Link>
+                  <Link href="/professor">
+                    <Button variant="ghost" size="sm">
+                      Open professor dashboard
+                    </Button>
+                  </Link>
+                </div>
               }
             />
             {loadingProfessorAttempts ? (

@@ -19,6 +19,26 @@ const PANEL_KEYWORDS: Record<string, string> = {
 
 const NARRATIVE_ONLY_PATTERNS = [/\bwithin\s+normal\s+limits\b/i, /\bpending\b/i, /\bno\s+abnormalit(y|ies)\b/i];
 
+function stripWrappingQuotes(text: string): string {
+  let out = text.trim();
+  out = out.replace(/^"+|"+$/g, "").trim();
+  out = out.replace(/^'+|'+$/g, "").trim();
+  return out;
+}
+
+function cleanFieldText(text: string): string {
+  let out = stripWrappingQuotes(String(text || ""));
+  out = out.replace(/[\u201c\u201d]/g, "");
+  out = out.replace(/\s+,\s*$/g, "");
+  out = out.replace(/\s{2,}/g, " ");
+  return out.trim();
+}
+
+function isObjectMarkerValue(value: string): boolean {
+  const v = value.trim();
+  return v === "{" || v === "}" || v === "[" || v === "]";
+}
+
 /**
  * Parses diagnostic findings into a structured table payload.
  * JSON payloads are preferred; line-based legacy text is supported as fallback.
@@ -84,11 +104,17 @@ function normalizePanel(panel: Record<string, unknown>): LabResultPanel | null {
 }
 
 function normalizeRow(row: Record<string, unknown>): LabResultRow {
+  const name = cleanFieldText(String(row.name || ""));
+  const value =
+    row.value === undefined || row.value === null
+      ? ""
+      : cleanFieldText(String(row.value));
+
   return {
-    name: String(row.name || ""),
-    value: row.value === undefined || row.value === null ? "" : String(row.value),
-    unit: String(row.unit || ""),
-    refRange: row.refRange ? String(row.refRange) : undefined,
+    name,
+    value,
+    unit: cleanFieldText(String(row.unit || "")),
+    refRange: row.refRange ? cleanFieldText(String(row.refRange)) : undefined,
     flag: normalizeFlag(row.flag),
   };
 }
@@ -134,8 +160,12 @@ function tryParseLines(text: string): LabResultsPayload | null {
       continue;
     }
 
-    const name = matches[1].trim();
-    const rawValue = matches[2].trim();
+    const name = cleanFieldText(matches[1].trim());
+    const rawValue = cleanFieldText(matches[2].trim());
+
+    if (!name || isObjectMarkerValue(rawValue)) {
+      continue;
+    }
 
     if (NARRATIVE_ONLY_PATTERNS.some((pattern) => pattern.test(rawValue))) {
       narrativeOnlyCount += 1;
@@ -147,9 +177,9 @@ function tryParseLines(text: string): LabResultsPayload | null {
       continue;
     }
 
-    const valueRaw = valueMatch[1]?.trim() || rawValue;
-    const unit = valueMatch[2]?.trim() || "";
-    const extra = valueMatch[3]?.trim() || "";
+    const valueRaw = cleanFieldText(valueMatch[1]?.trim() || rawValue);
+    const unit = cleanFieldText(valueMatch[2]?.trim() || "");
+    const extra = cleanFieldText(valueMatch[3]?.trim() || "");
 
     let flag: "low" | "high" | "critical" | null = null;
     if (/\bleukopenia\b|\blow\b|\bdecreased\b/i.test(extra)) flag = "low";
@@ -159,7 +189,7 @@ function tryParseLines(text: string): LabResultsPayload | null {
 
     currentPanel.rows.push({
       name,
-      value: valueRaw.replace(/^\*\s*/, ""),
+      value: cleanFieldText(valueRaw.replace(/^\*\s*/, "")),
       unit,
       flag,
     });
@@ -167,14 +197,21 @@ function tryParseLines(text: string): LabResultsPayload | null {
 
   if (currentPanel.rows.length) panels.push(currentPanel);
 
-  const rowCount = panels.reduce((acc, panel) => acc + panel.rows.length, 0);
+  const cleanedPanels = panels
+    .map((panel) => ({
+      ...panel,
+      rows: panel.rows.filter((row) => row.name && row.value && !isObjectMarkerValue(row.value)),
+    }))
+    .filter((panel) => panel.rows.length > 0);
+
+  const rowCount = cleanedPanels.reduce((acc, panel) => acc + panel.rows.length, 0);
   if (rowCount === 0) return null;
 
   // If all parsed rows are narrative placeholders, do not force table rendering.
-  const hasAnyNumericLikeRow = panels.some((panel) => panel.rows.some((row) => /\d/.test(row.value) || Boolean(row.unit)));
+  const hasAnyNumericLikeRow = cleanedPanels.some((panel) => panel.rows.some((row) => /\d/.test(row.value) || Boolean(row.unit)));
   if (!hasAnyNumericLikeRow && narrativeOnlyCount >= rowCount) return null;
 
-  return { panels };
+  return { panels: cleanedPanels };
 }
 
 function titleCase(text: string): string {
