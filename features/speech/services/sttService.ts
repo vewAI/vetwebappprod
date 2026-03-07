@@ -605,16 +605,6 @@ export function isSttSuppressed() {
 }
 
 /**
- * Force-clear ALL suppression state unconditionally.
- * Use this in TTS resume paths to guarantee STT can start.
- */
-export function forceClearSuppression(reason?: string) {
-  sttSuppressed = false;
-  sttSuppressedUntil = 0;
-  void reason;
-}
-
-/**
  * Returns true if starting STT is allowed right now (not suppressed, not deaf).
  */
 export function canStartListening(): boolean {
@@ -695,11 +685,10 @@ export function enterDeafMode(durationMs = 0) {
 /**
  * Exit deaf mode after TTS ends. Adds a buffer period to catch any trailing audio.
  */
-export function exitDeafMode(bufferMs: number = 0) {
-  // By default do not extend deaf mode when caller wants to explicitly
-  // clear it. Callers that need a short trailing buffer after TTS should
-  // pass a positive `bufferMs` (e.g. DEAF_WINDOW_AFTER_TTS_MS).
-  deafUntil = bufferMs > 0 ? Date.now() + bufferMs : 0;
+export function exitDeafMode(bufferMs: number = DEAF_WINDOW_AFTER_TTS_MS) {
+  // Always keep a trailing deaf window so the mic doesn't pick up
+  // residual TTS audio. Default = ~1650ms (DEAF_WINDOW_AFTER_TTS_MS).
+  deafUntil = Date.now() + bufferMs;
 }
 
 /**

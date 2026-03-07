@@ -29,7 +29,6 @@ import {
   isInDeafMode,
   canStartListening,
   scheduleClearSuppressionWhen,
-  forceClearSuppression,
   setSttCaseSpecies,
 } from "@/features/speech/services/sttService";
 import { isSpeechRecognitionSupported } from "@/features/speech/services/sttService";
@@ -1957,9 +1956,8 @@ export function ChatInterface({
     } catch {}
 
     try {
-      forceClearSuppression();
       setSttSuppressed(false, true, "attempt-complete");
-      exitDeafMode();
+      exitDeafMode(0);
     } catch {}
   }, [isAttemptCompleting, setTtsEnabledState, setVoiceMode]);
 
@@ -4593,9 +4591,9 @@ export function ChatInterface({
                 pushSttTrace({ event: "intro_dialog_voice_continue", isListening, voiceMode });
                 if (voiceModeRef.current && !isListening && !userToggledOffRef.current && !isPlayingAudioRef.current) {
                   isSuppressingSttRef.current = false;
-                  forceClearSuppression("intro-dialog-continue");
+                  setSttSuppressed(false, true, "intro-dialog-continue");
                   try {
-                    exitDeafMode();
+                    exitDeafMode(0);
                   } catch (e) {}
                   safeStart();
                 }

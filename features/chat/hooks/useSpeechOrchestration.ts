@@ -7,7 +7,6 @@ import {
   setSttSuppressedFor,
   enterDeafMode,
   exitDeafMode,
-  forceClearSuppression,
   canStartListening,
 } from "@/features/speech/services/sttService";
 import { speakRemote, speakRemoteStream, stopActiveTtsPlayback } from "@/features/speech/services/ttsService";
@@ -108,12 +107,7 @@ export function useSpeechOrchestration(deps: UseSpeechOrchestrationDeps) {
           } catch {}
 
           try {
-            forceClearSuppression("tts-resume");
-          } catch {}
-
-          const RESUME_DEAF_BUFFER_MS = 50;
-          try {
-            exitDeafMode(RESUME_DEAF_BUFFER_MS);
+            setSttSuppressed(false, true, "tts-resume");
           } catch {}
 
           if (skipResumeLocal || skipResume) return;
@@ -225,7 +219,7 @@ export function useSpeechOrchestration(deps: UseSpeechOrchestrationDeps) {
             deps.pushSttTrace({ event: "forced_resume_safety_timer_fired" });
             deps.isSuppressingSttRef.current = false;
             try {
-              forceClearSuppression("tts-forced");
+              setSttSuppressed(false, true, "tts-forced");
             } catch {}
             try {
               exitDeafMode();

@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import { canStartListening, forceClearSuppression, exitDeafMode } from "@/features/speech/services/sttService";
+import { canStartListening, setSttSuppressed, exitDeafMode } from "@/features/speech/services/sttService";
 
 type VoiceToast = { title: string; body: string };
 
@@ -87,7 +87,7 @@ export function useVoiceMode({
                 pushSttTrace({ event: "voiceMode_start_attempt", canStart: canStartListening() });
                 isSuppressingSttRef.current = false;
                 try {
-                  forceClearSuppression("voice-mode-enabled");
+                  setSttSuppressed(false, true, "voice-mode-enabled");
                 } catch (e) {}
                 try {
                   exitDeafMode();

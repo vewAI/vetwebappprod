@@ -1,6 +1,5 @@
 import type { TtsEventDetail } from "@/features/speech/models/tts-events";
 import { dispatchTtsEnd, dispatchTtsStart } from "@/features/speech/models/tts-events";
-import { setSttSuppressed, setSttSuppressedFor, enterDeafMode, exitDeafMode } from "@/features/speech/services/sttService";
 import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
 import { getPreferredOutputDevice } from "./deviceRegistry";
 
@@ -160,16 +159,6 @@ export async function speakRemote(text: string, voice?: string, meta?: TtsMeta):
     }
 
     function onEnded() {
-      try {
-        // Clear STT suppression and deaf mode after playback finishes.
-        try {
-          // Clear suppression but skip cooldown so startListening can resume quickly
-          setSttSuppressed(false, true, "tts-speakRemote");
-        } catch {}
-        try {
-          exitDeafMode(50);
-        } catch {}
-      } catch {}
       cleanup();
       safeResolve(audio);
     }
@@ -200,14 +189,6 @@ export async function speakRemote(text: string, voice?: string, meta?: TtsMeta):
     // Try to start playback. If autoplay is blocked, the caller may need to
     // trigger play via a user gesture — handle that by warning and allow the
     // caller to attempt playback later via the returned Audio element.
-    // Ensure STT is suppressed and in deaf mode before playing to avoid self-capture
-    try {
-      setSttSuppressed(true, false, "tts-speakRemote");
-    } catch {}
-    try {
-      enterDeafMode();
-    } catch {}
-
     const playPromise = audio.play();
     if (playPromise && typeof playPromise.then === "function") {
       playPromise.then(() => {
