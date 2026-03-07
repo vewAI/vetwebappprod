@@ -138,11 +138,15 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const auth = await requireUser(req, { requireAdmin: true });
+  const auth = await requireUser(req);
   if ("error" in auth) {
     return auth.error;
   }
-  const { supabase } = auth;
+  if (auth.role !== "admin" && auth.role !== "professor") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const supabase = auth.adminSupabase ?? auth.supabase;
   try {
     // Read raw text first and provide a clearer error for empty or malformed bodies.
     const raw = await req.text();

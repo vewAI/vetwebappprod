@@ -11,6 +11,11 @@ if (supabaseUrl) {
       hostname,
       pathname: "/storage/v1/object/public/**",
     });
+    remotePatterns.push({
+      protocol: "https",
+      hostname,
+      pathname: "/storage/v1/object/sign/**",
+    });
   } catch (error) {
     console.warn("Invalid NEXT_PUBLIC_SUPABASE_URL for image config", error);
   }
@@ -21,6 +26,11 @@ if (!remotePatterns.length) {
     protocol: "https",
     hostname: "*.supabase.co",
     pathname: "/storage/v1/object/public/**",
+  });
+  remotePatterns.push({
+    protocol: "https",
+    hostname: "*.supabase.co",
+    pathname: "/storage/v1/object/sign/**",
   });
 }
 

@@ -104,9 +104,12 @@ async function getProfessorStudentAttemptsNeedingFeedback(professorId: string): 
 
 export default function HomePage() {
   const { user, role } = useAuth() as { user: any; role: Role };
-  const logoSrc = process.env.NEXT_PUBLIC_SUPABASE_URL
-    ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/img/logo.png`
-    : "/placeholder.svg";
+  const baseLogoSrc =
+    process.env.NEXT_PUBLIC_BRAND_LOGO_URL ||
+    (process.env.NEXT_PUBLIC_SUPABASE_URL
+      ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/img/logo.png`
+      : "/placeholder.svg");
+  const [logoSrc, setLogoSrc] = useState<string>(baseLogoSrc);
   const [studentAttempts, setStudentAttempts] = useState<AttemptSummary[]>([]);
   const [professorAttempts, setProfessorAttempts] = useState<AttemptSummary[]>([]);
   const [latestCases, setLatestCases] = useState<Case[]>([]);
@@ -141,6 +144,32 @@ export default function HomePage() {
     fetchCases({ limit: 3 })
       .then((cases) => setLatestCases(cases))
       .finally(() => setLoadingCases(false));
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const resolveSignedLogo = async () => {
+      // If caller already configured an explicit brand URL, keep it.
+      if (process.env.NEXT_PUBLIC_BRAND_LOGO_URL) {
+        if (!cancelled) setLogoSrc(process.env.NEXT_PUBLIC_BRAND_LOGO_URL);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase.storage.from("img").createSignedUrl("logo.png", 60 * 60 * 24 * 30);
+        if (!cancelled && !error && data?.signedUrl) {
+          setLogoSrc(data.signedUrl);
+        }
+      } catch {
+        // Keep base fallback URL when signed URL cannot be generated.
+      }
+    };
+
+    void resolveSignedLogo();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const displayName = useMemo(() => {

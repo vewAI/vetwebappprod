@@ -1,131 +1,177 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import axios from "axios";
 import { getAccessToken, buildAuthHeaders } from "@/lib/auth-headers";
+import { useAuth } from "@/features/auth/services/authService";
 import ImageUploader from "@/components/ui/image-uploader";
-import {
-  caseFieldMeta,
-  createEmptyCaseFormState,
-  orderedCaseFieldKeys,
-  type CaseFieldKey,
-  getFieldMeta,
-} from "@/features/cases/fieldMeta";
-import { CaseMediaEditor, uploadFile } from "@/features/cases/components/case-media-editor";
+import { caseFieldMeta, createEmptyCaseFormState, orderedCaseFieldKeys, type CaseFieldKey, getFieldMeta } from "@/features/cases/fieldMeta";
+import { CaseMediaEditor } from "@/features/cases/components/case-media-editor";
 import { TimeProgressionEditor } from "@/features/cases/components/case-time-progression-editor";
 import { AvatarSelector } from "@/features/cases/components/avatar-selector";
 import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
-// Random case generation must be sourced from clinical references or server
-// API. Local fallback generation removed to ensure all cases are
-// traceable to a validated source.
+
+type IntakeCompletionItem = {
+  fieldKey: string;
+  label: string;
+  extractedValue: string;
+  isMissing: boolean;
+  missingReason: string;
+  aiSuggestion: string;
+  confidence?: number;
+};
+
+type IntakeAnalysisResult = {
+  draftCase: Record<string, string>;
+  completionPlan: IntakeCompletionItem[];
+  missingCount: number;
+  sourceSummary: string;
+};
+
+function isCaseFieldKey(value: string): value is CaseFieldKey {
+  return Boolean(getFieldMeta(value));
+}
 
 export default function CaseEntryForm() {
-  const [expandedField, setExpandedField] = useState<CaseFieldKey | null>(
-    null
-  );
-  const [form, setForm] = useState<Record<CaseFieldKey, string>>(
-    createEmptyCaseFormState
-  );
+  const { role, loading: authLoading } = useAuth() as { role: string | null; loading: boolean };
+  const canCreate = role === "admin" || role === "professor";
+
+  const [expandedField, setExpandedField] = useState<CaseFieldKey | null>(null);
+  const [form, setForm] = useState<Record<CaseFieldKey, string>>(createEmptyCaseFormState);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
   const [mediaItems, setMediaItems] = useState<CaseMediaItem[]>([]);
-  const [showPaperUploader, setShowPaperUploader] = useState(false);
-  const [uploaderFiles, setUploaderFiles] = useState<FileList | null>(null);
-  const [uploaderUploading, setUploaderUploading] = useState(false);
-  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [savedCaseId, setSavedCaseId] = useState<string>("");
+
+  const [intakeText, setIntakeText] = useState("");
+  const [intakeFile, setIntakeFile] = useState<File | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysis, setAnalysis] = useState<IntakeAnalysisResult | null>(null);
+  const [wizardIndex, setWizardIndex] = useState(0);
+  const [reviewed, setReviewed] = useState<Record<string, boolean>>({});
 
   const caseIdForMedia = useMemo(() => {
     const raw = form.id?.trim();
     return raw ? raw : undefined;
   }, [form.id]);
 
-  const handleRandomCase = async () => {
-    setLoading(true);
-    setSuccess("");
+  const missingFields = useMemo(() => {
+    if (!analysis) return [] as IntakeCompletionItem[];
+    return analysis.completionPlan.filter((item) => item.isMissing);
+  }, [analysis]);
+
+  const currentMissing = missingFields[wizardIndex] ?? null;
+  const wizardDone = missingFields.length > 0 && wizardIndex >= missingFields.length;
+
+  const applyDraftToForm = (draftCase: Record<string, string>) => {
+    setForm((prev) => {
+      const next = { ...prev };
+      for (const [key, value] of Object.entries(draftCase)) {
+        if (!isCaseFieldKey(key)) continue;
+        next[key] = String(value ?? "");
+      }
+      return next;
+    });
+  };
+
+  const handleAnalyzeCaseSource = async () => {
+    setIsAnalyzing(true);
     setError("");
+    setSuccess("");
+
     try {
-      // If no reference papers attached, ask user if they want to upload one
-      if (mediaItems.length === 0 && !showPaperUploader) {
-        const want = window.confirm(
-          "Attach reference papers to influence generation? Click OK to upload papers, Cancel to proceed without."
-        );
-        if (want) {
-          setShowPaperUploader(true);
-          setLoading(false);
-          return;
-        }
+      const fd = new FormData();
+      fd.append("rawText", intakeText);
+      if (intakeFile) {
+        fd.append("sourceFile", intakeFile);
       }
 
       const token = await getAccessToken();
-      const headers = await buildAuthHeaders({ "Content-Type": "application/json" }, token);
-      const body: Record<string, unknown> = {};
-      if (mediaItems.length > 0) {
-        body.references = mediaItems.map((m) => ({ url: m.url, caption: m.caption ?? null }));
+      const headers = await buildAuthHeaders({}, token);
+      const response = await fetch("/api/case-intake/analyze", {
+        method: "POST",
+        headers,
+        body: fd,
+      });
+
+      const data = (await response.json()) as IntakeAnalysisResult | { error?: string };
+      if (!response.ok) {
+        throw new Error((data as { error?: string })?.error ?? "Failed to analyze source text");
       }
-      const response = await axios.post("/api/cases/generate-random", body, { headers });
-      const data = response.data as any;
-      if (data && !data.error) {
-        setForm((prev) => ({ ...prev, ...(data as any) }));
-        const msg = body.references ? "Case successfully generated from uploaded papers!" : "Random case generated from expert knowledge!";
-        setSuccess(msg);
-      } else {
-        throw new Error(data?.error || "No data returned");
-      }
+
+      const result = data as IntakeAnalysisResult;
+      setAnalysis(result);
+      setWizardIndex(0);
+      setReviewed({});
+      applyDraftToForm(result.draftCase ?? {});
+      setSuccess("AI analysis complete. Review missing fields step by step below.");
     } catch (err) {
-      console.error("Remote generation failed", err);
-      setError(
-        "Unable to generate case from expert knowledge. Please try again later. No local fallback is used."
-      );
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg || "Could not analyze the input text.");
     } finally {
-      setLoading(false);
+      setIsAnalyzing(false);
     }
   };
 
-  const handleUploadReferences = async () => {
-    if (!uploaderFiles || uploaderFiles.length === 0) return;
-    setUploaderUploading(true);
-    try {
-      const uploaded: CaseMediaItem[] = [];
-      for (let i = 0; i < uploaderFiles.length; i++) {
-        const file = uploaderFiles[i];
-        const { url, path } = await uploadFile(file, "document", form.id);
-        uploaded.push({
-          id: `${Date.now()}-${Math.random()}`,
-          type: "document",
-          url,
-          caption: file.name,
-          mimeType: file.type,
-          metadata: { sourcePath: path },
-          trigger: "on_demand",
-        } as CaseMediaItem);
-      }
-      const next = [...mediaItems, ...uploaded];
-      setMediaItems(next);
-      setForm((prev) => (prev ? { ...prev, media: next } : prev));
-      setShowPaperUploader(false);
-      // After uploading, automatically trigger generation
-      setTimeout(() => void handleRandomCase(), 50);
-    } catch (e) {
-      console.error("Reference upload failed", e);
-      setError("Failed to upload reference papers. See console.");
-    } finally {
-      setUploaderUploading(false);
-    }
+  const markCurrentReviewedAndNext = () => {
+    if (!currentMissing) return;
+    setReviewed((prev) => ({ ...prev, [currentMissing.fieldKey]: true }));
+    setWizardIndex((prev) => prev + 1);
   };
 
-  function handleChange(
-    e: React.ChangeEvent<
-      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-    >
-  ) {
+  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) {
     const { name, value } = e.target;
     if (!getFieldMeta(name)) return;
     setForm((prev) => ({ ...prev, [name as CaseFieldKey]: value }));
   }
+
+  const handleDownloadTxt = async () => {
+    try {
+      const token = await getAccessToken();
+      const headers = await buildAuthHeaders({ "Content-Type": "application/json" }, token);
+      const response = await fetch("/api/case-intake/export", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          caseId: savedCaseId || form.id || "new-case",
+          format: "txt",
+          approvedValues: form,
+        }),
+      });
+
+      const payload = (await response.json()) as {
+        error?: string;
+        fileName?: string;
+        mimeType?: string;
+        contentBase64?: string;
+      };
+
+      if (!response.ok || !payload.contentBase64 || !payload.fileName) {
+        throw new Error(payload.error || "Could not generate TXT export");
+      }
+
+      const raw = atob(payload.contentBase64);
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
+      const blob = new Blob([bytes], { type: payload.mimeType || "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = payload.fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg || "Failed to export TXT");
+    }
+  };
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -133,28 +179,20 @@ export default function CaseEntryForm() {
     setSuccess("");
     setError("");
     try {
-      // Prepare payload and merge in case-specific structured fields when empty
       const payload: Record<string, unknown> = { ...form };
       payload["media"] = mediaItems;
 
-      // Helper to inject default text only when empty
       const ensure = (key: CaseFieldKey, value: string) => {
         const v = payload[key];
-        if (
-          v === undefined ||
-          v === null ||
-          (typeof v === "string" && v.trim() === "")
-        ) {
+        if (v === undefined || v === null || (typeof v === "string" && v.trim() === "")) {
           payload[key] = value;
         }
       };
 
-      // Basic case-specific defaults based on id/title
-      const patientLabel = String(
-        payload["title"] ?? payload["id"] ?? "the patient"
-      );
+      const patientLabel = String(payload["title"] ?? payload["id"] ?? "the patient");
 
-      const diagnostic_findings_template = `List the diagnostic data that is already available for this case. Present each value on its own line with units where appropriate. When responding to the student, release only the specific result they request. If a test has not been performed, state that it is pending or unavailable.`;
+      const diagnostic_findings_template =
+        "List the diagnostic data that is already available for this case. Present each value on its own line with units where appropriate. When responding to the student, release only the specific result they request. If a test has not been performed, state that it is pending or unavailable.";
 
       const owner_background_template = `Role: Animal owner or primary caretaker.
 Patient: ${patientLabel}
@@ -207,7 +245,6 @@ Guidance:
 - Ask about timelines for recovery, potential complications, and how to protect other animals or people if relevant.
 - Acknowledge clear explanations and request clarification when something is unclear.`;
 
-      // Prompts for interactive roles
       const get_owner_prompt_template = `You are roleplaying as the patient's owner or caretaker. Stay in character using the background information below and provide only the details that are explicitly requested.
 
 {ownerBackground}
@@ -225,15 +262,18 @@ Remain collaborative, use everyday language, and avoid offering your own medical
 
       const get_diagnostic_prompt_template = `You are a laboratory technician answering questions about diagnostic results for ${patientLabel}. Release one requested result at a time, note if a test is pending or unperformed, and avoid interpretation beyond the raw data.`;
 
-      const get_owner_follow_up_prompt_template = `You are roleplaying as the owner or caretaker during the diagnostic planning conversation. Ask for clear explanations, raise practical concerns, and acknowledge when the student addresses them effectively.`;
+      const get_owner_follow_up_prompt_template =
+        "You are roleplaying as the owner or caretaker during the diagnostic planning conversation. Ask for clear explanations, raise practical concerns, and acknowledge when the student addresses them effectively.";
 
-      const get_owner_follow_up_feedback_prompt_template = `Provide structured feedback on the student's diagnostic planning discussion. Highlight strengths, note missing explanations, and recommend actionable improvements.`;
+      const get_owner_follow_up_feedback_prompt_template =
+        "Provide structured feedback on the student's diagnostic planning discussion. Highlight strengths, note missing explanations, and recommend actionable improvements.";
 
-      const get_owner_diagnosis_prompt_template = `You are the owner or caretaker receiving the results discussion. Respond with practical questions about management, monitoring, and communication while staying consistent with the owner's persona.`;
+      const get_owner_diagnosis_prompt_template =
+        "You are the owner or caretaker receiving the results discussion. Respond with practical questions about management, monitoring, and communication while staying consistent with the owner's persona.";
 
-      const get_overall_feedback_prompt_template = `Provide a comprehensive teaching summary covering communication, clinical reasoning, diagnostic planning, and professionalism observed across the entire case.`;
+      const get_overall_feedback_prompt_template =
+        "Provide a comprehensive teaching summary covering communication, clinical reasoning, diagnostic planning, and professionalism observed across the entire case.";
 
-      // Inject defaults when empty
       ensure("diagnostic_findings", diagnostic_findings_template);
       ensure("owner_background", owner_background_template);
       ensure("history_feedback", history_feedback_template);
@@ -241,109 +281,161 @@ Remain collaborative, use everyday language, and avoid offering your own medical
       ensure("owner_follow_up_feedback", owner_follow_up_feedback_template);
       ensure("owner_diagnosis", owner_diagnosis_template);
       ensure("get_owner_prompt", get_owner_prompt_template);
-      ensure(
-        "get_history_feedback_prompt",
-        get_history_feedback_prompt_template
-      );
+      ensure("get_history_feedback_prompt", get_history_feedback_prompt_template);
       ensure("get_physical_exam_prompt", get_physical_exam_prompt_template);
       ensure("get_diagnostic_prompt", get_diagnostic_prompt_template);
       ensure("get_owner_follow_up_prompt", get_owner_follow_up_prompt_template);
-      ensure(
-        "get_owner_follow_up_feedback_prompt",
-        get_owner_follow_up_feedback_prompt_template
-      );
+      ensure("get_owner_follow_up_feedback_prompt", get_owner_follow_up_feedback_prompt_template);
       ensure("get_owner_diagnosis_prompt", get_owner_diagnosis_prompt_template);
-      ensure(
-        "get_overall_feedback_prompt",
-        get_overall_feedback_prompt_template
-      );
+      ensure("get_overall_feedback_prompt", get_overall_feedback_prompt_template);
 
-      // Post to API with auth headers
       const headers = await buildAuthHeaders();
-      await axios.post("/api/cases", payload, { headers });
-      setSuccess("Case added successfully!");
-      setForm(createEmptyCaseFormState());
-      setMediaItems([]);
+      const response = await axios.post("/api/cases", payload, { headers });
+      const inserted = (response.data?.data?.[0] ?? response.data?.data) as { id?: string } | undefined;
+      const createdId = String(inserted?.id ?? payload.id ?? "").trim();
+      if (createdId) {
+        setSavedCaseId(createdId);
+      }
+
+      setSuccess("Case saved successfully.");
+      if (createdId) {
+        setForm((prev) => ({ ...prev, id: createdId }));
+      }
     } catch (err: unknown) {
-      // Prefer server-provided error message when available
-      const e = err as {
-        response?: { data?: { error?: string } };
-        message?: string;
-      };
-      const serverMsg =
-        e?.response?.data?.error ??
-        e?.message ??
-        (typeof err === "string" ? err : undefined);
+      const e = err as { response?: { data?: { error?: string } }; message?: string };
+      const serverMsg = e?.response?.data?.error ?? e?.message ?? (typeof err === "string" ? err : undefined);
       setError(serverMsg ?? "Error adding case. Please try again.");
     } finally {
       setLoading(false);
     }
   }
 
+  if (authLoading) {
+    return <div className="max-w-2xl mx-auto p-8 text-sm text-muted-foreground">Checking permissions...</div>;
+  }
+
+  if (!canCreate) {
+    return (
+      <div className="max-w-2xl mx-auto p-8 space-y-3">
+        <h1 className="text-2xl font-bold text-red-600">Access denied</h1>
+        <p className="text-sm text-muted-foreground">Only professors and admins can create cases.</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-2xl mx-auto p-8">
-      <div className="flex justify-between items-center mb-6">
+    <div className="max-w-3xl mx-auto p-8 space-y-6">
+      <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Add New Case</h1>
-        <div className="text-right">
-          <Button type="button" variant="outline" onClick={handleRandomCase} disabled={loading}>
-            {loading ? "Processing..." : mediaItems.length > 0 ? "Regenerate from PDF" : "Random Case"}
+      </div>
+
+      <div className="rounded-lg border border-border p-4 space-y-4 bg-card">
+        <div>
+          <h2 className="text-lg font-semibold">1) Paste Full Case Source</h2>
+          <p className="text-sm text-muted-foreground mt-1">Paste the complete case as you have it. Then optionally upload a supporting document.</p>
+        </div>
+
+        <Textarea
+          value={intakeText}
+          onChange={(e) => setIntakeText(e.target.value)}
+          rows={10}
+          placeholder="Paste full case text here (history, exam, diagnostics, owner context, prompts, etc.)"
+          className="w-full"
+        />
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium" htmlFor="case-source-file">
+            2) Upload Supporting File (optional)
+          </label>
+          <Input id="case-source-file" type="file" accept=".pdf,.txt,.docx" onChange={(e) => setIntakeFile(e.target.files?.[0] ?? null)} />
+          <p className="text-xs text-muted-foreground">Allowed types: .pdf, .txt, .docx</p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button type="button" onClick={handleAnalyzeCaseSource} disabled={isAnalyzing || (!intakeText.trim() && !intakeFile)}>
+            {isAnalyzing ? "Analyzing..." : "Analyze and Split into Case Fields"}
           </Button>
-          <p className="text-xs text-muted-foreground mt-2 max-w-xs">
-            Generates a realistic veterinary case. If papers are uploaded below, they will be used as the primary source.
-            Otherwise, a case is generated from curated expert veterinary knowledge.
-          </p>
+          {intakeFile && <span className="text-xs text-muted-foreground">Selected: {intakeFile.name}</span>}
         </div>
       </div>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {showPaperUploader && (
-          <div className="space-y-4 border p-4 rounded-lg bg-muted/10 relative">
-            <div className="space-y-2">
-              <label className="text-sm font-semibold flex items-center gap-2">
-                1. Select your reference papers (PDF/DOCX)
-              </label>
-              <input
-                type="file"
-                accept=".pdf,.docx,.doc"
-                multiple
-                onChange={(e) => {
-                  console.log("Files selected:", e.target.files);
-                  setUploaderFiles(e.target.files);
-                }}
-                className="block w-full text-sm text-slate-500
-                  file:mr-4 file:py-2 file:px-4
-                  file:rounded-full file:border-0
-                  file:text-sm file:font-semibold
-                  file:bg-violet-50 file:text-violet-700
-                  hover:file:bg-violet-100 cursor-pointer"
-              />
-            </div>
-            <div className="flex items-center gap-3">
-              <Button
-                type="button"
-                className="bg-violet-600 hover:bg-violet-700 text-white"
-                onClick={handleUploadReferences}
-                disabled={uploaderUploading || !uploaderFiles || uploaderFiles.length === 0}
-              >
-                {uploaderUploading ? "Uploading & Processing..." : "2. Upload & Use References"}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setShowPaperUploader(false);
-                  setUploaderFiles(null);
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-            {!uploaderFiles?.length && !uploaderUploading && (
-              <p className="text-xs text-muted-foreground italic">
-                Tip: Select a file above first, then click the upload button to generate your case.
-              </p>
-            )}
+
+      {analysis && (
+        <div className="rounded-lg border border-border p-4 space-y-4 bg-card">
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold">3) AI Completion Review</h2>
+            <p className="text-sm text-muted-foreground">{analysis.sourceSummary}</p>
+            <p className="text-sm">
+              Missing fields detected: <strong>{analysis.missingCount}</strong>
+            </p>
           </div>
-        )}
+
+          {missingFields.length === 0 ? (
+            <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
+              No missing fields detected. You can still edit values below before saving.
+            </div>
+          ) : wizardDone ? (
+            <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
+              All missing fields reviewed. Continue editing the full form below, then save.
+            </div>
+          ) : currentMissing ? (
+            <div className="rounded-md border p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="font-semibold">
+                  Field {wizardIndex + 1} of {missingFields.length}: {currentMissing.label}
+                </div>
+                <div className="text-xs text-muted-foreground">{currentMissing.fieldKey}</div>
+              </div>
+
+              <div className="rounded bg-amber-50 border border-amber-200 p-3 text-sm text-amber-900">
+                <strong>What was missing:</strong> {currentMissing.missingReason}
+              </div>
+
+              <div className="rounded bg-sky-50 border border-sky-200 p-3 text-sm text-sky-900">
+                <strong>AI suggestion:</strong> {currentMissing.aiSuggestion || "No suggestion provided."}
+              </div>
+
+              {isCaseFieldKey(currentMissing.fieldKey) ? (
+                <Textarea
+                  rows={6}
+                  value={form[currentMissing.fieldKey] || ""}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      [currentMissing.fieldKey]: e.target.value,
+                    }))
+                  }
+                  placeholder={`Write ${currentMissing.label.toLowerCase()} here...`}
+                />
+              ) : (
+                <div className="text-sm text-red-600">Unknown field key: {currentMissing.fieldKey}</div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="outline" onClick={() => setWizardIndex((prev) => Math.max(0, prev - 1))} disabled={wizardIndex === 0}>
+                  Back
+                </Button>
+                <Button type="button" onClick={markCurrentReviewedAndNext}>
+                  Approve and Next
+                </Button>
+                <Button type="button" variant="ghost" onClick={markCurrentReviewedAndNext}>
+                  Skip
+                </Button>
+              </div>
+
+              <div className="text-xs text-muted-foreground">
+                Reviewed in wizard: {Object.keys(reviewed).length}/{missingFields.length}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="rounded-lg border border-border p-4">
+          <h2 className="text-lg font-semibold mb-2">4) Final Edit and Save</h2>
+          <p className="text-sm text-muted-foreground">Review, adjust, and save the complete case record.</p>
+        </div>
+
         {orderedCaseFieldKeys.map((key) => {
           const meta = caseFieldMeta[key];
           const helpId = meta.help ? `${key}-help` : undefined;
@@ -358,7 +450,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
                   name={key}
                   value={form[key]}
                   onChange={handleChange}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                   aria-describedby={helpId}
                 >
                   <option value="" disabled>
@@ -386,12 +478,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
                   {meta.label}
                 </label>
                 <div className="space-y-2">
-                  <ImageUploader
-                    existingUrl={form.image_url}
-                    onUpload={(url) =>
-                      setForm((prev) => ({ ...prev, image_url: url }))
-                    }
-                  />
+                  <ImageUploader existingUrl={form.image_url} onUpload={(url) => setForm((prev) => ({ ...prev, image_url: url }))} />
                   <Input
                     name={key}
                     value={form[key]}
@@ -459,11 +546,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
                     className="w-full"
                     rows={meta.rows ?? 4}
                   />
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => setExpandedField(key)}
-                  >
+                  <Button type="button" size="sm" onClick={() => setExpandedField(key)}>
                     Expand
                   </Button>
                 </div>
@@ -503,11 +586,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
           <div className="space-y-6 pt-4">
             <div className="border border-dashed border-muted-foreground/40 rounded-lg p-4">
               <h3 className="text-lg font-medium mb-4">Case Media</h3>
-              <CaseMediaEditor
-                caseId={caseIdForMedia}
-                value={mediaItems}
-                onChange={setMediaItems}
-              />
+              <CaseMediaEditor caseId={caseIdForMedia} value={mediaItems} onChange={setMediaItems} />
             </div>
 
             <div className="border border-dashed border-muted-foreground/40 rounded-lg p-4">
@@ -517,18 +596,37 @@ Remain collaborative, use everyday language, and avoid offering your own medical
         )}
 
         <Button type="submit" disabled={loading} className="w-full">
-          {loading ? "Submitting..." : "Submit"}
+          {loading ? "Saving..." : "Save Case"}
         </Button>
+
         {success && <div className="text-green-600 mt-2">{success}</div>}
         {error && <div className="text-red-600 mt-2">{error}</div>}
       </form>
-      {/* Modal for expanded field */}
+
+      {savedCaseId && (
+        <div className="rounded-lg border border-border p-4 space-y-3">
+          <h3 className="font-semibold">5) Post-save actions</h3>
+          <p className="text-sm text-muted-foreground">
+            Case <code>{savedCaseId}</code> is saved. Choose next action:
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" onClick={handleDownloadTxt}>
+              Download TXT
+            </Button>
+            <Button type="button" asChild variant="outline">
+              <Link href="/case-viewer">Edit Saved Case</Link>
+            </Button>
+            <Button type="button" asChild variant="outline">
+              <Link href="/admin/case-stage-manager">Edit Stages</Link>
+            </Button>
+          </div>
+        </div>
+      )}
+
       {expandedField && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg max-w-2xl w-full p-6">
-            <h2 className="text-lg font-bold mb-2">
-              {caseFieldMeta[expandedField]?.label ?? expandedField}
-            </h2>
+            <h2 className="text-lg font-bold mb-2">{caseFieldMeta[expandedField]?.label ?? expandedField}</h2>
             <Textarea
               value={form[expandedField]}
               onChange={handleChange}
@@ -536,18 +634,11 @@ Remain collaborative, use everyday language, and avoid offering your own medical
               autoComplete="off"
               className="w-full h-64"
               placeholder={caseFieldMeta[expandedField]?.placeholder}
-              aria-describedby={
-                caseFieldMeta[expandedField]?.help
-                  ? `${expandedField}-help`
-                  : undefined
-              }
+              aria-describedby={caseFieldMeta[expandedField]?.help ? `${expandedField}-help` : undefined}
               rows={caseFieldMeta[expandedField]?.rows ?? 12}
             />
             {caseFieldMeta[expandedField]?.help && (
-              <p
-                id={`${expandedField}-help`}
-                className="mt-2 text-sm text-muted-foreground"
-              >
+              <p id={`${expandedField}-help`} className="mt-2 text-sm text-muted-foreground">
                 {caseFieldMeta[expandedField]?.help}
               </p>
             )}
