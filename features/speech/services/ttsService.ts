@@ -4,9 +4,12 @@ import {
   dispatchTtsStart,
 } from "@/features/speech/models/tts-events";
 import {
-  buildAuthHeaders,
-  getAccessToken,
-} from "@/lib/auth-headers";
+  setSttSuppressed,
+  setSttSuppressedFor,
+  enterDeafMode,
+  exitDeafMode,
+} from "@/features/speech/services/sttService";
+import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
 import { getPreferredOutputDevice } from "./deviceRegistry";
 import { debugEventBus } from "@/lib/debug-events-fixed";
 
@@ -66,12 +69,15 @@ export function stopActiveTtsPlayback() {
 export async function speakRemote(
   text: string,
   voice?: string,
-  meta?: TtsMeta
+  meta?: TtsMeta,
 ): Promise<HTMLAudioElement> {
   if (!text) throw new Error("text required");
 
   const startTime = Date.now();
-  debugEventBus.emitEvent('info', 'TTS', 'Requesting speech synthesis', { textLength: text.length, voice });
+  debugEventBus.emitEvent("info", "TTS", "Requesting speech synthesis", {
+    textLength: text.length,
+    voice,
+  });
 
   const token = await getAccessToken();
   if (!token) {
@@ -82,7 +88,7 @@ export async function speakRemote(
     method: "POST",
     headers: await buildAuthHeaders(
       { "Content-Type": "application/json" },
-      token
+      token,
     ),
     body: JSON.stringify({ text, voice }),
   });
@@ -97,7 +103,12 @@ export async function speakRemote(
     }
 
     if (bodyJson && bodyJson.fallback === "browser") {
-      debugEventBus.emitEvent('warning', 'TTS', 'Server TTS unavailable, using browser voices', { voice, detail: bodyJson.detail });
+      debugEventBus.emitEvent(
+        "warning",
+        "TTS",
+        "Server TTS unavailable, using browser voices",
+        { voice, detail: bodyJson.detail },
+      );
       // Use browser SpeechSynthesis as a fallback. Respect avatar sex if provided in meta.
       await speakWithSpeechSynthesis(text, voice, meta);
       // Return a real Audio element placeholder so callers get an HTMLAudioElement.
@@ -106,12 +117,22 @@ export async function speakRemote(
     }
 
     const body = await res.text().catch(() => "");
-    debugEventBus.emitEvent('error', 'TTS', `Remote TTS failed: ${res.status}`, { body });
+    debugEventBus.emitEvent(
+      "error",
+      "TTS",
+      `Remote TTS failed: ${res.status}`,
+      { body },
+    );
     throw new Error(`Remote TTS failed: ${res.status} ${body}`);
   }
 
   const buf = await res.arrayBuffer();
-  debugEventBus.emitEvent('success', 'TTS', `Audio received in ${Date.now() - startTime}ms`, { size: buf.byteLength });
+  debugEventBus.emitEvent(
+    "success",
+    "TTS",
+    `Audio received in ${Date.now() - startTime}ms`,
+    { size: buf.byteLength },
+  );
   const contentType = res.headers.get("content-type") ?? "audio/mpeg";
   const blob = new Blob([buf], { type: contentType });
   const url = URL.createObjectURL(blob);
@@ -143,6 +164,16 @@ export async function speakRemote(
     }
 
     function onEnded() {
+      try {
+        // Clear STT suppression and deaf mode after playback finishes.
+        try {
+          // Clear suppression but skip cooldown so startListening can resume quickly
+          setSttSuppressed(false, true, "tts-speakRemote");
+        } catch {}
+        try {
+          exitDeafMode(50);
+        } catch {}
+      } catch {}
       cleanup();
       resolve(audio);
     }
@@ -176,6 +207,14 @@ export async function speakRemote(
     // Try to start playback. If autoplay is blocked, the caller may need to
     // trigger play via a user gesture — handle that by warning and allow the
     // caller to attempt playback later via the returned Audio element.
+    // Ensure STT is suppressed and in deaf mode before playing to avoid self-capture
+    try {
+      setSttSuppressed(true, false, "tts-speakRemote");
+    } catch {}
+    try {
+      enterDeafMode();
+    } catch {}
+
     const playPromise = audio.play();
     if (playPromise && typeof playPromise.then === "function") {
       playPromise.catch((e) => {
@@ -187,8 +226,13 @@ export async function speakRemote(
   });
 }
 
-async function speakWithSpeechSynthesis(text: string, voice?: string, meta?: TtsMeta) {
-  const preferredSex = (meta && meta.metadata && (meta.metadata.sex as string)) || undefined;
+async function speakWithSpeechSynthesis(
+  text: string,
+  voice?: string,
+  meta?: TtsMeta,
+) {
+  const preferredSex =
+    (meta && meta.metadata && (meta.metadata.sex as string)) || undefined;
   const suggestGenderFromVoice = (v?: string) => {
     const female = ["alice", "charlotte", "lily", "matilda"];
     const male = ["charlie", "george", "harry"];
@@ -201,8 +245,8 @@ async function speakWithSpeechSynthesis(text: string, voice?: string, meta?: Tts
   const desiredGender = preferredSex ?? suggestGenderFromVoice(voice);
 
   return new Promise<void>((resolve) => {
-    if (typeof window === "undefined" || !('speechSynthesis' in window)) {
-      console.warn('Browser speechSynthesis not available');
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      console.warn("Browser speechSynthesis not available");
       resolve();
       return;
     }
@@ -225,35 +269,38 @@ async function speakWithSpeechSynthesis(text: string, voice?: string, meta?: Tts
         desiredGender === "female"
           ? ["female", "woman", "f"]
           : desiredGender === "male"
-          ? ["male", "man", "m"]
-          : [];
+            ? ["male", "man", "m"]
+            : [];
 
       const normalize = (s?: string) => (s || "").toLowerCase();
 
       const gbVoices = voices.filter(
-        (v) => v.lang && normalize(v.lang).startsWith("en-gb")
+        (v) => v.lang && normalize(v.lang).startsWith("en-gb"),
       );
       const enVoices = voices.filter(
-        (v) => v.lang && normalize(v.lang).startsWith("en")
+        (v) => v.lang && normalize(v.lang).startsWith("en"),
       );
 
       const findByName = (list: SpeechSynthesisVoice[]) => {
         if (!list || list.length === 0) return undefined;
         if (genderPriority.length) {
           const found = list.find((v) =>
-            genderPriority.some((g) => normalize(v.name).includes(g))
+            genderPriority.some((g) => normalize(v.name).includes(g)),
           );
           if (found) return found;
         }
         // Prefer voices whose name indicates British/UK if present
-        const britishNamed = list.find((v) =>
-          normalize(v.name).includes("british") || normalize(v.name).includes("uk")
+        const britishNamed = list.find(
+          (v) =>
+            normalize(v.name).includes("british") ||
+            normalize(v.name).includes("uk"),
         );
         if (britishNamed) return britishNamed;
         return list[0];
       };
 
-      let candidate = findByName(gbVoices) || findByName(enVoices) || findByName(voices);
+      let candidate =
+        findByName(gbVoices) || findByName(enVoices) || findByName(voices);
       return candidate;
     };
 
@@ -263,14 +310,23 @@ async function speakWithSpeechSynthesis(text: string, voice?: string, meta?: Tts
     utter.rate = 1;
     utter.pitch = 1;
 
-    dispatchTtsStart({ ...(meta ?? {}), audio: undefined as unknown as HTMLAudioElement });
+    dispatchTtsStart({
+      ...(meta ?? {}),
+      audio: undefined as unknown as HTMLAudioElement,
+    });
 
     utter.onend = () => {
-      dispatchTtsEnd({ ...(meta ?? {}), audio: undefined as unknown as HTMLAudioElement });
+      dispatchTtsEnd({
+        ...(meta ?? {}),
+        audio: undefined as unknown as HTMLAudioElement,
+      });
       resolve();
     };
     utter.onerror = () => {
-      dispatchTtsEnd({ ...(meta ?? {}), audio: undefined as unknown as HTMLAudioElement });
+      dispatchTtsEnd({
+        ...(meta ?? {}),
+        audio: undefined as unknown as HTMLAudioElement,
+      });
       resolve();
     };
 
@@ -288,7 +344,7 @@ async function speakWithSpeechSynthesis(text: string, voice?: string, meta?: Tts
 export async function speakRemoteStream(
   text: string,
   voice?: string,
-  meta?: TtsMeta
+  meta?: TtsMeta,
 ): Promise<HTMLAudioElement> {
   if (!text) throw new Error("text required");
 
@@ -304,7 +360,7 @@ export async function speakRemoteStream(
     method: "POST",
     headers: await buildAuthHeaders(
       { "Content-Type": "application/json" },
-      token
+      token,
     ),
     body: JSON.stringify({ text, voice }),
   });
@@ -314,7 +370,7 @@ export async function speakRemoteStream(
     throw new Error(`TTS init failed: ${initResp.status} ${body}`);
   }
 
-  const initData = await initResp.json().catch(() => ({} as any));
+  const initData = await initResp.json().catch(() => ({}) as any);
 
   // Validate initData to avoid creating an invalid stream URL (which
   // results in opaque media errors that are hard to debug).
@@ -325,7 +381,9 @@ export async function speakRemoteStream(
   }
 
   const url = String(
-    initData?.url ?? initData?.streamUrl ?? `/api/tts/stream?id=${initData?.id}`
+    initData?.url ??
+      initData?.streamUrl ??
+      `/api/tts/stream?id=${initData?.id}`,
   );
 
   const audio = new Audio(url);
@@ -363,7 +421,7 @@ export async function speakRemoteStream(
       try {
         console.warn(
           "Streamed audio failed, attempting buffered fallback:",
-          ev
+          ev,
         );
         const resp = await fetch(url, {
           cache: "no-store",
@@ -391,7 +449,7 @@ export async function speakRemoteStream(
           : { metadata: { playbackVariant: "buffered-fallback" } };
         const endFallbackLifecycle = trackTtsLifecycle(
           fallbackAudio,
-          fallbackMeta
+          fallbackMeta,
         );
 
         function cleanupFallback() {
@@ -430,7 +488,7 @@ export async function speakRemoteStream(
         fallbackAudio.addEventListener("ended", onFallbackEnd);
         fallbackAudio.addEventListener(
           "error",
-          onFallbackError as EventListener
+          onFallbackError as EventListener,
         );
         registerActivePlayback({
           audio: fallbackAudio,
@@ -444,15 +502,19 @@ export async function speakRemoteStream(
           p.catch((playErr) => {
             console.warn(
               "Fallback playback blocked by autoplay policy:",
-              playErr
+              playErr,
             );
           });
         }
       } catch (fallbackErr: unknown) {
         try {
           const fallbackMessage =
-            typeof fallbackErr === "object" && fallbackErr !== null && "message" in fallbackErr
-              ? String((fallbackErr as { message?: string }).message ?? fallbackErr)
+            typeof fallbackErr === "object" &&
+            fallbackErr !== null &&
+            "message" in fallbackErr
+              ? String(
+                  (fallbackErr as { message?: string }).message ?? fallbackErr,
+                )
               : String(fallbackErr);
           const eventMessage =
             typeof ev === "object" && ev !== null && "message" in ev
@@ -489,7 +551,7 @@ export async function speakRemoteStream(
 
 function trackTtsLifecycle(
   audio: HTMLAudioElement,
-  meta?: TtsMeta
+  meta?: TtsMeta,
 ): () => void {
   const detail: TtsEventDetail = { ...(meta ?? {}), audio };
   let finished = false;

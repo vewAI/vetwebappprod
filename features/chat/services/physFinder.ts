@@ -21,6 +21,9 @@ const ALIAS_MAP: Record<string, string[]> = {
   // Add auscultation aliases; 'was quotation' is a common mis-transcription
   // that should map to auscultation.
   auscultation: ["auscultation", "ausc", "stethoscope", "was quotation", "quotation"],
+  rectal_palpation: ["rectal palpation", "rectal exam", "rectal palp", "rectal", "rectal examination"],
+  nasogastric_intubation: ["nasogastric intubation", "nasogastric tube", "ng tube", "nasogastric", "ngt"],
+  abdominocentesis: ["abdominocentesis", "abdominal centesis", "abdo centesis", "abdo-centesis"],
 };
 
 // Group tokens map to multiple canonical keys
@@ -105,8 +108,12 @@ export function matchPhysicalFindings(requested: RequestedKeys, findingsText: st
 
     for (const line of lines) {
       const low = line.toLowerCase();
-      // match if any alias appears as a whole word or as a substring
-      if (loweredAliases.some((alias) => low.includes(alias.split(" ")[0]))) {
+      // match if any alias appears as a whole phrase or as a substring to be tolerant
+      // of ASR mis-transcriptions (e.g., 'was quotation' -> auscultation)
+      if (
+        loweredAliases.some((alias) => low.includes(alias)) ||
+        loweredAliases.some((alias) => low.includes(alias.split(" ")[0]))
+      ) {
         matched.push(line);
       }
     }
@@ -116,5 +123,32 @@ export function matchPhysicalFindings(requested: RequestedKeys, findingsText: st
 
   return results;
 }
+
+export const PHYS_SYNONYMS: Record<string, string[]> = {
+  rumen_turnover: ["rumen turnover", "rumen_turnover", "rumen_turnover"],
+  // include dash/underscore variants and common phrase forms
+  rumen_turnover_alt: [
+    "rumen-turnover",
+    "rumen turnover",
+    "rumen_turnover",
+  ],
+  ballottement: ["ballottement", "ballottement was", "ballott"],
+  temperature: ["temp", "temperature"],
+  heart_rate: ["heart", "heart rate", "pulse"],
+  respiratory_rate: ["respiratory", "respirations", "resp rate", "resp"],
+  mucous_membranes: [
+    "mucous",
+    "mucous membrane",
+    "mm",
+    "mm color",
+    "mm colour",
+  ],
+  hydration: ["hydration"],
+  abdomen: ["abdomen", "abdominal", "rumen"],
+  // Procedure keywords we want to recognize for direct requests
+  rectal_palpation: ["rectal palpation", "rectal exam", "rectal palp", "rectal"],
+  nasogastric_intubation: ["nasogastric intubation", "nasogastric tube", "ng tube", "ngt", "nasogastric"],
+  abdominocentesis: ["abdominocentesis", "abdominal centesis", "abdo centesis"],
+};
 
 export default { parseRequestedKeys, matchPhysicalFindings };

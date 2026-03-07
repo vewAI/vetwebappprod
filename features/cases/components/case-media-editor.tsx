@@ -1,33 +1,23 @@
 "use client";
 
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/lib/supabase";
-import { getStagesForCase } from "@/features/stages/services/stageService";
-import type {
-  CaseMediaItem,
-  CaseMediaType,
-  CaseMediaStageRef,
-} from "@/features/cases/models/caseMedia";
+import { getActiveStagesForCase, getStagesForCase } from "@/features/stages/services/stageService";
+import type { CaseMediaItem, CaseMediaType, CaseMediaStageRef } from "@/features/cases/models/caseMedia";
 
 const DEFAULT_BUCKET = "case-media";
-const SUPPORTED_TYPES: CaseMediaType[] = [
-  "image",
-  "video",
-  "audio",
-  "document",
-];
+const SUPPORTED_TYPES: CaseMediaType[] = ["image", "video", "audio", "document"];
 
 const FILE_ACCEPT: Record<CaseMediaType, string> = {
   image: "image/*",
   video: "video/*",
   audio: "audio/*",
-  document:
-    "application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  document: "application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 };
 
 type CaseMediaEditorProps = {
@@ -47,10 +37,7 @@ type WebAudioWindow = typeof window & {
 };
 
 function generateId() {
-  if (
-    typeof crypto !== "undefined" &&
-    typeof (crypto as Crypto).randomUUID === "function"
-  ) {
+  if (typeof crypto !== "undefined" && typeof (crypto as Crypto).randomUUID === "function") {
     return (crypto as Crypto).randomUUID();
   }
   return `${Date.now()}-${Math.random()}`;
@@ -67,33 +54,24 @@ function ensureStageRef(stage?: CaseMediaStageRef | null): CaseMediaStageRef {
   return {};
 }
 
-export async function uploadFile(
-  file: File,
-  type: CaseMediaType,
-  caseId?: string,
-  bucket = DEFAULT_BUCKET
-): Promise<{ url: string; path: string }> {
+export async function uploadFile(file: File, type: CaseMediaType, caseId?: string, bucket = DEFAULT_BUCKET): Promise<{ url: string; path: string }> {
   const ext = file.name.split(".").pop() ?? "bin";
   const normalizedType = type === "document" ? "documents" : `${type}s`;
   const safeCaseId = caseId?.trim() ? caseId.trim() : "draft";
   const filename = `${generateId()}.${ext}`;
   const path = `cases/${safeCaseId}/${normalizedType}/${filename}`;
 
-  const { data, error } = await supabase.storage
-    .from(bucket)
-    .upload(path, file, {
-      cacheControl: "3600",
-      upsert: false,
-      contentType: file.type || undefined,
-    });
+  const { data, error } = await supabase.storage.from(bucket).upload(path, file, {
+    cacheControl: "3600",
+    upsert: false,
+    contentType: file.type || undefined,
+  });
 
   if (error || !data) {
     throw error ?? new Error("Upload failed");
   }
 
-  const { data: publicUrlData } = supabase.storage
-    .from(bucket)
-    .getPublicUrl(data.path);
+  const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(data.path);
 
   const publicUrl = publicUrlData?.publicUrl;
   if (!publicUrl) {
@@ -108,11 +86,7 @@ type WaveformResult = {
   durationMs?: number;
 };
 
-async function createWaveformPreview(
-  file: File,
-  caseId?: string,
-  bucket = DEFAULT_BUCKET
-): Promise<WaveformResult> {
+async function createWaveformPreview(file: File, caseId?: string, bucket = DEFAULT_BUCKET): Promise<WaveformResult> {
   if (typeof window === "undefined" || typeof document === "undefined") {
     return { thumbnailUrl: null };
   }
@@ -174,20 +148,16 @@ async function createWaveformPreview(
     const filename = `${generateId()}.png`;
     const uploadPath = `cases/${safeCaseId}/waveforms/${filename}`;
 
-    const { data, error } = await supabase.storage
-      .from(bucket)
-      .upload(uploadPath, blob, {
-        cacheControl: "3600",
-        upsert: false,
-        contentType: "image/png",
-      });
+    const { data, error } = await supabase.storage.from(bucket).upload(uploadPath, blob, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: "image/png",
+    });
     if (error || !data) {
       return { thumbnailUrl: null, durationMs: audioBuffer.duration * 1000 };
     }
 
-    const { data: publicUrlData } = supabase.storage
-      .from(bucket)
-      .getPublicUrl(data.path);
+    const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(data.path);
     return {
       thumbnailUrl: publicUrlData?.publicUrl ?? null,
       durationMs: audioBuffer.duration * 1000,
@@ -209,10 +179,28 @@ function clone(items: CaseMediaItem[]): CaseMediaItem[] {
 export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: CaseMediaEditorProps) {
   const [uploadState, setUploadState] = useState<UploadState>({ uploadingIndex: null, error: null });
   const [advancedOpen, setAdvancedOpen] = useState<Record<string, boolean>>({});
+  const [stages, setStages] = useState<ReturnType<typeof getStagesForCase>>([]);
 
-  const stages = useMemo(() => {
-    if (!caseId) return [];
-    return getStagesForCase(caseId);
+  useEffect(() => {
+    let cancelled = false;
+    if (!caseId) {
+      setStages([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+    (async () => {
+      try {
+        const activeStages = await getActiveStagesForCase(caseId);
+        if (!cancelled) setStages(activeStages);
+      } catch (error) {
+        if (!cancelled) setStages(getStagesForCase(caseId));
+        console.warn("Failed to load active stages for media editor", error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [caseId]);
 
   const items = useMemo(() => clone(value), [value]);
@@ -223,7 +211,7 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
       next[index] = updater(next[index]);
       onChange(next);
     },
-    [items, onChange]
+    [items, onChange],
   );
 
   const addItem = () => {
@@ -269,11 +257,7 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
     onChange(next);
   };
 
-  const handleFileChange = async (
-    index: number,
-    file: File,
-    type: CaseMediaType
-  ) => {
+  const handleFileChange = async (index: number, file: File, type: CaseMediaType) => {
     if (readOnly) return;
     setUploadState({ uploadingIndex: index, error: null });
     try {
@@ -286,10 +270,7 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
         ...item,
         url,
         mimeType: file.type || item.mimeType,
-        durationMs:
-          type === "audio"
-            ? waveform?.durationMs ?? item.durationMs
-            : item.durationMs,
+        durationMs: type === "audio" ? (waveform?.durationMs ?? item.durationMs) : item.durationMs,
         thumbnailUrl: waveform?.thumbnailUrl ?? item.thumbnailUrl,
       }));
       setUploadState({ uploadingIndex: null, error: null });
@@ -307,7 +288,7 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
         [id]: !prev[id],
       }));
     },
-    [readOnly]
+    [readOnly],
   );
 
   return (
@@ -320,58 +301,29 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
           </Button>
         )}
       </div>
-      {uploadState.error && (
-        <div className="text-sm text-red-600">{uploadState.error}</div>
-      )}
+      {uploadState.error && <div className="text-sm text-red-600">{uploadState.error}</div>}
       {items.length === 0 ? (
         <p className="text-sm text-muted-foreground">No media attached yet.</p>
       ) : (
         <div className="space-y-4">
           {items.map((item, index) => {
             const stage = ensureStageRef(item.stage);
-            const advancedHasValue = Boolean(
-              stage.stageId ||
-              stage.roleKey ||
-              item.mimeType ||
-              item.durationMs ||
-              item.loop ||
-              item.thumbnailUrl
-            );
+            const advancedHasValue = Boolean(stage.stageId || stage.roleKey || item.mimeType || item.durationMs || item.loop || item.thumbnailUrl);
             const showAdvanced = advancedOpen[item.id] ?? advancedHasValue;
 
             return (
-              <div
-                key={item.id}
-                className="space-y-4 rounded border border-border p-4"
-              >
+              <div key={item.id} className="space-y-4 rounded border border-border p-4">
                 <div className="flex items-center justify-between">
                   <div className="font-medium">Item {index + 1}</div>
                   {!readOnly && (
                     <div className="flex items-center gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => moveItem(index, -1)}
-                        disabled={index === 0}
-                      >
+                      <Button type="button" size="sm" variant="secondary" onClick={() => moveItem(index, -1)} disabled={index === 0}>
                         Move up
                       </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => moveItem(index, 1)}
-                        disabled={index === items.length - 1}
-                      >
+                      <Button type="button" size="sm" variant="secondary" onClick={() => moveItem(index, 1)} disabled={index === items.length - 1}>
                         Move down
                       </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="destructive"
-                        onClick={() => removeItem(index)}
-                      >
+                      <Button type="button" size="sm" variant="destructive" onClick={() => removeItem(index)}>
                         Remove
                       </Button>
                     </div>
@@ -403,18 +355,10 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
 
                       <Label>Source</Label>
                       {item.type === "image" && item.url ? (
-                        <img
-                          src={item.url}
-                          alt={item.caption ?? "Case asset"}
-                          className="h-32 w-full rounded object-cover"
-                        />
+                        <img src={item.url} alt={item.caption ?? "Case asset"} className="h-32 w-full rounded object-cover" />
                       ) : null}
-                      {item.type === "video" && item.url ? (
-                        <video controls className="w-full rounded" src={item.url} />
-                      ) : null}
-                      {item.type === "audio" && item.url ? (
-                        <audio controls className="w-full" src={item.url} />
-                      ) : null}
+                      {item.type === "video" && item.url ? <video controls className="w-full rounded" src={item.url} /> : null}
+                      {item.type === "audio" && item.url ? <audio controls className="w-full" src={item.url} /> : null}
 
                       <Input
                         value={item.url}
@@ -446,8 +390,8 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                           <option value="auto">Auto (Show at stage start)</option>
                         </select>
                         <p className="text-xs text-muted-foreground">
-                          "Auto" shows the media immediately when the assigned stage begins.
-                          "On Demand" requires the student to ask for it.
+                          &quot;Auto&quot; shows the media immediately when the assigned stage begins. &quot;On Demand&quot; requires the student to
+                          ask for it.
                         </p>
                       </div>
 
@@ -464,19 +408,13 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                             }}
                             disabled={uploadState.uploadingIndex === index}
                           />
-                          {uploadState.uploadingIndex === index && (
-                            <span className="text-xs text-muted-foreground">
-                              Uploading...
-                            </span>
-                          )}
+                          {uploadState.uploadingIndex === index && <span className="text-xs text-muted-foreground">Uploading...</span>}
                         </label>
                       )}
                     </div>
 
                     <div className="space-y-3">
-                      <Label htmlFor={`media-stage-key-${item.id}`}>
-                        Stage Assignment
-                      </Label>
+                      <Label htmlFor={`media-stage-key-${item.id}`}>Stage Assignment</Label>
                       <select
                         id={`media-stage-key-${item.id}`}
                         className="w-full rounded border border-input bg-card text-card-foreground px-2 py-1 text-sm"
@@ -496,9 +434,7 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                             }));
                             return;
                           }
-                          const selectedStage = stages.find(
-                            (s) => s.id === selectedId
-                          );
+                          const selectedStage = stages.find((s) => s.id === selectedId);
                           if (selectedStage) {
                             updateItem(index, (current) => ({
                               ...current,
@@ -512,9 +448,7 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                           }
                         }}
                       >
-                        <option value="">
-                          -- Global (Available in all stages) --
-                        </option>
+                        <option value="">-- Global (Available in all stages) --</option>
                         {stages.map((s) => (
                           <option key={s.id} value={s.id}>
                             {s.title} ({s.role})
@@ -525,9 +459,7 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                   </div>
 
                   <div className="space-y-3">
-                    <Label htmlFor={`media-caption-${item.id}`}>
-                      Caption
-                    </Label>
+                    <Label htmlFor={`media-caption-${item.id}`}>Caption</Label>
                     <Textarea
                       id={`media-caption-${item.id}`}
                       value={item.caption ?? ""}
@@ -543,9 +475,7 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                   </div>
 
                   <div className="space-y-3">
-                    <Label htmlFor={`media-transcript-${item.id}`}>
-                      Transcript / accessibility notes
-                    </Label>
+                    <Label htmlFor={`media-transcript-${item.id}`}>Transcript / accessibility notes</Label>
                     <Textarea
                       id={`media-transcript-${item.id}`}
                       value={item.transcript ?? ""}
@@ -561,13 +491,7 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                   </div>
 
                   <div className="flex justify-end">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => toggleAdvanced(item.id)}
-                      disabled={readOnly && !advancedHasValue}
-                    >
+                    <Button type="button" variant="ghost" size="sm" onClick={() => toggleAdvanced(item.id)} disabled={readOnly && !advancedHasValue}>
                       {showAdvanced ? "Hide advanced fields" : "Show advanced fields"}
                     </Button>
                   </div>
@@ -576,9 +500,7 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                     <div className="space-y-4 border-t border-border/40 pt-3">
                       <div className="grid gap-3 lg:grid-cols-2">
                         <div className="space-y-3">
-                          <Label htmlFor={`media-stage-id-${item.id}`}>
-                            Stage id (optional)
-                          </Label>
+                          <Label htmlFor={`media-stage-id-${item.id}`}>Stage id (optional)</Label>
                           <Input
                             id={`media-stage-id-${item.id}`}
                             value={stage.stageId ?? ""}
@@ -594,9 +516,7 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                             }
                           />
 
-                          <Label htmlFor={`media-role-key-${item.id}`}>
-                            Persona role key
-                          </Label>
+                          <Label htmlFor={`media-role-key-${item.id}`}>Persona role key</Label>
                           <Input
                             id={`media-role-key-${item.id}`}
                             value={stage.roleKey ?? ""}
@@ -612,9 +532,7 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                             }
                           />
 
-                          <Label htmlFor={`media-mime-${item.id}`}>
-                            MIME type
-                          </Label>
+                          <Label htmlFor={`media-mime-${item.id}`}>MIME type</Label>
                           <Input
                             id={`media-mime-${item.id}`}
                             value={item.mimeType ?? ""}
@@ -630,9 +548,7 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                         </div>
 
                         <div className="space-y-3">
-                          <Label htmlFor={`media-duration-${item.id}`}>
-                            Duration (ms)
-                          </Label>
+                          <Label htmlFor={`media-duration-${item.id}`}>Duration (ms)</Label>
                           <Input
                             id={`media-duration-${item.id}`}
                             type="number"
@@ -642,9 +558,7 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                             onChange={(event) =>
                               updateItem(index, (current) => ({
                                 ...current,
-                                durationMs: event.target.value
-                                  ? Number(event.target.value)
-                                  : undefined,
+                                durationMs: event.target.value ? Number(event.target.value) : undefined,
                               }))
                             }
                           />
@@ -661,20 +575,12 @@ export function CaseMediaEditor({ caseId, value, onChange, readOnly = false }: C
                               }
                               disabled={readOnly}
                             />
-                            <Label htmlFor={`media-loop-${item.id}`}>
-                              Loop playback
-                            </Label>
+                            <Label htmlFor={`media-loop-${item.id}`}>Loop playback</Label>
                           </div>
 
-                          <Label htmlFor={`media-thumbnail-${item.id}`}>
-                            Thumbnail / waveform URL
-                          </Label>
+                          <Label htmlFor={`media-thumbnail-${item.id}`}>Thumbnail / waveform URL</Label>
                           {item.thumbnailUrl ? (
-                            <img
-                              src={item.thumbnailUrl}
-                              alt="Thumbnail preview"
-                              className="h-20 w-full rounded object-cover"
-                            />
+                            <img src={item.thumbnailUrl} alt="Thumbnail preview" className="h-20 w-full rounded object-cover" />
                           ) : null}
                           <Input
                             id={`media-thumbnail-${item.id}`}

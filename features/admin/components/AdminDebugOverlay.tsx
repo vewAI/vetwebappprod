@@ -10,11 +10,21 @@ export function AdminDebugOverlay() {
   const { isAdmin } = useAuth();
   const [events, setEvents] = useState<DebugEvent[]>([]);
   const [isVisible, setIsVisible] = useState(true);
+  const [showSpeechDebug, setShowSpeechDebug] = useState<boolean>(() => {
+    try {
+      return Boolean(window?.localStorage?.getItem('admin_show_speech_debug') === 'true');
+    } catch {
+      return false;
+    }
+  });
 
   useEffect(() => {
     if (!isAdmin) return;
 
     const handleEvent = (event: DebugEvent) => {
+      // Optionally filter out high-volume speech debug events unless the admin opted in
+      if (!showSpeechDebug && (event.source === 'TTS' || event.source === 'STT')) return;
+
       setEvents((prev) => [event, ...prev].slice(0, 50)); // Keep last 50 events
       
       // Auto-remove success/info toasts after 5 seconds
@@ -30,7 +40,7 @@ export function AdminDebugOverlay() {
     return () => {
       debugEventBus.off("debug-event", handleEvent);
     };
-  }, [isAdmin]);
+  }, [isAdmin, showSpeechDebug]);
 
   // Listen for debug toggle changes from admin panel
   useEffect(() => {
@@ -53,7 +63,11 @@ export function AdminDebugOverlay() {
 
   return (
     <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-md w-full pointer-events-none">
-      <div className="flex justify-end mb-2 pointer-events-auto">
+      <div className="flex justify-end mb-2 pointer-events-auto gap-2">
+        <label className="text-xs bg-black/50 text-white px-2 py-1 rounded flex items-center gap-2">
+          <input type="checkbox" checked={showSpeechDebug} onChange={(e) => { setShowSpeechDebug(e.target.checked); try { window.localStorage.setItem('admin_show_speech_debug', e.target.checked ? 'true' : 'false'); } catch {} }} />
+          <span className="ml-1">Show speech debug</span>
+        </label>
         <button 
           onClick={() => setEvents([])}
           className="text-xs bg-black/50 text-white px-2 py-1 rounded hover:bg-black/70 transition-colors"

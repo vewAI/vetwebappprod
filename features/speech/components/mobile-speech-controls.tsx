@@ -3,6 +3,7 @@
 import React from "react";
 import { Mic, MicOff, Speaker } from "lucide-react";
 import { useSTT } from "../hooks/useSTT";
+import { canStartListening } from "../services/sttService";
 import { stopActiveTtsPlayback } from "../services/ttsService";
 
 export default function MobileSpeechControls() {
@@ -22,7 +23,17 @@ export default function MobileSpeechControls() {
       <div className="flex flex-col items-end space-y-2">
         <button
           aria-label={isListening ? "Stop recording" : "Start recording"}
-          onClick={() => (isListening ? stop() : start())}
+          onClick={() => {
+            if (isListening) stop();
+            else {
+              try {
+                if (!canStartListening()) return;
+              } catch (e) {
+                // fallback
+              }
+              start();
+            }
+          }}
           className="h-14 w-14 rounded-full bg-red-600 text-white shadow-lg flex items-center justify-center touch-none active:scale-95"
         >
           {isListening ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}

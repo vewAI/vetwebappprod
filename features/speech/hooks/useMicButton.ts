@@ -1,4 +1,5 @@
 import { RefObject } from "react";
+import { canStartListening } from "../services/sttService";
 
 type TextareaRef = RefObject<HTMLTextAreaElement | null>;
 
@@ -20,6 +21,11 @@ export function useMicButton(
   const handleStart = () => {
     reset();
     setInput("");
+    try {
+      if (!canStartListening()) return;
+    } catch (e) {
+      // On failure, fall back to attempting start to avoid blocking user action
+    }
     start();
   };
   

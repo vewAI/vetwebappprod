@@ -6,12 +6,17 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "test": "tsx --test",
+    "lint": "eslint .",
+    "test": "vitest",
+    "test:unit": "vitest",
+    "test:watch": "vitest --watch",
+    "test:e2e": "playwright test",
+    "playwright:install": "npx playwright install --with-deps",
     "seed:cases": "tsx scripts/seed-cases.ts",
     "generate:portraits": "tsx scripts/generate-persona-portraits.ts",
     "reset:portraits": "tsx scripts/reset-persona-portraits.ts",
     "seed:global-personas": "tsx scripts/seed-global-personas.ts",
+    "seed:stages": "tsx scripts/seed-case-stages.ts",
     "generate:global-portraits": "tsx scripts/generate-global-portraits.ts",
     "cleanup:case-personas": "tsx scripts/cleanup-case-personas.ts"
   },
@@ -46,6 +51,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.3",
+    "@playwright/test": "^1.35.0",
     "@tailwindcss/postcss": "^4.1.18",
     "@types/axios": "^0.9.36",
     "@types/node": "^25.0.2",
@@ -55,8 +61,12 @@
     "dotenv": "^17.2.3",
     "eslint": "^9.39.2",
     "eslint-config-next": "^16.0.10",
+    "jsdom": "^27.4.0",
+    "msw": "^2.12.7",
     "tailwindcss": "^4.1.18",
+    "autoprefixer": "^10.4.14",
     "tsx": "^4.21.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.0.18"
   }
 }

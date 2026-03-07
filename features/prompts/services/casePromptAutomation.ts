@@ -374,7 +374,7 @@ const SPECIES_PHYSICAL_EXAM_DEFAULTS: Record<string, { vitals: string[]; finding
   },
 };
 
-function getConditionPhysicalExamDefaults(
+export function getConditionPhysicalExamDefaults(
   condition: string,
   species: string
 ): { vitals: string[]; findings: string[] } {

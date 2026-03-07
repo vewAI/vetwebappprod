@@ -1,12 +1,7 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it } from "vitest";
 
-import {
-  ALLOWED_CHAT_PERSONA_KEYS,
-  classifyChatPersonaLabel,
-  isAllowedChatPersonaKey,
-  resolveChatPersonaRoleKey,
-} from "./persona-guardrails";
+import { ALLOWED_CHAT_PERSONA_KEYS, classifyChatPersonaLabel, isAllowedChatPersonaKey, resolveChatPersonaRoleKey } from "./persona-guardrails";
 
 describe("persona guardrails", () => {
   it("classifies owner style labels", () => {
@@ -15,10 +10,7 @@ describe("persona guardrails", () => {
   });
 
   it("classifies nurse style labels", () => {
-    assert.equal(
-      classifyChatPersonaLabel("Laboratory Technician"),
-      "veterinary-nurse"
-    );
+    assert.equal(classifyChatPersonaLabel("Laboratory Technician"), "veterinary-nurse");
     assert.equal(classifyChatPersonaLabel("Assistant"), "veterinary-nurse");
   });
 
@@ -28,10 +20,7 @@ describe("persona guardrails", () => {
   });
 
   it("defaults to nurse when labels are missing", () => {
-    assert.equal(
-      resolveChatPersonaRoleKey(undefined, undefined),
-      "veterinary-nurse"
-    );
+    assert.equal(resolveChatPersonaRoleKey(undefined, undefined), "veterinary-nurse");
   });
 
   it("prefers stageRole before displayRole", () => {

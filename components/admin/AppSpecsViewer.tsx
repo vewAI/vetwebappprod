@@ -41,13 +41,27 @@ interface STTConfig {
   provider: string;
   incompletePhraseSuffixes: string[];
   description: string;
+  descriptionLong?: string;
+  speakMode?: {
+    description?: string;
+    behavior?: string[];
+    incompleteFragmentTiming?: {
+      initialWaitMs?: number;
+      extendedWaitMs?: number;
+      note?: string;
+    };
+    autoSendBehavior?: string;
+  };
+  helpers?: { suppressionReasons?: string };
 }
 
 interface TTSConfig {
   preDelay: number;
   suppressionClear: number;
   sttResumeDelay: number;
+  resumeRetryDelay?: number;
   deafWindowAfterTts: number;
+  deafWindowCalc?: string;
   description: string;
 }
 
@@ -72,9 +86,12 @@ interface PromptIntegration {
   nurseGuardrails?: string[];
 }
 
+interface PromptSample { key: string; summary: string }
+
 interface AppSpecs {
   promptIntegration: PromptIntegration;
   rolePromptDefinitions: RolePromptDefinition[];
+  promptSamples?: PromptSample[];
   findingsReleaseStrategies: FindingsStrategy[];
   defaultStages: DefaultStage[];
   personaRoleKeys: PersonaRoleKey[];
@@ -118,6 +135,12 @@ export function AppSpecsViewer({ open, onOpenChange }: AppSpecsViewerProps) {
   const [error, setError] = React.useState<string | null>(null);
   const [expandedPrompt, setExpandedPrompt] = React.useState<string | null>(null);
 
+  // prompt overrides loaded separately so we can edit/override templates
+  const [promptOverrides, setPromptOverrides] = React.useState<Record<string, string>>({});
+  const [editingPrompt, setEditingPrompt] = React.useState<string | null>(null);
+  const [editingValue, setEditingValue] = React.useState<string>("");
+  const [saving, setSaving] = React.useState(false);
+
   React.useEffect(() => {
     if (open && !specs) {
       setLoading(true);
@@ -131,7 +154,82 @@ export function AppSpecsViewer({ open, onOpenChange }: AppSpecsViewerProps) {
         .catch((err) => setError(err.message))
         .finally(() => setLoading(false));
     }
+
+    if (open) {
+      // Load current prompt overrides (admin only)
+      fetch("/api/prompts")
+        .then((res) => {
+          if (!res.ok) throw new Error("Failed to load prompt overrides");
+          return res.json();
+        })
+        .then((data) => {
+          if (data && Array.isArray(data.prompts)) {
+            const map: Record<string, string> = {};
+            data.prompts.forEach((p: any) => {
+              if (p?.id && typeof p.value === "string") map[p.id] = p.value;
+            });
+            setPromptOverrides(map);
+          }
+        })
+        .catch(() => {
+          // ignore - not fatal
+        });
+    }
   }, [open, specs]);
+
+  const startEditing = (key: string, current: string) => {
+    setEditingPrompt(key);
+    setEditingValue(current);
+  };
+
+  const cancelEditing = () => {
+    setEditingPrompt(null);
+    setEditingValue("");
+  };
+
+  const saveEditing = async (key: string) => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/prompts", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: key, value: editingValue }),
+      });
+      if (!res.ok) throw new Error("Failed to save prompt");
+      // update local overrides map
+      setPromptOverrides((prev) => ({ ...prev, [key]: editingValue }));
+      setEditingPrompt(null);
+      setEditingValue("");
+    } catch (err) {
+      console.error("Failed to save prompt", err);
+      alert("Failed to save prompt: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const revertToDefault = async (key: string) => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/prompts", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: key, value: "" }),
+      });
+      if (!res.ok) throw new Error("Failed to revert prompt");
+      setPromptOverrides((prev) => {
+        const copy = { ...prev };
+        delete copy[key];
+        return copy;
+      });
+    } catch (err) {
+      console.error("Failed to revert prompt", err);
+      alert("Failed to revert prompt: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setSaving(false);
+    }
+  };
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -238,6 +336,20 @@ export function AppSpecsViewer({ open, onOpenChange }: AppSpecsViewerProps) {
                 </div>
               </CollapsibleSection>
 
+              {/* Prompt Samples Summary */}
+              {specs.promptSamples && specs.promptSamples.length > 0 && (
+                <CollapsibleSection title={`Prompt Samples (${specs.promptSamples.length})`} defaultOpen={false}>
+                  <div className="space-y-2 text-sm">
+                    {specs.promptSamples.map((ps: any) => (
+                      <div key={ps.key} className="flex items-start gap-3 p-2 bg-muted rounded-md">
+                        <div className="font-mono text-xs w-32">{ps.key}</div>
+                        <div className="text-muted-foreground">{ps.summary}</div>
+                      </div>
+                    ))}
+                  </div>
+                </CollapsibleSection>
+              )}
+
               {/* Role Prompt Definitions */}
               <CollapsibleSection
                 title={`Role Prompt Definitions (${specs.rolePromptDefinitions.length})`}
@@ -283,9 +395,56 @@ export function AppSpecsViewer({ open, onOpenChange }: AppSpecsViewerProps) {
                             <h4 className="text-xs font-semibold text-muted-foreground mb-1">
                               Template:
                             </h4>
-                            <pre className="text-xs bg-muted p-3 rounded-md overflow-x-auto whitespace-pre-wrap font-mono max-h-64 overflow-y-auto">
-                              {prompt.defaultTemplate}
-                            </pre>
+
+                            {editingPrompt === prompt.key ? (
+                              <div className="space-y-2">
+                                <textarea
+                                  className="w-full h-48 p-2 font-mono text-sm bg-muted rounded-md"
+                                  value={editingValue}
+                                  onChange={(e) => setEditingValue(e.target.value)}
+                                />
+                                <div className="flex gap-2">
+                                  <button
+                                    className="px-3 py-1 bg-blue-600 text-white rounded-md"
+                                    onClick={() => void saveEditing(prompt.key)}
+                                    disabled={saving}
+                                  >
+                                    {saving ? 'Saving...' : 'Save'}
+                                  </button>
+                                  <button
+                                    className="px-3 py-1 bg-muted rounded-md"
+                                    onClick={cancelEditing}
+                                    disabled={saving}
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    className="px-3 py-1 bg-amber-100 text-amber-900 rounded-md"
+                                    onClick={() => void revertToDefault(prompt.key)}
+                                    disabled={saving}
+                                  >
+                                    Revert to default
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="space-y-2">
+                                <pre className="text-xs bg-muted p-3 rounded-md overflow-x-auto whitespace-pre-wrap font-mono max-h-64 overflow-y-auto">
+                                  {promptOverrides[prompt.key] ?? prompt.defaultTemplate}
+                                </pre>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    className="px-3 py-1 bg-indigo-600 text-white rounded-md text-sm"
+                                    onClick={() => startEditing(prompt.key, promptOverrides[prompt.key] ?? prompt.defaultTemplate)}
+                                  >
+                                    Edit
+                                  </button>
+                                  {promptOverrides[prompt.key] && (
+                                    <span className="text-xs text-muted-foreground">(overridden)</span>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}
@@ -410,6 +569,9 @@ export function AppSpecsViewer({ open, onOpenChange }: AppSpecsViewerProps) {
                           {specs.ttsConfig.deafWindowAfterTts}
                         </div>
                         <div className="text-xs text-muted-foreground">Deaf window (ms)</div>
+                        {specs.ttsConfig.deafWindowCalc && (
+                          <div className="text-xs text-muted-foreground mt-1">Calc: {specs.ttsConfig.deafWindowCalc}</div>
+                        )}
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground mt-3">
@@ -418,13 +580,46 @@ export function AppSpecsViewer({ open, onOpenChange }: AppSpecsViewerProps) {
                   </div>
 
                   <div>
-                    <h4 className="font-medium mb-2">STT Configuration</h4>
+                    <h4 className="font-medium mb-2">Speak Mode & STT Configuration</h4>
                     <p className="text-sm text-muted-foreground mb-2">
                       Provider: <Badge variant="outline">{specs.sttConfig.provider}</Badge>
                     </p>
-                    <p className="text-sm text-muted-foreground mb-2">
-                      {specs.sttConfig.description}
-                    </p>
+
+                    {specs.sttConfig.descriptionLong ? (
+                      <p className="text-sm text-muted-foreground mb-2">{specs.sttConfig.descriptionLong}</p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground mb-2">{specs.sttConfig.description}</p>
+                    )}
+
+                    {/* Speak Mode details */}
+                    {specs.sttConfig.speakMode && (
+                      <div className="p-3 bg-muted rounded-md mb-2">
+                        <div className="text-xs text-muted-foreground mb-1">Speak Mode</div>
+                        <div className="text-sm mb-2">{specs.sttConfig.speakMode.description}</div>
+                        <div className="text-xs font-medium mb-1">Behaviors:</div>
+                        <ul className="list-disc list-inside text-sm mb-2">
+                          {specs.sttConfig.speakMode.behavior?.map((b, i) => (
+                            <li key={i}>{b}</li>
+                          ))}
+                        </ul>
+                        <div className="text-xs font-medium mb-1">Incomplete fragment timing:</div>
+                        <div className="text-sm">
+                          Initial wait: <strong>{specs.sttConfig.speakMode.incompleteFragmentTiming?.initialWaitMs ?? "n/a"}ms</strong>
+                          <br />
+                          Extended wait: <strong>{specs.sttConfig.speakMode.incompleteFragmentTiming?.extendedWaitMs ?? "n/a"}ms</strong>
+                          <div className="text-xs text-muted-foreground mt-1">{specs.sttConfig.speakMode.incompleteFragmentTiming?.note}</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Helpers */}
+                    {specs.sttConfig.helpers?.suppressionReasons && (
+                      <div className="p-3 bg-muted rounded-md mb-2">
+                        <div className="text-xs text-muted-foreground mb-1">Suppression & Telemetry</div>
+                        <div className="text-sm">{specs.sttConfig.helpers.suppressionReasons}</div>
+                      </div>
+                    )}
+
                     <div className="p-3 bg-muted rounded-md">
                       <div className="text-xs text-muted-foreground mb-1">
                         Incomplete phrase suffixes ({specs.sttConfig.incompletePhraseSuffixes.length} words):

@@ -151,13 +151,13 @@ Completed examination record:
 STRICT GUARDRAILS (Non-Negotiable):
 - NO DIAGNOSIS: NEVER mention the diagnosis, condition name, or any diagnostic summary. If the findings contain a summary or diagnosis, you MUST ignore that part completely.
 - NO TREATMENT: NEVER provide or suggest treatment plans. That is the student's responsibility to determine.
-- STRICT SCOPE: Provide ONLY the specific information requested. If the student asks for "vitals", do not provide abdominal findings, cardiac auscultation, or other systems.
+- STRICT SCOPE: Provide ONLY the specific information requested. If the student only asks for "vitals", do not provide abdominal findings, cardiac auscultation, or other systems.
 - NATURAL LANGUAGE: Do NOT output raw JSON, code blocks, or data structures. Present data in professional, clinical spoken language.
 
 INFORMATION DELIVERY RULES:
 - Role Hierarchy: You PROVIDE information from the records. You do NOT ask the student for findings. You are the one holding the clipboard.
 - Temperature: ALWAYS report temperatures in BOTH Fahrenheit (°F) AND Celsius (°C). Formula: °F = °C × 1.8 + 32
-- Missing Data: If asked for something not in the record, state it was "not recorded" or is "unremarkable/within normal limits" based on context. Do NOT invent abnormal values.
+- Missing Data: If asked for something not in the record, state it is "unremarkable/within normal limits" based on context or look up a real normal value for the species and pathology.
 - Conciseness: Be helpful and professional, but do NOT volunteer extra categories of data not explicitly requested.
 - No Questions: Do not ask the student what they found. You are reporting, not quizzing.
 
@@ -165,6 +165,7 @@ Release Strategy:
 {{RELEASE_STRATEGY_INSTRUCTION}}
 
 Student request: {{STUDENT_REQUEST}}`,
+
     placeholderDocs: [
       { token: "{{FINDINGS}}", description: "Physical examination findings for the case." },
       { token: "{{STUDENT_REQUEST}}", description: "Latest clinician question or request." },
@@ -486,7 +487,12 @@ async function loadRolePromptOverride(
       return null;
     }
     const prompts = extractRolePromptsFromMetadata(data?.metadata ?? null);
-    return prompts[roleInfoKey] ?? null;
+    const candidate = prompts[roleInfoKey] ?? null;
+    if (candidate && /(?:invent|guess|fabricat|plausibl)/i.test(candidate)) {
+      console.warn("Rejected unsafe role prompt override containing fabrication instructions", { caseId, roleKey, roleInfoKey });
+      return null;
+    }
+    return candidate;
   } catch (error) {
     console.warn("Unhandled error loading role prompt override", error);
     return null;
@@ -504,7 +510,8 @@ const caseRoleInfoMap: Record<string, RoleInfo> = {
 export async function getRoleInfoPrompt(
   caseId: string,
   stageIndex: number,
-  userMessage: string
+  userMessage: string,
+  stageOverride?: Stage
 ): Promise<string | null> {
   // Check if the caseId is valid
   if (!isCaseIdValid(caseId)) {
@@ -515,13 +522,11 @@ export async function getRoleInfoPrompt(
   // Get the role info object for this case (with type assertion)
   const roleInfo = caseRoleInfoMap[caseId] ?? dbRoleInfo;
 
-  // Get the stages for this case from the config
-  const caseStages = caseConfig[caseId];
-  if (!caseStages || !caseStages[stageIndex]) {
+  const stage = stageOverride ?? caseConfig[caseId]?.[stageIndex];
+  if (!stage) {
     return null;
   }
 
-  const stage = caseStages[stageIndex];
   if (!stage.roleInfoKey) {
     return null;
   }

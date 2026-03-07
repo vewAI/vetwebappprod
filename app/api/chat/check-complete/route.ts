@@ -1,5 +1,6 @@
 import OpenAi from "openai";
 import { NextRequest, NextResponse } from "next/server";
+import { PHYS_SYNONYMS } from "@/features/chat/services/physFinder";
 
 const openai = new OpenAi({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -19,14 +20,8 @@ const DIAG_SYNONYMS: Record<string, string[]> = {
   calcium: ["calcium", "ca"],
 };
 
-const PHYS_SYNONYMS: Record<string, string[]> = {
-  rumen_turnover: ["rumen turnover", "rumen_turnover", "rumen turnover"],
-  ballottement: ["ballottement", "ballottement was", "ballott"],
-  temperature: ["temp", "temperature"],
-  heart_rate: ["heart", "heart rate", "pulse"],
-  respiratory_rate: ["respiratory", "respirations", "resp rate", "resp"],
-  mucous_membranes: ["mucous", "mucous membrane", "mm", "mm color", "mm colour"],
-};
+// PHYS_SYNONYMS moved to services/physFinder.ts to keep a single source of truth for
+// physical exam synonym mappings used by both the server route and client helpers.
 
 function findSynonymKey(text: string, groups: Record<string, string[]>): string | null {
   const tNorm = normalizeForMatching(text);

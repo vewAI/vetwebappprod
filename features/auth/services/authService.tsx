@@ -55,36 +55,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { data, error } = await supabase.auth.getSession();
 
         if (error) {
-          console.error("Error getting session:", error.message);
-          // If the stored refresh token is invalid or rotated, clear local
-          // auth storage and force a fresh sign-in to avoid repeated console
-          // errors during local development.
-          try {
-            const msg = String(error?.message || "").toLowerCase();
-            if (msg.includes("refresh token") || msg.includes("invalid grant") || msg.includes("invalid refresh")) {
-              console.warn("Clearing local auth state due to invalid refresh token");
-              try {
-                // Sign out cleanly (will clear supabase client storage)
-                await supabase.auth.signOut();
-              } catch (e) {
-                // Fallback: try to clear common localStorage keys used by Supabase
-                try {
-                  if (typeof window !== "undefined") {
-                    window.localStorage.removeItem("supabase.auth.token");
-                    window.localStorage.removeItem("sb-access-token");
-                    window.localStorage.removeItem("sb-refresh-token");
-                    window.localStorage.removeItem("supabase.auth");
-                  }
-                } catch (__) {
-                  /* ignore */
-                }
-              }
-              // Redirect to login so the developer can sign in again
-              try {
-                router.push("/login");
-              } catch (__) {}
+          // Handle AuthApiError and refresh-token related failures gracefully.
+          // Prefer explicit error.code checks when available (e.g. "refresh_token_not_found").
+          const errObj: any = error ?? {};
+          const errCode = String(errObj?.code ?? errObj?.name ?? "").toLowerCase();
+          const errMsg = String(errObj?.message ?? errCode ?? "").toLowerCase();
+
+          const looksLikeRefreshFailure =
+            errCode === "refresh_token_not_found" ||
+            errMsg.includes("refresh token") ||
+            errMsg.includes("invalid grant") ||
+            errMsg.includes("invalid refresh");
+
+          // In production avoid noisy stack traces — still clear state and redirect.
+          if (looksLikeRefreshFailure) {
+            if (process.env.NODE_ENV !== "production") {
+              console.warn("Clearing local auth state due to invalid refresh token", errObj);
             }
-          } catch (__) {}
+
+            try {
+              // Sign out cleanly (will clear supabase client storage)
+              await supabase.auth.signOut();
+            } catch (e) {
+              // Fallback: try to clear common localStorage keys used by Supabase
+              try {
+                if (typeof window !== "undefined") {
+                  window.localStorage.removeItem("supabase.auth.token");
+                  window.localStorage.removeItem("sb-access-token");
+                  window.localStorage.removeItem("sb-refresh-token");
+                  window.localStorage.removeItem("supabase.auth");
+                }
+              } catch (__) {
+                /* ignore */
+              }
+            }
+
+            // Redirect to login so the developer can sign in again
+            try {
+              router.push("/login");
+            } catch (__) {}
+          } else {
+            // Non-refresh related auth errors are useful to log for debugging
+            if (process.env.NODE_ENV !== "production") {
+              console.error("Error getting session:", errObj);
+            }
+          }
         } else {
           setSession(data.session);
         }
