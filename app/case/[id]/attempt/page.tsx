@@ -249,20 +249,25 @@ export default function CaseChatPage() {
   const { timepoints, loading: timepointsLoading } = useCaseTimepoints(caseItem?.id ?? "");
 
   const handleProceedToNextStage = async (messages?: Message[], timeSpentSeconds: number = 0) => {
+    const stageIndexAtTransition = currentStageIndex;
+    const hasNextStage = stageIndexAtTransition < stages.length - 1;
+
+    // Optimistically update UI first so sidebar stage label switches immediately.
+    if (hasNextStage) {
+      setStages(markStageCompleted(stages, stageIndexAtTransition));
+      setCurrentStageIndex(stageIndexAtTransition + 1);
+    }
+
     if (attemptId && messages && messages.length > 0) {
       try {
-        await saveProgress(currentStageIndex, messages, timeSpentSeconds);
+        await saveProgress(stageIndexAtTransition, messages, timeSpentSeconds);
       } catch (saveError) {
         console.error("Error saving attempt progress during stage transition:", saveError);
       }
     }
 
-    if (currentStageIndex < stages.length - 1) {
-      setStages(markStageCompleted(stages, currentStageIndex));
-      const nextIndex = currentStageIndex + 1;
-      setCurrentStageIndex(nextIndex);
-    } else {
-      setStages(markStageCompleted(stages, currentStageIndex));
+    if (!hasNextStage) {
+      setStages(markStageCompleted(stages, stageIndexAtTransition));
       if (messages && messages.length > 0) {
         // keep a copy of the messages so the completion dialog can export them
         setLastMessagesForExport(messages);

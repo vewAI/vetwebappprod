@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { fetchCases } from "@/features/case-selection/services/caseService";
 import type { Case } from "@/features/case-selection/models/case";
@@ -234,6 +235,8 @@ function getOptionLabel(options: Array<{ value: string; label: string }>, value:
 }
 
 export default function CaseStageManagerPage() {
+  const searchParams = useSearchParams();
+  const requestedCaseId = searchParams.get("caseId")?.trim() ?? "";
   const [cases, setCases] = useState<Case[]>([]);
   const [selectedCaseId, setSelectedCaseId] = useState<string>("");
   const [source, setSource] = useState<"db" | "hardcoded" | "">("");
@@ -248,14 +251,17 @@ export default function CaseStageManagerPage() {
       try {
         const data = await fetchCases({ includeUnpublished: true, limit: 200 });
         setCases(data ?? []);
-        if (data?.[0]?.id) {
-          setSelectedCaseId(data[0].id);
+        if (data?.length) {
+          const requestedExists = requestedCaseId
+            ? data.some((caseItem) => caseItem.id === requestedCaseId)
+            : false;
+          setSelectedCaseId(requestedExists ? requestedCaseId : data[0].id);
         }
       } catch (err) {
         setError(`Failed to load cases: ${err instanceof Error ? err.message : String(err)}`);
       }
     })();
-  }, []);
+  }, [requestedCaseId]);
 
   const loadStages = async (caseId: string) => {
     if (!caseId) return;

@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 // ImageUploader intentionally not used here to allow manual image_url input in edit mode.
 import axios from "axios";
@@ -12,7 +13,6 @@ import { CaseMediaEditor } from "@/features/cases/components/case-media-editor";
 import { AvatarSelector } from "@/features/cases/components/avatar-selector";
 import { PersonaEditor, type PersonaConfig } from "@/features/personas/components/PersonaEditor";
 import { normalizeCaseMedia, type CaseMediaItem } from "@/features/cases/models/caseMedia";
-import { TimeProgressionEditor } from "@/features/cases/components/case-time-progression-editor";
 import { getActiveStagesForCase, getStagesForCase } from "@/features/stages/services/stageService";
 import { resolveChatPersonaRoleKey } from "@/features/chat/utils/persona-guardrails";
 
@@ -762,7 +762,7 @@ export default function CaseViewerPage() {
             <Button
               variant="outline"
               onClick={async () => {
-                const id = formatValue(formState["id"]);
+                const id = formatValue(formState?.["id"]);
                 if (!id) return;
                 if (!authHeaders) {
                   alert("You must be signed in to restore cases.");
@@ -861,8 +861,18 @@ export default function CaseViewerPage() {
         </div>
       )}
       {formState && caseIdValue && (
-        <div className="mb-6">
-          <TimeProgressionEditor caseId={caseIdValue} readOnly={!editable} />
+        <div className="mb-6 rounded-lg border bg-card p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="font-medium">Timeline & Stage Management</h3>
+              <p className="text-sm text-muted-foreground">
+                Time progression, visits/days, and stage sequencing are managed centrally in Stage Manager.
+              </p>
+            </div>
+            <Link href={`/admin/case-stage-manager?caseId=${encodeURIComponent(caseIdValue)}`}>
+              <Button type="button" variant="outline">Open Stage Manager</Button>
+            </Link>
+          </div>
         </div>
       )}
       <form className="space-y-4">
