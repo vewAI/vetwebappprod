@@ -1,6 +1,6 @@
 type SupabaseLikeClient = {
   auth?: {
-    signOut?: (options?: unknown) => Promise<unknown>;
+    signOut?: (options?: { scope?: "global" | "local" | "others" }) => Promise<unknown>;
   };
 };
 
