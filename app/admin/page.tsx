@@ -14,6 +14,17 @@ export default function AdminPage() {
   const [specsOpen, setSpecsOpen] = React.useState(false);
   const LLMProviderManager = dynamic(() => import("@/features/admin/components/LLMProviderManager"), { ssr: false });
 
+  React.useEffect(() => {
+    try {
+      // Cleanup legacy debug toggle preferences so old admin UI traces stay off.
+      window.localStorage.removeItem("debugOverlay");
+      window.localStorage.removeItem("admin_show_speech_debug");
+      window.dispatchEvent(new CustomEvent("debugOverlayToggle", { detail: false }));
+    } catch {
+      // no-op
+    }
+  }, []);
+
   const tourSteps = [
     { element: '#admin-title', popover: { title: 'Admin Dashboard', description: 'Welcome to the central hub for managing the application.' } },
     { element: '#btn-new-case', popover: { title: 'Create Cases', description: 'Start here to input new clinical cases into the system.' } },
