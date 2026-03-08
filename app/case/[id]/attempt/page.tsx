@@ -451,7 +451,7 @@ export default function CaseChatPage() {
         onClose={() => setShowCompletionDialog(false)}
         feedback={feedbackContent}
         isLoading={isGeneratingFeedback}
-        caseId={caseItem.id.replace("case-", "")}
+        caseId={caseItem.id}
         messages={lastMessagesForExport ?? []}
       />
     </div>
