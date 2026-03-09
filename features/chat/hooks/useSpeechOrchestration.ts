@@ -87,7 +87,8 @@ export function useSpeechOrchestration(deps: UseSpeechOrchestrationDeps) {
       } catch {}
     };
 
-    const RESUME_DELAY_AFTER_TTS_MS = 50;
+    const RESUME_DELAY_AFTER_TTS_MS = 120;
+    const RESUME_DEAF_BUFFER_MS = 50;
 
     const doTtsResume = (skipResumeLocal = false) => {
       const tryResumeWhenSafe = () => {
@@ -103,7 +104,9 @@ export function useSpeechOrchestration(deps: UseSpeechOrchestrationDeps) {
           deps.isSuppressingSttRef.current = false;
           
           try {
-            exitDeafMode();
+            // Keep only a tiny trailing buffer to avoid echo while allowing
+            // mic resume quickly after assistant speech.
+            exitDeafMode(RESUME_DEAF_BUFFER_MS);
           } catch {}
 
           try {
@@ -222,7 +225,9 @@ export function useSpeechOrchestration(deps: UseSpeechOrchestrationDeps) {
               setSttSuppressed(false, true, "tts-forced");
             } catch {}
             try {
-              exitDeafMode();
+              // Forced safety resume must clear deaf mode immediately before
+              // calling safeStart, otherwise canStartListening stays blocked.
+              exitDeafMode(0);
             } catch {}
             deps.safeStart();
           }

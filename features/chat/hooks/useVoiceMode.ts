@@ -90,7 +90,7 @@ export function useVoiceMode({
                   setSttSuppressed(false, true, "voice-mode-enabled");
                 } catch (e) {}
                 try {
-                  exitDeafMode();
+                  exitDeafMode(0);
                 } catch (e) {}
                 safeStart();
               } catch (e) {
