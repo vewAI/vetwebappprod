@@ -17,4 +17,10 @@ describe("postProcessTranscript phrase corrections", () => {
     );
     expect(postProcessTranscript("simpsons")).toContain("symptoms");
   });
+
+  it("maps urinalysis mis-hearings to 'urinalysis'", () => {
+    expect(postProcessTranscript("you're analysis")).toContain("urinalysis");
+    expect(postProcessTranscript("your analysis")).toContain("urinalysis");
+    expect(postProcessTranscript("ur analysis")).toContain("urinalysis");
+  });
 });

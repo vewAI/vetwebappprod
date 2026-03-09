@@ -1117,7 +1117,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
         const caseSpecies = String((caseRecord as any).species ?? "").trim() || undefined;
         const labResultsPayload = parseLabResults(diagText, caseSpecies);
         const isGeneralLabRequest =
-          /\b(results|bloodwork|bloods|blood\s*work|labs|all|full|complete|show|display|printout|report|cbc|hematology|haematology)\b/i.test(
+          /\b(results|bloodwork|bloods|blood\s*work|labs|all|full|complete|show|display|printout|report|cbc|hematology|haematology|analysis|analyse|analisis|analytics|overview|summary|panel|workup)\b/i.test(
             userText,
           );
         if (labResultsPayload && labResultsPayload.panels.length > 0 && isGeneralLabRequest) {

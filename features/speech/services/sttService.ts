@@ -143,6 +143,12 @@ PHRASE_CORRECTIONS["buy chemistry"] = "biochemistry";
 // Common mis-hearing: 'baseball fields' -> 'basophils'
 PHRASE_CORRECTIONS["baseball fields"] = "basophils";
 PHRASE_CORRECTIONS["baseball field"] = "basophils";
+// Common mis-hearings for urinalysis
+PHRASE_CORRECTIONS["you're analysis"] = "urinalysis";
+PHRASE_CORRECTIONS["youre analysis"] = "urinalysis";
+PHRASE_CORRECTIONS["your analysis"] = "urinalysis";
+PHRASE_CORRECTIONS["you are analysis"] = "urinalysis";
+PHRASE_CORRECTIONS["ur analysis"] = "urinalysis";
 
 export function postProcessTranscript(text: string): string {
   let processed = text;
