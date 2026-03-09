@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { fetchCases } from "@/features/case-selection/services/caseService";
 import type { Case } from "@/features/case-selection/models/case";
@@ -235,8 +234,7 @@ function getOptionLabel(options: Array<{ value: string; label: string }>, value:
 }
 
 export default function CaseStageManagerPage() {
-  const searchParams = useSearchParams();
-  const requestedCaseId = searchParams.get("caseId")?.trim() ?? "";
+  const [requestedCaseId, setRequestedCaseId] = useState<string>("");
   const [cases, setCases] = useState<Case[]>([]);
   const [selectedCaseId, setSelectedCaseId] = useState<string>("");
   const [source, setSource] = useState<"db" | "hardcoded" | "">("");
@@ -245,6 +243,16 @@ export default function CaseStageManagerPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>("");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const caseId = new URLSearchParams(window.location.search).get("caseId")?.trim() ?? "";
+      setRequestedCaseId(caseId);
+    } catch {
+      setRequestedCaseId("");
+    }
+  }, []);
 
   useEffect(() => {
     (async () => {
