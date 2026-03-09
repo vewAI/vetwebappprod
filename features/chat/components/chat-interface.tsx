@@ -1155,11 +1155,11 @@ export function ChatInterface({
           // When noise suppression is active, use a longer delay to filter
           // out ambient chatter that might be picked up as speech.
           // When phrase looks incomplete, give extra time to finish
-          let autoSendDelay = 500;
+          let autoSendDelay = 1800;
           if (noiseSuppressionRef.current) {
-            autoSendDelay = 1500;
+            autoSendDelay = 2600;
           } else if (looksIncomplete) {
-            autoSendDelay = 1200; // Give 1.2s for incomplete phrases
+            autoSendDelay = 2400; // Give extra time for likely continuation
           }
 
           autoSendFinalTimerRef.current = window.setTimeout(() => {
@@ -3508,6 +3508,10 @@ export function ChatInterface({
           autoSendTimerRef.current = null;
           autoSendPendingTextRef.current = null;
         }
+        if (autoSendFinalTimerRef.current) {
+          window.clearTimeout(autoSendFinalTimerRef.current);
+          autoSendFinalTimerRef.current = null;
+        }
         const combined = mergeStringsNoDup(baseInputRef.current, interimTranscript.trim());
         // Mark as STT input (not manual typing)
         try {
@@ -3552,6 +3556,15 @@ export function ChatInterface({
         // rather than the onFinal callback, ensure we still schedule the
         // final-only auto-send timer so the message doesn't get stuck.
         if (voiceMode && !autoSendFinalTimerRef.current && autoSendSttRef.current) {
+          const textToCheck = baseInputRef.current?.trim() || "";
+          const looksIncomplete = endsWithIncompleteMarker(textToCheck);
+          let autoSendDelay = 1800;
+          if (noiseSuppressionRef.current) {
+            autoSendDelay = 2600;
+          } else if (looksIncomplete) {
+            autoSendDelay = 2400;
+          }
+
           autoSendFinalTimerRef.current = window.setTimeout(() => {
             autoSendFinalTimerRef.current = null;
             autoSendPendingTextRef.current = null;
@@ -3570,7 +3583,7 @@ export function ChatInterface({
             } catch (err) {
               console.error("Failed to auto-send final transcript (via transcript):", err);
             }
-          }, 500);
+          }, autoSendDelay);
         }
       }
     }

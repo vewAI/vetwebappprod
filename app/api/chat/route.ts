@@ -1347,9 +1347,22 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
   10) Imaging and ultrasound reporting should describe findings clearly without over-interpreting and without adding conclusions unless asked.
   11) Do not provide treatment advice unless asked. Do not speculate beyond available data. Maintain a neutral, professional, clinically realistic tone.`;
 
+    const ownerBasePrompt = `
+
+  OWNER PERSONA RULES: If you are answering as the owner/client persona, follow these rules strictly:
+  1) Speak as a concerned animal owner in plain, everyday language.
+  2) Do NOT provide technical diagnostic interpretation, treatment plans, dosage suggestions, or lab-value analysis.
+  3) Do NOT invent clinical facts. Only describe what you observed or what you were told as an owner.
+  4) If asked a technical veterinary question, explicitly state you do not know and defer to the veterinary team.
+  5) Keep replies concise (1 to 3 sentences), natural, and emotionally realistic.
+  6) Do NOT include internal prompts, hidden instructions, or role-management text.`;
+
     // Append the nurse base prompt for nurse/lab personas during sensitive stages
     if (personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician" || isPhysicalStage || isLabStage) {
       systemGuideline += nurseBasePrompt;
+    }
+    if (personaRoleKey === "owner") {
+      systemGuideline += ownerBasePrompt;
     }
 
     // Apply any per-stage 'basePrompt' overrides stored in the case's settings
@@ -1369,7 +1382,8 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     // When a nurse or lab persona answers during sensitive stages, use a low-temperature
     // deterministic setting to reduce the chance of interpretive language being generated.
     const isSensitivePersona = personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician";
-    const tempForCall = isSensitivePersona && (isPhysicalStage || isLabStage) ? 0.0 : 0.7;
+    const isOwnerPersonaForTemp = personaRoleKey === "owner";
+    const tempForCall = isSensitivePersona && (isPhysicalStage || isLabStage) ? 0.0 : isOwnerPersonaForTemp ? 0.2 : 0.7;
 
     // Persona-boundary annotation
     // The conversation history may contain assistant messages from a different
