@@ -2776,6 +2776,7 @@ export function ChatInterface({
                         ...m,
                         content: finalAssistantContent,
                         media: aiMessage.media,
+                        labResults: aiMessage.labResults,
                         status: "sent", // TS requires "sent", "failed", "pending" or undefined
                       }
                     : m,

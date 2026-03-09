@@ -104,12 +104,7 @@ async function getProfessorStudentAttemptsNeedingFeedback(professorId: string): 
 
 export default function HomePage() {
   const { user, role } = useAuth() as { user: any; role: Role };
-  const baseLogoSrc =
-    process.env.NEXT_PUBLIC_BRAND_LOGO_URL ||
-    (process.env.NEXT_PUBLIC_SUPABASE_URL
-      ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/img/logo.png`
-      : "/placeholder.svg");
-  const [logoSrc, setLogoSrc] = useState<string>(baseLogoSrc);
+  const [logoSrc, setLogoSrc] = useState<string>("/placeholder.svg");
   const [studentAttempts, setStudentAttempts] = useState<AttemptSummary[]>([]);
   const [professorAttempts, setProfessorAttempts] = useState<AttemptSummary[]>([]);
   const [latestCases, setLatestCases] = useState<Case[]>([]);
@@ -149,24 +144,40 @@ export default function HomePage() {
   useEffect(() => {
     let cancelled = false;
 
-    const resolveSignedLogo = async () => {
-      // If caller already configured an explicit brand URL, keep it.
+    const resolveLogo = async () => {
+      // 1. Explicit brand URL from env
       if (process.env.NEXT_PUBLIC_BRAND_LOGO_URL) {
         if (!cancelled) setLogoSrc(process.env.NEXT_PUBLIC_BRAND_LOGO_URL);
         return;
       }
 
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      if (!supabaseUrl) return;
+
+      // 2. Try public URL first (fastest, no auth needed)
+      const publicUrl = `${supabaseUrl}/storage/v1/object/public/img/logo.png`;
+      try {
+        const res = await fetch(publicUrl, { method: "HEAD" });
+        if (!cancelled && res.ok) {
+          setLogoSrc(publicUrl);
+          return;
+        }
+      } catch {
+        // Public URL inaccessible, try signed URL next
+      }
+
+      // 3. Signed URL fallback (requires Supabase client)
       try {
         const { data, error } = await supabase.storage.from("img").createSignedUrl("logo.png", 60 * 60 * 24 * 30);
         if (!cancelled && !error && data?.signedUrl) {
           setLogoSrc(data.signedUrl);
         }
       } catch {
-        // Keep base fallback URL when signed URL cannot be generated.
+        // Keep placeholder when neither approach works
       }
     };
 
-    void resolveSignedLogo();
+    void resolveLogo();
     return () => {
       cancelled = true;
     };
@@ -271,7 +282,16 @@ export default function HomePage() {
             <div className="relative h-28 w-32 self-end motion-safe:animate-in motion-safe:fade-in-50 motion-safe:slide-in-from-right-6 md:h-32 md:w-40 lg:h-40 lg:w-48">
               <div className="absolute inset-0 rounded-3xl bg-black/10 blur-2xl" />
               <div className="relative flex h-full w-full items-center justify-center rounded-3xl border border-white/10 bg-white/10 shadow-2xl backdrop-blur-md">
-                <Image src={logoSrc} alt="Veterinary OSCE Simulator logo" width={120} height={120} className="h-16 w-auto md:h-20" priority />
+                <Image
+                  src={logoSrc}
+                  alt="Veterinary OSCE Simulator logo"
+                  width={120}
+                  height={120}
+                  className="h-16 w-auto md:h-20"
+                  priority
+                  unoptimized={logoSrc.includes("supabase.co")}
+                  onError={() => setLogoSrc("/placeholder.svg")}
+                />
               </div>
             </div>
           </div>
