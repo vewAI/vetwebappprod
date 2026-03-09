@@ -30,6 +30,7 @@ import {
   canStartListening,
   scheduleClearSuppressionWhen,
   setSttCaseSpecies,
+  clearAllSttBlocks,
 } from "@/features/speech/services/sttService";
 import { isSpeechRecognitionSupported } from "@/features/speech/services/sttService";
 import { ChatMessage } from "@/features/chat/components/chat-message";
@@ -1805,44 +1806,15 @@ export function ChatInterface({
   // Safe wrapper to start STT only when conditions allow
   const safeStart = useCallback(() => {
     try {
-      if (isPlayingAudioRef.current) {
-        pushSttTrace({ event: "safeStart_blocked", reason: "audio_playing" });
+      if (isPlayingAudioRef.current || isSuppressingSttRef.current || tempVoiceDisabledRef.current || userToggledOffRef.current) {
         return;
       }
-      if (isSuppressingSttRef.current) {
-        pushSttTrace({ event: "safeStart_blocked", reason: "stt_suppressed" });
-        return;
-      }
-      if (tempVoiceDisabledRef.current) {
-        pushSttTrace({ event: "safeStart_blocked", reason: "temp_voice_disabled" });
-        return;
-      }
-      if (userToggledOffRef.current) {
-        pushSttTrace({ event: "safeStart_blocked", reason: "user_toggled_off" });
-        return;
-      }
-      try {
-        if (!canStartListening()) {
-          pushSttTrace({ event: "safeStart_blocked", reason: "canStartListening_false" });
-          return;
-        }
-      } catch (e) {
-        if (isSttSuppressed() || isInDeafMode()) {
-          pushSttTrace({ event: "safeStart_blocked", reason: "service_suppressed_or_deaf" });
-          return;
-        }
-      }
-      try {
-        pushSttTrace({ event: "safeStart_starting" });
-        start();
-        pushSttTrace({ event: "safeStart_started" });
-      } catch (e) {
-        pushSttTrace({ event: "safeStart_start_error", err: String(e) });
-      }
+      if (!canStartListening()) return;
+      start();
     } catch (e) {
       // swallow errors to avoid breaking callers
     }
-  }, [start, pushSttTrace]);
+  }, [start]);
 
   // Attempt to start STT with a few retries if the engine doesn't immediately begin.
   // This makes resume-after-TTS more robust across browsers and STT implementations.
@@ -3257,29 +3229,12 @@ export function ChatInterface({
   const togglePause = useCallback(async () => {
     if (isPaused) {
       setIsPaused(false);
-      // Clear global pause flag so STT can restart
       setGlobalPaused(false);
 
-      // CRITICAL: Reset ALL STT suppression state when resuming
-      // These might be stuck from TTS that was playing when we paused
+      // Reset all STT blocking state when resuming
       isSuppressingSttRef.current = false;
       isPlayingAudioRef.current = false;
-      try {
-        // Only clear suppression/deaf mode if no audio is currently playing.
-        // Prioritize TTS suppression over pause/resume to avoid accidental mic restarts.
-        if (!isPlayingAudioRef.current) {
-          setSttSuppressed(false, true); // skip cooldown
-          exitDeafMode(); // clear deaf mode timestamp
-        } else {
-          
-          // Schedule a safe clear: service will clear suppression once it sees playback ended
-          try {
-            scheduleClearSuppressionWhen(() => !isPlayingAudioRef.current, 200, 8000);
-          } catch (e) {
-            // ignore scheduling failures
-          }
-        }
-      } catch {}
+      clearAllSttBlocks();
 
       // Ensure voice mode and TTS are enabled when resuming
       setVoiceModeEnabled(true);
@@ -3829,8 +3784,11 @@ export function ChatInterface({
         // Clear any pause/deaf-mode status when the user returns to the tab
         setIsPaused(false);
         setGlobalPaused(false);
+        // Clear deaf mode and suppression immediately so the mic can restart
         try {
-          exitDeafMode();
+          clearAllSttBlocks();
+          isSuppressingSttRef.current = false;
+          isPlayingAudioRef.current = false;
         } catch {}
         try {
           // If voice mode is enabled and the user didn't explicitly toggle off,
@@ -4813,12 +4771,15 @@ export function ChatInterface({
                   } catch {}
                   if (showStartSpeakingPrompt) {
                     setShowStartSpeakingPrompt(false);
-                    try {
-                      setVoiceModeEnabled(false);
-                    } catch (err) {}
-                    try {
-                      void sendOwnerGreetingIfNeeded();
-                    } catch (e) {}
+                    // Defer expensive operations to avoid blocking the input handler
+                    setTimeout(() => {
+                      try {
+                        setVoiceModeEnabled(false);
+                      } catch (err) {}
+                      try {
+                        void sendOwnerGreetingIfNeeded();
+                      } catch (e) {}
+                    }, 0);
                   }
                 }}
                 onKeyDown={handleKeyDown}

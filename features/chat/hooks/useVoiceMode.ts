@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import { canStartListening, setSttSuppressed, exitDeafMode } from "@/features/speech/services/sttService";
+import { canStartListening, setSttSuppressed, exitDeafMode, clearAllSttBlocks } from "@/features/speech/services/sttService";
 
 type VoiceToast = { title: string; body: string };
 
@@ -84,14 +84,8 @@ export function useVoiceMode({
             pushSttTrace({ event: "voiceMode_enabled", action: "scheduling_start" });
             setTimeout(() => {
               try {
-                pushSttTrace({ event: "voiceMode_start_attempt", canStart: canStartListening() });
+                clearAllSttBlocks();
                 isSuppressingSttRef.current = false;
-                try {
-                  setSttSuppressed(false, true, "voice-mode-enabled");
-                } catch (e) {}
-                try {
-                  exitDeafMode(0);
-                } catch (e) {}
                 safeStart();
               } catch (e) {
                 pushSttTrace({ event: "voiceMode_start_error", err: String(e) });
@@ -163,8 +157,18 @@ export function useVoiceMode({
     try {
       setShowModeControls(false);
     } catch (e) {}
-    void setVoiceModeEnabled(!voiceModeRef.current);
-  }, [setVoiceModeEnabled, voiceModeRef]);
+    // If voice mode is on but STT stalled (e.g. after blur/refocus),
+    // re-engage instead of toggling off.
+    if (voiceModeRef.current) {
+      clearAllSttBlocks();
+      isSuppressingSttRef.current = false;
+      isPlayingAudioRef.current = false;
+      userToggledOffRef.current = false;
+      setTimeout(() => safeStart(), 80);
+      return;
+    }
+    void setVoiceModeEnabled(true);
+  }, [setVoiceModeEnabled, voiceModeRef, safeStart, userToggledOffRef, isSuppressingSttRef, isPlayingAudioRef]);
 
   return {
     showModeControls,

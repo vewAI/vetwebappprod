@@ -717,3 +717,14 @@ export function setGlobalPaused(paused: boolean) {
 export function isGlobalPaused(): boolean {
   return globalPaused;
 }
+
+/**
+ * One-shot reset of all STT blocking state: suppression, deaf mode, global pause.
+ * Call this when the user explicitly wants STT to start (mic click, resume, etc.).
+ */
+export function clearAllSttBlocks() {
+  sttSuppressed = false;
+  sttSuppressedUntil = 0;
+  deafUntil = 0;
+  globalPaused = false;
+}
