@@ -3,7 +3,7 @@ import type { LabResultPanel, LabResultRow, LabResultsPayload } from "../models/
 const LINE_REGEX = /^[-*]?\s*(.+?):\s*(.+)$/;
 
 const VALUE_UNIT_REGEX =
-  /^([*]?\s*[\d.,]+(?:\s*[\-]\s*[\d.,]+)?|[A-Za-z\s*]+?)\s*(x10\^?\d+\/L|g\/[Ld]L|mg\/[Ld]L|mmol\/L|%|fL|umol\/L|mEq\/L|IU\/L|U\/L|bpm|sec)?(.*)$/i;
+  /^([*]?\s*[-+]?\d[\d.,]*(?:\s*[\-/]\s*[-+]?\d[\d.,]*)?)\s*(x10\^?\d+\/?[Ll]?|g\/[Ll]|g\/[Dd][Ll]|mg\/[Ll]|mg\/[Dd][Ll]|mmol\/[Ll]|umol\/[Ll]|mEq\/[Ll]|IU\/[Ll]|U\/[Ll]|ng\/[mM][Ll]|pg\/[mM][Ll]|bpm|mmhg|sec|s|%|fL)?(.*)$/i;
 
 const PANEL_KEYWORDS: Record<string, string> = {
   cbc: "Haematology (CBC)",
@@ -37,6 +37,26 @@ function cleanFieldText(text: string): string {
 function isObjectMarkerValue(value: string): boolean {
   const v = value.trim();
   return v === "{" || v === "}" || v === "[" || v === "]";
+}
+
+function parseValueParts(rawValue: string): { value: string; unit: string; extra: string } {
+  const cleaned = cleanFieldText(rawValue);
+  const numericMatch = cleaned.match(VALUE_UNIT_REGEX);
+  if (!numericMatch) {
+    return { value: cleaned, unit: "", extra: "" };
+  }
+
+  const value = cleanFieldText(numericMatch[1] || cleaned).replace(/^\*\s*/, "");
+  const unit = cleanFieldText(numericMatch[2] || "");
+  const extra = cleanFieldText(numericMatch[3] || "");
+
+  // If regex produced a suspiciously short token for a clearly narrative string,
+  // keep the original full value instead of truncating.
+  if (!unit && !extra && value.length <= 2 && /[A-Za-z]{3,}/.test(cleaned)) {
+    return { value: cleaned, unit: "", extra: "" };
+  }
+
+  return { value, unit, extra };
 }
 
 /**
@@ -171,21 +191,13 @@ function tryParseLines(text: string): LabResultsPayload | null {
       narrativeOnlyCount += 1;
     }
 
-    const valueMatch = rawValue.match(VALUE_UNIT_REGEX);
-    if (!valueMatch) {
-      currentPanel.rows.push({ name, value: rawValue, unit: "", flag: null });
-      continue;
-    }
-
-    const valueRaw = cleanFieldText(valueMatch[1]?.trim() || rawValue);
-    const unit = cleanFieldText(valueMatch[2]?.trim() || "");
-    const extra = cleanFieldText(valueMatch[3]?.trim() || "");
+    const { value: valueRaw, unit, extra } = parseValueParts(rawValue);
 
     let flag: "low" | "high" | "critical" | null = null;
     if (/\bleukopenia\b|\blow\b|\bdecreased\b/i.test(extra)) flag = "low";
     if (/\bleukocytosis\b|\bhigh\b|\bincreased\b|\belevated\b/i.test(extra)) flag = "high";
     if (/\bcritical\b|\bmarked\b|\bsevere\b/i.test(extra)) flag = "critical";
-    if (valueRaw.startsWith("*")) flag = flag || "high";
+    if (/^\*/.test(rawValue)) flag = flag || "high";
 
     currentPanel.rows.push({
       name,

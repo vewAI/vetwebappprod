@@ -36,7 +36,17 @@ function panelIcon(title: string) {
   return <Circle className="h-4 w-4 text-muted-foreground" />;
 }
 
+function isLongNarrativeRow(row: LabResultRow): boolean {
+  const value = (row.value || "").trim();
+  if (!value) return false;
+  const hasNumericLead = /^[-+]?\d/.test(value);
+  const hasNarrativePunctuation = /[,;.]\s*[A-Za-z]/.test(value);
+  return !hasNumericLead && (value.length > 42 || hasNarrativePunctuation);
+}
+
 function PanelTable({ panel }: { panel: LabResultPanel }) {
+  const useTwoColumnLayout = panel.rows.some(isLongNarrativeRow);
+
   return (
     <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
       <header className="border-b border-border bg-muted/30 px-4 py-3">
@@ -48,29 +58,48 @@ function PanelTable({ panel }: { panel: LabResultPanel }) {
       </header>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[560px] text-sm">
+        <table className={cn("w-full text-sm", useTwoColumnLayout ? "min-w-[420px]" : "min-w-[560px]")}>
           <thead>
             <tr className="border-b border-border bg-muted/20 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
               <th className="px-4 py-2.5 font-semibold">Parameter</th>
-              <th className="px-4 py-2.5 font-semibold">Value</th>
-              <th className="px-4 py-2.5 font-semibold">Unit</th>
-              <th className="hidden px-4 py-2.5 font-semibold sm:table-cell">Ref. Range</th>
-              <th className="px-4 py-2.5 font-semibold">Status</th>
+              {useTwoColumnLayout ? (
+                <th className="px-4 py-2.5 font-semibold">Details</th>
+              ) : (
+                <>
+                  <th className="px-4 py-2.5 font-semibold">Value</th>
+                  <th className="px-4 py-2.5 font-semibold">Unit</th>
+                  <th className="hidden px-4 py-2.5 font-semibold sm:table-cell">Ref. Range</th>
+                  <th className="px-4 py-2.5 font-semibold">Status</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {panel.rows.map((row, idx) => (
               <tr key={`${panel.title}-${row.name}-${idx}`} className={cn("hover:bg-muted/20", row.flag === "critical" && "bg-red-50/70")}>
                 <td className="px-4 py-2.5 font-medium">{row.name}</td>
-                <td className={cn("px-4 py-2.5 tabular-nums", row.flag ? "font-semibold text-red-700" : "text-foreground")}>
-                  {row.flag ? <span className="mr-0.5">*</span> : null}
-                  {row.value || "-"}
-                </td>
-                <td className="px-4 py-2.5 text-muted-foreground">{row.unit || "-"}</td>
-                <td className="hidden px-4 py-2.5 text-muted-foreground sm:table-cell">{row.refRange || "-"}</td>
-                <td className="px-4 py-2.5">
-                  <FlagBadge flag={row.flag} />
-                </td>
+                {useTwoColumnLayout ? (
+                  <td className="px-4 py-2.5 align-top text-foreground">
+                    <div className="whitespace-pre-wrap break-words">{row.value || "-"}</div>
+                    {row.flag ? (
+                      <div className="mt-1">
+                        <FlagBadge flag={row.flag} />
+                      </div>
+                    ) : null}
+                  </td>
+                ) : (
+                  <>
+                    <td className={cn("px-4 py-2.5 tabular-nums", row.flag ? "font-semibold text-red-700" : "text-foreground")}>
+                      {row.flag ? <span className="mr-0.5">*</span> : null}
+                      {row.value || "-"}
+                    </td>
+                    <td className="px-4 py-2.5 text-muted-foreground">{row.unit || "-"}</td>
+                    <td className="hidden px-4 py-2.5 text-muted-foreground sm:table-cell">{row.refRange || "-"}</td>
+                    <td className="px-4 py-2.5">
+                      <FlagBadge flag={row.flag} />
+                    </td>
+                  </>
+                )}
               </tr>
             ))}
           </tbody>
