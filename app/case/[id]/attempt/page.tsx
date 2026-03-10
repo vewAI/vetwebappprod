@@ -19,7 +19,7 @@ import type { Message } from "@/features/chat/models/chat";
 import type { Stage } from "@/features/stages/types";
 import { getStagesForCase, initializeStages, markStageCompleted } from "@/features/stages/services/stageService";
 import { createFollowup } from "@/features/attempts/services/attemptMutationService";
-import { useCaseTimepoints } from "@/features/cases/hooks/useCaseTimepoints";
+
 import { GuidedTour } from "@/components/ui/guided-tour";
 import CasePapersUploader from "@/features/cases/components/case-papers-uploader";
 import { CaseRagManager } from "@/features/cases/components/case-rag-manager";
@@ -245,8 +245,6 @@ export default function CaseChatPage() {
   const [showCompletionDialog, setShowCompletionDialog] = useState(false);
   const [feedbackContent, setFeedbackContent] = useState("");
   const [lastMessagesForExport, setLastMessagesForExport] = useState<Message[] | null>(null);
-  const [followupDay, setFollowupDay] = useState<number>(1);
-  const { timepoints, loading: timepointsLoading } = useCaseTimepoints(caseItem?.id ?? "");
 
   const handleProceedToNextStage = async (messages?: Message[], timeSpentSeconds: number = 0) => {
     const stageIndexAtTransition = currentStageIndex;
@@ -319,21 +317,7 @@ export default function CaseChatPage() {
     }
   };
 
-  // Helper: derive display stages based on followup day
-  function deriveDisplayStages(baseStages: Stage[], day: number): Stage[] {
-    if (!day || day <= 1) return baseStages;
-    // For follow-up days, duplicate relevant stages and prefix the title to indicate the day
-    const followupSuffix = `-followup-day-${day}`;
-    const duplicated = baseStages.map((s) => {
-      const copy = { ...s } as Stage & { id?: string };
-      // Ensure a unique id for the duplicated stage
-      copy.id = `${s.id ?? s.title}-${followupSuffix}`;
-      copy.title = `Day ${day} - ${s.title}`;
-      copy.completed = false;
-      return copy;
-    });
-    return duplicated;
-  }
+
 
   const SHOW_RAG = process.env.NEXT_PUBLIC_SHOW_RAG === "true";
   if (loading || isRestoring) return <div className="p-8 text-center">Loading case...</div>;
@@ -398,36 +382,11 @@ export default function CaseChatPage() {
             </Dialog>
           </div>
         )}
-        {/* Follow-up Day selector (only show when case has timepoints/time progression enabled) */}
-        {timepoints && timepoints.length > 0 && (
+        {attemptId && (
           <div className="p-3 flex items-center gap-3">
-            <span className="text-sm text-gray-500">Session:</span>
-            <select
-              value={String(followupDay)}
-              onChange={async (e) => {
-                const next = Number(e.target.value || 1);
-                // Only create followup records when switching to day > 1
-                if (next > 1 && attemptId) {
-                  try {
-                    await createFollowup(attemptId, next, `Follow-up day ${next} started`);
-                  } catch (err) {
-                    console.error("Failed to create followup record:", err);
-                  }
-                }
-                setFollowupDay(next);
-              }}
-              className="rounded px-2 py-1 border"
-            >
-              <option value="1">Day 1</option>
-              <option value="2">Day 2</option>
-              <option value="3">Day 3</option>
-            </select>
-            <span className="text-sm text-gray-400">{timepoints.length} timepoints</span>
-            {attemptId && (
-              <Button variant="outline" size="sm" onClick={handleStartOver} className="ml-auto">
-                Start Over
-              </Button>
-            )}
+            <Button variant="outline" size="sm" onClick={handleStartOver} className="ml-auto">
+              Start Over
+            </Button>
           </div>
         )}
 
@@ -437,10 +396,9 @@ export default function CaseChatPage() {
           attemptId={attemptId || undefined}
           initialMessages={initialMessages}
           currentStageIndex={currentStageIndex}
-          stages={deriveDisplayStages(stages, followupDay)}
+          stages={stages}
           onProceedToNextStage={handleProceedToNextStage}
           caseMedia={caseItem.media}
-          followupDay={followupDay}
           species={caseItem.species}
           isAttemptCompleting={Boolean(isGeneratingFeedback || showCompletionDialog)}
         />
