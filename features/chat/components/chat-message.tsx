@@ -1,7 +1,7 @@
 import { User, Bot, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Message } from "@/features/chat/models/chat";
-import { useEffect, useState } from "react";
+import { useEffect, useState, memo } from "react";
 import type { Stage } from "@/features/stages/types";
 import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
 import { Button } from "@/components/ui/button";
@@ -140,7 +140,7 @@ function CollapsibleContent({ content }: { content: string }) {
   );
 }
 
-export function ChatMessage({ message, stages, onRetry }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ message, stages, onRetry }: ChatMessageProps) {
   const isUser = message.role === "user";
   const [formattedTime, setFormattedTime] = useState<string>("");
 
@@ -211,4 +211,4 @@ export function ChatMessage({ message, stages, onRetry }: ChatMessageProps) {
       </div>
     </div>
   );
-}
+});

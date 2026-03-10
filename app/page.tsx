@@ -104,7 +104,11 @@ async function getProfessorStudentAttemptsNeedingFeedback(professorId: string): 
 
 export default function HomePage() {
   const { user, role } = useAuth() as { user: any; role: Role };
-  const [logoSrc, setLogoSrc] = useState<string>("/placeholder.svg");
+  const logoSrc =
+    process.env.NEXT_PUBLIC_BRAND_LOGO_URL ||
+    (process.env.NEXT_PUBLIC_SUPABASE_URL
+      ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/img/logo.png`
+      : "/placeholder.svg");
   const [studentAttempts, setStudentAttempts] = useState<AttemptSummary[]>([]);
   const [professorAttempts, setProfessorAttempts] = useState<AttemptSummary[]>([]);
   const [latestCases, setLatestCases] = useState<Case[]>([]);
@@ -139,48 +143,6 @@ export default function HomePage() {
     fetchCases({ limit: 3 })
       .then((cases) => setLatestCases(cases))
       .finally(() => setLoadingCases(false));
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const resolveLogo = async () => {
-      // 1. Explicit brand URL from env
-      if (process.env.NEXT_PUBLIC_BRAND_LOGO_URL) {
-        if (!cancelled) setLogoSrc(process.env.NEXT_PUBLIC_BRAND_LOGO_URL);
-        return;
-      }
-
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      if (!supabaseUrl) return;
-
-      // 2. Try public URL first (fastest, no auth needed)
-      const publicUrl = `${supabaseUrl}/storage/v1/object/public/img/logo.png`;
-      try {
-        const res = await fetch(publicUrl, { method: "HEAD" });
-        if (!cancelled && res.ok) {
-          setLogoSrc(publicUrl);
-          return;
-        }
-      } catch {
-        // Public URL inaccessible, try signed URL next
-      }
-
-      // 3. Signed URL fallback (requires Supabase client)
-      try {
-        const { data, error } = await supabase.storage.from("img").createSignedUrl("logo.png", 60 * 60 * 24 * 30);
-        if (!cancelled && !error && data?.signedUrl) {
-          setLogoSrc(data.signedUrl);
-        }
-      } catch {
-        // Keep placeholder when neither approach works
-      }
-    };
-
-    void resolveLogo();
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   const displayName = useMemo(() => {
@@ -289,8 +251,7 @@ export default function HomePage() {
                   height={120}
                   className="h-16 w-auto md:h-20"
                   priority
-                  unoptimized={logoSrc.includes("supabase.co")}
-                  onError={() => setLogoSrc("/placeholder.svg")}
+                  unoptimized
                 />
               </div>
             </div>

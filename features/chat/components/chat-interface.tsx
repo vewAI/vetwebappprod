@@ -2867,11 +2867,15 @@ export function ChatInterface({
     }
   };
 
-  const retryUserMessage = async (messageId: string) => {
-    const msg = messages.find((m) => m.id === messageId);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const sendUserMessageRef = useRef(sendUserMessage);
+  sendUserMessageRef.current = sendUserMessage;
+  const retryUserMessage = useCallback(async (messageId: string) => {
+    const msg = messagesRef.current.find((m) => m.id === messageId);
     if (!msg) return;
-    await sendUserMessage(msg.content, messageId);
-  };
+    await sendUserMessageRef.current(msg.content, messageId);
+  }, []);
 
   const classifyStageReadinessIntent = useCallback(
     (content: string): StageReadinessDetection => {
