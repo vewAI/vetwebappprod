@@ -281,10 +281,12 @@ export async function POST(request: NextRequest) {
           userQ,
         );
       const personaEligible = personaRoleKey === "veterinary-nurse" || /nurse|lab|laboratory/i.test(String(stageRole ?? ""));
+      const stageTitleHere = String(stageDescriptor?.title ?? stageRole ?? "");
+      const isNurseStageContext = /physical|laboratory|\blab\b|treatment/i.test(stageTitleHere) && !/planning/i.test(stageTitleHere);
       // Inject role behavior prompt for nurse/lab personas when either the user explicitly requested
       // findings OR the current stage/role indicates Physical/Laboratory/Treatment context. This
       // guarantees the LLM will always have persona-specific instructions when generating nurse replies.
-      if (personaEligible && (looksLikeFindingsRequest || /physical|laboratory|lab|treatment/i.test(String(stageRole ?? "")))) {
+      if (personaEligible && (looksLikeFindingsRequest || isNurseStageContext)) {
         enhancedMessages.unshift({
           role: "system",
           content: roleInfoPromptContent,
@@ -949,6 +951,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
       !isOwnerPersona && (/physical/i.test(stageTitle) || physicalStageKeywords.some((k) => stageTitle.toLowerCase().includes(k)));
     // Exclude "Diagnostic Planning" which is an owner stage despite having "diagnostic" in the name
     const isLabStage = !isOwnerPersona && /laboratory|lab/i.test(stageTitle) && !/planning/i.test(stageTitle);
+    const isTreatmentStage = !isOwnerPersona && /treatment/i.test(stageTitle);
 
     // NOTE: Early short-circuit removed: forward physical-stage queries to the LLM
     // so the nurse persona's behavior prompt and instructions are applied. If the
@@ -1345,7 +1348,13 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     - PCV => packed cell volume
   9) Multi-parameter delivery style should be natural and sequenced (single paragraph), for example: "Potassium is three point two millimoles per litre, which is low. Chloride is ninety millimoles per litre, low-normal. Calcium is two point one millimoles per litre, mildly decreased."
   10) Imaging and ultrasound reporting should describe findings clearly without over-interpreting and without adding conclusions unless asked.
-  11) Do not provide treatment advice unless asked. Do not speculate beyond available data. Maintain a neutral, professional, clinically realistic tone.`;
+  11) Do not provide treatment advice unless asked. Do not speculate beyond available data. Maintain a neutral, professional, clinically realistic tone.
+  12) In the Treatment Plan stage, your role shifts from reporting findings to RECEIVING treatment instructions from the veterinarian (student). Do NOT ask about tests, findings, or diagnostics. Instead:
+    - Wait for and acknowledge the student's treatment orders.
+    - Confirm instructions clearly (e.g., "Understood, I will administer [medication] at [dose].").
+    - If instructions are vague, ask for specifics: dosage, route, frequency, or duration.
+    - You may ask practical logistics questions (e.g., "Should I prepare the IV fluids now?").
+    - You execute the veterinarian's plan — you do not suggest one.`;
 
     const ownerBasePrompt = `
 
