@@ -18,7 +18,6 @@ import { useAuth } from "@/features/auth/services/authService";
 import type { Message } from "@/features/chat/models/chat";
 import type { Stage } from "@/features/stages/types";
 import { getStagesForCase, initializeStages, markStageCompleted } from "@/features/stages/services/stageService";
-import { createFollowup } from "@/features/attempts/services/attemptMutationService";
 
 import { GuidedTour } from "@/components/ui/guided-tour";
 import CasePapersUploader from "@/features/cases/components/case-papers-uploader";

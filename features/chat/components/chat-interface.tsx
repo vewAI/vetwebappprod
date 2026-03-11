@@ -71,8 +71,6 @@ import {
 } from "@/features/chat/utils/stage-readiness-intent";
 import { dispatchStageIntentEvent } from "@/features/chat/models/stage-intent-events";
 import { dispatchStageReadinessEvent } from "@/features/chat/models/stage-readiness-events";
-import { useCaseTimepoints } from "@/features/cases/hooks/useCaseTimepoints";
-import type { CaseTimepoint } from "@/features/cases/models/caseTimepoint";
 import { useAuth } from "@/features/auth/services/authService";
 import { HelpTip } from "@/components/ui/help-tip";
 import { GuidedTour } from "@/components/ui/guided-tour";
@@ -204,7 +202,6 @@ type ChatInterfaceProps = {
   onProceedToNextStage: (messages?: Message[], timeSpentSeconds?: number) => void;
   initialTimeSpentSeconds?: number;
   caseMedia?: CaseMediaItem[];
-  followupDay?: number;
   species?: string; // Case species for species-aware STT corrections (e.g., only 'other' -> 'udder' for bovine)
   isAttemptCompleting?: boolean;
 };
@@ -231,13 +228,9 @@ export function ChatInterface({
   onProceedToNextStage,
   initialTimeSpentSeconds = 0,
   caseMedia = [],
-  followupDay = 1,
   species,
   isAttemptCompleting = false,
 }: ChatInterfaceProps) {
-  // State for timepoint progression dialog
-  const [showTimepointDialog, setShowTimepointDialog] = useState(false);
-  const [pendingTimepoint, setPendingTimepoint] = useState<any>(null);
   const awaitingContinuationRef = useRef<{ partial: string; placeholderId: string } | null>(null);
   const [autoSendStt, setAutoSendStt] = useState<boolean>(() => {
     try {
@@ -268,8 +261,6 @@ export function ChatInterface({
   }, [species]);
 
   // Handlers for dialog actions (implement as no-ops or TODOs for now)
-  const handleSnoozeTimepoint = () => setShowTimepointDialog(false);
-  const confirmTimepointUnlock = () => setShowTimepointDialog(false);
   const tourSteps = [
     {
       element: "#chat-messages",
@@ -4882,21 +4873,6 @@ export function ChatInterface({
           </div>
         </div>
       )}
-
-      <Dialog open={showTimepointDialog} onOpenChange={setShowTimepointDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Time Progression</DialogTitle>
-            <DialogDescription>It is now {pendingTimepoint?.label}. Do you want to proceed with the updates for this time?</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={handleSnoozeTimepoint}>
-              Wait
-            </Button>
-            <Button onClick={confirmTimepointUnlock}>Advance</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Notepad (per-persona) */}
       <Notepad
