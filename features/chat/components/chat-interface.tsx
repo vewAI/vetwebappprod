@@ -478,7 +478,6 @@ export function ChatInterface({
     stage: Stage | undefined,
     lastUserText?: string,
   ): { message: Message; allowTts: boolean } => transformNurseAssistantMessageUtil(aiMessage, stage, lastUserText, messages);
-  const { timepoints } = useCaseTimepoints(caseId);
   const latestInitialMessagesRef = useRef<Message[]>(initialMessages ?? []);
   const lastHydratedAttemptKeyRef = useRef<string | null>(null);
   const [input, setInput] = useState("");
