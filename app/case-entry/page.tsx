@@ -14,6 +14,9 @@ import { CaseMediaEditor } from "@/features/cases/components/case-media-editor";
 import { TimeProgressionEditor } from "@/features/cases/components/case-time-progression-editor";
 import { AvatarSelector } from "@/features/cases/components/avatar-selector";
 import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
+import { VerificationChatbot } from "@/features/case-intake/components/VerificationChatbot";
+import { caseVerificationService } from "@/features/case-intake/services/caseVerificationService";
+import type { CaseVerificationResult } from "@/features/case-intake/models/caseVerification";
 
 type IntakeCompletionItem = {
   fieldKey: string;
@@ -47,6 +50,10 @@ export default function CaseEntryForm() {
   const [error, setError] = useState("");
   const [mediaItems, setMediaItems] = useState<CaseMediaItem[]>([]);
   const [savedCaseId, setSavedCaseId] = useState<string>("");
+
+  const [verificationResult, setVerificationResult] = useState<CaseVerificationResult | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [showVerificationChat, setShowVerificationChat] = useState(false);
 
   const [intakeText, setIntakeText] = useState("");
   const [intakeFile, setIntakeFile] = useState<File | null>(null);
@@ -122,6 +129,37 @@ export default function CaseEntryForm() {
     if (!currentMissing) return;
     setReviewed((prev) => ({ ...prev, [currentMissing.fieldKey]: true }));
     setWizardIndex((prev) => prev + 1);
+  };
+
+  const handleVerifyCase = async () => {
+    setIsVerifying(true);
+    setError("");
+    try {
+      const result = await caseVerificationService.verify(form);
+      setVerificationResult(result);
+      setShowVerificationChat(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg || "No se pudo verificar el caso.");
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const handleFieldResolved = (targetField: string, value: string, writeMode: "append" | "replace") => {
+    if (!isCaseFieldKey(targetField)) return;
+    setForm((prev) => {
+      const existing = prev[targetField] || "";
+      if (writeMode === "append" && existing.trim()) {
+        return { ...prev, [targetField]: existing.trim() + "\n" + value };
+      }
+      return { ...prev, [targetField]: value };
+    });
+  };
+
+  const handleVerificationComplete = () => {
+    setShowVerificationChat(false);
+    setSuccess("Verificación completada. Los datos han sido integrados al formulario.");
   };
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) {
@@ -430,6 +468,39 @@ Remain collaborative, use everyday language, and avoid offering your own medical
         </div>
       )}
 
+      {/* ── Verification Step ── */}
+      <div className="rounded-lg border border-border p-4 space-y-4 bg-card">
+        <div>
+          <h2 className="text-lg font-semibold">3.5) Deep Clinical Verification</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Analyze with AI whether the case contains all clinical data a student might need:
+            physical exam, laboratory, imaging, differential diagnoses and more.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button
+            type="button"
+            onClick={handleVerifyCase}
+            disabled={isVerifying || !form.species?.trim() || !form.condition?.trim()}
+          >
+            {isVerifying ? "Analyzing clinical completeness..." : "Verify Case Completeness"}
+          </Button>
+          {verificationResult && !showVerificationChat && (
+            <Button type="button" variant="outline" onClick={() => setShowVerificationChat(true)}>
+              Reopen Verification ({verificationResult.completenessScore}%)
+            </Button>
+          )}
+        </div>
+
+        {verificationResult && !showVerificationChat && (
+          <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
+            Verification completed — Completeness: {verificationResult.completenessScore}%.{" "}
+            {verificationResult.counts.missing} items pending from {verificationResult.items.length} analyzed.
+          </div>
+        )}
+      </div>
+
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="rounded-lg border border-border p-4">
           <h2 className="text-lg font-semibold mb-2">4) Final Edit and Save</h2>
@@ -649,6 +720,22 @@ Remain collaborative, use everyday language, and avoid offering your own medical
             </div>
           </div>
         </div>
+      )}
+
+      {verificationResult && (
+        <VerificationChatbot
+          open={showVerificationChat}
+          onClose={() => setShowVerificationChat(false)}
+          verificationResult={verificationResult}
+          caseContext={{
+            species: form.species || "",
+            condition: form.condition || "",
+            patientName: form.patient_name || form.title || "",
+            category: form.category || "",
+          }}
+          onFieldResolved={handleFieldResolved}
+          onComplete={handleVerificationComplete}
+        />
       )}
     </div>
   );
