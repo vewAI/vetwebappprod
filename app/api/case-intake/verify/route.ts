@@ -129,15 +129,42 @@ export async function POST(request: NextRequest) {
       title: caseData.title ?? "",
     };
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      temperature: 0.3,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: JSON.stringify(userPayload, null, 2) },
-      ],
-    });
+    let response;
+    let lastError: Error | null = null;
+    
+    // Try gpt-4o-mini first, fallback to gpt-3.5-turbo if project doesn't have access
+    for (const model of ["gpt-4o-mini", "gpt-3.5-turbo"]) {
+      try {
+        response = await openai.chat.completions.create({
+          model,
+          temperature: 0.3,
+          response_format: { type: "json_object" },
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: JSON.stringify(userPayload, null, 2) },
+          ],
+        });
+        break; // Success, exit loop
+      } catch (err) {
+        lastError = err as Error;
+        const errorMsg = lastError.message || String(lastError);
+        if (errorMsg.includes("404") || errorMsg.includes("does not have access")) {
+          // Model not available, try next one
+          continue;
+        } else {
+          // Other error, don't retry
+          throw err;
+        }
+      }
+    }
+
+    if (!response) {
+      const msg = lastError?.message || "No model available for verification";
+      return NextResponse.json(
+        { error: msg },
+        { status: 502 }
+      );
+    }
 
     const content = response.choices?.[0]?.message?.content;
     if (!content) {

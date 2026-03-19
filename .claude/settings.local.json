@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh repo list:*)",
+      "Bash(gh auth status:*)",
+      "Bash(gh search:*)",
+      "Bash(git -C \"C:\\\\Users\\\\Usuario\\\\Developer\\\\vetwebappprod\" status --short)"
+    ]
+  }
+}

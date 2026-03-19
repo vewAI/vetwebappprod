@@ -172,7 +172,7 @@ Student request: {{STUDENT_REQUEST}}`,
       { token: "{{RELEASE_STRATEGY_INSTRUCTION}}", description: "Instruction on how to reveal findings (all at once vs on demand)." },
     ],
     buildReplacements: ({ caseRow, userMessage }) => {
-      const strategy = getText(caseRow, "findings_release_strategy", "immediate");
+      const strategy = getText(caseRow, "findings_release_strategy", "on_demand");
       const instruction =
         strategy === "on_demand"
           ? `CRITICAL: Only reveal findings for the EXACT body system or parameter the student requested. DO NOT provide findings from other systems.
@@ -225,7 +225,7 @@ Student request: {{STUDENT_REQUEST}}`,
       { token: "{{RELEASE_STRATEGY_INSTRUCTION}}", description: "Instruction on how to reveal findings (all at once vs on demand)." },
     ],
     buildReplacements: ({ caseRow, userMessage }) => {
-      const strategy = getText(caseRow, "findings_release_strategy", "immediate");
+      const strategy = getText(caseRow, "findings_release_strategy", "on_demand");
       const instruction =
         strategy === "on_demand"
           ? `CRITICAL: Only reveal results for the EXACT test or category the student requested. DO NOT provide results from other tests.

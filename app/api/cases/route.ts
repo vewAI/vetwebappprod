@@ -41,6 +41,8 @@ function normalizeCaseBody(body: Record<string, unknown>): Record<string, unknow
   // Remove temporary UI-only fields that aren't database columns
   delete next["_ownerPersonaConfig"];
   delete next["_nursePersonaConfig"];
+  delete next["owner_persona_config"];
+  delete next["nurse_persona_config"];
 
   // estimated_time
   if (next["estimated_time"] !== undefined && next["estimated_time"] !== "") {

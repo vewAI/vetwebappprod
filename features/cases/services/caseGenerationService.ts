@@ -7,7 +7,8 @@ const TEMPLATES: CaseTemplate[] = [
   {
     id: "",
     title: "Bella the Boxer: Syncope and Exercise Intolerance",
-    description: "A 6-year-old female Boxer presents for collapsing episodes during excitement. The owner reports she 'faints' when greeting guests but recovers quickly.",
+    description:
+      "A 6-year-old female Boxer presents for collapsing episodes during excitement. The owner reports she 'faints' when greeting guests but recovers quickly.",
     species: "Canine",
     patient_name: "Bella",
     patient_age: "6 years",
@@ -21,9 +22,12 @@ const TEMPLATES: CaseTemplate[] = [
     estimated_time: "30",
     image_url: "https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&w=800&q=80",
     details: "Presenting Complaint: Syncope.\nDuration: 2 weeks.\nDiet: Commercial dry food.\nCurrent Meds: None.",
-    physical_exam_findings: "HR: 160 bpm (irregularly irregular rhythm). RR: 24 bpm. MM: Pink, CRT < 2s. Femoral pulses: Pulse deficits present. Auscultation: Grade 2/6 left apical systolic murmur. Lungs: Clear.",
-    diagnostic_findings: "ECG: Ventricular premature complexes (VPCs) in bigeminy, upright in lead II (suggesting LV origin) but some with LBBB morphology (RV origin). Holter recommended. Echo: Mild LA enlargement, otherwise normal function.",
-    owner_background: "Role: Owner (Mrs. Thompson).\nPersonality: Anxious but observant. Loves Bella dearly.\nKnowledge: Knows Boxers have 'heart issues' but hopes it's just heat exhaustion.",
+    physical_exam_findings:
+      "HR: 160 bpm (irregularly irregular rhythm). RR: 24 bpm. MM: Pink, CRT < 2s. Femoral pulses: Pulse deficits present. Auscultation: Grade 2/6 left apical systolic murmur. Lungs: Clear.",
+    diagnostic_findings:
+      "ECG: Ventricular premature complexes (VPCs) in bigeminy, upright in lead II (suggesting LV origin) but some with LBBB morphology (RV origin). Holter recommended. Echo: Mild LA enlargement, otherwise normal function.",
+    owner_background:
+      "Role: Owner (Mrs. Thompson).\nPersonality: Anxious but observant. Loves Bella dearly.\nKnowledge: Knows Boxers have 'heart issues' but hopes it's just heat exhaustion.",
     history_feedback: "Ensure you ask about the exact nature of the collapse (flaccid vs rigid), duration, and triggers (excitement vs exercise).",
     owner_follow_up: "Mrs. Thompson asks if Bella needs surgery or just pills, and if she can still play ball.",
     owner_follow_up_feedback: "Did the student explain the prognosis of ARVC? Did they discuss the risk of sudden death gently but clearly?",
@@ -40,12 +44,13 @@ const TEMPLATES: CaseTemplate[] = [
     nurse_avatar_url: "",
     owner_persona_id: "",
     nurse_persona_id: "",
-    findings_release_strategy: "immediate"
+    findings_release_strategy: "on_demand",
   },
   {
     id: "",
     title: "Luna the Siamese: Polyuria and Weight Loss",
-    description: "A 12-year-old Siamese cat is brought in for weight loss despite a ravenous appetite. The owner also notes larger clumps in the litter box.",
+    description:
+      "A 12-year-old Siamese cat is brought in for weight loss despite a ravenous appetite. The owner also notes larger clumps in the litter box.",
     species: "Feline",
     patient_name: "Luna",
     patient_age: "12 years",
@@ -61,7 +66,8 @@ const TEMPLATES: CaseTemplate[] = [
     details: "Presenting Complaint: Weight loss, PU/PD, polyphagia.\nDuration: 3 months.\nBehavior: More vocal at night, slightly aggressive.",
     physical_exam_findings: "BCS: 3/9. HR: 220 bpm (tachycardia). Palpable thyroid slip on the left side. Coat: Unkempt. Nails: Overgrown.",
     diagnostic_findings: "Total T4: >15 ug/dL (High). CBC/Chem: Mild ALT elevation, otherwise WNL. USG: 1.035.",
-    owner_background: "Role: Owner (Mr. Chen).\nPersonality: Practical, slightly annoyed by the night howling.\nConcerns: Thinks it's just 'old age' but the weight loss is scary.",
+    owner_background:
+      "Role: Owner (Mr. Chen).\nPersonality: Practical, slightly annoyed by the night howling.\nConcerns: Thinks it's just 'old age' but the weight loss is scary.",
     history_feedback: "Check if the student asked about behavioral changes (vocalization, aggression) which are classic for hyperthyroid cats.",
     owner_follow_up: "Mr. Chen asks about the options: 'Can we just give a pill? I heard about radioactive stuff.'",
     owner_follow_up_feedback: "Did the student explain the three main options: Methimazole, I-131, and Surgery (or Diet)?",
@@ -78,7 +84,7 @@ const TEMPLATES: CaseTemplate[] = [
     nurse_avatar_url: "",
     owner_persona_id: "",
     nurse_persona_id: "",
-    findings_release_strategy: "immediate"
+    findings_release_strategy: "on_demand",
   },
   {
     id: "",
@@ -97,9 +103,11 @@ const TEMPLATES: CaseTemplate[] = [
     estimated_time: "15",
     image_url: "https://images.unsplash.com/photo-1633722715463-d30f4f325e24?auto=format&fit=crop&w=800&q=80",
     details: "Presenting Complaint: RPL Lameness.\nOnset: Acute, 2 hours ago.\nActivity: Chasing a ball, yelped and held leg up.",
-    physical_exam_findings: "Gait: Grade 4/5 lameness Right Pelvic Limb. Stifle: Positive cranial drawer, positive tibial compression test. Joint effusion palpable. Pain on extension.",
+    physical_exam_findings:
+      "Gait: Grade 4/5 lameness Right Pelvic Limb. Stifle: Positive cranial drawer, positive tibial compression test. Joint effusion palpable. Pain on extension.",
     diagnostic_findings: "Radiographs: Stifle effusion, loss of infrapatellar fat pad detail. No fractures.",
-    owner_background: "Role: Owner (Sarah).\nPersonality: Active, worried about sports career (agility).\nConcerns: 'Is it broken? Can he run again?'",
+    owner_background:
+      "Role: Owner (Sarah).\nPersonality: Active, worried about sports career (agility).\nConcerns: 'Is it broken? Can he run again?'",
     history_feedback: "Ensure the student asked about the mechanism of injury (traumatic vs chronic).",
     owner_follow_up: "Sarah asks if he needs surgery or if rest is enough.",
     owner_follow_up_feedback: "Did the student explain why conservative management is often insufficient for large breeds?",
@@ -116,8 +124,8 @@ const TEMPLATES: CaseTemplate[] = [
     nurse_avatar_url: "",
     owner_persona_id: "",
     nurse_persona_id: "",
-    findings_release_strategy: "immediate"
-  }
+    findings_release_strategy: "on_demand",
+  },
 ];
 
 /**
@@ -127,7 +135,5 @@ const TEMPLATES: CaseTemplate[] = [
  * throws to prevent accidental use of invented/local fallback content.
  */
 export function generateRandomCase(): CaseTemplate {
-  throw new Error(
-    "Local case template generation is disabled. Use /api/cases/generate-random which sources the Merck Veterinary Manual."
-  );
+  throw new Error("Local case template generation is disabled. Use /api/cases/generate-random which sources the Merck Veterinary Manual.");
 }
