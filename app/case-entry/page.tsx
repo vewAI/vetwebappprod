@@ -393,7 +393,19 @@ Remain collaborative, use everyday language, and avoid offering your own medical
       ensure("get_overall_feedback_prompt", get_overall_feedback_prompt_template);
 
       const headers = await buildAuthHeaders();
-      const response = await axios.post("/api/cases", payload, { headers });
+      
+      // Check if this is an existing case (already saved) or a new case
+      const isExistingCase = Boolean(savedCaseId || (form.id && form.id.length > 0 && form.id !== "case-fresh-sick-cow"));
+      
+      let response;
+      if (isExistingCase) {
+        // Use PUT to update existing case
+        response = await axios.put("/api/cases", payload, { headers });
+      } else {
+        // Use POST to create new case
+        response = await axios.post("/api/cases", payload, { headers });
+      }
+      
       const inserted = (response.data?.data?.[0] ?? response.data?.data) as { id?: string } | undefined;
       const createdId = String(inserted?.id ?? payload.id ?? "").trim();
       if (createdId) {

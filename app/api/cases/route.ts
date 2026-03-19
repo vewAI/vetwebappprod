@@ -265,9 +265,12 @@ export async function POST(req: Request) {
 
 // Allow updating an existing case via PUT
 export async function PUT(req: Request) {
-  const auth = await requireUser(req, { requireAdmin: true });
+  const auth = await requireUser(req);
   if ("error" in auth) {
     return auth.error;
+  }
+  if (auth.role !== "admin" && auth.role !== "professor") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { supabase } = auth;
   try {
