@@ -39,6 +39,21 @@ function isCaseFieldKey(value: string): value is CaseFieldKey {
   return Boolean(getFieldMeta(value));
 }
 
+/** Fields safe to auto-apply without chatbot review (basic metadata, not clinical content) */
+const IDENTITY_FIELDS: ReadonlySet<string> = new Set([
+  "id",
+  "title",
+  "species",
+  "condition",
+  "category",
+  "patient_name",
+  "patient_age",
+  "patient_sex",
+  "difficulty",
+  "estimated_time",
+  "region",
+]);
+
 export default function CaseEntryForm() {
   const { role, loading: authLoading } = useAuth() as { role: string | null; loading: boolean };
   const canCreate = role === "admin" || role === "professor";
@@ -115,8 +130,39 @@ export default function CaseEntryForm() {
       setAnalysis(result);
       setWizardIndex(0);
       setReviewed({});
-      applyDraftToForm(result.draftCase ?? {});
-      setSuccess("AI analysis complete. Review missing fields step by step below.");
+      // Split draft: identity fields go straight to form, clinical fields wait for chatbot review
+      const draft = result.draftCase ?? {};
+      const identityPatch: Record<string, string> = {};
+      for (const [key, value] of Object.entries(draft)) {
+        if (!isCaseFieldKey(key)) continue;
+        if (IDENTITY_FIELDS.has(key)) {
+          identityPatch[key] = String(value ?? "");
+        }
+      }
+      // Apply only identity fields to the form immediately
+      if (Object.keys(identityPatch).length > 0) {
+        applyDraftToForm(identityPatch);
+      }
+
+      // Auto-launch verification chatbot so the professor reviews AI suggestions field by field
+      setSuccess("AI analysis complete. Launching clinical verification...");
+      setIsVerifying(true);
+      try {
+        // Pass the FULL draft to verify so it can see what the AI suggested
+        const formWithDraft = { ...createEmptyCaseFormState() };
+        for (const [key, value] of Object.entries(draft)) {
+          if (isCaseFieldKey(key)) formWithDraft[key] = String(value ?? "");
+        }
+        const verifyResult = await caseVerificationService.verify(formWithDraft);
+        setVerificationResult(verifyResult);
+        setShowVerificationChat(true);
+        setSuccess("Clinical verification ready. Review each AI suggestion with the guide.");
+      } catch (verifyErr) {
+        const msg = verifyErr instanceof Error ? verifyErr.message : String(verifyErr);
+        setError(msg || "Analysis succeeded but verification failed. You can retry below.");
+      } finally {
+        setIsVerifying(false);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg || "Could not analyze the input text.");
@@ -140,7 +186,7 @@ export default function CaseEntryForm() {
       setShowVerificationChat(true);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setError(msg || "No se pudo verificar el caso.");
+      setError(msg || "Could not verify the case.");
     } finally {
       setIsVerifying(false);
     }
@@ -159,7 +205,7 @@ export default function CaseEntryForm() {
 
   const handleVerificationComplete = () => {
     setShowVerificationChat(false);
-    setSuccess("Verificación completada. Los datos han sido integrados al formulario.");
+    setSuccess("Verification complete. Data has been integrated into the form.");
   };
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) {
@@ -390,8 +436,8 @@ Remain collaborative, use everyday language, and avoid offering your own medical
         </div>
 
         <div className="flex items-center gap-3">
-          <Button type="button" onClick={handleAnalyzeCaseSource} disabled={isAnalyzing || (!intakeText.trim() && !intakeFile)}>
-            {isAnalyzing ? "Analyzing..." : "Analyze and Split into Case Fields"}
+          <Button type="button" onClick={handleAnalyzeCaseSource} disabled={isAnalyzing || isVerifying || (!intakeText.trim() && !intakeFile)}>
+            {isAnalyzing ? (isVerifying ? "Verifying..." : "Analyzing...") : "Analyze and Verify Case"}
           </Button>
           {intakeFile && <span className="text-xs text-muted-foreground">Selected: {intakeFile.name}</span>}
         </div>
@@ -400,106 +446,38 @@ Remain collaborative, use everyday language, and avoid offering your own medical
       {analysis && (
         <div className="rounded-lg border border-border p-4 space-y-4 bg-card">
           <div className="space-y-1">
-            <h2 className="text-lg font-semibold">3) AI Completion Review</h2>
+            <h2 className="text-lg font-semibold">3) AI Analysis & Verification</h2>
             <p className="text-sm text-muted-foreground">{analysis.sourceSummary}</p>
-            <p className="text-sm">
-              Missing fields detected: <strong>{analysis.missingCount}</strong>
-            </p>
+            {verificationResult && (
+              <p className="text-sm">
+                Completeness: <strong>{verificationResult.completenessScore}%</strong> — {verificationResult.counts.missing} items pending from {verificationResult.items.length} analyzed.
+              </p>
+            )}
           </div>
 
-          {missingFields.length === 0 ? (
-            <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
-              No missing fields detected. You can still edit values below before saving.
-            </div>
-          ) : wizardDone ? (
-            <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
-              All missing fields reviewed. Continue editing the full form below, then save.
-            </div>
-          ) : currentMissing ? (
-            <div className="rounded-md border p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="font-semibold">
-                  Field {wizardIndex + 1} of {missingFields.length}: {currentMissing.label}
-                </div>
-                <div className="text-xs text-muted-foreground">{currentMissing.fieldKey}</div>
-              </div>
-
-              <div className="rounded bg-amber-50 border border-amber-200 p-3 text-sm text-amber-900">
-                <strong>What was missing:</strong> {currentMissing.missingReason}
-              </div>
-
-              <div className="rounded bg-sky-50 border border-sky-200 p-3 text-sm text-sky-900">
-                <strong>AI suggestion:</strong> {currentMissing.aiSuggestion || "No suggestion provided."}
-              </div>
-
-              {isCaseFieldKey(currentMissing.fieldKey) ? (
-                <Textarea
-                  rows={6}
-                  value={form[currentMissing.fieldKey] || ""}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      [currentMissing.fieldKey]: e.target.value,
-                    }))
-                  }
-                  placeholder={`Write ${currentMissing.label.toLowerCase()} here...`}
-                />
-              ) : (
-                <div className="text-sm text-red-600">Unknown field key: {currentMissing.fieldKey}</div>
-              )}
-
-              <div className="flex items-center gap-2">
-                <Button type="button" variant="outline" onClick={() => setWizardIndex((prev) => Math.max(0, prev - 1))} disabled={wizardIndex === 0}>
-                  Back
-                </Button>
-                <Button type="button" onClick={markCurrentReviewedAndNext}>
-                  Approve and Next
-                </Button>
-                <Button type="button" variant="ghost" onClick={markCurrentReviewedAndNext}>
-                  Skip
-                </Button>
-              </div>
-
-              <div className="text-xs text-muted-foreground">
-                Reviewed in wizard: {Object.keys(reviewed).length}/{missingFields.length}
-              </div>
-            </div>
-          ) : null}
-        </div>
-      )}
-
-      {/* ── Verification Step ── */}
-      <div className="rounded-lg border border-border p-4 space-y-4 bg-card">
-        <div>
-          <h2 className="text-lg font-semibold">3.5) Deep Clinical Verification</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Analyze with AI whether the case contains all clinical data a student might need:
-            physical exam, laboratory, imaging, differential diagnoses and more.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <Button
-            type="button"
-            onClick={handleVerifyCase}
-            disabled={isVerifying || !form.species?.trim() || !form.condition?.trim()}
-          >
-            {isVerifying ? "Analyzing clinical completeness..." : "Verify Case Completeness"}
-          </Button>
-          {verificationResult && !showVerificationChat && (
-            <Button type="button" variant="outline" onClick={() => setShowVerificationChat(true)}>
-              Reopen Verification ({verificationResult.completenessScore}%)
+          <div className="flex items-center gap-3 flex-wrap">
+            {verificationResult && !showVerificationChat && (
+              <Button type="button" onClick={() => setShowVerificationChat(true)}>
+                Reopen Verification Guide ({verificationResult.completenessScore}%)
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleVerifyCase}
+              disabled={isVerifying || !form.species?.trim() || !form.condition?.trim()}
+            >
+              {isVerifying ? "Re-analyzing..." : "Re-run Verification"}
             </Button>
+          </div>
+
+          {isVerifying && (
+            <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+              Running clinical completeness analysis...
+            </div>
           )}
         </div>
-
-        {verificationResult && !showVerificationChat && (
-          <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
-            Verification completed — Completeness: {verificationResult.completenessScore}%.{" "}
-            {verificationResult.counts.missing} items pending from {verificationResult.items.length} analyzed.
-          </div>
-        )}
-      </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="rounded-lg border border-border p-4">

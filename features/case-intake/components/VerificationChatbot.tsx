@@ -97,11 +97,22 @@ export function VerificationChatbot({
   useEffect(() => {
     if (!activeItem) return;
     if (chatHistories[activeItem.id]?.length) return;
+    let greetingText: string;
+    if (activeItem.alreadyPresent && activeItem.existingValue) {
+      greetingText =
+        `The AI extracted this for **${activeItem.itemName}**:\n\n` +
+        `> ${activeItem.existingValue.split("\n").join("\n> ")}\n\n` +
+        `Does this look correct and complete? You can **Approve** it as-is, ` +
+        `click **Edit** to modify it, or we can discuss what's missing. ` +
+        `${activeItem.reasoning}`;
+    } else {
+      greetingText = activeItem.suggestedPrompt || `Could you provide information about: ${activeItem.itemName}?`;
+    }
 
     const greeting: VerificationChatMessage = {
       id: `greeting-${activeItem.id}`,
       role: "assistant",
-      content: activeItem.suggestedPrompt || `Could you provide information about: ${activeItem.itemName}?`,
+      content: greetingText,
       verificationItemId: activeItem.id,
       timestamp: new Date().toISOString(),
     };
@@ -245,6 +256,10 @@ export function VerificationChatbot({
 
   const handleConfirmPresent = useCallback(() => {
     if (!activeItem) return;
+    // Write the existing value into the form when the professor confirms
+    if (activeItem.existingValue) {
+      onFieldResolved(activeItem.targetField, activeItem.existingValue, "append");
+    }
     setItems((prev) =>
       prev.map((item, idx) =>
         idx === activeItemIndex ? { ...item, status: "accepted" } : item
@@ -259,7 +274,7 @@ export function VerificationChatbot({
     if (nextIdx !== -1) {
       setActiveItemIndex(nextIdx);
     }
-  }, [activeItem, activeItemIndex, items]);
+  }, [activeItem, activeItemIndex, items, onFieldResolved]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -392,14 +407,22 @@ export function VerificationChatbot({
 
                 {/* Quick actions for already-present items */}
                 {activeItem.alreadyPresent && activeItem.status === "pending" && (
-                  <div className="px-4 py-2 border-t bg-blue-50 flex items-center gap-2 text-sm">
-                    <span>This data is already in the case.</span>
-                    <Button size="sm" onClick={handleConfirmPresent}>
-                      Confirm
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => {/* open chat */}}>
-                      Edit
-                    </Button>
+                  <div className="px-4 py-2 border-t bg-blue-50 space-y-2 text-sm">
+                    <div className="font-medium text-blue-800">AI-suggested value:</div>
+                    <pre className="whitespace-pre-wrap text-xs bg-white border border-blue-200 rounded p-2 max-h-32 overflow-y-auto">
+                      {activeItem.existingValue || "(empty)"}
+                    </pre>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" onClick={handleConfirmPresent}>
+                        Approve
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setInputText(activeItem.existingValue || "")}>
+                        Edit
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={handleSkip}>
+                        Skip
+                      </Button>
+                    </div>
                   </div>
                 )}
 
