@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,9 +73,28 @@ export default function CaseEntryForm() {
   const [intakeText, setIntakeText] = useState("");
   const [intakeFile, setIntakeFile] = useState<File | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [countdown, setCountdown] = useState(60); // Countdown timer for analysis
   const [analysis, setAnalysis] = useState<IntakeAnalysisResult | null>(null);
   const [wizardIndex, setWizardIndex] = useState(0);
   const [reviewed, setReviewed] = useState<Record<string, boolean>>({});
+
+  // Countdown timer during analysis
+  useEffect(() => {
+    if (!isAnalyzing) return;
+    
+    const timer = setInterval(() => {
+      setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isAnalyzing]);
+
+  // Reset countdown when analysis starts
+  useEffect(() => {
+    if (isAnalyzing) {
+      setCountdown(60);
+    }
+  }, [isAnalyzing]);
 
   const caseIdForMedia = useMemo(() => {
     const raw = form.id?.trim();
@@ -696,6 +715,46 @@ Remain collaborative, use everyday language, and avoid offering your own medical
                 Close
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loading/Countdown Modal During Analysis */}
+      {isAnalyzing && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg max-w-md w-full p-8 text-center">
+            <h2 className="text-2xl font-bold mb-6">Analyzing Case Data</h2>
+            <p className="text-lg text-muted-foreground mb-4">Please wait one minute while we analyze the data</p>
+            <div className="flex items-center justify-center mb-6">
+              <div className="relative w-24 h-24">
+                <svg className="w-full h-full" viewBox="0 0 100 100">
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="45"
+                    fill="none"
+                    stroke="#e5e7eb"
+                    strokeWidth="8"
+                  />
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="45"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="8"
+                    strokeDasharray={`${(countdown / 60) * 282.7} 282.7`}
+                    strokeLinecap="round"
+                    className="text-teal-600 transition-all duration-1000"
+                    transform="rotate(-90 50 50)"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-2xl font-bold">{countdown}s</span>
+                </div>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground">Clinical verification will start automatically</p>
           </div>
         </div>
       )}
