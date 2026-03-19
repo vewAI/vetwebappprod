@@ -6,6 +6,7 @@ import { useAuth } from "@/features/auth/services/authService";
 import {
   fetchCases,
   fetchDisciplines,
+  fetchSpecies,
 } from "@/features/case-selection/services/caseService";
 import type { Case } from "@/features/case-selection/models/case";
 import { GuidedTour } from "@/components/ui/guided-tour";
@@ -15,7 +16,9 @@ export default function CasesPage() {
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [disciplines, setDisciplines] = useState<string[]>([]);
+  const [species, setSpecies] = useState<string[]>([]);
   const [selectedDiscipline, setSelectedDiscipline] = useState<string>("all");
+  const [selectedSpecies, setSelectedSpecies] = useState<string>("all");
   const { user, role } = useAuth();
   const [hasAssignedCases, setHasAssignedCases] = useState<boolean>(false);
 
@@ -50,6 +53,8 @@ export default function CasesPage() {
     async function loadData() {
       const disc = await fetchDisciplines();
       setDisciplines(disc);
+      const sp = await fetchSpecies();
+      setSpecies(sp);
     }
     loadData();
   }, []);
@@ -99,6 +104,7 @@ export default function CasesPage() {
         } else {
           const result = await fetchCases({
             category: selectedDiscipline === "all" ? undefined : selectedDiscipline,
+            species: selectedSpecies === "all" ? undefined : selectedSpecies,
           });
           setCases(result);
         }
@@ -110,7 +116,7 @@ export default function CasesPage() {
       }
     }
     loadCases();
-  }, [selectedDiscipline, user, role]);
+  }, [selectedDiscipline, selectedSpecies, user, role]);
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -131,23 +137,42 @@ export default function CasesPage() {
           Explore the full library of OSCE-style veterinary cases.
         </p>
 
-        <div className="mt-6 flex justify-center items-center gap-2">
-          <div id="discipline-filter" className="w-full max-w-xs">
-            <select
-              className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              value={selectedDiscipline}
-              onChange={(e) => setSelectedDiscipline(e.target.value)}
-            >
-              <option value="all">Show All Cases</option>
-              {hasAssignedCases && <option value="assigned">My Assignments</option>}
-              {disciplines.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
+        <div className="mt-6 flex flex-col gap-4 justify-center">
+          <div className="flex justify-center items-center gap-2">
+            <div id="discipline-filter" className="w-full max-w-xs">
+              <select
+                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                value={selectedDiscipline}
+                onChange={(e) => setSelectedDiscipline(e.target.value)}
+              >
+                <option value="all">Show All Cases</option>
+                {hasAssignedCases && <option value="assigned">My Assignments</option>}
+                {disciplines.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <HelpTip content="Filter the list of cases by medical discipline." />
           </div>
-          <HelpTip content="Filter the list of cases by medical discipline." />
+          <div className="flex justify-center items-center gap-2">
+            <div id="species-filter" className="w-full max-w-xs">
+              <select
+                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                value={selectedSpecies}
+                onChange={(e) => setSelectedSpecies(e.target.value)}
+              >
+                <option value="all">All Species</option>
+                {species.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <HelpTip content="Filter the list of cases by animal species." />
+          </div>
         </div>
       </header>
 

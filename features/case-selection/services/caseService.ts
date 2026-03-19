@@ -136,6 +136,20 @@ export async function fetchDisciplines(): Promise<string[]> {
   }
 }
 
+export async function fetchSpecies(): Promise<string[]> {
+  try {
+    const { data: cases } = await supabase.from("cases").select("species");
+    if (cases) {
+      const species = new Set(cases.map((c) => c.species).filter(Boolean));
+      return Array.from(species).sort() as string[];
+    }
+    return [];
+  } catch (e) {
+    console.error("Failed to fetch species", e);
+    return [];
+  }
+}
+
 export async function fetchAssignedCases(userId: string): Promise<Case[]> {
   // 1. Get professors for this student
   const { data: professors } = await supabase
