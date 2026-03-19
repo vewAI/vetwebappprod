@@ -67,6 +67,9 @@ export function VerificationChatbot({
   >({});
   const [inputText, setInputText] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [showingSuggestion, setShowingSuggestion] = useState(false);
+  const [suggestedValue, setSuggestedValue] = useState("");
+  const [waitingForSuggestion, setWaitingForSuggestion] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const activeItem: CaseVerificationItem | undefined = items[activeItemIndex];
@@ -156,6 +159,12 @@ export function VerificationChatbot({
         caseContext,
       });
 
+      // Check if response is a result (contains "Here's the result" or similar patterns)
+      const isResult =
+        response.reply.toLowerCase().includes("here's the result") ||
+        response.reply.toLowerCase().includes("final answer") ||
+        response.isResolved;
+
       const assistantMsg: VerificationChatMessage = {
         id: `assistant-${Date.now()}`,
         role: "assistant",
@@ -167,12 +176,14 @@ export function VerificationChatbot({
       setChatHistories((prev) => ({
         ...prev,
         [activeItem.id]: [...(prev[activeItem.id] ?? []), userMsg, assistantMsg].filter(
-          // Deduplicate (userMsg might already be in the list)
           (msg, idx, arr) => arr.findIndex((m) => m.id === msg.id) === idx
         ),
       }));
 
-      if (response.isResolved) {
+      if (isResult && response.extractedValue) {
+        setSuggestedValue(response.extractedValue);
+        setShowingSuggestion(true);
+      } else if (response.isResolved) {
         // Write value into form
         if (response.extractedValue) {
           onFieldResolved(
@@ -205,6 +216,8 @@ export function VerificationChatbot({
           );
           if (nextIdx !== -1) {
             setActiveItemIndex(nextIdx);
+            setShowingSuggestion(false);
+            setSuggestedValue("");
           }
         }, 800);
       }
@@ -251,6 +264,8 @@ export function VerificationChatbot({
     );
     if (nextIdx !== -1) {
       setActiveItemIndex(nextIdx);
+      setShowingSuggestion(false);
+      setSuggestedValue("");
     }
   }, [activeItem, activeItemIndex, items]);
 
@@ -273,8 +288,110 @@ export function VerificationChatbot({
     );
     if (nextIdx !== -1) {
       setActiveItemIndex(nextIdx);
+      setShowingSuggestion(false);
+      setSuggestedValue("");
     }
   }, [activeItem, activeItemIndex, items, onFieldResolved]);
+
+  const handleGetAISuggestion = useCallback(async () => {
+    if (!activeItem) return;
+    setWaitingForSuggestion(true);
+
+    const userMsg: VerificationChatMessage = {
+      id: `user-suggestion-${Date.now()}`,
+      role: "user",
+      content: "Can you suggest what data should be provided for this field?",
+      verificationItemId: activeItem.id,
+      timestamp: new Date().toISOString(),
+    };
+
+    const updatedChat = [...(chatHistories[activeItem.id] ?? []), userMsg];
+    setChatHistories((prev) => ({
+      ...prev,
+      [activeItem.id]: updatedChat,
+    }));
+
+    try {
+      const apiMessages = updatedChat.map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+
+      const response = await caseVerificationService.chat({
+        messages: apiMessages,
+        currentItem: activeItem,
+        caseContext,
+      });
+
+      const assistantMsg: VerificationChatMessage = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content: response.reply,
+        verificationItemId: activeItem.id,
+        timestamp: new Date().toISOString(),
+      };
+
+      setChatHistories((prev) => ({
+        ...prev,
+        [activeItem.id]: [...(prev[activeItem.id] ?? []), userMsg, assistantMsg],
+      }));
+
+      if (response.extractedValue) {
+        setSuggestedValue(response.extractedValue);
+        setShowingSuggestion(true);
+      }
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : "Connection error";
+      const errorAssistantMsg: VerificationChatMessage = {
+        id: `error-${Date.now()}`,
+        role: "assistant",
+        content: `Error: ${errMsg}. Please try again.`,
+        verificationItemId: activeItem.id,
+        timestamp: new Date().toISOString(),
+      };
+      setChatHistories((prev) => ({
+        ...prev,
+        [activeItem.id]: [...(prev[activeItem.id] ?? []), errorAssistantMsg],
+      }));
+    } finally {
+      setWaitingForSuggestion(false);
+    }
+  }, [activeItem, chatHistories, caseContext]);
+
+  const handleApproveSuggestion = useCallback(() => {
+    if (!activeItem || !suggestedValue) return;
+
+    onFieldResolved(activeItem.targetField, suggestedValue, "append");
+
+    setItems((prev) =>
+      prev.map((item, idx) =>
+        idx === activeItemIndex
+          ? { ...item, status: "answered", professorAnswer: suggestedValue }
+          : item
+      )
+    );
+
+    // Auto-advance to next pending item
+    setTimeout(() => {
+      const nextIdx = items.findIndex(
+        (item, idx) =>
+          idx > activeItemIndex &&
+          item.status === "pending" &&
+          item.relevance !== "unnecessary"
+      );
+      if (nextIdx !== -1) {
+        setActiveItemIndex(nextIdx);
+        setShowingSuggestion(false);
+        setSuggestedValue("");
+      }
+    }, 800);
+  }, [activeItem, suggestedValue, activeItemIndex, items, onFieldResolved]);
+
+  const handleEditSuggestion = useCallback(() => {
+    if (!suggestedValue) return;
+    setShowingSuggestion(false);
+    setInputText(suggestedValue);
+  }, [suggestedValue]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -426,6 +543,27 @@ export function VerificationChatbot({
                   </div>
                 )}
 
+                {/* AI Suggestion Display */}
+                {showingSuggestion && suggestedValue && activeItem.status === "pending" && (
+                  <div className="px-4 py-2 border-t bg-emerald-50 space-y-2 text-sm">
+                    <div className="font-medium text-emerald-800">Here's the result:</div>
+                    <pre className="whitespace-pre-wrap text-xs bg-white border border-emerald-200 rounded p-2 max-h-40 overflow-y-auto">
+                      {suggestedValue}
+                    </pre>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={handleApproveSuggestion}>
+                        Approve
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={handleEditSuggestion}>
+                        Edit
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={handleSkip}>
+                        Skip
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Input area */}
                 <div className="p-3 border-t flex items-center gap-2 shrink-0">
                   <Input
@@ -435,6 +573,7 @@ export function VerificationChatbot({
                     placeholder="Type your response..."
                     disabled={
                       isSending ||
+                      waitingForSuggestion ||
                       activeItem.status === "answered" ||
                       activeItem.status === "accepted" ||
                       activeItem.status === "skipped"
@@ -445,13 +584,25 @@ export function VerificationChatbot({
                     onClick={sendMessage}
                     disabled={
                       isSending ||
+                      waitingForSuggestion ||
                       !inputText.trim() ||
-                      activeItem.status !== "pending"
+                      activeItem.status !== "pending" ||
+                      showingSuggestion
                     }
                     size="sm"
                   >
                     {isSending ? "..." : "Send"}
                   </Button>
+                  {!showingSuggestion && activeItem.status === "pending" && !activeItem.alreadyPresent && (
+                    <Button
+                      onClick={handleGetAISuggestion}
+                      variant="outline"
+                      size="sm"
+                      disabled={waitingForSuggestion || isSending}
+                    >
+                      {waitingForSuggestion ? "..." : "AI Suggestion"}
+                    </Button>
+                  )}
                   <Button
                     onClick={handleSkip}
                     variant="ghost"

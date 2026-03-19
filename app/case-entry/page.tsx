@@ -73,7 +73,7 @@ export default function CaseEntryForm() {
   const [intakeText, setIntakeText] = useState("");
   const [intakeFile, setIntakeFile] = useState<File | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [countdown, setCountdown] = useState(60); // Countdown timer for analysis
+  const [countdown, setCountdown] = useState(120); // 2 minutes countdown
   const [analysis, setAnalysis] = useState<IntakeAnalysisResult | null>(null);
   const [wizardIndex, setWizardIndex] = useState(0);
   const [reviewed, setReviewed] = useState<Record<string, boolean>>({});
@@ -92,7 +92,7 @@ export default function CaseEntryForm() {
   // Reset countdown when analysis starts
   useEffect(() => {
     if (isAnalyzing) {
-      setCountdown(60);
+      setCountdown(120); // 2 minutes
     }
   }, [isAnalyzing]);
 
@@ -724,7 +724,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg max-w-md w-full p-8 text-center">
             <h2 className="text-2xl font-bold mb-6">Analyzing Case Data</h2>
-            <p className="text-lg text-muted-foreground mb-4">Please wait one minute while we analyze the data</p>
+            <p className="text-base text-muted-foreground mb-4">Please wait a moment while we upload and analyze case data</p>
             <div className="flex items-center justify-center mb-6">
               <div className="relative w-24 h-24">
                 <svg className="w-full h-full" viewBox="0 0 100 100">
@@ -743,7 +743,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
                     fill="none"
                     stroke="currentColor"
                     strokeWidth="8"
-                    strokeDasharray={`${(countdown / 60) * 282.7} 282.7`}
+                    strokeDasharray={`${(countdown / 120) * 282.7} 282.7`}
                     strokeLinecap="round"
                     className="text-teal-600 transition-all duration-1000"
                     transform="rotate(-90 50 50)"
