@@ -1144,12 +1144,17 @@ export default function CaseViewerPage() {
                         }
                         try {
                           setIsDeleting(true);
+                          console.log(`[ARCHIVE] Starting archive for case: ${id}`);
                           const resp = await axios.delete(`/api/cases?id=${encodeURIComponent(id)}&mode=archive`, {
                             headers: authHeaders,
                           });
+                          console.log(`[ARCHIVE] Response received:`, resp.data);
                           const respData = resp.data as unknown;
                           const respObj = respData as Record<string, unknown>;
                           if (respObj && respObj["success"]) {
+                            console.log(`[ARCHIVE] Success confirmed, updating UI`);
+                            // Add a small delay to ensure database write completes
+                            await new Promise((resolve) => setTimeout(resolve, 500));
                             const next = cases.filter((c) => formatValue(c["id"]) !== id);
                             setCases(next);
                             const newIndex = Math.max(0, Math.min(currentIndex, next.length - 1));
@@ -1158,15 +1163,25 @@ export default function CaseViewerPage() {
                             setShowDeleteModal(false);
                             setEditable(false);
                             setExpandedField(null);
+                            console.log(`[ARCHIVE] Archive completed successfully`);
                           } else {
                             const errMsg = typeof respObj["error"] === "string" ? respObj["error"] : undefined;
-                            throw new Error(errMsg ?? "Archive failed");
+                            const fullMsg = errMsg ?? "Archive failed";
+                            console.error(`[ARCHIVE] API returned error: ${fullMsg}`);
+                            throw new Error(fullMsg);
                           }
                         } catch (err) {
-                          console.error("Error archiving case:", err);
-                          alert("Error archiving case. See console for details.");
-                        } finally {
+                          const errMsg = err instanceof Error ? err.message : String(err);
+                          console.error(`[ARCHIVE] Error archiving case:`, err);
+                          alert(`Error archiving case: ${errMsg}\n\nPlease check your permissions and try again. Make sure you are logged in as an admin.`);
                           setIsDeleting(false);
+                          // Keep modal open so user can try again
+                          return;
+                        } finally {
+                          // Only set isDeleting false here if we're not keeping modal open on error
+                          if (isDeleting) {
+                            setIsDeleting(false);
+                          }
                         }
                       }}
                       disabled={isDeleting}

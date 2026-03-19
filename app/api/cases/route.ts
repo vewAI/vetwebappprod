@@ -403,6 +403,7 @@ export async function DELETE(req: Request) {
 
     // Soft archive mode: keep row but mark it archived and unpublished.
     if (mode === "archive") {
+      console.log(`[ARCHIVE] Beginning archive for case: ${id}`);
       const { data: row, error: fetchError } = await supabase
         .from("cases")
         .select("settings")
@@ -410,10 +411,12 @@ export async function DELETE(req: Request) {
         .maybeSingle();
 
       if (fetchError) {
+        console.error(`[ARCHIVE] Fetch error:`, fetchError);
         return NextResponse.json({ error: fetchError.message }, { status: 500 });
       }
 
       if (!row) {
+        console.error(`[ARCHIVE] Case not found: ${id}`);
         return NextResponse.json({ error: "Case not found" }, { status: 404 });
       }
 
@@ -429,18 +432,30 @@ export async function DELETE(req: Request) {
         archivedBy: user.id,
       };
 
-      const { error: archiveError } = await supabase
+      console.log(`[ARCHIVE] Updated settings object:`, nextSettings);
+
+      const { error: archiveError, data: updateResult } = await supabase
         .from("cases")
         .update({
           is_published: false,
           settings: nextSettings,
         })
-        .eq("id", id);
+        .eq("id", id)
+        .select();
+
+      console.log(`[ARCHIVE] Update result:`, { error: archiveError, data: updateResult });
 
       if (archiveError) {
+        console.error(`[ARCHIVE] Archive error:`, archiveError);
         return NextResponse.json({ error: archiveError.message }, { status: 500 });
       }
 
+      if (!updateResult || updateResult.length === 0) {
+        console.error(`[ARCHIVE] No rows updated for case: ${id}`);
+        return NextResponse.json({ error: "Failed to update case" }, { status: 500 });
+      }
+
+      console.log(`[ARCHIVE] Archive successful for case: ${id}`);
       return NextResponse.json({ success: true, archived: true });
     }
 
