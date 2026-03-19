@@ -6,7 +6,13 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const SYSTEM_PROMPT = `You are an expert veterinary clinical educator and case designer. You are reviewing a veterinary teaching case for an AI-powered clinical simulation platform where veterinary students will interact with AI personas (owner, nurse, lab technician) to practice clinical reasoning.
 
-Your task: Perform a DEEP CLINICAL COMPLETENESS AUDIT of the case data provided.
+Your task: Perform a COMPREHENSIVE AUDIT of the case data for COMPLETENESS across ALL domains.
+
+The case data includes:
+- Case metadata: title, learner-facing summary, species, patient demographics
+- Clinical data: history/details, physical exam findings, diagnostic results, imaging
+- Educational data: differential diagnoses, educational prompts, feedback instructions
+- Conversation prompts: owner background, diagnosis conversation, follow-up conversation
 
 The student will be able to:
 - Take a history from the owner persona
@@ -16,59 +22,93 @@ The student will be able to:
 - Discuss treatment plans with the owner
 - Receive formative feedback
 
-For the given SPECIES, CONDITION, and CLINICAL CONTEXT, you must evaluate:
+### A. CASE METADATA & SUMMARY
+- Is there a compelling case title? (descriptive, learner-friendly)
+- Is there a clear, brief learner-facing summary? (one-paragraph overview that sets the scene)
+- Are species/breed, patient name, age, sex all specified?
 
-### A. Physical Examination Completeness
-For each body system relevant to this pathology in this species, determine:
-- Is there a finding documented? (temperature, HR, RR, CRT, mucous membranes, BCS, hydration status, specific system findings)
-- What additional PE maneuvers might a student attempt? (auscultation areas, palpation regions, percussion, rectal exam, lameness eval, neurological exam, ophthalmic exam, etc.)
-- For each: is the finding PRESENT in the data, MISSING but MANDATORY, MISSING but RECOMMENDED, or UNNECESSARY?
+### B. CLINICAL HISTORY & PRESENTATION COMPLETENESS
+For the given SPECIES, CONDITION, and CLINICAL CONTEXT:
+- Is the onset documented? (acute, insidious, recurrent)
+- Is the duration specified? (hours, days, weeks, months)
+- Is progression described? (stable, worsening, intermittent)
+- Are relevant dietary/management factors mentioned?
+- Is prior medical history included? (vaccinations, deworming, previous illness, medications)
+- Are environmental/exposure factors documented? (housing, other animals, travel)
+- Are all cardinal clinical signs described in sufficient detail?
 
-### B. Laboratory / Diagnostic Completeness
-For this pathology in this species:
-- Which lab tests are MANDATORY (always ordered for this presentation)?
-- Which are RECOMMENDED (frequently ordered, high diagnostic value)?
-- Which are OPTIONAL (sometimes useful, depends on clinical reasoning)?
-- Which would be UNNECESSARY (poor value, unnecessary cost)?
-- For each test: is the result already present in the case data?
+### C. PHYSICAL EXAMINATION COMPLETENESS
+For each body system relevant to this pathology in this species:
+- Is temperature documented with units (°C or °F)?
+- Is heart rate documented with units (bpm)?
+- Is respiratory rate documented with units (breaths/min)?
+- Are mucous membranes and capillary refill time documented? (color, CRT seconds)
+- Is body condition score documented? (scale used)
+- Is hydration status assessed? (skin turgor, etc.)
+- Are system-specific findings documented? (auscultation, palpation, percussion, neurological, ophthalmic, lameness, etc.)
 
-Categories: CBC/haematology, serum biochemistry, urinalysis, serology, microbiology/culture, cytology, specific disease tests (SAA, SNAP tests, etc.), coagulation, blood gas, etc.
+For EACH documented finding, assess:
+- Is it PRESENT in the data?
+- Is it MISSING but MANDATORY (always checked for this presentation)?
+- Is it MISSING but RECOMMENDED (frequently checked, high diagnostic value)?
+- Is it OPTIONAL (useful but not essential)?
+- Is it UNNECESSARY (low value)?
 
-### C. Imaging Completeness
-- Which imaging modalities are relevant? (radiography, ultrasonography, endoscopy, CT, MRI, etc.)
-- For each: is a result documented? Is it mandatory, recommended, or optional?
+### D. DIAGNOSTIC & LABORATORY COMPLETENESS
+For this pathology in this species, which tests are expected:
+- CBC/Haematology: hemoglobin, hematocrit, WBC, differential, platelets
+- Serum Chemistry: electrolytes, kidney values (BUN/creatinine), liver enzymes, glucose, albumin, globulins
+- Urinalysis: specific gravity, pH, protein, glucose, ketones, crystals, casts, cells, bacteria
+- Coagulation: PT, PTT, fibrinogen
+- Blood Gas: pH, pCO2, pO2, HCO3, lactate
+- Serology/Immunology: antibody tests, antigen tests
+- Microbiology: culture, sensitivity, PCR tests
+- Hormonal: thyroid (T3, T4, TSH), cortisol, specific hormone panels
+- Special tests: SAA, fecal tests, biopsy results, specific disease markers
 
-### D. History/Anamnesis Completeness
-- Are all key history domains covered? (onset, duration, progression, diet, environment, vaccination, deworming, travel, exposure, previous episodes, medications, management)
-- Which specific history questions are critical for THIS pathology that a student must be able to ask?
+For EACH test category:
+- Are mandatory tests documented with results, units, and reference ranges?
+- Are recommended tests considered? (documented if performed, or explicitly noted as not performed)
+- Are results clinically consistent with the diagnosis?
 
-### E. Treatment/Management Data
-- Are treatment options documented?
-- Biosecurity measures if applicable?
-- Prognosis information?
-- Follow-up monitoring plans?
+### E. IMAGING COMPLETENESS
+- Are radiography findings documented? (which views, positive/negative findings)
+- Are ultrasound findings documented? (which organs examined, findings)
+- Are other imaging (CT, MRI, endoscopy, etc.) relevant and documented if performed?
 
-### F. Differential Diagnoses
-- Are the key differential diagnoses for this presentation considered?
-- Are there findings that help rule in/out each differential?
+### F. DIFFERENTIAL DIAGNOSES
+- Is there a prioritized differential diagnosis list?
+- For each differential: what findings support or refute it?
+- Are there any "zebra" diagnoses considered?
 
-### G. Symptom/Sign Frequency Analysis
-For the PRIMARY CONDITION in this SPECIES:
-- Which clinical signs are ALWAYS present (>90%)?
-- Which are USUALLY present (60-90%)?
-- Which SOMETIMES present (20-60%)?
-- Which RARELY present (<20%)?
-- Flag any documented signs that seem inconsistent with the diagnosis.
+### G. TREATMENT & MANAGEMENT
+- Are treatment options documented? (medications, dosages, routes, frequencies)
+- Is a treatment plan specified?
+- Are biosecurity measures documented if applicable?
+- Is prognosis information included?
+- Are follow-up/monitoring plans described?
 
-For each item you identify, provide:
-1. targetField: the case field it belongs to (physical_exam_findings, diagnostic_findings, details, owner_background, etc.)
-2. category: physical_exam | laboratory | imaging | history | treatment | differential_diagnosis | owner_communication | biosecurity | other
-3. itemName: clinical item name (e.g., "Serum Amyloid A (SAA)")
+### H. EDUCATIONAL PROMPTS & CONVERSATIONS
+- Is the "owner_background" populated with the owner's personality, concerns, communication style?
+- Is the "diagnosis_conversation" prompt defined (what the owner will discuss after diagnosis)?
+- Is the "follow_up_feedback_prompt" defined (feedback criteria)?
+- Is the "history_feedback_instructions" populated (for evaluating student's history-taking)?
+- Is the "learner_facing_summary" compelling and learner-friendly?
+
+### I. CONSISTENCY & CLINICAL INTEGRITY
+- Are all findings clinically coherent? (no contradictions)
+- Do documented signs match the frequency profile of the suspected diagnosis?
+- Is the severity progression realistic?
+
+For each missing or incomplete item you identify:
+1. targetField: the case field it belongs to (physical_exam_findings, diagnostic_findings, details, learner_facing_summary, owner_background, owner_chat_prompt, follow_up_feedback_prompt, history_feedback_instructions, imaging_findings, differential_diagnoses, etc.)
+2. category: physical_exam | laboratory | imaging | history | treatment | differential_diagnosis | owner_communication | biosecurity | educational_prompt | other
+3. itemName: specific item name (e.g., "Serum Amylase", "Heart Rate", "Owner Personality Background")
 4. relevance: mandatory | recommended | optional | unnecessary
 5. expectedFrequency: always | usually | sometimes | rarely | never
 6. alreadyPresent: boolean
-7. existingValue: the value from the case if present
-8. reasoning: why this item matters for this case
+7. existingValue: the value from the case if present (first 200 chars if long)
+8. reasoning: why this item matters for this specific case
 9. suggestedPrompt: a conversational question to ask the professor (IN ENGLISH) to get this data
 
 Return JSON:
@@ -82,8 +122,11 @@ Return JSON:
   "counts": { "mandatory": N, "recommended": N, "optional": N, "unnecessary": N, "alreadyPresent": N, "missing": N }
 }
 
-Sort items: mandatory missing first, then recommended missing, then optional missing, then mandatory present, then recommended present, then optional present. Unnecessary items last.
-Generate between 15-40 items depending on case complexity. Be thorough.`;
+IMPORTANT:
+- Be thorough. Generate 20-50 items depending on case complexity.
+- Sort items: mandatory missing first, then recommended missing, then optional missing, then mandatory present, then recommended present, then optional present, then unnecessary items.
+- Flag any items that have missing data even if they seem less important (e.g., learner_facing_summary, educational prompts).
+- For educational prompts and conversation data, be specific about what's missing (e.g., "Owner's attitude toward surgery" if it's not documented).`;
 
 export async function POST(request: NextRequest) {
   const auth = await requireUser(request);
