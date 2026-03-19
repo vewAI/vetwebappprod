@@ -251,21 +251,32 @@ export default function CaseEntryForm() {
       return !value || (typeof value === "string" && value.trim() === "");
     });
 
+    console.log("[AUTO-FILL] Empty fields detected:", emptyFields);
+
     if (emptyFields.length === 0) {
+      console.log("[AUTO-FILL] No empty fields, skipping auto-fill");
       return; // All fields are filled
     }
 
     // Request auto-fill suggestions from LLM
     setIsAutoFilling(true);
     try {
+      console.log("[AUTO-FILL] Requesting suggestions for fields:", emptyFields);
       const suggestions = await caseVerificationService.autoFill({
         emptyFields,
         caseData: form,
       });
+      console.log("[AUTO-FILL] Received suggestions:", suggestions);
+      
+      // Verify all fields have content
+      const populatedFields = Object.entries(suggestions).filter(([_, val]) => val && val.trim().length > 0);
+      console.log(`[AUTO-FILL] Populated ${populatedFields.length}/${Object.keys(suggestions).length} fields`);
+      
       setAutoFillSuggestions(suggestions);
       setShowAutoFillModal(true);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      console.error("[AUTO-FILL] Error generating suggestions:", err);
       setError(`Could not generate suggestions: ${msg}`);
     } finally {
       setIsAutoFilling(false);
@@ -274,17 +285,34 @@ export default function CaseEntryForm() {
 
   const handleAutoFillApply = (selectedFields: Record<string, boolean>) => {
     // Apply only the selected suggestions to the form
+    console.log("[AUTO-FILL] Applying suggestions with selected fields:", selectedFields);
+    console.log("[AUTO-FILL] Current suggestions:", autoFillSuggestions);
+    
     setForm((prev) => {
       const next = { ...prev };
+      let appliedCount = 0;
+      
       for (const [field, isSelected] of Object.entries(selectedFields)) {
-        if (isSelected && autoFillSuggestions[field]) {
-          next[field as CaseFieldKey] = autoFillSuggestions[field] as string;
+        if (isSelected) {
+          const suggestion = autoFillSuggestions[field];
+          console.log(`[AUTO-FILL] Field: ${field}, isSelected: ${isSelected}, suggestion: ${suggestion ? suggestion.substring(0, 50) + "..." : "EMPTY"}`);
+          
+          if (suggestion && suggestion.trim().length > 0) {
+            next[field as CaseFieldKey] = suggestion as string;
+            console.log(`[AUTO-FILL] ✓ Applied ${field}`);
+            appliedCount++;
+          } else {
+            console.warn(`[AUTO-FILL] ✗ No suggestion for ${field}`);
+          }
         }
       }
+      
+      console.log(`[AUTO-FILL] Total fields applied: ${appliedCount}`);
       return next;
     });
+    
     setShowAutoFillModal(false);
-    setSuccess("Suggestions applied. Review and save when ready.");
+    setSuccess(`Suggestions applied to ${Object.values(selectedFields).filter(Boolean).length} fields. Review and save when ready.`);
   };
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) {
@@ -510,6 +538,8 @@ Remain collaborative, use everyday language, and avoid offering your own medical
     onApply: (selected: Record<string, boolean>) => void;
     onCancel: () => void;
   }) => {
+    console.log("[AUTO-FILL-PANEL] Rendering with suggestions:", suggestions);
+    
     const [selected, setSelected] = useState<Record<string, boolean>>(
       Object.keys(suggestions).reduce((acc, field) => {
         acc[field] = true; // Pre-select all
@@ -528,10 +558,17 @@ Remain collaborative, use everyday language, and avoid offering your own medical
       follow_up_feedback_prompt: "Follow-up Feedback Prompt",
     };
 
+    const handleApply = () => {
+      console.log("[AUTO-FILL-PANEL] Apply clicked with selected:", selected);
+      onApply(selected);
+    };
+
     return (
       <div className="space-y-4">
-        {Object.entries(suggestions).map(([field, suggestion]) =>
-          suggestion ? (
+        {Object.entries(suggestions).map(([field, suggestion]) => {
+          console.log(`[AUTO-FILL-PANEL] Field ${field}: has content = ${suggestion ? "YES" : "NO"}`);
+          
+          return suggestion ? (
             <div key={field} className="border rounded-lg p-4 space-y-2 bg-muted/50">
               <div className="flex items-center gap-3">
                 <input
@@ -554,15 +591,15 @@ Remain collaborative, use everyday language, and avoid offering your own medical
                 {suggestion}
               </pre>
             </div>
-          ) : null
-        )}
+          ) : null;
+        })}
 
         <div className="flex gap-2 justify-end">
           <Button variant="outline" onClick={onCancel} disabled={isLoading}>
             Cancel
           </Button>
           <Button
-            onClick={() => onApply(selected)}
+            onClick={handleApply}
             disabled={isLoading || Object.values(selected).every((v) => !v)}
           >
             {isLoading ? "Generating..." : "Apply Selected"}

@@ -15,6 +15,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { emptyFields, caseData } = body;
 
+    console.log("[AUTO-FILL-API] Received request with emptyFields:", emptyFields);
+
     if (!emptyFields || !Array.isArray(emptyFields) || emptyFields.length === 0) {
       return NextResponse.json({ error: "emptyFields array is required and must not be empty" }, { status: 400 });
     }
@@ -120,13 +122,17 @@ Only include fields that are in the emptyFields list passed. Set other fields to
     // Build result with only the fields that were requested
     const suggestions: Record<string, string | null> = {};
     for (const field of emptyFields) {
-      if (parsed[field]) {
-        suggestions[field] = String(parsed[field]);
+      const value = parsed[field];
+      if (value) {
+        suggestions[field] = String(value);
+        console.log(`[AUTO-FILL-API] ✓ ${field}: "${String(value).substring(0, 50)}..."`);
       } else {
         suggestions[field] = null;
+        console.log(`[AUTO-FILL-API] ✗ ${field}: null or empty`);
       }
     }
 
+    console.log("[AUTO-FILL-API] Returning suggestions:", Object.keys(suggestions));
     return NextResponse.json({
       success: true,
       suggestions,
