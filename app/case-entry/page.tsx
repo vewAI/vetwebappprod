@@ -295,14 +295,18 @@ export default function CaseEntryForm() {
       for (const [field, isSelected] of Object.entries(selectedFields)) {
         if (isSelected) {
           const suggestion = autoFillSuggestions[field];
-          console.log(`[AUTO-FILL] Field: ${field}, isSelected: ${isSelected}, suggestion: ${suggestion ? suggestion.substring(0, 50) + "..." : "EMPTY"}`);
+          // Check for non-null/undefined, not just truthy (to allow empty strings)
+          const hasSuggestion = suggestion !== null && suggestion !== undefined;
+          const content = hasSuggestion ? String(suggestion) : "";
           
-          if (suggestion && suggestion.trim().length > 0) {
-            next[field as CaseFieldKey] = suggestion as string;
-            console.log(`[AUTO-FILL] ✓ Applied ${field}`);
+          console.log(`[AUTO-FILL] Field: ${field}, isSelected: ${isSelected}, hasSuggestion: ${hasSuggestion}, content length: ${content.length}`);
+          
+          if (hasSuggestion && content.trim().length > 0) {
+            next[field as CaseFieldKey] = content;
+            console.log(`[AUTO-FILL] ✓ Applied ${field} (${content.length} chars)`);
             appliedCount++;
           } else {
-            console.warn(`[AUTO-FILL] ✗ No suggestion for ${field}`);
+            console.warn(`[AUTO-FILL] ⚠ Skipped ${field} - no content (hasSuggestion=${hasSuggestion}, trimmed length=${content.trim().length})`);
           }
         }
       }
