@@ -292,8 +292,7 @@ export async function PUT(req: Request) {
       .from("cases")
       .update(body)
       .eq("id", body.id)
-      .select()
-      .single();
+      .select();
 
     if (error) {
       console.error(`[cases PUT] Supabase update FAILED:`, JSON.stringify({
@@ -305,19 +304,30 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    console.log(`[cases PUT] Supabase update SUCCESS for case id="${data?.id}"`);
+    // Handle both single and multiple row responses
+    const updatedCase = Array.isArray(data) ? data[0] : data;
+    
+    if (!updatedCase) {
+      console.error(`[cases PUT] No rows updated for case id="${body.id}"`);
+      return NextResponse.json(
+        { error: `Case with id "${body.id}" not found` },
+        { status: 404 }
+      );
+    }
 
-    if (data?.id) {
+    console.log(`[cases PUT] Supabase update SUCCESS for case id="${updatedCase?.id}"`);
+
+    if (updatedCase?.id) {
       // Note: Personas are created only on case INSERT, not on UPDATE
       // Admin can modify personas via PersonaEditor in case-viewer
       
       try {
-        scheduleCasePersonaPortraitGeneration(supabase, openai, data.id);
+        scheduleCasePersonaPortraitGeneration(supabase, openai, updatedCase.id);
         scheduleCaseImageGeneration(
           supabase,
           openai,
-          data as Record<string, unknown>,
-          { force: !data?.image_url }
+          updatedCase as Record<string, unknown>,
+          { force: !updatedCase?.image_url }
         );
       } catch (scheduleErr) {
         console.error(`[cases PUT] Image scheduling FAILED:`, scheduleErr);
@@ -325,7 +335,7 @@ export async function PUT(req: Request) {
       }
     }
 
-    return NextResponse.json({ success: true, data });
+    return NextResponse.json({ success: true, data: updatedCase });
   } catch (err: unknown) {
     console.error(`[cases PUT] Unhandled exception:`, err);
     const msg = err instanceof Error ? err.message : String(err);

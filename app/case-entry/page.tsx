@@ -5,6 +5,13 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import axios from "axios";
 import { getAccessToken, buildAuthHeaders } from "@/lib/auth-headers";
 import { useAuth } from "@/features/auth/services/authService";
@@ -68,6 +75,9 @@ export default function CaseEntryForm() {
 
   const [verificationResult, setVerificationResult] = useState<CaseVerificationResult | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isAutoFilling, setIsAutoFilling] = useState(false);
+  const [autoFillSuggestions, setAutoFillSuggestions] = useState<Record<string, string | null>>({});
+  const [showAutoFillModal, setShowAutoFillModal] = useState(false);
   const [showVerificationChat, setShowVerificationChat] = useState(false);
 
   const [intakeText, setIntakeText] = useState("");
@@ -222,9 +232,59 @@ export default function CaseEntryForm() {
     });
   };
 
-  const handleVerificationComplete = () => {
+  const handleVerificationComplete = async () => {
     setShowVerificationChat(false);
     setSuccess("Verification complete. Data has been integrated into the form.");
+
+    // Detect empty fields that should be auto-filled
+    const emptyFields = [
+      "learner_facing_summary",
+      "owner_background",
+      "history_feedback_instructions",
+      "owner_follow_up",
+      "owner_follow_up_feedback_prompt",
+      "owner_diagnosis",
+      "owner_chat_prompt",
+      "follow_up_feedback_prompt",
+    ].filter((field) => {
+      const value = form[field as CaseFieldKey];
+      return !value || (typeof value === "string" && value.trim() === "");
+    });
+
+    if (emptyFields.length === 0) {
+      return; // All fields are filled
+    }
+
+    // Request auto-fill suggestions from LLM
+    setIsAutoFilling(true);
+    try {
+      const suggestions = await caseVerificationService.autoFill({
+        emptyFields,
+        caseData: form,
+      });
+      setAutoFillSuggestions(suggestions);
+      setShowAutoFillModal(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`Could not generate suggestions: ${msg}`);
+    } finally {
+      setIsAutoFilling(false);
+    }
+  };
+
+  const handleAutoFillApply = (selectedFields: Record<string, boolean>) => {
+    // Apply only the selected suggestions to the form
+    setForm((prev) => {
+      const next = { ...prev };
+      for (const [field, isSelected] of Object.entries(selectedFields)) {
+        if (isSelected && autoFillSuggestions[field]) {
+          next[field as CaseFieldKey] = autoFillSuggestions[field] as string;
+        }
+      }
+      return next;
+    });
+    setShowAutoFillModal(false);
+    setSuccess("Suggestions applied. Review and save when ready.");
   };
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) {
@@ -437,6 +497,80 @@ Remain collaborative, use everyday language, and avoid offering your own medical
       </div>
     );
   }
+
+  // Auto-fill suggestions panel component
+  const AutoFillSuggestionsPanel = ({
+    suggestions,
+    isLoading,
+    onApply,
+    onCancel,
+  }: {
+    suggestions: Record<string, string | null>;
+    isLoading: boolean;
+    onApply: (selected: Record<string, boolean>) => void;
+    onCancel: () => void;
+  }) => {
+    const [selected, setSelected] = useState<Record<string, boolean>>(
+      Object.keys(suggestions).reduce((acc, field) => {
+        acc[field] = true; // Pre-select all
+        return acc;
+      }, {} as Record<string, boolean>)
+    );
+
+    const fieldNames: Record<string, string> = {
+      learner_facing_summary: "Learner-Facing Summary",
+      owner_background: "Owner Background",
+      history_feedback_instructions: "History Feedback Instructions",
+      owner_follow_up: "Owner Follow-up Script",
+      owner_follow_up_feedback_prompt: "Follow-up Feedback Prompt",
+      owner_diagnosis: "Diagnosis Conversation",
+      owner_chat_prompt: "Owner Chat Prompt",
+      follow_up_feedback_prompt: "Follow-up Feedback Prompt",
+    };
+
+    return (
+      <div className="space-y-4">
+        {Object.entries(suggestions).map(([field, suggestion]) =>
+          suggestion ? (
+            <div key={field} className="border rounded-lg p-4 space-y-2 bg-muted/50">
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id={`select-${field}`}
+                  checked={selected[field]}
+                  onChange={(e) =>
+                    setSelected((prev) => ({
+                      ...prev,
+                      [field]: e.target.checked,
+                    }))
+                  }
+                  className="w-4 h-4"
+                />
+                <label htmlFor={`select-${field}`} className="font-medium text-sm">
+                  {fieldNames[field] || field}
+                </label>
+              </div>
+              <pre className="text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded p-3 max-h-32 overflow-y-auto whitespace-pre-wrap break-words">
+                {suggestion}
+              </pre>
+            </div>
+          ) : null
+        )}
+
+        <div className="flex gap-2 justify-end">
+          <Button variant="outline" onClick={onCancel} disabled={isLoading}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => onApply(selected)}
+            disabled={isLoading || Object.values(selected).every((v) => !v)}
+          >
+            {isLoading ? "Generating..." : "Apply Selected"}
+          </Button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="max-w-3xl mx-auto p-8 space-y-6">
@@ -786,6 +920,25 @@ Remain collaborative, use everyday language, and avoid offering your own medical
           onComplete={handleVerificationComplete}
         />
       )}
+
+      {/* Auto-Fill Suggestions Modal */}
+      <Dialog open={showAutoFillModal} onOpenChange={setShowAutoFillModal}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>AI-Generated Field Suggestions</DialogTitle>
+            <DialogDescription>
+              Review the AI suggestions for empty fields and select which ones to apply to your case.
+            </DialogDescription>
+          </DialogHeader>
+
+          <AutoFillSuggestionsPanel
+            suggestions={autoFillSuggestions}
+            isLoading={isAutoFilling}
+            onApply={handleAutoFillApply}
+            onCancel={() => setShowAutoFillModal(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

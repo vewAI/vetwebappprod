@@ -63,4 +63,30 @@ export const caseVerificationService = {
     }
     return res.json();
   },
+
+  /**
+   * Generate LLM suggestions for empty case fields.
+   */
+  async autoFill(params: {
+    emptyFields: string[];
+    caseData: Record<string, string>;
+  }): Promise<Record<string, string | null>> {
+    const headers = await buildAuthHeaders({
+      "Content-Type": "application/json",
+    });
+    const res = await fetch("/api/case-intake/auto-fill", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(params),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(
+        (err as { error?: string }).error ?? "Auto-fill request failed"
+      );
+    }
+    const data = await res.json();
+    return (data as { suggestions?: Record<string, string | null> })
+      .suggestions ?? {};
+  },
 };

@@ -46,7 +46,7 @@ interface VerificationChatbotProps {
     value: string,
     writeMode: "append" | "replace"
   ) => void;
-  onComplete: () => void;
+  onComplete: (emptyFields?: string[]) => void; // Optional param for empty fields that need auto-fill
 }
 
 export function VerificationChatbot({
@@ -675,7 +675,7 @@ export function VerificationChatbot({
               Close
             </Button>
             {allResolved && (
-              <Button onClick={onComplete}>
+              <Button onClick={() => onComplete()}>
                 Finish Verification
               </Button>
             )}
