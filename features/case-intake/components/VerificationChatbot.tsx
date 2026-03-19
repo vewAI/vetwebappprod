@@ -9,7 +9,6 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { caseVerificationService } from "../services/caseVerificationService";
 import type {
   CaseVerificationItem,
@@ -71,6 +70,7 @@ export function VerificationChatbot({
   const [suggestedValue, setSuggestedValue] = useState("");
   const [waitingForSuggestion, setWaitingForSuggestion] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const activeItem: CaseVerificationItem | undefined = items[activeItemIndex];
   const activeItemId = activeItem?.id ?? "";
@@ -91,10 +91,19 @@ export function VerificationChatbot({
   );
   const allResolved = resolvedCount >= actionableItems.length && actionableItems.length > 0;
 
-  // Auto-scroll chat to bottom
+  // Auto-scroll chat to bottom and auto-focus input after chat updates
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [currentChat.length]);
+
+  // Auto-focus input when ready for input
+  useEffect(() => {
+    if (activeItem?.status === "pending" && !isSending && !waitingForSuggestion && !showingSuggestion) {
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 150);
+    }
+  }, [currentChat.length, isSending, waitingForSuggestion, showingSuggestion, activeItem?.status, activeItem?.id]);
 
   // Auto-greet when switching to a new item with no history
   useEffect(() => {
@@ -193,33 +202,36 @@ export function VerificationChatbot({
           );
         }
 
-        // Update item status
-        setItems((prev) =>
-          prev.map((item, idx) =>
+        // Update item status AND schedule auto-advance via state updater
+        setItems((prevItems) => {
+          const updatedItems = prevItems.map((item, idx) =>
             idx === activeItemIndex
               ? {
                   ...item,
-                  status: response.extractedValue ? "answered" : "skipped",
+                  status: (response.extractedValue ? "answered" : "skipped") as "answered" | "skipped",
                   professorAnswer: response.extractedValue ?? "",
                 }
               : item
-          )
-        );
-
-        // Auto-advance to next pending item after delay
-        setTimeout(() => {
-          const nextIdx = items.findIndex(
-            (item, idx) =>
-              idx > activeItemIndex &&
-              item.status === "pending" &&
-              item.relevance !== "unnecessary"
           );
-          if (nextIdx !== -1) {
-            setActiveItemIndex(nextIdx);
-            setShowingSuggestion(false);
-            setSuggestedValue("");
-          }
-        }, 800);
+
+          // Auto-advance using the updated items array
+          setTimeout(() => {
+            const nextIdx = updatedItems.findIndex(
+              (item, idx) =>
+                idx > activeItemIndex &&
+                item.status === "pending" &&
+                item.relevance !== "unnecessary"
+            );
+            if (nextIdx !== -1) {
+              setActiveItemIndex(nextIdx);
+              setShowingSuggestion(false);
+              setSuggestedValue("");
+              setInputText("");
+            }
+          }, 400);
+
+          return updatedItems;
+        });
       }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : "Connection error";
@@ -244,30 +256,35 @@ export function VerificationChatbot({
     isSending,
     chatHistories,
     caseContext,
-    items,
+
     onFieldResolved,
   ]);
 
   const handleSkip = useCallback(() => {
     if (!activeItem) return;
-    setItems((prev) =>
-      prev.map((item, idx) =>
-        idx === activeItemIndex ? { ...item, status: "skipped" } : item
-      )
-    );
-    // Advance to next pending
-    const nextIdx = items.findIndex(
-      (item, idx) =>
-        idx > activeItemIndex &&
-        item.status === "pending" &&
-        item.relevance !== "unnecessary"
-    );
-    if (nextIdx !== -1) {
-      setActiveItemIndex(nextIdx);
-      setShowingSuggestion(false);
-      setSuggestedValue("");
-    }
-  }, [activeItem, activeItemIndex, items]);
+    setItems((prevItems) => {
+      const updatedItems = prevItems.map((item, idx) =>
+        idx === activeItemIndex ? { ...item, status: "skipped" as const } : item
+      );
+
+      // Advance to next pending immediately
+      const nextIdx = updatedItems.findIndex(
+        (item, idx) =>
+          idx > activeItemIndex &&
+          item.status === "pending" &&
+          item.relevance !== "unnecessary"
+      );
+      if (nextIdx !== -1) {
+        setTimeout(() => {
+          setActiveItemIndex(nextIdx);
+          setShowingSuggestion(false);
+          setSuggestedValue("");
+          setInputText("");
+        }, 0);
+      }
+      return updatedItems;
+    });
+  }, [activeItem, activeItemIndex]);
 
   const handleConfirmPresent = useCallback(() => {
     if (!activeItem) return;
@@ -275,32 +292,48 @@ export function VerificationChatbot({
     if (activeItem.existingValue) {
       onFieldResolved(activeItem.targetField, activeItem.existingValue, "append");
     }
-    setItems((prev) =>
-      prev.map((item, idx) =>
-        idx === activeItemIndex ? { ...item, status: "accepted" } : item
-      )
-    );
-    const nextIdx = items.findIndex(
-      (item, idx) =>
-        idx > activeItemIndex &&
-        item.status === "pending" &&
-        item.relevance !== "unnecessary"
-    );
-    if (nextIdx !== -1) {
-      setActiveItemIndex(nextIdx);
-      setShowingSuggestion(false);
-      setSuggestedValue("");
-    }
-  }, [activeItem, activeItemIndex, items, onFieldResolved]);
+    setItems((prevItems) => {
+      const updatedItems = prevItems.map((item, idx) =>
+        idx === activeItemIndex ? { ...item, status: "accepted" as const } : item
+      );
+
+      // Advance to next pending
+      const nextIdx = updatedItems.findIndex(
+        (item, idx) =>
+          idx > activeItemIndex &&
+          item.status === "pending" &&
+          item.relevance !== "unnecessary"
+      );
+      if (nextIdx !== -1) {
+        setTimeout(() => {
+          setActiveItemIndex(nextIdx);
+          setShowingSuggestion(false);
+          setSuggestedValue("");
+          setInputText("");
+        }, 0);
+      }
+      return updatedItems;
+    });
+  }, [activeItem, activeItemIndex, onFieldResolved]);
 
   const handleGetAISuggestion = useCallback(async () => {
     if (!activeItem) return;
     setWaitingForSuggestion(true);
 
+    const suggestPrompt = `Based on this ${caseContext.species} case with ${caseContext.condition}, what specific realistic and clinically relevant data should be provided for "${activeItem.itemName}"? 
+    
+    Consider:
+    - The patient: ${caseContext.patientName}
+    - Typical presentations and findings for this condition
+    - What a veterinary student would expect to see
+    - Specific values, measurements, or observations (with units where applicable)
+    
+    Provide a detailed, realistic suggestion that would be appropriate for teaching this case.`;
+
     const userMsg: VerificationChatMessage = {
       id: `user-suggestion-${Date.now()}`,
       role: "user",
-      content: "Can you suggest what data should be provided for this field?",
+      content: suggestPrompt,
       verificationItemId: activeItem.id,
       timestamp: new Date().toISOString(),
     };
@@ -363,29 +396,32 @@ export function VerificationChatbot({
 
     onFieldResolved(activeItem.targetField, suggestedValue, "append");
 
-    setItems((prev) =>
-      prev.map((item, idx) =>
+    setItems((prevItems) => {
+      const updatedItems = prevItems.map((item, idx) =>
         idx === activeItemIndex
-          ? { ...item, status: "answered", professorAnswer: suggestedValue }
+          ? { ...item, status: "answered" as const, professorAnswer: suggestedValue }
           : item
-      )
-    );
-
-    // Auto-advance to next pending item
-    setTimeout(() => {
-      const nextIdx = items.findIndex(
-        (item, idx) =>
-          idx > activeItemIndex &&
-          item.status === "pending" &&
-          item.relevance !== "unnecessary"
       );
-      if (nextIdx !== -1) {
-        setActiveItemIndex(nextIdx);
-        setShowingSuggestion(false);
-        setSuggestedValue("");
-      }
-    }, 800);
-  }, [activeItem, suggestedValue, activeItemIndex, items, onFieldResolved]);
+
+      // Schedule auto-advance
+      setTimeout(() => {
+        const nextIdx = updatedItems.findIndex(
+          (item, idx) =>
+            idx > activeItemIndex &&
+            item.status === "pending" &&
+            item.relevance !== "unnecessary"
+        );
+        if (nextIdx !== -1) {
+          setActiveItemIndex(nextIdx);
+          setShowingSuggestion(false);
+          setSuggestedValue("");
+          setInputText("");
+        }
+      }, 400);
+
+      return updatedItems;
+    });
+  }, [activeItem, suggestedValue, activeItemIndex, onFieldResolved]);
 
   const handleEditSuggestion = useCallback(() => {
     if (!suggestedValue) return;
@@ -402,22 +438,22 @@ export function VerificationChatbot({
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <DialogContent className="max-w-5xl h-[80vh] flex flex-col p-0 gap-0">
+      <DialogContent className="max-w-5xl h-[92vh] flex flex-col p-0 gap-0">
         {/* ── Header ── */}
-        <DialogHeader className="p-4 border-b shrink-0">
-          <DialogTitle>Case Verification</DialogTitle>
-          <DialogDescription>
+        <DialogHeader className="p-4 border-b shrink-0 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700">
+          <DialogTitle className="text-lg dark:text-white">Case Verification</DialogTitle>
+          <DialogDescription className="text-slate-600 dark:text-slate-300">
             {verificationResult.overallAssessment}
           </DialogDescription>
           <div className="flex items-center gap-4 mt-2 text-sm">
-            <span className="font-medium">
+            <span className="font-medium dark:text-slate-200">
               Completeness: {verificationResult.completenessScore}%
             </span>
-            <span className="text-muted-foreground">
+            <span className="text-slate-500 dark:text-slate-400">
               {resolvedCount}/{actionableItems.length} items reviewed
             </span>
             {allResolved && (
-              <span className="text-emerald-600 font-medium">
+              <span className="text-emerald-600 dark:text-emerald-400 font-medium">
                 ✓ Verification complete
               </span>
             )}
@@ -545,19 +581,19 @@ export function VerificationChatbot({
 
                 {/* AI Suggestion Display */}
                 {showingSuggestion && suggestedValue && activeItem.status === "pending" && (
-                  <div className="px-4 py-2 border-t bg-emerald-50 space-y-2 text-sm">
-                    <div className="font-medium text-emerald-800">Here's the result:</div>
-                    <pre className="whitespace-pre-wrap text-xs bg-white border border-emerald-200 rounded p-2 max-h-40 overflow-y-auto">
+                  <div className="px-4 py-2 border-t bg-teal-950/40 dark:bg-teal-900/60 border-teal-600 space-y-2 text-sm">
+                    <div className="font-medium text-teal-600 dark:text-teal-300">Here's the result:</div>
+                    <pre className="whitespace-pre-wrap text-xs bg-gray-900 dark:bg-gray-950 border border-teal-500 text-teal-50 dark:text-teal-100 rounded p-2 max-h-40 overflow-y-auto">
                       {suggestedValue}
                     </pre>
                     <div className="flex items-center gap-2">
-                      <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={handleApproveSuggestion}>
+                      <Button size="sm" className="bg-teal-600 hover:bg-teal-700 dark:bg-teal-600 dark:hover:bg-teal-500 text-white" onClick={handleApproveSuggestion}>
                         Approve
                       </Button>
-                      <Button size="sm" variant="outline" onClick={handleEditSuggestion}>
+                      <Button size="sm" variant="outline" className="border-teal-600 text-teal-600 dark:border-teal-400 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-950" onClick={handleEditSuggestion}>
                         Edit
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={handleSkip}>
+                      <Button size="sm" variant="ghost" className="text-teal-600 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900" onClick={handleSkip}>
                         Skip
                       </Button>
                     </div>
@@ -565,12 +601,18 @@ export function VerificationChatbot({
                 )}
 
                 {/* Input area */}
-                <div className="p-3 border-t flex items-center gap-2 shrink-0">
-                  <Input
+                <div className="p-3 border-t border-slate-200 dark:border-slate-700 flex flex-col gap-2 shrink-0 bg-white dark:bg-slate-950">
+                  <textarea
+                    ref={inputRef}
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Type your response..."
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        sendMessage();
+                      }
+                    }}
+                    placeholder="Type your response... (Shift+Enter for newline)"
                     disabled={
                       isSending ||
                       waitingForSuggestion ||
@@ -578,39 +620,41 @@ export function VerificationChatbot({
                       activeItem.status === "accepted" ||
                       activeItem.status === "skipped"
                     }
-                    className="flex-1"
+                    className="flex-1 min-h-20 max-h-32 p-3 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 resize-vertical focus:outline-none focus:ring-2 focus:ring-teal-500 dark:focus:ring-teal-400 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
                   />
-                  <Button
-                    onClick={sendMessage}
-                    disabled={
-                      isSending ||
-                      waitingForSuggestion ||
-                      !inputText.trim() ||
-                      activeItem.status !== "pending" ||
-                      showingSuggestion
-                    }
-                    size="sm"
-                  >
-                    {isSending ? "..." : "Send"}
-                  </Button>
-                  {!showingSuggestion && activeItem.status === "pending" && !activeItem.alreadyPresent && (
+                  <div className="flex items-center gap-2">
                     <Button
-                      onClick={handleGetAISuggestion}
-                      variant="outline"
+                      onClick={sendMessage}
+                      disabled={
+                        isSending ||
+                        waitingForSuggestion ||
+                        !inputText.trim() ||
+                        activeItem.status !== "pending" ||
+                        showingSuggestion
+                      }
                       size="sm"
-                      disabled={waitingForSuggestion || isSending}
                     >
-                      {waitingForSuggestion ? "..." : "AI Suggestion"}
+                      {isSending ? "..." : "Send"}
                     </Button>
-                  )}
-                  <Button
-                    onClick={handleSkip}
-                    variant="ghost"
-                    size="sm"
-                    disabled={activeItem.status !== "pending"}
-                  >
-                    Skip
-                  </Button>
+                    {!showingSuggestion && activeItem.status === "pending" && !activeItem.alreadyPresent && (
+                      <Button
+                        onClick={handleGetAISuggestion}
+                        variant="outline"
+                        size="sm"
+                        disabled={waitingForSuggestion || isSending}
+                      >
+                        {waitingForSuggestion ? "..." : "AI Suggestion"}
+                      </Button>
+                    )}
+                    <Button
+                      onClick={handleSkip}
+                      variant="ghost"
+                      size="sm"
+                      disabled={activeItem.status !== "pending"}
+                    >
+                      Skip
+                    </Button>
+                  </div>
                 </div>
               </>
             ) : (
