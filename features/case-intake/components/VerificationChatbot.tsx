@@ -1,27 +1,17 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { caseVerificationService } from "../services/caseVerificationService";
-import type {
-  CaseVerificationItem,
-  CaseVerificationResult,
-  VerificationChatMessage,
-} from "../models/caseVerification";
+import type { CaseVerificationItem, CaseVerificationResult, VerificationChatMessage } from "../models/caseVerification";
 
 /* ── Relevance → visual style mapping ── */
 const RELEVANCE_STYLES: Record<string, { dot: string; label: string; bg: string }> = {
-  mandatory:   { dot: "bg-red-500",    label: "Mandatory", bg: "bg-red-50 border-red-200" },
+  mandatory: { dot: "bg-red-500", label: "Mandatory", bg: "bg-red-50 border-red-200" },
   recommended: { dot: "bg-orange-400", label: "Recommended", bg: "bg-orange-50 border-orange-200" },
-  optional:    { dot: "bg-yellow-400", label: "Optional",    bg: "bg-yellow-50 border-yellow-200" },
-  unnecessary: { dot: "bg-gray-300",   label: "Unnecessary", bg: "bg-gray-50 border-gray-200" },
+  optional: { dot: "bg-yellow-400", label: "Optional", bg: "bg-yellow-50 border-yellow-200" },
+  unnecessary: { dot: "bg-gray-300", label: "Unnecessary", bg: "bg-gray-50 border-gray-200" },
 };
 
 const STATUS_ICONS: Record<string, string> = {
@@ -41,29 +31,14 @@ interface VerificationChatbotProps {
     patientName: string;
     category: string;
   };
-  onFieldResolved: (
-    targetField: string,
-    value: string,
-    writeMode: "append" | "replace"
-  ) => void;
+  onFieldResolved: (targetField: string, value: string, writeMode: "append" | "replace") => void;
   onComplete: (emptyFields?: string[]) => void; // Optional param for empty fields that need auto-fill
 }
 
-export function VerificationChatbot({
-  open,
-  onClose,
-  verificationResult,
-  caseContext,
-  onFieldResolved,
-  onComplete,
-}: VerificationChatbotProps) {
-  const [items, setItems] = useState<CaseVerificationItem[]>(
-    verificationResult.items
-  );
+export function VerificationChatbot({ open, onClose, verificationResult, caseContext, onFieldResolved, onComplete }: VerificationChatbotProps) {
+  const [items, setItems] = useState<CaseVerificationItem[]>(verificationResult.items);
   const [activeItemIndex, setActiveItemIndex] = useState(0);
-  const [chatHistories, setChatHistories] = useState<
-    Record<string, VerificationChatMessage[]>
-  >({});
+  const [chatHistories, setChatHistories] = useState<Record<string, VerificationChatMessage[]>>({});
   const [inputText, setInputText] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [showingSuggestion, setShowingSuggestion] = useState(false);
@@ -79,68 +54,53 @@ export function VerificationChatbot({
   const currentChat = chatHistories[activeItemId] ?? [];
 
   // Helper function to find next pending item following visual order (mandatory → recommended → optional)
-  const findNextPendingItemByRelevance = useCallback(
-    (currentIdx: number, itemsList: CaseVerificationItem[]): number => {
-      const relevanceOrder = { mandatory: 0, recommended: 1, optional: 2, unnecessary: 3 };
-      
-      // Sort items by relevance order, then by their original position
-      const sortedIndices = itemsList
-        .map((item, idx) => ({
-          idx,
-          relevance: relevanceOrder[item.relevance] ?? 999,
-          item,
-        }))
-        .sort((a, b) => {
-          if (a.relevance !== b.relevance) return a.relevance - b.relevance;
-          return a.idx - b.idx;
-        });
+  const findNextPendingItemByRelevance = useCallback((currentIdx: number, itemsList: CaseVerificationItem[]): number => {
+    const relevanceOrder = { mandatory: 0, recommended: 1, optional: 2, unnecessary: 3 };
 
-      // Find the next pending item after current item (in visual order)
-      const currentRelevance = itemsList[currentIdx]?.relevance ?? "unnecessary";
-      const currentRelevanceOrder = relevanceOrder[currentRelevance];
-      
-      let foundCurrent = false;
-      for (const { idx, item } of sortedIndices) {
-        if (idx === currentIdx) {
-          foundCurrent = true;
-          continue;
-        }
-        if (foundCurrent && item.status === "pending" && item.relevance !== "unnecessary") {
-          console.log(`[VERIFICATION] Auto-advancing: ${itemsList[currentIdx]?.itemName} → ${item.itemName}`);
-          return idx;
-        }
+    // Sort items by relevance order, then by their original position
+    const sortedIndices = itemsList
+      .map((item, idx) => ({
+        idx,
+        relevance: relevanceOrder[item.relevance] ?? 999,
+        item,
+      }))
+      .sort((a, b) => {
+        if (a.relevance !== b.relevance) return a.relevance - b.relevance;
+        return a.idx - b.idx;
+      });
+
+    // Find the next pending item after current item (in visual order)
+    const currentRelevance = itemsList[currentIdx]?.relevance ?? "unnecessary";
+    const currentRelevanceOrder = relevanceOrder[currentRelevance];
+
+    let foundCurrent = false;
+    for (const { idx, item } of sortedIndices) {
+      if (idx === currentIdx) {
+        foundCurrent = true;
+        continue;
       }
+      if (foundCurrent && item.status === "pending" && item.relevance !== "unnecessary") {
+        console.log(`[VERIFICATION] Auto-advancing: ${itemsList[currentIdx]?.itemName} → ${item.itemName}`);
+        return idx;
+      }
+    }
 
-      return -1; // No more pending items
-    },
-    []
-  );
+    return -1; // No more pending items
+  }, []);
 
   // Count resolved items (only non-unnecessary)
-  const actionableItems = useMemo(
-    () => items.filter((i) => i.relevance !== "unnecessary"),
-    [items]
-  );
+  const actionableItems = useMemo(() => items.filter((i) => i.relevance !== "unnecessary"), [items]);
   const resolvedCount = useMemo(
-    () =>
-      actionableItems.filter(
-        (i) => i.status === "accepted" || i.status === "answered" || i.status === "skipped"
-      ).length,
-    [actionableItems]
+    () => actionableItems.filter((i) => i.status === "accepted" || i.status === "answered" || i.status === "skipped").length,
+    [actionableItems],
   );
   const allResolved = resolvedCount >= actionableItems.length && actionableItems.length > 0;
 
   // Track mandatory items separately - finish button should be available when all mandatory are done
-  const mandatoryItems = useMemo(
-    () => items.filter((i) => i.relevance === "mandatory"),
-    [items]
-  );
+  const mandatoryItems = useMemo(() => items.filter((i) => i.relevance === "mandatory"), [items]);
   const mandatoryResolved = useMemo(
-    () =>
-      mandatoryItems.filter(
-        (i) => i.status === "accepted" || i.status === "answered" || i.status === "skipped"
-      ).length,
-    [mandatoryItems]
+    () => mandatoryItems.filter((i) => i.status === "accepted" || i.status === "answered" || i.status === "skipped").length,
+    [mandatoryItems],
   );
   const allMandatoryResolved = mandatoryResolved >= mandatoryItems.length && mandatoryItems.length > 0;
 
@@ -201,14 +161,14 @@ export function VerificationChatbot({
       setSuggestedValue("");
 
       // Write the edited value directly to the form
-      onFieldResolved(activeItem.targetField, userText, "replace");
+      // If the field already had content, append the new data; otherwise replace
+      const writeMode = activeItem.alreadyPresent && activeItem.existingValue ? "append" : "replace";
+      onFieldResolved(activeItem.targetField, userText, writeMode);
 
       // Update item status and auto-advance
       setItems((prevItems) => {
         const updatedItems = prevItems.map((item, idx) =>
-          idx === activeItemIndex
-            ? { ...item, status: "answered" as const, professorAnswer: userText }
-            : item
+          idx === activeItemIndex ? { ...item, status: "answered" as const, professorAnswer: userText } : item,
         );
 
         // Schedule auto-advance
@@ -259,9 +219,7 @@ export function VerificationChatbot({
 
       // Check if response is a result (contains "Here's the result" or similar patterns)
       const isResult =
-        response.reply.toLowerCase().includes("here's the result") ||
-        response.reply.toLowerCase().includes("final answer") ||
-        response.isResolved;
+        response.reply.toLowerCase().includes("here's the result") || response.reply.toLowerCase().includes("final answer") || response.isResolved;
 
       const assistantMsg: VerificationChatMessage = {
         id: `assistant-${Date.now()}`,
@@ -274,7 +232,7 @@ export function VerificationChatbot({
       setChatHistories((prev) => ({
         ...prev,
         [activeItem.id]: [...(prev[activeItem.id] ?? []), userMsg, assistantMsg].filter(
-          (msg, idx, arr) => arr.findIndex((m) => m.id === msg.id) === idx
+          (msg, idx, arr) => arr.findIndex((m) => m.id === msg.id) === idx,
         ),
       }));
 
@@ -284,11 +242,7 @@ export function VerificationChatbot({
       } else if (response.isResolved) {
         // Write value into form
         if (response.extractedValue) {
-          onFieldResolved(
-            response.targetField,
-            response.extractedValue,
-            response.writeMode
-          );
+          onFieldResolved(response.targetField, response.extractedValue, response.writeMode);
         }
 
         // Update item status AND schedule auto-advance via state updater
@@ -300,7 +254,7 @@ export function VerificationChatbot({
                   status: (response.extractedValue ? "answered" : "skipped") as "answered" | "skipped",
                   professorAnswer: response.extractedValue ?? "",
                 }
-              : item
+              : item,
           );
 
           // Auto-advance using the updated items array, respecting visual order
@@ -348,9 +302,7 @@ export function VerificationChatbot({
   const handleSkip = useCallback(() => {
     if (!activeItem) return;
     setItems((prevItems) => {
-      const updatedItems = prevItems.map((item, idx) =>
-        idx === activeItemIndex ? { ...item, status: "skipped" as const } : item
-      );
+      const updatedItems = prevItems.map((item, idx) => (idx === activeItemIndex ? { ...item, status: "skipped" as const } : item));
 
       // Advance to next pending, respecting visual order
       const nextIdx = findNextPendingItemByRelevance(activeItemIndex, updatedItems);
@@ -373,9 +325,7 @@ export function VerificationChatbot({
       onFieldResolved(activeItem.targetField, activeItem.existingValue, "append");
     }
     setItems((prevItems) => {
-      const updatedItems = prevItems.map((item, idx) =>
-        idx === activeItemIndex ? { ...item, status: "accepted" as const } : item
-      );
+      const updatedItems = prevItems.map((item, idx) => (idx === activeItemIndex ? { ...item, status: "accepted" as const } : item));
 
       // Advance to next pending, respecting visual order
       const nextIdx = findNextPendingItemByRelevance(activeItemIndex, updatedItems);
@@ -473,9 +423,7 @@ export function VerificationChatbot({
 
     setItems((prevItems) => {
       const updatedItems = prevItems.map((item, idx) =>
-        idx === activeItemIndex
-          ? { ...item, status: "answered" as const, professorAnswer: suggestedValue }
-          : item
+        idx === activeItemIndex ? { ...item, status: "answered" as const, professorAnswer: suggestedValue } : item,
       );
 
       // Schedule auto-advance, respecting visual order
@@ -513,21 +461,13 @@ export function VerificationChatbot({
         {/* ── Header ── */}
         <DialogHeader className="p-4 border-b shrink-0 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700">
           <DialogTitle className="text-lg dark:text-white">Case Verification</DialogTitle>
-          <DialogDescription className="text-slate-600 dark:text-slate-300">
-            {verificationResult.overallAssessment}
-          </DialogDescription>
+          <DialogDescription className="text-slate-600 dark:text-slate-300">{verificationResult.overallAssessment}</DialogDescription>
           <div className="flex items-center gap-4 mt-2 text-sm">
-            <span className="font-medium dark:text-slate-200">
-              Completeness: {verificationResult.completenessScore}%
-            </span>
+            <span className="font-medium dark:text-slate-200">Completeness: {verificationResult.completenessScore}%</span>
             <span className="text-slate-500 dark:text-slate-400">
               {resolvedCount}/{actionableItems.length} items reviewed
             </span>
-            {allResolved && (
-              <span className="text-emerald-600 dark:text-emerald-400 font-medium">
-                ✓ Verification complete
-              </span>
-            )}
+            {allResolved && <span className="text-emerald-600 dark:text-emerald-400 font-medium">✓ Verification complete</span>}
           </div>
         </DialogHeader>
 
@@ -535,52 +475,46 @@ export function VerificationChatbot({
         <div className="flex flex-1 overflow-hidden">
           {/* ── Sidebar: item list ── */}
           <div className="w-72 border-r overflow-y-auto shrink-0 bg-muted/30 dark:bg-slate-800/50 dark:border-slate-700">
-            {(["mandatory", "recommended", "optional", "unnecessary"] as const).map(
-              (relevance) => {
-                const group = items.filter((i) => i.relevance === relevance);
-                if (group.length === 0) return null;
-                const style = RELEVANCE_STYLES[relevance];
-                return (
-                  <div key={relevance} className="py-2">
-                    <div className="px-3 py-1 text-xs font-semibold text-muted-foreground dark:text-slate-400 uppercase tracking-wide flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${style.dot}`} />
-                      {style.label} ({group.length})
-                    </div>
-                    {group.map((item) => {
-                      const itemIdx = items.indexOf(item);
-                      const isActive = itemIdx === activeItemIndex;
-                      return (
-                        <button
-                          key={item.id}
-                          onClick={() => setActiveItemIndex(itemIdx)}
-                          className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-accent/50 transition-colors dark:text-slate-200 ${
-                            isActive ? "bg-accent font-medium dark:bg-slate-700" : "dark:text-slate-300"
-                          }`}
-                        >
-                          <span
-                            className={`text-xs ${
-                              item.status === "answered" || item.status === "accepted"
-                                ? "text-emerald-600"
-                                : item.status === "skipped"
+            {(["mandatory", "recommended", "optional", "unnecessary"] as const).map((relevance) => {
+              const group = items.filter((i) => i.relevance === relevance);
+              if (group.length === 0) return null;
+              const style = RELEVANCE_STYLES[relevance];
+              return (
+                <div key={relevance} className="py-2">
+                  <div className="px-3 py-1 text-xs font-semibold text-muted-foreground dark:text-slate-400 uppercase tracking-wide flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${style.dot}`} />
+                    {style.label} ({group.length})
+                  </div>
+                  {group.map((item) => {
+                    const itemIdx = items.indexOf(item);
+                    const isActive = itemIdx === activeItemIndex;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => setActiveItemIndex(itemIdx)}
+                        className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-accent/50 transition-colors dark:text-slate-200 ${
+                          isActive ? "bg-accent font-medium dark:bg-slate-700" : "dark:text-slate-300"
+                        }`}
+                      >
+                        <span
+                          className={`text-xs ${
+                            item.status === "answered" || item.status === "accepted"
+                              ? "text-emerald-600"
+                              : item.status === "skipped"
                                 ? "text-muted-foreground"
                                 : "text-muted-foreground/50"
-                            }`}
-                          >
-                            {STATUS_ICONS[item.status]}
-                          </span>
-                          <span className="truncate">{item.itemName}</span>
-                          {item.alreadyPresent && item.status === "pending" && (
-                            <span className="ml-auto text-xs text-blue-500 shrink-0">
-                              ✎
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                );
-              }
-            )}
+                          }`}
+                        >
+                          {STATUS_ICONS[item.status]}
+                        </span>
+                        <span className="truncate">{item.itemName}</span>
+                        {item.alreadyPresent && item.status === "pending" && <span className="ml-auto text-xs text-blue-500 shrink-0">✎</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })}
           </div>
 
           {/* ── Chat panel ── */}
@@ -588,20 +522,11 @@ export function VerificationChatbot({
             {activeItem ? (
               <>
                 {/* Item header */}
-                <div
-                  className={`p-3 border-b text-sm ${
-                    RELEVANCE_STYLES[activeItem.relevance]?.bg ?? ""
-                  }`}
-                >
+                <div className={`p-3 border-b text-sm ${RELEVANCE_STYLES[activeItem.relevance]?.bg ?? ""}`}>
                   <div className="font-medium dark:text-white">{activeItem.itemName}</div>
                   <div className="text-xs text-muted-foreground dark:text-slate-300 mt-1">
-                    {activeItem.category} · {activeItem.relevance} ·{" "}
-                    Frequency: {activeItem.expectedFrequency}
-                    {activeItem.alreadyPresent && (
-                      <span className="ml-2 text-blue-600 dark:text-blue-300">
-                        (Already present in the case)
-                      </span>
-                    )}
+                    {activeItem.category} · {activeItem.relevance} · Frequency: {activeItem.expectedFrequency}
+                    {activeItem.alreadyPresent && <span className="ml-2 text-blue-600 dark:text-blue-300">(Already present in the case)</span>}
                   </div>
                   <div className="text-xs mt-1 dark:text-slate-300">{activeItem.reasoning}</div>
                 </div>
@@ -609,17 +534,10 @@ export function VerificationChatbot({
                 {/* Messages */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-3">
                   {currentChat.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`flex ${
-                        msg.role === "user" ? "justify-end" : "justify-start"
-                      }`}
-                    >
+                    <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                       <div
                         className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
-                          msg.role === "user"
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted"
+                          msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"
                         }`}
                       >
                         {msg.content}
@@ -658,13 +576,27 @@ export function VerificationChatbot({
                       {suggestedValue}
                     </pre>
                     <div className="flex items-center gap-2">
-                      <Button size="sm" className="bg-teal-600 hover:bg-teal-700 dark:bg-teal-600 dark:hover:bg-teal-500 text-white" onClick={handleApproveSuggestion}>
+                      <Button
+                        size="sm"
+                        className="bg-teal-600 hover:bg-teal-700 dark:bg-teal-600 dark:hover:bg-teal-500 text-white"
+                        onClick={handleApproveSuggestion}
+                      >
                         Approve
                       </Button>
-                      <Button size="sm" variant="outline" className="border-teal-600 text-teal-600 dark:border-teal-400 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-950" onClick={handleEditSuggestion}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-teal-600 text-teal-600 dark:border-teal-400 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-950"
+                        onClick={handleEditSuggestion}
+                      >
                         Edit
                       </Button>
-                      <Button size="sm" variant="ghost" className="text-teal-600 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900" onClick={handleSkip}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-teal-600 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900"
+                        onClick={handleSkip}
+                      >
                         Skip
                       </Button>
                     </div>
@@ -696,42 +628,24 @@ export function VerificationChatbot({
                   <div className="flex items-center gap-2">
                     <Button
                       onClick={sendMessage}
-                      disabled={
-                        isSending ||
-                        waitingForSuggestion ||
-                        !inputText.trim() ||
-                        activeItem.status !== "pending" ||
-                        showingSuggestion
-                      }
+                      disabled={isSending || waitingForSuggestion || !inputText.trim() || activeItem.status !== "pending" || showingSuggestion}
                       size="sm"
                     >
                       {isSending ? "..." : "Send"}
                     </Button>
                     {!showingSuggestion && activeItem.status === "pending" && !activeItem.alreadyPresent && (
-                      <Button
-                        onClick={handleGetAISuggestion}
-                        variant="outline"
-                        size="sm"
-                        disabled={waitingForSuggestion || isSending}
-                      >
+                      <Button onClick={handleGetAISuggestion} variant="outline" size="sm" disabled={waitingForSuggestion || isSending}>
                         {waitingForSuggestion ? "..." : "AI Suggestion"}
                       </Button>
                     )}
-                    <Button
-                      onClick={handleSkip}
-                      variant="ghost"
-                      size="sm"
-                      disabled={activeItem.status !== "pending"}
-                    >
+                    <Button onClick={handleSkip} variant="ghost" size="sm" disabled={activeItem.status !== "pending"}>
                       Skip
                     </Button>
                   </div>
                 </div>
               </>
             ) : (
-              <div className="flex-1 flex items-center justify-center text-muted-foreground">
-                Select an item to verify
-              </div>
+              <div className="flex-1 flex items-center justify-center text-muted-foreground">Select an item to verify</div>
             )}
           </div>
         </div>
@@ -745,11 +659,7 @@ export function VerificationChatbot({
             <Button variant="outline" onClick={onClose}>
               Close
             </Button>
-            {allMandatoryResolved && (
-              <Button onClick={() => onComplete()}>
-                Finish Verification
-              </Button>
-            )}
+            {allMandatoryResolved && <Button onClick={() => onComplete()}>Finish Verification</Button>}
           </div>
         </div>
       </DialogContent>

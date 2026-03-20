@@ -65,6 +65,11 @@ Rules:
   - For owner_background: Personality and communication notes
   - For description (learner-facing summary): Concise, learner-friendly overview
 - If the professor explicitly says "skip", "not applicable", or "not available" AND it's clinically justified, set isResolved=true with extractedValue=null.
+- writeMode rules:
+  - Use "append" when the field already has content and the new data ADDS to it (e.g., additional exam findings, extra history details). The existing text will be preserved and the new value appended on a new line.
+  - Use "replace" ONLY when the professor explicitly rewrites the entire field content from scratch, or the field was previously empty.
+  - When in doubt, prefer "append" — it is safer because it never deletes existing data.
+- IMPORTANT: When writeMode is "append", extractedValue should contain ONLY the NEW data to add, NOT a copy of the existing value. The system will automatically combine old + new.
 
 Return ONLY JSON (no markdown, no commentary):
 {
