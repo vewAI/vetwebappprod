@@ -69,6 +69,7 @@ export function VerificationChatbot({
   const [showingSuggestion, setShowingSuggestion] = useState(false);
   const [suggestedValue, setSuggestedValue] = useState("");
   const [waitingForSuggestion, setWaitingForSuggestion] = useState(false);
+  const [isEditingFromSuggestion, setIsEditingFromSuggestion] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -176,6 +177,42 @@ export function VerificationChatbot({
   const sendMessage = useCallback(async () => {
     if (!inputText.trim() || !activeItem || isSending) return;
     const userText = inputText.trim();
+
+    // If editing from suggestion, save directly without LLM processing
+    if (isEditingFromSuggestion) {
+      console.log(`[VERIFICATION] Saving edited text directly (not sending to LLM): ${activeItem.itemName}`);
+      setInputText("");
+      setIsEditingFromSuggestion(false);
+      setShowingSuggestion(false);
+      setSuggestedValue("");
+
+      // Write the edited value directly to the form
+      onFieldResolved(activeItem.targetField, userText, "replace");
+
+      // Update item status and auto-advance
+      setItems((prevItems) => {
+        const updatedItems = prevItems.map((item, idx) =>
+          idx === activeItemIndex
+            ? { ...item, status: "answered" as const, professorAnswer: userText }
+            : item
+        );
+
+        // Schedule auto-advance
+        setTimeout(() => {
+          const nextIdx = findNextPendingItemByRelevance(activeItemIndex, updatedItems);
+          if (nextIdx !== -1) {
+            setActiveItemIndex(nextIdx);
+            setShowingSuggestion(false);
+            setSuggestedValue("");
+            setInputText("");
+          }
+        }, 400);
+
+        return updatedItems;
+      });
+      return; // Exit early, don't send to LLM
+    }
+
     setInputText("");
     setIsSending(true);
 
@@ -291,6 +328,7 @@ export function VerificationChatbot({
     caseContext,
     onFieldResolved,
     findNextPendingItemByRelevance,
+    isEditingFromSuggestion,
   ]);
 
   const handleSkip = useCallback(() => {
@@ -445,6 +483,7 @@ export function VerificationChatbot({
     if (!suggestedValue) return;
     setShowingSuggestion(false);
     setInputText(suggestedValue);
+    setIsEditingFromSuggestion(true); // Mark that we're editing from a suggestion
   }, [suggestedValue]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
