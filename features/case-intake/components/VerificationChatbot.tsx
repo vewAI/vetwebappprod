@@ -520,7 +520,7 @@ export function VerificationChatbot({
         {/* ── Body: sidebar + chat ── */}
         <div className="flex flex-1 overflow-hidden">
           {/* ── Sidebar: item list ── */}
-          <div className="w-72 border-r overflow-y-auto shrink-0 bg-muted/30">
+          <div className="w-72 border-r overflow-y-auto shrink-0 bg-muted/30 dark:bg-slate-800/50 dark:border-slate-700">
             {(["mandatory", "recommended", "optional", "unnecessary"] as const).map(
               (relevance) => {
                 const group = items.filter((i) => i.relevance === relevance);
@@ -528,7 +528,7 @@ export function VerificationChatbot({
                 const style = RELEVANCE_STYLES[relevance];
                 return (
                   <div key={relevance} className="py-2">
-                    <div className="px-3 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+                    <div className="px-3 py-1 text-xs font-semibold text-muted-foreground dark:text-slate-400 uppercase tracking-wide flex items-center gap-2">
                       <span className={`w-2 h-2 rounded-full ${style.dot}`} />
                       {style.label} ({group.length})
                     </div>
@@ -539,8 +539,8 @@ export function VerificationChatbot({
                         <button
                           key={item.id}
                           onClick={() => setActiveItemIndex(itemIdx)}
-                          className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-accent/50 transition-colors ${
-                            isActive ? "bg-accent font-medium" : ""
+                          className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-accent/50 transition-colors dark:text-slate-200 ${
+                            isActive ? "bg-accent font-medium dark:bg-slate-700" : "dark:text-slate-300"
                           }`}
                         >
                           <span
@@ -579,17 +579,17 @@ export function VerificationChatbot({
                     RELEVANCE_STYLES[activeItem.relevance]?.bg ?? ""
                   }`}
                 >
-                  <div className="font-medium">{activeItem.itemName}</div>
-                  <div className="text-xs text-muted-foreground mt-1">
+                  <div className="font-medium dark:text-white">{activeItem.itemName}</div>
+                  <div className="text-xs text-muted-foreground dark:text-slate-300 mt-1">
                     {activeItem.category} · {activeItem.relevance} ·{" "}
                     Frequency: {activeItem.expectedFrequency}
                     {activeItem.alreadyPresent && (
-                      <span className="ml-2 text-blue-600">
+                      <span className="ml-2 text-blue-600 dark:text-blue-300">
                         (Already present in the case)
                       </span>
                     )}
                   </div>
-                  <div className="text-xs mt-1">{activeItem.reasoning}</div>
+                  <div className="text-xs mt-1 dark:text-slate-300">{activeItem.reasoning}</div>
                 </div>
 
                 {/* Messages */}
@@ -617,9 +617,9 @@ export function VerificationChatbot({
 
                 {/* Quick actions for already-present items */}
                 {activeItem.alreadyPresent && activeItem.status === "pending" && (
-                  <div className="px-4 py-2 border-t bg-blue-50 space-y-2 text-sm">
-                    <div className="font-medium text-blue-800">AI-suggested value:</div>
-                    <pre className="whitespace-pre-wrap text-xs bg-white border border-blue-200 rounded p-2 max-h-32 overflow-y-auto">
+                  <div className="px-4 py-2 border-t bg-blue-50 dark:bg-blue-950/30 space-y-2 text-sm">
+                    <div className="font-medium text-blue-800 dark:text-blue-300">AI-suggested value:</div>
+                    <pre className="whitespace-pre-wrap text-xs bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-700 rounded p-2 max-h-32 overflow-y-auto text-slate-900 dark:text-slate-100">
                       {activeItem.existingValue || "(empty)"}
                     </pre>
                     <div className="flex items-center gap-2">
