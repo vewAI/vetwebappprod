@@ -130,6 +130,20 @@ export function VerificationChatbot({
   );
   const allResolved = resolvedCount >= actionableItems.length && actionableItems.length > 0;
 
+  // Track mandatory items separately - finish button should be available when all mandatory are done
+  const mandatoryItems = useMemo(
+    () => items.filter((i) => i.relevance === "mandatory"),
+    [items]
+  );
+  const mandatoryResolved = useMemo(
+    () =>
+      mandatoryItems.filter(
+        (i) => i.status === "accepted" || i.status === "answered" || i.status === "skipped"
+      ).length,
+    [mandatoryItems]
+  );
+  const allMandatoryResolved = mandatoryResolved >= mandatoryItems.length && mandatoryItems.length > 0;
+
   // Auto-scroll chat to bottom and auto-focus input after chat updates
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -731,7 +745,7 @@ export function VerificationChatbot({
             <Button variant="outline" onClick={onClose}>
               Close
             </Button>
-            {allResolved && (
+            {allMandatoryResolved && (
               <Button onClick={() => onComplete()}>
                 Finish Verification
               </Button>
