@@ -5,13 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import axios from "axios";
 import { getAccessToken, buildAuthHeaders } from "@/lib/auth-headers";
 import { useAuth } from "@/features/auth/services/authService";
@@ -116,7 +110,7 @@ export default function CaseEntryForm() {
   // Countdown timer during analysis
   useEffect(() => {
     if (!isAnalyzing) return;
-    
+
     const timer = setInterval(() => {
       setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
     }, 1000);
@@ -305,11 +299,11 @@ export default function CaseEntryForm() {
         caseData: form,
       });
       console.log("[AUTO-FILL] Received suggestions:", suggestions);
-      
+
       // Verify all fields have content
       const populatedFields = Object.entries(suggestions).filter(([_, val]) => val && val.trim().length > 0);
       console.log(`[AUTO-FILL] Populated ${populatedFields.length}/${Object.keys(suggestions).length} fields`);
-      
+
       setAutoFillSuggestions(suggestions);
       setShowAutoFillModal(true);
     } catch (err) {
@@ -325,20 +319,20 @@ export default function CaseEntryForm() {
     // Apply only the selected suggestions to the form
     console.log("[AUTO-FILL] Applying suggestions with selected fields:", selectedFields);
     console.log("[AUTO-FILL] Current suggestions:", autoFillSuggestions);
-    
+
     setForm((prev) => {
       const next = { ...prev };
       let appliedCount = 0;
-      
+
       for (const [field, isSelected] of Object.entries(selectedFields)) {
         if (isSelected) {
           const suggestion = autoFillSuggestions[field];
           // Check for non-null/undefined, not just truthy (to allow empty strings)
           const hasSuggestion = suggestion !== null && suggestion !== undefined;
           const content = hasSuggestion ? String(suggestion) : "";
-          
+
           console.log(`[AUTO-FILL] Field: ${field}, isSelected: ${isSelected}, hasSuggestion: ${hasSuggestion}, content length: ${content.length}`);
-          
+
           if (hasSuggestion && content.trim().length > 0) {
             next[field as CaseFieldKey] = content;
             console.log(`[AUTO-FILL] ✓ Applied ${field} (${content.length} chars)`);
@@ -348,11 +342,11 @@ export default function CaseEntryForm() {
           }
         }
       }
-      
+
       console.log(`[AUTO-FILL] Total fields applied: ${appliedCount}`);
       return next;
     });
-    
+
     setShowAutoFillModal(false);
     setSuccess(`Suggestions applied to ${Object.values(selectedFields).filter(Boolean).length} fields. Review and save when ready.`);
   };
@@ -523,10 +517,12 @@ Remain collaborative, use everyday language, and avoid offering your own medical
       ensure("get_overall_feedback_prompt", get_overall_feedback_prompt_template);
 
       const headers = await buildAuthHeaders();
-      
+
       // Check if this is an existing case (already saved) or a new case
-      const isExistingCase = Boolean(savedCaseId || (form.id && form.id.length > 0 && form.id !== "case-fresh-sick-cow"));
-      
+      // Only treat as existing if we previously saved this case (savedCaseId is set AND matches current form.id)
+      // If user changed the ID to something new, it's a POST (create new), not a PUT (update existing)
+      const isExistingCase = Boolean(savedCaseId && form.id === savedCaseId);
+
       let response;
       if (isExistingCase) {
         // Use PUT to update existing case
@@ -535,7 +531,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
         // Use POST to create new case
         response = await axios.post("/api/cases", payload, { headers });
       }
-      
+
       const inserted = (response.data?.data?.[0] ?? response.data?.data) as { id?: string } | undefined;
       const createdId = String(inserted?.id ?? payload.id ?? "").trim();
       if (createdId) {
@@ -581,12 +577,15 @@ Remain collaborative, use everyday language, and avoid offering your own medical
     onCancel: () => void;
   }) => {
     console.log("[AUTO-FILL-PANEL] Rendering with suggestions:", suggestions);
-    
+
     const [selected, setSelected] = useState<Record<string, boolean>>(
-      Object.keys(suggestions).reduce((acc, field) => {
-        acc[field] = true; // Pre-select all
-        return acc;
-      }, {} as Record<string, boolean>)
+      Object.keys(suggestions).reduce(
+        (acc, field) => {
+          acc[field] = true; // Pre-select all
+          return acc;
+        },
+        {} as Record<string, boolean>,
+      ),
     );
 
     const fieldNames: Record<string, string> = {
@@ -617,7 +616,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
       <div className="space-y-4">
         {Object.entries(suggestions).map(([field, suggestion]) => {
           console.log(`[AUTO-FILL-PANEL] Field ${field}: has content = ${suggestion ? "YES" : "NO"}`);
-          
+
           return suggestion ? (
             <div key={field} className="border rounded-lg p-4 space-y-2 bg-muted/50">
               <div className="flex items-center gap-3">
@@ -648,10 +647,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
           <Button variant="outline" onClick={onCancel} disabled={isLoading}>
             Cancel
           </Button>
-          <Button
-            onClick={handleApply}
-            disabled={isLoading || Object.values(selected).every((v) => !v)}
-          >
+          <Button onClick={handleApply} disabled={isLoading || Object.values(selected).every((v) => !v)}>
             {isLoading ? "Generating..." : "Apply Selected"}
           </Button>
         </div>
@@ -702,7 +698,8 @@ Remain collaborative, use everyday language, and avoid offering your own medical
             <p className="text-sm text-muted-foreground">{analysis.sourceSummary}</p>
             {verificationResult && (
               <p className="text-sm">
-                Completeness: <strong>{verificationResult.completenessScore}%</strong> — {verificationResult.counts.missing} items pending from {verificationResult.items.length} analyzed.
+                Completeness: <strong>{verificationResult.completenessScore}%</strong> — {verificationResult.counts.missing} items pending from{" "}
+                {verificationResult.items.length} analyzed.
               </p>
             )}
           </div>
@@ -724,9 +721,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
           </div>
 
           {isVerifying && (
-            <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
-              Running clinical completeness analysis...
-            </div>
+            <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">Running clinical completeness analysis...</div>
           )}
         </div>
       )}
@@ -961,14 +956,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
             <div className="flex items-center justify-center mb-6">
               <div className="relative w-24 h-24">
                 <svg className="w-full h-full" viewBox="0 0 100 100">
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="45"
-                    fill="none"
-                    stroke="#e5e7eb"
-                    strokeWidth="8"
-                  />
+                  <circle cx="50" cy="50" r="45" fill="none" stroke="#e5e7eb" strokeWidth="8" />
                   <circle
                     cx="50"
                     cy="50"
@@ -1013,9 +1001,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>AI-Generated Field Suggestions</DialogTitle>
-            <DialogDescription>
-              Review the AI suggestions for empty fields and select which ones to apply to your case.
-            </DialogDescription>
+            <DialogDescription>Review the AI suggestions for empty fields and select which ones to apply to your case.</DialogDescription>
           </DialogHeader>
 
           <AutoFillSuggestionsPanel
