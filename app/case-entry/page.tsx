@@ -46,6 +46,24 @@ function isCaseFieldKey(value: string): value is CaseFieldKey {
   return Boolean(getFieldMeta(value));
 }
 
+/**
+ * Maps LLM-generated targetField names to actual form state keys.
+ * The LLM sometimes uses descriptive aliases instead of the real DB column / form key.
+ */
+const TARGET_FIELD_ALIASES: Record<string, CaseFieldKey> = {
+  learner_facing_summary: "description",
+  owner_chat_prompt: "get_owner_prompt",
+  history_feedback_instructions: "get_history_feedback_prompt",
+  follow_up_feedback_prompt: "owner_follow_up_feedback",
+  owner_follow_up_feedback_prompt: "get_owner_follow_up_feedback_prompt",
+  imaging_findings: "diagnostic_findings",
+  differential_diagnoses: "details",
+};
+
+function normalizeTargetField(field: string): string {
+  return TARGET_FIELD_ALIASES[field] ?? field;
+}
+
 /** Fields safe to auto-apply without chatbot review (basic metadata, not clinical content) */
 const IDENTITY_FIELDS: ReadonlySet<string> = new Set([
   "id",
@@ -222,13 +240,18 @@ export default function CaseEntryForm() {
   };
 
   const handleFieldResolved = (targetField: string, value: string, writeMode: "append" | "replace") => {
-    if (!isCaseFieldKey(targetField)) return;
+    const normalized = normalizeTargetField(targetField);
+    if (!isCaseFieldKey(normalized)) {
+      console.warn(`[FIELD-RESOLVED] Unknown targetField "${targetField}" (normalized: "${normalized}") – skipping`);
+      return;
+    }
+    console.log(`[FIELD-RESOLVED] Writing to "${normalized}" (from "${targetField}") mode=${writeMode} (${value.length} chars)`);
     setForm((prev) => {
-      const existing = prev[targetField] || "";
+      const existing = prev[normalized] || "";
       if (writeMode === "append" && existing.trim()) {
-        return { ...prev, [targetField]: existing.trim() + "\n" + value };
+        return { ...prev, [normalized]: existing.trim() + "\n" + value };
       }
-      return { ...prev, [targetField]: value };
+      return { ...prev, [normalized]: value };
     });
   };
 
@@ -236,16 +259,16 @@ export default function CaseEntryForm() {
     setShowVerificationChat(false);
     setSuccess("Verification complete. Data has been integrated into the form.");
 
-    // Detect empty fields that should be auto-filled
+    // Detect empty fields that should be auto-filled (use actual form keys)
     const emptyFields = [
-      "learner_facing_summary",
+      "description",
       "owner_background",
-      "history_feedback_instructions",
+      "get_history_feedback_prompt",
       "owner_follow_up",
-      "owner_follow_up_feedback_prompt",
+      "get_owner_follow_up_feedback_prompt",
       "owner_diagnosis",
-      "owner_chat_prompt",
-      "follow_up_feedback_prompt",
+      "get_owner_prompt",
+      "owner_follow_up_feedback",
     ].filter((field) => {
       const value = form[field as CaseFieldKey];
       return !value || (typeof value === "string" && value.trim() === "");
@@ -552,14 +575,14 @@ Remain collaborative, use everyday language, and avoid offering your own medical
     );
 
     const fieldNames: Record<string, string> = {
-      learner_facing_summary: "Learner-Facing Summary",
+      description: "Learner-Facing Summary",
       owner_background: "Owner Background",
-      history_feedback_instructions: "History Feedback Instructions",
+      get_history_feedback_prompt: "History Feedback Instructions",
       owner_follow_up: "Owner Follow-up Script",
-      owner_follow_up_feedback_prompt: "Follow-up Feedback Prompt",
+      get_owner_follow_up_feedback_prompt: "Follow-up Feedback Instructions",
       owner_diagnosis: "Diagnosis Conversation",
-      owner_chat_prompt: "Owner Chat Prompt",
-      follow_up_feedback_prompt: "Follow-up Feedback Prompt",
+      get_owner_prompt: "Owner Chat Prompt",
+      owner_follow_up_feedback: "Follow-up Feedback Prompt",
     };
 
     const handleApply = () => {

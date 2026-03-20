@@ -90,10 +90,10 @@ For EACH test category:
 
 ### H. EDUCATIONAL PROMPTS & CONVERSATIONS
 - Is the "owner_background" populated with the owner's personality, concerns, communication style?
-- Is the "diagnosis_conversation" prompt defined (what the owner will discuss after diagnosis)?
-- Is the "follow_up_feedback_prompt" defined (feedback criteria)?
-- Is the "history_feedback_instructions" populated (for evaluating student's history-taking)?
-- Is the "learner_facing_summary" compelling and learner-friendly?
+- Is the "owner_diagnosis" prompt defined (what the owner will discuss after diagnosis)?
+- Is the "owner_follow_up_feedback" defined (feedback criteria)?
+- Is the "get_history_feedback_prompt" populated (for evaluating student's history-taking)?
+- Is the "description" (learner-facing summary) compelling and learner-friendly?
 
 ### I. CONSISTENCY & CLINICAL INTEGRITY
 - Are all findings clinically coherent? (no contradictions)
@@ -101,7 +101,7 @@ For EACH test category:
 - Is the severity progression realistic?
 
 For each missing or incomplete item you identify:
-1. targetField: the case field it belongs to (physical_exam_findings, diagnostic_findings, details, learner_facing_summary, owner_background, owner_chat_prompt, follow_up_feedback_prompt, history_feedback_instructions, imaging_findings, differential_diagnoses, etc.)
+1. targetField: the case field it belongs to (physical_exam_findings, diagnostic_findings, details, description, owner_background, get_owner_prompt, owner_follow_up_feedback, get_history_feedback_prompt, get_owner_follow_up_feedback_prompt, owner_diagnosis, owner_follow_up, history_feedback, etc.)
 2. category: physical_exam | laboratory | imaging | history | treatment | differential_diagnosis | owner_communication | biosecurity | educational_prompt | other
 3. itemName: specific item name (e.g., "Serum Amylase", "Heart Rate", "Owner Personality Background")
 4. relevance: mandatory | recommended | optional | unnecessary
@@ -125,7 +125,7 @@ Return JSON:
 IMPORTANT:
 - Be thorough. Generate 20-50 items depending on case complexity.
 - Sort items: mandatory missing first, then recommended missing, then optional missing, then mandatory present, then recommended present, then optional present, then unnecessary items.
-- Flag any items that have missing data even if they seem less important (e.g., learner_facing_summary, educational prompts).
+- Flag any items that have missing data even if they seem less important (e.g., description, educational prompts).
 - For educational prompts and conversation data, be specific about what's missing (e.g., "Owner's attitude toward surgery" if it's not documented).`;
 
 export async function POST(request: NextRequest) {

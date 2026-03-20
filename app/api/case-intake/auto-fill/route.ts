@@ -34,14 +34,14 @@ export async function POST(request: NextRequest) {
     const diagnostics = caseData.diagnostic_findings || "(no diagnostic results)";
 
     const fieldDescriptions: Record<string, string> = {
-      learner_facing_summary: "A compelling one-paragraph overview for learners describing the case and its clinical significance",
+      description: "A compelling one-paragraph overview for learners describing the case and its clinical significance",
       owner_background: "The owner/caretaker's personality, concerns, communication style, and relationship with the animal",
-      history_feedback_instructions: "LLM instructions for evaluating the student's history-taking and gathering of clinical information",
+      get_history_feedback_prompt: "LLM instructions for evaluating the student's history-taking and gathering of clinical information",
       owner_follow_up: "Dialogue template for the owner persona during diagnostic planning and treatment discussion",
-      owner_follow_up_feedback_prompt: "Instructions for providing structured feedback on the student's diagnostic planning conversation",
+      get_owner_follow_up_feedback_prompt: "Instructions for providing structured feedback on the student's diagnostic planning conversation",
       owner_diagnosis: "Dialogue template for the owner persona when receiving diagnostic results and discussing management",
-      owner_chat_prompt: "System prompt for the owner persona during initial history-taking conversation with the student",
-      follow_up_feedback_prompt: "Rubric and instructions for evaluating the student's overall case handling and clinical reasoning",
+      get_owner_prompt: "System prompt for the owner persona during initial history-taking conversation with the student",
+      owner_follow_up_feedback: "Rubric and instructions for evaluating the student's overall case handling and clinical reasoning",
     };
 
     const fieldsDescription = emptyFields.map((field) => `- ${field}: ${fieldDescriptions[field] || field}`).join("\n");
@@ -70,14 +70,14 @@ ${fieldsDescription}
 
 Return a JSON object with ONLY these fields (one per empty field passed to you):
 {
-  "learner_facing_summary": "string or null",
+  "description": "string or null",
   "owner_background": "string or null",
-  "history_feedback_instructions": "string or null",
+  "get_history_feedback_prompt": "string or null",
   "owner_follow_up": "string or null",
-  "owner_follow_up_feedback_prompt": "string or null",
+  "get_owner_follow_up_feedback_prompt": "string or null",
   "owner_diagnosis": "string or null",
-  "owner_chat_prompt": "string or null",
-  "follow_up_feedback_prompt": "string or null"
+  "get_owner_prompt": "string or null",
+  "owner_follow_up_feedback": "string or null"
 }
 
 Only include fields that are in the emptyFields list passed. Set other fields to null.

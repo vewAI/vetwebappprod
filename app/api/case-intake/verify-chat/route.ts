@@ -63,7 +63,7 @@ Rules:
   - For diagnostic_findings: "Test - Analyte: Value units (ref range)" format, one per line
   - For details: Natural paragraph text
   - For owner_background: Personality and communication notes
-  - For learner_facing_summary: Concise, learner-friendly overview
+  - For description (learner-facing summary): Concise, learner-friendly overview
 - If the professor explicitly says "skip", "not applicable", or "not available" AND it's clinically justified, set isResolved=true with extractedValue=null.
 
 Return ONLY JSON (no markdown, no commentary):
