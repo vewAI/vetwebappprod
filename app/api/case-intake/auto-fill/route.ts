@@ -42,6 +42,14 @@ export async function POST(request: NextRequest) {
       owner_diagnosis: "Dialogue template for the owner persona when receiving diagnostic results and discussing management",
       get_owner_prompt: "System prompt for the owner persona during initial history-taking conversation with the student",
       owner_follow_up_feedback: "Rubric and instructions for evaluating the student's overall case handling and clinical reasoning",
+      details: "Detailed presenting complaint, history, and other relevant information about the case",
+      physical_exam_findings: "Reference script with vital signs and system-by-system findings for the virtual assistant",
+      diagnostic_findings: "Lab results, imaging findings, and other test results formatted for the lab persona to reveal on request",
+      get_physical_exam_prompt: "System prompt for the virtual assistant when providing physical exam data to the student",
+      get_diagnostic_prompt: "System prompt for the lab technician persona when releasing diagnostic results",
+      get_owner_follow_up_prompt: "System prompt for the owner persona during the follow-up discussion after initial findings",
+      get_owner_diagnosis_prompt: "System prompt for the owner persona when discussing diagnosis and treatment plan",
+      get_overall_feedback_prompt: "Final feedback rubric for summarizing the student's overall performance in the case",
     };
 
     const fieldsDescription = emptyFields.map((field) => `- ${field}: ${fieldDescriptions[field] || field}`).join("\n");
@@ -77,7 +85,15 @@ Return a JSON object with ONLY these fields (one per empty field passed to you):
   "get_owner_follow_up_feedback_prompt": "string or null",
   "owner_diagnosis": "string or null",
   "get_owner_prompt": "string or null",
-  "owner_follow_up_feedback": "string or null"
+  "owner_follow_up_feedback": "string or null",
+  "details": "string or null",
+  "physical_exam_findings": "string or null",
+  "diagnostic_findings": "string or null",
+  "get_physical_exam_prompt": "string or null",
+  "get_diagnostic_prompt": "string or null",
+  "get_owner_follow_up_prompt": "string or null",
+  "get_owner_diagnosis_prompt": "string or null",
+  "get_overall_feedback_prompt": "string or null"
 }
 
 Only include fields that are in the emptyFields list passed. Set other fields to null.

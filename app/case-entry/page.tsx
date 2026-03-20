@@ -58,6 +58,13 @@ const TARGET_FIELD_ALIASES: Record<string, CaseFieldKey> = {
   owner_follow_up_feedback_prompt: "get_owner_follow_up_feedback_prompt",
   imaging_findings: "diagnostic_findings",
   differential_diagnoses: "details",
+  physical_exam_prompt: "get_physical_exam_prompt",
+  diagnostic_prompt: "get_diagnostic_prompt",
+  diagnostics_prompt: "get_diagnostic_prompt",
+  owner_follow_up_prompt: "get_owner_follow_up_prompt",
+  owner_diagnosis_prompt: "get_owner_diagnosis_prompt",
+  feedback_prompt: "get_overall_feedback_prompt",
+  overall_feedback_prompt: "get_overall_feedback_prompt",
 };
 
 function normalizeTargetField(field: string): string {
@@ -269,6 +276,14 @@ export default function CaseEntryForm() {
       "owner_diagnosis",
       "get_owner_prompt",
       "owner_follow_up_feedback",
+      "details",
+      "physical_exam_findings",
+      "diagnostic_findings",
+      "get_physical_exam_prompt",
+      "get_diagnostic_prompt",
+      "get_owner_follow_up_prompt",
+      "get_owner_diagnosis_prompt",
+      "get_overall_feedback_prompt",
     ].filter((field) => {
       const value = form[field as CaseFieldKey];
       return !value || (typeof value === "string" && value.trim() === "");
@@ -583,6 +598,14 @@ Remain collaborative, use everyday language, and avoid offering your own medical
       owner_diagnosis: "Diagnosis Conversation",
       get_owner_prompt: "Owner Chat Prompt",
       owner_follow_up_feedback: "Follow-up Feedback Prompt",
+      details: "Case Details",
+      physical_exam_findings: "Physical Exam Findings",
+      diagnostic_findings: "Diagnostic Findings",
+      get_physical_exam_prompt: "Physical Exam Prompt",
+      get_diagnostic_prompt: "Diagnostics Prompt",
+      get_owner_follow_up_prompt: "Owner Follow-up Prompt",
+      get_owner_diagnosis_prompt: "Owner Diagnosis Prompt",
+      get_overall_feedback_prompt: "Overall Feedback Prompt",
     };
 
     const handleApply = () => {

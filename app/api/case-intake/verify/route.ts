@@ -101,7 +101,7 @@ For EACH test category:
 - Is the severity progression realistic?
 
 For each missing or incomplete item you identify:
-1. targetField: the case field it belongs to (physical_exam_findings, diagnostic_findings, details, description, owner_background, get_owner_prompt, owner_follow_up_feedback, get_history_feedback_prompt, get_owner_follow_up_feedback_prompt, owner_diagnosis, owner_follow_up, history_feedback, etc.)
+1. targetField: the case field it belongs to (e.g., details, physical_exam_findings, diagnostic_findings, description, get_physical_exam_prompt, get_diagnostic_prompt, owner_background, get_owner_prompt, owner_follow_up, get_owner_follow_up_prompt, owner_diagnosis, get_owner_diagnosis_prompt, owner_follow_up_feedback, get_owner_follow_up_feedback_prompt, get_history_feedback_prompt, get_overall_feedback_prompt)
 2. category: physical_exam | laboratory | imaging | history | treatment | differential_diagnosis | owner_communication | biosecurity | educational_prompt | other
 3. itemName: specific item name (e.g., "Serum Amylase", "Heart Rate", "Owner Personality Background")
 4. relevance: mandatory | recommended | optional | unnecessary
