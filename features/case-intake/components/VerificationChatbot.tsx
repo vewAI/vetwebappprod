@@ -77,6 +77,44 @@ export function VerificationChatbot({
 
   const currentChat = chatHistories[activeItemId] ?? [];
 
+  // Helper function to find next pending item following visual order (mandatory → recommended → optional)
+  const findNextPendingItemByRelevance = useCallback(
+    (currentIdx: number, itemsList: CaseVerificationItem[]): number => {
+      const relevanceOrder = { mandatory: 0, recommended: 1, optional: 2, unnecessary: 3 };
+      
+      // Sort items by relevance order, then by their original position
+      const sortedIndices = itemsList
+        .map((item, idx) => ({
+          idx,
+          relevance: relevanceOrder[item.relevance] ?? 999,
+          item,
+        }))
+        .sort((a, b) => {
+          if (a.relevance !== b.relevance) return a.relevance - b.relevance;
+          return a.idx - b.idx;
+        });
+
+      // Find the next pending item after current item (in visual order)
+      const currentRelevance = itemsList[currentIdx]?.relevance ?? "unnecessary";
+      const currentRelevanceOrder = relevanceOrder[currentRelevance];
+      
+      let foundCurrent = false;
+      for (const { idx, item } of sortedIndices) {
+        if (idx === currentIdx) {
+          foundCurrent = true;
+          continue;
+        }
+        if (foundCurrent && item.status === "pending" && item.relevance !== "unnecessary") {
+          console.log(`[VERIFICATION] Auto-advancing: ${itemsList[currentIdx]?.itemName} → ${item.itemName}`);
+          return idx;
+        }
+      }
+
+      return -1; // No more pending items
+    },
+    []
+  );
+
   // Count resolved items (only non-unnecessary)
   const actionableItems = useMemo(
     () => items.filter((i) => i.relevance !== "unnecessary"),
@@ -214,14 +252,9 @@ export function VerificationChatbot({
               : item
           );
 
-          // Auto-advance using the updated items array
+          // Auto-advance using the updated items array, respecting visual order
           setTimeout(() => {
-            const nextIdx = updatedItems.findIndex(
-              (item, idx) =>
-                idx > activeItemIndex &&
-                item.status === "pending" &&
-                item.relevance !== "unnecessary"
-            );
+            const nextIdx = findNextPendingItemByRelevance(activeItemIndex, updatedItems);
             if (nextIdx !== -1) {
               setActiveItemIndex(nextIdx);
               setShowingSuggestion(false);
@@ -256,8 +289,8 @@ export function VerificationChatbot({
     isSending,
     chatHistories,
     caseContext,
-
     onFieldResolved,
+    findNextPendingItemByRelevance,
   ]);
 
   const handleSkip = useCallback(() => {
@@ -267,13 +300,8 @@ export function VerificationChatbot({
         idx === activeItemIndex ? { ...item, status: "skipped" as const } : item
       );
 
-      // Advance to next pending immediately
-      const nextIdx = updatedItems.findIndex(
-        (item, idx) =>
-          idx > activeItemIndex &&
-          item.status === "pending" &&
-          item.relevance !== "unnecessary"
-      );
+      // Advance to next pending, respecting visual order
+      const nextIdx = findNextPendingItemByRelevance(activeItemIndex, updatedItems);
       if (nextIdx !== -1) {
         setTimeout(() => {
           setActiveItemIndex(nextIdx);
@@ -284,7 +312,7 @@ export function VerificationChatbot({
       }
       return updatedItems;
     });
-  }, [activeItem, activeItemIndex]);
+  }, [activeItem, activeItemIndex, findNextPendingItemByRelevance]);
 
   const handleConfirmPresent = useCallback(() => {
     if (!activeItem) return;
@@ -297,13 +325,8 @@ export function VerificationChatbot({
         idx === activeItemIndex ? { ...item, status: "accepted" as const } : item
       );
 
-      // Advance to next pending
-      const nextIdx = updatedItems.findIndex(
-        (item, idx) =>
-          idx > activeItemIndex &&
-          item.status === "pending" &&
-          item.relevance !== "unnecessary"
-      );
+      // Advance to next pending, respecting visual order
+      const nextIdx = findNextPendingItemByRelevance(activeItemIndex, updatedItems);
       if (nextIdx !== -1) {
         setTimeout(() => {
           setActiveItemIndex(nextIdx);
@@ -314,7 +337,7 @@ export function VerificationChatbot({
       }
       return updatedItems;
     });
-  }, [activeItem, activeItemIndex, onFieldResolved]);
+  }, [activeItem, activeItemIndex, onFieldResolved, findNextPendingItemByRelevance]);
 
   const handleGetAISuggestion = useCallback(async () => {
     if (!activeItem) return;
@@ -403,14 +426,9 @@ export function VerificationChatbot({
           : item
       );
 
-      // Schedule auto-advance
+      // Schedule auto-advance, respecting visual order
       setTimeout(() => {
-        const nextIdx = updatedItems.findIndex(
-          (item, idx) =>
-            idx > activeItemIndex &&
-            item.status === "pending" &&
-            item.relevance !== "unnecessary"
-        );
+        const nextIdx = findNextPendingItemByRelevance(activeItemIndex, updatedItems);
         if (nextIdx !== -1) {
           setActiveItemIndex(nextIdx);
           setShowingSuggestion(false);
@@ -421,7 +439,7 @@ export function VerificationChatbot({
 
       return updatedItems;
     });
-  }, [activeItem, suggestedValue, activeItemIndex, onFieldResolved]);
+  }, [activeItem, suggestedValue, activeItemIndex, onFieldResolved, findNextPendingItemByRelevance]);
 
   const handleEditSuggestion = useCallback(() => {
     if (!suggestedValue) return;
