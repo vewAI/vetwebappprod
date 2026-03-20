@@ -104,6 +104,12 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
   );
   const allMandatoryResolved = mandatoryResolved >= mandatoryItems.length && mandatoryItems.length > 0;
 
+  // Calculate live completion percentage based on current items state
+  const liveCompletionPercentage = useMemo(() => {
+    if (actionableItems.length === 0) return 0;
+    return Math.round((resolvedCount / actionableItems.length) * 100);
+  }, [resolvedCount, actionableItems.length]);
+
   // Auto-scroll chat to bottom and auto-focus input after chat updates
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -463,7 +469,7 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
           <DialogTitle className="text-lg dark:text-white">Case Verification</DialogTitle>
           <DialogDescription className="text-slate-600 dark:text-slate-300">{verificationResult.overallAssessment}</DialogDescription>
           <div className="flex items-center gap-4 mt-2 text-sm">
-            <span className="font-medium dark:text-slate-200">Completeness: {verificationResult.completenessScore}%</span>
+            <span className="font-medium dark:text-slate-200">Completeness: {liveCompletionPercentage}%</span>
             <span className="text-slate-500 dark:text-slate-400">
               {resolvedCount}/{actionableItems.length} items reviewed
             </span>
