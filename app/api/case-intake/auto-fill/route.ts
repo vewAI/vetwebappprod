@@ -60,9 +60,10 @@ IMPORTANT RULES:
 1. Generate content that is REALISTIC and CLINICALLY COHERENT with the case.
 2. For owner/caregiver prompts: Make them conversational, slightly emotional (worried but cooperative), and true to the case.
 3. For feedback instructions: Make them specific to this case's clinical learning objectives.
-4. For learner-facing summary: Make it compelling, clear, and appropriate for veterinary learners.
-5. Keep responses concise but substantive (2-5 sentences for most fields).
-6. Return ONLY valid JSON with no markdown, no code blocks, no explanations.
+4. For learner-facing summary (description): Present the case from the learner's perspective. Include patient demographics, presenting complaint, observable signs (WITHOUT diagnosis), relevant history, and clinical context. DO NOT reveal diagnosis, pathology, treatment, or specific lab values.
+5. For physical_exam_findings and diagnostic_findings: Be PARTICULARLY THOROUGH and COMPLETE.
+6. Keep responses concise but substantive.
+7. Return ONLY valid JSON with no markdown, no code blocks, no explanations.
 
 Case Context:
 - Species: ${species}

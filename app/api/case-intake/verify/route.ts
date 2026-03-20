@@ -23,9 +23,7 @@ The student will be able to:
 - Receive formative feedback
 
 ### A. CASE METADATA & SUMMARY
-- Is there a compelling case title? (descriptive, learner-friendly)
-- Is there a clear, brief learner-facing summary? (one-paragraph overview that sets the scene)
-- Are species/breed, patient name, age, sex all specified?
+- Is there a compelling case title? (descriptive, learner-friendly)\n- Is there a clear, brief learner-facing summary? (one-paragraph overview that sets the scene for the student to discover the diagnosis)\n  - CRITICAL: Does the summary present observable signs, clinical context, and patient demographics WITHOUT revealing the diagnosis, confirmed pathology, or treatment plan?\n  - The summary should pose the scenario, not give away the answer.\n- Are species/breed, patient name, age, sex all specified?
 
 ### B. CLINICAL HISTORY & PRESENTATION COMPLETENESS
 For the given SPECIES, CONDITION, and CLINICAL CONTEXT:
@@ -38,38 +36,41 @@ For the given SPECIES, CONDITION, and CLINICAL CONTEXT:
 - Are all cardinal clinical signs described in sufficient detail?
 
 ### C. PHYSICAL EXAMINATION COMPLETENESS
-For each body system relevant to this pathology in this species:
-- Is temperature documented with units (°C or °F)?
-- Is heart rate documented with units (bpm)?
-- Is respiratory rate documented with units (breaths/min)?
-- Are mucous membranes and capillary refill time documented? (color, CRT seconds)
-- Is body condition score documented? (scale used)
-- Is hydration status assessed? (skin turgor, etc.)
-- Are system-specific findings documented? (auscultation, palpation, percussion, neurological, ophthalmic, lameness, etc.)
+Organize findings into THREE CLINICAL TIERS:
 
-For EACH documented finding, assess:
-- Is it PRESENT in the data?
-- Is it MISSING but MANDATORY (always checked for this presentation)?
-- Is it MISSING but RECOMMENDED (frequently checked, high diagnostic value)?
-- Is it OPTIONAL (useful but not essential)?
-- Is it UNNECESSARY (low value)?
+**ESSENTIAL** (would be present in almost any case with this pathology):
+- Temperature, heart rate, respiratory rate with units
+- Mucous membranes, capillary refill time, body condition score
+- Hydration status assessment
+- System-specific findings relevant to the differential (auscultation, palpation, percussion, etc.)
+
+**OPTIONAL** (might be present, clinically valuable):
+- Additional systemic exams (neurological, ophthalmic, lameness maneuvers, etc.)
+
+**COUNTERPRODUCTIVE** (no diagnostic value, potential harm/cost):
+- Exams unrelated to the clinical presentation
+- Unnecessary invasive procedures
+
+Verify: Are ESSENTIAL findings thoroughly documented with specific values and units? Are OPTIONAL findings appropriately included? Are COUNTERPRODUCTIVE items omitted?
 
 ### D. DIAGNOSTIC & LABORATORY COMPLETENESS
-For this pathology in this species, which tests are expected:
-- CBC/Haematology: hemoglobin, hematocrit, WBC, differential, platelets
-- Serum Chemistry: electrolytes, kidney values (BUN/creatinine), liver enzymes, glucose, albumin, globulins
-- Urinalysis: specific gravity, pH, protein, glucose, ketones, crystals, casts, cells, bacteria
-- Coagulation: PT, PTT, fibrinogen
-- Blood Gas: pH, pCO2, pO2, HCO3, lactate
-- Serology/Immunology: antibody tests, antigen tests
-- Microbiology: culture, sensitivity, PCR tests
-- Hormonal: thyroid (T3, T4, TSH), cortisol, specific hormone panels
-- Special tests: SAA, fecal tests, biopsy results, specific disease markers
+Organize findings into THREE CLINICAL TIERS:
 
-For EACH test category:
-- Are mandatory tests documented with results, units, and reference ranges?
-- Are recommended tests considered? (documented if performed, or explicitly noted as not performed)
-- Are results clinically consistent with the diagnosis?
+**ESSENTIAL** (would almost certainly be performed for this presentation):
+- CBC/Haematology (hemoglobin, hematocrit, WBC, differential, platelets) with exact values and reference ranges
+- Serum Chemistry (electrolytes, kidney values, liver enzymes, glucose, albumin, globulins)
+- Urinalysis (if indicated)
+- Blood Gas (if indicated)
+- Imaging (radiography, ultrasound views relevant to differential)
+- Culture/sensitivity (if infection suspected)
+
+**OPTIONAL** (valuable but less essential; depends on clinical reasoning):
+- Coagulation studies, specialized serology, hormonal assays, advanced imaging, specialized markers
+
+**COUNTERPRODUCTIVE** (no diagnostic value, harmful, or cost-prohibitive):
+- Tests unrelated to the differential, contraindicated procedures, cost-prohibitive tests without clear indication
+
+Verify: Are ESSENTIAL tests documented with exact values, units, AND reference ranges? Are values consistent with the suspected diagnosis? Are OPTIONAL tests appropriately included? Are COUNTERPRODUCTIVE tests avoided?
 
 ### E. IMAGING COMPLETENESS
 - Are radiography findings documented? (which views, positive/negative findings)
