@@ -106,7 +106,9 @@ export default function HomePage() {
   const { user, role } = useAuth() as { user: any; role: Role };
   const logoSrc =
     process.env.NEXT_PUBLIC_BRAND_LOGO_URL ||
-    (process.env.NEXT_PUBLIC_SUPABASE_URL ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/img/logo.png` : "/placeholder.svg");
+    (process.env.NEXT_PUBLIC_SUPABASE_URL
+      ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/img/logo_transparent.png`
+      : "/placeholder.svg");
   const [studentAttempts, setStudentAttempts] = useState<AttemptSummary[]>([]);
   const [professorAttempts, setProfessorAttempts] = useState<AttemptSummary[]>([]);
   const [latestCases, setLatestCases] = useState<Case[]>([]);

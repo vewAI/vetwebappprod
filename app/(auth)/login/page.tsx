@@ -1,6 +1,11 @@
 import Image from "next/image";
 import { LoginForm } from "@/features/login/components/login-form";
 import "./login.css";
+const logoSrc =
+  process.env.NEXT_PUBLIC_BRAND_LOGO_URL ||
+  (process.env.NEXT_PUBLIC_SUPABASE_URL
+    ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/img/logo_transparent.png`
+    : "/placeholder.svg");
 
 export default function LoginPage() {
   return (
@@ -8,7 +13,7 @@ export default function LoginPage() {
       {/* Logo and Company Name */}
       <div className="mb-4 flex flex-row items-center gap-2 motion-safe:animate-in motion-safe:fade-in-50 motion-safe:slide-in-from-top-4">
         <div className="relative h-20 w-20">
-          <Image src="/vewai_logo.png" alt="VewAI Logo" width={80} height={80} className="h-full w-full object-contain " priority />
+          <Image src={logoSrc} alt="VewAI Logo" width={80} height={80} className="h-full w-full object-contain " priority />
         </div>
         <h2 className="text-4xl text-primary tracking-tight">
           Vew<span className="text-white font-bold">Ai</span>
