@@ -6,7 +6,8 @@ import { ProtectedRoute } from "@/features/auth/components/protected-route";
 import { AppChrome } from "@/components/app-chrome";
 import { SpeechDeviceProvider } from "@/features/speech/context/audio-device-context";
 import { FontSizeProvider } from "@/features/navigation/context/FontSizeContext";
-import { AdminDebugOverlay } from "@/features/admin/components/AdminDebugOverlay";
+import MobileSpeechControls from "@/features/speech/components/mobile-speech-controls";
+import MainLayout from "@/components/layout/main-layout";
 
 const geistSans = GeistSans;
 
@@ -24,16 +25,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="h-full">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased h-full flex flex-col`}
-      >
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased h-full flex flex-col`}>
         <AuthProvider>
           <FontSizeProvider>
             <SpeechDeviceProvider>
-              <AdminDebugOverlay />
               {process.env.NEXT_PUBLIC_ENABLE_AUTH_PROTECTION === "true" ? (
                 <ProtectedRoute>
                   <AppChrome>{children}</AppChrome>
+                  <MainLayout>{children}</MainLayout>
+                  <MobileSpeechControls />
                 </ProtectedRoute>
               ) : (
                 <AppChrome>{children}</AppChrome>

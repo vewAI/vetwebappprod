@@ -1,8 +1,7 @@
 import axios from "axios";
-import type { Message } from "@/features/chat/models/chat";
+import type { LabResultsPayload, Message } from "@/features/chat/models/chat";
 import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
 import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
-import { debugEventBus } from "@/lib/debug-events-fixed";
 
 /**
  * Service for handling chat API communication
@@ -19,7 +18,7 @@ export const chatService = {
     messages: Message[],
     stageIndex: number,
     caseId: string,
-    options?: { attemptId?: string }
+    options?: { attemptId?: string },
   ): Promise<{
     content: string;
     displayRole?: string;
@@ -29,21 +28,16 @@ export const chatService = {
     patientSex?: string;
     personaRoleKey?: string;
     media?: CaseMediaItem[];
+    labResults?: LabResultsPayload;
   }> => {
     const startTime = Date.now();
     try {
-      debugEventBus.emitEvent('info', 'ChatService', 'Sending message to API', { 
-        messageCount: messages.length, 
-        stageIndex, 
-        caseId 
-      });
-
       // Format messages for the API
       const apiMessages = messages.map((msg) => ({
         role: msg.role as "system" | "user" | "assistant",
         content: msg.content,
         // Preserve persona selection when present so the server can honor the UI-selected persona
-        ...(msg as any).personaRoleKey ? { personaRoleKey: (msg as any).personaRoleKey } : {},
+        ...((msg as any).personaRoleKey ? { personaRoleKey: (msg as any).personaRoleKey } : {}),
       }));
       // If the browser is offline, throw immediately to avoid noisy network
       // errors from the XHR layer.
@@ -74,7 +68,6 @@ export const chatService = {
           const response = await axios.post("/api/chat", payload, {
             headers: authHeaders,
           });
-          debugEventBus.emitEvent('success', 'ChatService', `Response received in ${Date.now() - startTime}ms`);
           return response.data as {
             content: string;
             displayRole?: string;
@@ -84,6 +77,7 @@ export const chatService = {
             patientSex?: string;
             personaRoleKey?: string;
             media?: CaseMediaItem[];
+            labResults?: LabResultsPayload;
           };
         } catch (err) {
           lastErr = err;
@@ -103,16 +97,9 @@ export const chatService = {
 
       // If we exhausted retries, throw a normalized error so callers don't
       // receive an AxiosError object with noisy stack traces in console.
-      const msg =
-        lastErr && (lastErr as any)?.message
-          ? String((lastErr as any).message)
-          : "Network Error";
+      const msg = lastErr && (lastErr as any)?.message ? String((lastErr as any).message) : "Network Error";
       throw new Error(msg);
     } catch (error) {
-      debugEventBus.emitEvent('error', 'ChatService', 'Failed to send message', { 
-        error: error instanceof Error ? error.message : String(error),
-        duration: Date.now() - startTime
-      });
       console.error("Error getting chat response:", error);
       // Normalize to Error for callers
       if (error instanceof Error) throw error;
@@ -126,16 +113,12 @@ export const chatService = {
   checkCompleteness: async (
     fragment: string,
     caseId?: string,
-    stageIndex?: number
+    stageIndex?: number,
   ): Promise<{ complete: boolean; canonical?: string | null; type?: string | null }> => {
     try {
       const token = await getAccessToken();
       const authHeaders = await buildAuthHeaders({}, token || undefined);
-      const resp = await axios.post(
-        "/api/chat/check-complete",
-        { fragment, caseId, stageIndex },
-        { headers: authHeaders }
-      );
+      const resp = await axios.post("/api/chat/check-complete", { fragment, caseId, stageIndex }, { headers: authHeaders });
       return resp.data as { complete: boolean; canonical?: string | null; type?: string | null };
     } catch (e) {
       // On errors, default to complete to avoid blocking user input
@@ -152,10 +135,7 @@ export const chatService = {
    */
   createUserMessage: (content: string, stageIndex: number): Message => ({
     // Use crypto.randomUUID when available to avoid server/client hydration differences
-    id:
-      typeof crypto !== "undefined" && (crypto as any).randomUUID
-        ? (crypto as any).randomUUID()
-        : Date.now().toString(),
+    id: typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : Date.now().toString(),
     role: "user",
     content,
     timestamp: new Date().toISOString(),
@@ -182,7 +162,8 @@ export const chatService = {
     voiceId?: string,
     personaSex?: string,
     personaRoleKey?: string,
-    media?: CaseMediaItem[]
+    media?: CaseMediaItem[],
+    labResults?: LabResultsPayload,
   ): Message => {
     const sanitize = (s: string) => {
       if (!s) return s;
@@ -192,8 +173,8 @@ export const chatService = {
       // e.g. "How can I help you with your cow today?"
       try {
         const cleaned = s
-          .replace(/(^|\.|\!|\?)\s*(how\s+(?:can|may)\s+i\s+(?:help|assist|be of assistance)[^\.!\?]*[\.!\?]?)/ig, "")
-          .replace(/(^|\.|\!|\?)\s*(i\s+am\s+here\s+to\s+help[^\.!\?]*[\.!\?]?)/ig, "")
+          .replace(/(^|\.|\!|\?)\s*(how\s+(?:can|may)\s+i\s+(?:help|assist|be of assistance)[^\.!\?]*[\.!\?]?)/gi, "")
+          .replace(/(^|\.|\!|\?)\s*(i\s+am\s+here\s+to\s+help[^\.!\?]*[\.!\?]?)/gi, "")
           .trim();
         return cleaned || s;
       } catch (e) {
@@ -204,10 +185,7 @@ export const chatService = {
     const safeContent = sanitize(content);
 
     return {
-      id:
-        typeof crypto !== "undefined" && (crypto as any).randomUUID
-          ? `${(crypto as any).randomUUID()}`
-          : (Date.now() + 1).toString(),
+      id: typeof crypto !== "undefined" && (crypto as any).randomUUID ? `${(crypto as any).randomUUID()}` : (Date.now() + 1).toString(),
       role: "assistant",
       content: safeContent,
       timestamp: new Date().toISOString(),
@@ -218,6 +196,7 @@ export const chatService = {
       personaSex,
       personaRoleKey,
       media,
+      labResults,
     };
   },
 
@@ -228,10 +207,7 @@ export const chatService = {
    * @returns System message object
    */
   createSystemMessage: (content: string, stageIndex: number): Message => ({
-    id:
-      typeof crypto !== "undefined" && (crypto as any).randomUUID
-        ? `system-${(crypto as any).randomUUID()}`
-        : `system-${Date.now()}`,
+    id: typeof crypto !== "undefined" && (crypto as any).randomUUID ? `system-${(crypto as any).randomUUID()}` : `system-${Date.now()}`,
     role: "system",
     content,
     timestamp: new Date().toISOString(),
@@ -246,15 +222,9 @@ export const chatService = {
    * @returns Error message object
    */
   createErrorMessage: (error: unknown, stageIndex: number): Message => ({
-    id:
-      typeof crypto !== "undefined" && (crypto as any).randomUUID
-        ? `error-${(crypto as any).randomUUID()}`
-        : `error-${Date.now()}`,
+    id: typeof crypto !== "undefined" && (crypto as any).randomUUID ? `error-${(crypto as any).randomUUID()}` : `error-${Date.now()}`,
     role: "system",
-    content:
-      typeof error === "string"
-        ? error
-        : "Sorry, there was an error processing your request. Please try again.",
+    content: typeof error === "string" ? error : "Sorry, there was an error processing your request. Please try again.",
     timestamp: new Date().toISOString(),
     stageIndex,
     displayRole: "Virtual Examiner",

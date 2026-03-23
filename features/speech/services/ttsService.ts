@@ -1,14 +1,7 @@
 import type { TtsEventDetail } from "@/features/speech/models/tts-events";
-import {
-  dispatchTtsEnd,
-  dispatchTtsStart,
-} from "@/features/speech/models/tts-events";
-import {
-  buildAuthHeaders,
-  getAccessToken,
-} from "@/lib/auth-headers";
+import { dispatchTtsEnd, dispatchTtsStart } from "@/features/speech/models/tts-events";
+import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
 import { getPreferredOutputDevice } from "./deviceRegistry";
-import { debugEventBus } from "@/lib/debug-events-fixed";
 
 type TtsMeta = Omit<TtsEventDetail, "audio"> | undefined;
 
@@ -18,6 +11,18 @@ type ActivePlaybackHandle = {
 };
 
 let activePlayback: ActivePlaybackHandle | null = null;
+
+function isPlaybackInterruptedError(error: unknown): boolean {
+  if (!error) return false;
+  const maybeError = error as { name?: string; message?: string };
+  const name = String(maybeError.name ?? "");
+  const message = String(maybeError.message ?? error);
+  return (
+    name === "AbortError" ||
+    /play\(\) request was interrupted by a call to pause\(\)/i.test(message) ||
+    /the play\(\) request was interrupted/i.test(message)
+  );
+}
 
 function registerActivePlayback(handle: ActivePlaybackHandle) {
   if (activePlayback && activePlayback.audio !== handle.audio) {
@@ -63,16 +68,10 @@ export function stopActiveTtsPlayback() {
 /**
  * Client helper to call the server TTS route and play the returned audio.
  */
-export async function speakRemote(
-  text: string,
-  voice?: string,
-  meta?: TtsMeta
-): Promise<HTMLAudioElement> {
+export async function speakRemote(text: string, voice?: string, meta?: TtsMeta): Promise<HTMLAudioElement> {
   if (!text) throw new Error("text required");
 
   const startTime = Date.now();
-  debugEventBus.emitEvent('info', 'TTS', 'Requesting speech synthesis', { textLength: text.length, voice });
-
   const token = await getAccessToken();
   if (!token) {
     throw new Error("Not authenticated");
@@ -80,10 +79,7 @@ export async function speakRemote(
 
   const res = await fetch("/api/tts", {
     method: "POST",
-    headers: await buildAuthHeaders(
-      { "Content-Type": "application/json" },
-      token
-    ),
+    headers: await buildAuthHeaders({ "Content-Type": "application/json" }, token),
     body: JSON.stringify({ text, voice }),
   });
 
@@ -97,7 +93,6 @@ export async function speakRemote(
     }
 
     if (bodyJson && bodyJson.fallback === "browser") {
-      debugEventBus.emitEvent('warning', 'TTS', 'Server TTS unavailable, using browser voices', { voice, detail: bodyJson.detail });
       // Use browser SpeechSynthesis as a fallback. Respect avatar sex if provided in meta.
       await speakWithSpeechSynthesis(text, voice, meta);
       // Return a real Audio element placeholder so callers get an HTMLAudioElement.
@@ -106,12 +101,10 @@ export async function speakRemote(
     }
 
     const body = await res.text().catch(() => "");
-    debugEventBus.emitEvent('error', 'TTS', `Remote TTS failed: ${res.status}`, { body });
     throw new Error(`Remote TTS failed: ${res.status} ${body}`);
   }
 
   const buf = await res.arrayBuffer();
-  debugEventBus.emitEvent('success', 'TTS', `Audio received in ${Date.now() - startTime}ms`, { size: buf.byteLength });
   const contentType = res.headers.get("content-type") ?? "audio/mpeg";
   const blob = new Blob([buf], { type: contentType });
   const url = URL.createObjectURL(blob);
@@ -123,6 +116,29 @@ export async function speakRemote(
   // Return a promise that resolves when playback ends (or rejects on error)
   return new Promise<HTMLAudioElement>((resolve, reject) => {
     const endLifecycle = trackTtsLifecycle(audio, meta);
+    let settled = false;
+    let startupTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const clearStartupTimeout = () => {
+      if (startupTimeout) {
+        clearTimeout(startupTimeout);
+        startupTimeout = null;
+      }
+    };
+
+    const safeResolve = (result: HTMLAudioElement) => {
+      if (settled) return;
+      settled = true;
+      clearStartupTimeout();
+      resolve(result);
+    };
+
+    const safeReject = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      clearStartupTimeout();
+      reject(error);
+    };
 
     function cleanup() {
       clearActivePlayback(audio);
@@ -144,7 +160,7 @@ export async function speakRemote(
 
     function onEnded() {
       cleanup();
-      resolve(audio);
+      safeResolve(audio);
     }
 
     function onError(e: any) {
@@ -152,13 +168,10 @@ export async function speakRemote(
       // Normalize media errors/events into Error with useful detail
       try {
         const detail =
-          (e && e.message) ||
-          (e && e.error && e.error.message) ||
-          (e && e.target && e.target.error && e.target.error.message) ||
-          String(e);
-        reject(new Error(`Audio playback error: ${detail}`));
+          (e && e.message) || (e && e.error && e.error.message) || (e && e.target && e.target.error && e.target.error.message) || String(e);
+        safeReject(new Error(`Audio playback error: ${detail}`));
       } catch (err) {
-        reject(new Error("Audio playback error"));
+        safeReject(new Error("Audio playback error"));
       }
     }
 
@@ -169,7 +182,7 @@ export async function speakRemote(
       audio,
       stop: () => {
         cleanup();
-        resolve(audio);
+        safeResolve(audio);
       },
     });
 
@@ -178,12 +191,25 @@ export async function speakRemote(
     // caller to attempt playback later via the returned Audio element.
     const playPromise = audio.play();
     if (playPromise && typeof playPromise.then === "function") {
+      playPromise.then(() => {
+        clearStartupTimeout();
+      });
       playPromise.catch((e) => {
-        console.warn("Playback blocked by browser autoplay policy:", e);
-        // Do not reject here; leave the promise to resolve/reject via
-        // the audio element events so callers can still inspect the element.
+        if (isPlaybackInterruptedError(e)) {
+          cleanup();
+          safeResolve(audio);
+          return;
+        }
+        cleanup();
+        safeReject(new Error(`Audio playback could not start: ${e instanceof Error ? e.message : String(e)}`));
       });
     }
+
+    // Avoid indefinite pending when browsers fail silently during startup.
+    startupTimeout = setTimeout(() => {
+      cleanup();
+      safeReject(new Error("Audio playback timeout while starting"));
+    }, 8000);
   });
 }
 
@@ -201,8 +227,8 @@ async function speakWithSpeechSynthesis(text: string, voice?: string, meta?: Tts
   const desiredGender = preferredSex ?? suggestGenderFromVoice(voice);
 
   return new Promise<void>((resolve) => {
-    if (typeof window === "undefined" || !('speechSynthesis' in window)) {
-      console.warn('Browser speechSynthesis not available');
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      console.warn("Browser speechSynthesis not available");
       resolve();
       return;
     }
@@ -221,34 +247,21 @@ async function speakWithSpeechSynthesis(text: string, voice?: string, meta?: Tts
       // Prefer British English voices (en-GB) first, then any English (en-*)
       // and finally any available voice. Also respect desired gender when
       // possible by looking for gender tokens in the voice name.
-      const genderPriority =
-        desiredGender === "female"
-          ? ["female", "woman", "f"]
-          : desiredGender === "male"
-          ? ["male", "man", "m"]
-          : [];
+      const genderPriority = desiredGender === "female" ? ["female", "woman", "f"] : desiredGender === "male" ? ["male", "man", "m"] : [];
 
       const normalize = (s?: string) => (s || "").toLowerCase();
 
-      const gbVoices = voices.filter(
-        (v) => v.lang && normalize(v.lang).startsWith("en-gb")
-      );
-      const enVoices = voices.filter(
-        (v) => v.lang && normalize(v.lang).startsWith("en")
-      );
+      const gbVoices = voices.filter((v) => v.lang && normalize(v.lang).startsWith("en-gb"));
+      const enVoices = voices.filter((v) => v.lang && normalize(v.lang).startsWith("en"));
 
       const findByName = (list: SpeechSynthesisVoice[]) => {
         if (!list || list.length === 0) return undefined;
         if (genderPriority.length) {
-          const found = list.find((v) =>
-            genderPriority.some((g) => normalize(v.name).includes(g))
-          );
+          const found = list.find((v) => genderPriority.some((g) => normalize(v.name).includes(g)));
           if (found) return found;
         }
         // Prefer voices whose name indicates British/UK if present
-        const britishNamed = list.find((v) =>
-          normalize(v.name).includes("british") || normalize(v.name).includes("uk")
-        );
+        const britishNamed = list.find((v) => normalize(v.name).includes("british") || normalize(v.name).includes("uk"));
         if (britishNamed) return britishNamed;
         return list[0];
       };
@@ -263,14 +276,23 @@ async function speakWithSpeechSynthesis(text: string, voice?: string, meta?: Tts
     utter.rate = 1;
     utter.pitch = 1;
 
-    dispatchTtsStart({ ...(meta ?? {}), audio: undefined as unknown as HTMLAudioElement });
+    dispatchTtsStart({
+      ...(meta ?? {}),
+      audio: undefined as unknown as HTMLAudioElement,
+    });
 
     utter.onend = () => {
-      dispatchTtsEnd({ ...(meta ?? {}), audio: undefined as unknown as HTMLAudioElement });
+      dispatchTtsEnd({
+        ...(meta ?? {}),
+        audio: undefined as unknown as HTMLAudioElement,
+      });
       resolve();
     };
     utter.onerror = () => {
-      dispatchTtsEnd({ ...(meta ?? {}), audio: undefined as unknown as HTMLAudioElement });
+      dispatchTtsEnd({
+        ...(meta ?? {}),
+        audio: undefined as unknown as HTMLAudioElement,
+      });
       resolve();
     };
 
@@ -285,11 +307,7 @@ async function speakWithSpeechSynthesis(text: string, voice?: string, meta?: Tts
  * URL length limits — if you expect long inputs, consider a POST-to-init
  * pattern or a signed URL approach.
  */
-export async function speakRemoteStream(
-  text: string,
-  voice?: string,
-  meta?: TtsMeta
-): Promise<HTMLAudioElement> {
+export async function speakRemoteStream(text: string, voice?: string, meta?: TtsMeta): Promise<HTMLAudioElement> {
   if (!text) throw new Error("text required");
 
   const token = await getAccessToken();
@@ -302,10 +320,7 @@ export async function speakRemoteStream(
   // upstream provider and supports streaming audio.
   const initResp = await fetch("/api/tts/init", {
     method: "POST",
-    headers: await buildAuthHeaders(
-      { "Content-Type": "application/json" },
-      token
-    ),
+    headers: await buildAuthHeaders({ "Content-Type": "application/json" }, token),
     body: JSON.stringify({ text, voice }),
   });
 
@@ -314,7 +329,7 @@ export async function speakRemoteStream(
     throw new Error(`TTS init failed: ${initResp.status} ${body}`);
   }
 
-  const initData = await initResp.json().catch(() => ({} as any));
+  const initData = await initResp.json().catch(() => ({}) as any);
 
   // Validate initData to avoid creating an invalid stream URL (which
   // results in opaque media errors that are hard to debug).
@@ -324,9 +339,7 @@ export async function speakRemoteStream(
     throw new Error(`TTS init returned no URL or id: ${bodyText}`);
   }
 
-  const url = String(
-    initData?.url ?? initData?.streamUrl ?? `/api/tts/stream?id=${initData?.id}`
-  );
+  const url = String(initData?.url ?? initData?.streamUrl ?? `/api/tts/stream?id=${initData?.id}`);
 
   const audio = new Audio(url);
   // Preload metadata to reduce startup latency
@@ -335,6 +348,29 @@ export async function speakRemoteStream(
 
   return await new Promise<HTMLAudioElement>((resolve, reject) => {
     const endLifecycle = trackTtsLifecycle(audio, meta);
+    let settled = false;
+    let startupTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const clearStartupTimeout = () => {
+      if (startupTimeout) {
+        clearTimeout(startupTimeout);
+        startupTimeout = null;
+      }
+    };
+
+    const safeResolve = (result: HTMLAudioElement) => {
+      if (settled) return;
+      settled = true;
+      clearStartupTimeout();
+      resolve(result);
+    };
+
+    const safeReject = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      clearStartupTimeout();
+      reject(error);
+    };
 
     function cleanup() {
       clearActivePlayback(audio);
@@ -351,7 +387,7 @@ export async function speakRemoteStream(
 
     function onEnded() {
       cleanup();
-      resolve(audio);
+      safeResolve(audio);
     }
 
     function onError(ev: any) {
@@ -361,10 +397,7 @@ export async function speakRemoteStream(
 
     async function attemptBufferedFallback(ev: any) {
       try {
-        console.warn(
-          "Streamed audio failed, attempting buffered fallback:",
-          ev
-        );
+        console.warn("Streamed audio failed, attempting buffered fallback:", ev);
         const resp = await fetch(url, {
           cache: "no-store",
           headers: await buildAuthHeaders({}, token),
@@ -389,10 +422,7 @@ export async function speakRemoteStream(
               },
             }
           : { metadata: { playbackVariant: "buffered-fallback" } };
-        const endFallbackLifecycle = trackTtsLifecycle(
-          fallbackAudio,
-          fallbackMeta
-        );
+        const endFallbackLifecycle = trackTtsLifecycle(fallbackAudio, fallbackMeta);
 
         function cleanupFallback() {
           clearActivePlayback(fallbackAudio);
@@ -414,37 +444,41 @@ export async function speakRemoteStream(
 
         function onFallbackEnd() {
           cleanupFallback();
-          resolve(fallbackAudio);
+          safeResolve(fallbackAudio);
         }
 
         function onFallbackError(e: any) {
           cleanupFallback();
           const detail =
-            (e && e.message) ||
-            (e && e.error && e.error.message) ||
-            (e && e.target && e.target.error && e.target.error.message) ||
-            String(e);
-          reject(new Error(`Streamed audio fallback failed: ${detail}`));
+            (e && e.message) || (e && e.error && e.error.message) || (e && e.target && e.target.error && e.target.error.message) || String(e);
+          safeReject(new Error(`Streamed audio fallback failed: ${detail}`));
         }
 
         fallbackAudio.addEventListener("ended", onFallbackEnd);
-        fallbackAudio.addEventListener(
-          "error",
-          onFallbackError as EventListener
-        );
+        fallbackAudio.addEventListener("error", onFallbackError as EventListener);
         registerActivePlayback({
           audio: fallbackAudio,
           stop: () => {
             cleanupFallback();
-            resolve(fallbackAudio);
+            safeResolve(fallbackAudio);
           },
         });
         const p = fallbackAudio.play();
         if (p && typeof p.then === "function") {
+          p.then(() => {
+            clearStartupTimeout();
+          });
           p.catch((playErr) => {
-            console.warn(
-              "Fallback playback blocked by autoplay policy:",
-              playErr
+            if (isPlaybackInterruptedError(playErr)) {
+              cleanupFallback();
+              safeResolve(fallbackAudio);
+              return;
+            }
+            cleanupFallback();
+            safeReject(
+              new Error(
+                `Fallback playback could not start: ${playErr instanceof Error ? playErr.message : String(playErr)}`,
+              ),
             );
           });
         }
@@ -455,13 +489,11 @@ export async function speakRemoteStream(
               ? String((fallbackErr as { message?: string }).message ?? fallbackErr)
               : String(fallbackErr);
           const eventMessage =
-            typeof ev === "object" && ev !== null && "message" in ev
-              ? String((ev as { message?: string }).message ?? ev)
-              : String(ev);
+            typeof ev === "object" && ev !== null && "message" in ev ? String((ev as { message?: string }).message ?? ev) : String(ev);
           const detail = fallbackMessage || eventMessage;
-          reject(new Error(`Streamed audio playback error: ${detail}`));
+          safeReject(new Error(`Streamed audio playback error: ${detail}`));
         } catch (err) {
-          reject(new Error("Streamed audio playback error"));
+          safeReject(new Error("Streamed audio playback error"));
         }
       }
     }
@@ -473,24 +505,35 @@ export async function speakRemoteStream(
       audio,
       stop: () => {
         cleanup();
-        resolve(audio);
+        safeResolve(audio);
       },
     });
 
     const playPromise = audio.play();
     if (playPromise && typeof playPromise.then === "function") {
+      playPromise.then(() => {
+        clearStartupTimeout();
+      });
       playPromise.catch((e) => {
-        // Autoplay may be blocked; caller can call audio.play() on user gesture.
-        console.warn("Playback blocked by autoplay policy (stream):", e);
+        if (isPlaybackInterruptedError(e)) {
+          cleanup();
+          safeResolve(audio);
+          return;
+        }
+        cleanup();
+        void attemptBufferedFallback(e);
       });
     }
+
+    // If stream startup stalls, fall back to buffered playback.
+    startupTimeout = setTimeout(() => {
+      cleanup();
+      void attemptBufferedFallback(new Error("Streaming playback startup timeout"));
+    }, 5000);
   });
 }
 
-function trackTtsLifecycle(
-  audio: HTMLAudioElement,
-  meta?: TtsMeta
-): () => void {
+function trackTtsLifecycle(audio: HTMLAudioElement, meta?: TtsMeta): () => void {
   const detail: TtsEventDetail = { ...(meta ?? {}), audio };
   let finished = false;
   dispatchTtsStart(detail);

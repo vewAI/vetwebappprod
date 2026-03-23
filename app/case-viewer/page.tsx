@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 // ImageUploader intentionally not used here to allow manual image_url input in edit mode.
 import axios from "axios";
@@ -9,13 +10,10 @@ import { caseFieldMeta, orderedCaseFieldKeys, type CaseFieldKey } from "@/featur
 import { isCaseFieldAutomatable } from "@/features/prompts/services/casePromptAutomation";
 import { useAuth } from "@/features/auth/services/authService";
 import { CaseMediaEditor } from "@/features/cases/components/case-media-editor";
-import CasePapersUploader from "@/features/cases/components/case-papers-uploader";
 import { AvatarSelector } from "@/features/cases/components/avatar-selector";
 import { PersonaEditor, type PersonaConfig } from "@/features/personas/components/PersonaEditor";
 import { normalizeCaseMedia, type CaseMediaItem } from "@/features/cases/models/caseMedia";
-import { AdminDebugPanel } from "@/features/admin/components/AdminDebugPanel";
-import { TimeProgressionEditor } from "@/features/cases/components/case-time-progression-editor";
-import { caseConfig } from "@/features/config/case-config";
+import { getActiveStagesForCase, getStagesForCase } from "@/features/stages/services/stageService";
 import { resolveChatPersonaRoleKey } from "@/features/chat/utils/persona-guardrails";
 
 type CaseRecord = Record<string, unknown>;
@@ -52,11 +50,10 @@ export default function CaseViewerPage() {
     return accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined;
   }, [accessToken]);
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [editable, setEditable] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [formState, setFormState] = useState<CaseRecord | null>(null);
   const [expandedField, setExpandedField] = useState<CaseFieldKey | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -82,14 +79,6 @@ export default function CaseViewerPage() {
     >
   >({});
   const [mediaDraft, setMediaDraft] = useState<CaseMediaItem[]>([]);
-  const [compareResult, setCompareResult] = useState<null | {
-    suggested?: Record<string, unknown>;
-    diffs?: Record<string, { original: unknown; suggested: unknown }>;
-    snippet?: string;
-    error?: string;
-  }>(null);
-  const [selectedSuggestKeys, setSelectedSuggestKeys] = useState<Record<string, boolean>>({});
-  const [applying, setApplying] = useState(false);
 
   const parseMedia = useCallback((raw: unknown): CaseMediaItem[] => {
     if (typeof raw === "string") {
@@ -176,8 +165,13 @@ export default function CaseViewerPage() {
           console.warn("Failed to load shared personas in case viewer", sharedErr);
         }
 
-        // Filter personas based on the roles defined in caseConfig for this case
-        const stages = caseConfig[caseId] || [];
+        // Filter personas based on stage roles configured for this case.
+        let stages = [] as Array<{ role?: string }>;
+        try {
+          stages = await getActiveStagesForCase(caseId);
+        } catch {
+          stages = getStagesForCase(caseId);
+        }
         const allowedRoles = new Set<string>();
 
         // Always include owner
@@ -228,6 +222,9 @@ export default function CaseViewerPage() {
       try {
         const response = await axios.get("/api/cases", {
           headers: authHeaders,
+          params: {
+            includeArchived: showArchived ? "true" : undefined,
+          },
         });
         const data = response.data as unknown;
         const parsed = Array.isArray(data) ? (data as CaseRecord[]) : ([] as CaseRecord[]);
@@ -254,7 +251,7 @@ export default function CaseViewerPage() {
 
     if (authLoading) return;
     void fetchCases();
-  }, [authHeaders, authLoading, loadCaseIntoForm, loadPersonas]);
+  }, [authHeaders, authLoading, loadCaseIntoForm, loadPersonas, showArchived]);
 
   useEffect(() => {
     if (!cases.length) {
@@ -605,6 +602,15 @@ export default function CaseViewerPage() {
     return String(value);
   };
 
+  const isArchivedCase = (record: CaseRecord | null): boolean => {
+    if (!record) return false;
+    const settings = record["settings"];
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+      return false;
+    }
+    return (settings as Record<string, unknown>)["archived"] === true;
+  };
+
   const extraEntries = useMemo(() => {
     if (!formState) return [] as [string, unknown][];
     return Object.entries(formState).filter(([key]) => key !== "media" && !knownFieldKeys.has(key as CaseFieldKey));
@@ -625,6 +631,7 @@ export default function CaseViewerPage() {
 
   const imageUrl = formState ? formatValue(formState["image_url"]) : "";
   const caseIdValue = formState ? formatValue(formState["id"]).trim() : "";
+  const currentCaseArchived = isArchivedCase(formState);
 
   const baseFieldClasses =
     "w-full rounded-md border border-input px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background transition-colors";
@@ -662,6 +669,10 @@ export default function CaseViewerPage() {
           <Button onClick={handleNext} disabled={currentIndex === cases.length - 1}>
             Next →
           </Button>
+          <label className="ml-2 inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+            Show archived
+          </label>
         </div>
 
         <div className="flex items-center gap-2">
@@ -747,14 +758,72 @@ export default function CaseViewerPage() {
           >
             Save
           </Button>
+          {currentCaseArchived && (
+            <Button
+              variant="outline"
+              onClick={async () => {
+                const id = formatValue(formState?.["id"]);
+                if (!id) return;
+                if (!authHeaders) {
+                  alert("You must be signed in to restore cases.");
+                  return;
+                }
+                try {
+                  const resp = await axios.delete(`/api/cases?id=${encodeURIComponent(id)}&mode=restore`, {
+                    headers: authHeaders,
+                  });
+                  const respObj = (resp.data ?? {}) as Record<string, unknown>;
+                  if (!respObj.success) {
+                    throw new Error(typeof respObj.error === "string" ? respObj.error : "Restore failed");
+                  }
+
+                  setCases((prev) =>
+                    prev.map((entry) => {
+                      if (formatValue(entry["id"]) !== id) return entry;
+                      const settings =
+                        entry["settings"] && typeof entry["settings"] === "object" && !Array.isArray(entry["settings"])
+                          ? ({ ...(entry["settings"] as Record<string, unknown>) } as Record<string, unknown>)
+                          : {};
+                      delete settings.archived;
+                      delete settings.archivedAt;
+                      delete settings.archivedBy;
+                      return {
+                        ...entry,
+                        settings,
+                      };
+                    }),
+                  );
+                  setFormState((prev) => {
+                    if (!prev || formatValue(prev["id"]) !== id) return prev;
+                    const settings =
+                      prev["settings"] && typeof prev["settings"] === "object" && !Array.isArray(prev["settings"])
+                        ? ({ ...(prev["settings"] as Record<string, unknown>) } as Record<string, unknown>)
+                        : {};
+                    delete settings.archived;
+                    delete settings.archivedAt;
+                    delete settings.archivedBy;
+                    return {
+                      ...prev,
+                      settings,
+                    };
+                  });
+                } catch (err) {
+                  console.error("Error restoring case:", err);
+                  alert("Error restoring case. See console for details.");
+                }
+              }}
+            >
+              Restore
+            </Button>
+          )}
           <Button
-            className="bg-red-600 text-white hover:bg-red-700"
+            className="bg-amber-500 text-black hover:bg-amber-600"
             onClick={() => {
               setDeleteStep(1);
               setShowDeleteModal(true);
             }}
           >
-            Delete
+            Archive
           </Button>
         </div>
       </div>
@@ -792,229 +861,18 @@ export default function CaseViewerPage() {
         </div>
       )}
       {formState && caseIdValue && (
-        <div className="mb-6">
-          <div className="flex items-center justify-between">
-            <div className="text-lg font-medium">Reference Papers</div>
+        <div className="mb-6 rounded-lg border bg-card p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="font-medium">Timeline & Stage Management</h3>
+              <p className="text-sm text-muted-foreground">
+                Time progression, visits/days, and stage sequencing are managed centrally in Stage Manager.
+              </p>
+            </div>
+            <Link href={`/admin/case-stage-manager?caseId=${encodeURIComponent(caseIdValue)}`}>
+              <Button type="button" variant="outline">Open Stage Manager</Button>
+            </Link>
           </div>
-          <CasePapersUploader
-            caseId={caseIdValue}
-            onUploaded={async (media) => {
-              try {
-                // update UI media list
-                setMediaDraft((prev) => [...prev, media]);
-                // trigger server-side ingestion to append generated content from papers
-                const headers = authHeaders ?? {};
-                await fetch(`/api/cases/${encodeURIComponent(caseIdValue)}/papers/ingest`, {
-                  method: "POST",
-                  headers: {
-                    ...(headers as Record<string, string>),
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({
-                    fields: ["details", "physical_exam_findings", "diagnostic_findings"],
-                  }),
-                });
-                // refresh page to show appended data
-                window.location.reload();
-              } catch (e) {
-                console.error("Paper upload hook failed", e);
-              }
-            }}
-          />
-          <div className="mt-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              className="hidden"
-              onChange={async (e) => {
-                const f = e.target.files?.[0];
-                if (!f) return;
-                try {
-                  const arr = await f.arrayBuffer();
-                  const bytes = new Uint8Array(arr);
-                  let binary = "";
-                  const chunkSize = 0x8000;
-                  for (let i = 0; i < bytes.length; i += chunkSize) {
-                    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)) as any);
-                  }
-                  const b64 = typeof window !== "undefined" ? window.btoa(binary) : Buffer.from(bytes).toString("base64");
-                  const headers = authHeaders ?? {};
-                  const resp = await axios.post(
-                    `/api/cases/${encodeURIComponent(caseIdValue)}/compare`,
-                    {
-                      fileName: f.name,
-                      mimeType: f.type || "application/octet-stream",
-                      contentBase64: b64,
-                    },
-                    { headers },
-                  );
-                  const data = resp.data as any;
-                  if ((data as any)?.error) {
-                    setCompareResult({ error: String((data as any).error) });
-                    setSelectedSuggestKeys({});
-                  } else if (data?.diffs && Object.keys(data.diffs).length > 0) {
-                    setCompareResult(data);
-                    const keys: Record<string, boolean> = {};
-                    Object.keys(data.diffs).forEach((k) => (keys[k] = true));
-                    setSelectedSuggestKeys(keys);
-                  } else if (data?.suggested) {
-                    setCompareResult(data);
-                    const keys: Record<string, boolean> = {};
-                    Object.keys(data.suggested).forEach((k) => (keys[k] = true));
-                    setSelectedSuggestKeys(keys);
-                  } else {
-                    setCompareResult({});
-                    setSelectedSuggestKeys({});
-                  }
-                } catch (err) {
-                  console.error(err);
-                  alert("Upload & compare failed");
-                } finally {
-                  // clear input
-                  (e.target as HTMLInputElement).value = "";
-                }
-              }}
-            />
-            <Button type="button" size="sm" variant="secondary" onClick={() => fileInputRef.current?.click()}>
-              Upload & Compare
-            </Button>
-            {/* Diff / suggestions panel */}
-            {compareResult && (
-              <div className="mt-4 rounded border bg-background p-4">
-                {compareResult.error ? <div className="text-sm text-red-600">Error: {compareResult.error}</div> : null}
-                {compareResult.diffs && Object.keys(compareResult.diffs).length > 0 ? (
-                  <div>
-                    <div className="font-semibold mb-2">Suggested updates</div>
-                    <div className="space-y-2">
-                      {Object.entries(compareResult.diffs).map(([key, pair]) => (
-                        <div key={key} className="flex flex-col gap-1 border-b pb-2">
-                          <label className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={!!selectedSuggestKeys[key]}
-                              onChange={(e) =>
-                                setSelectedSuggestKeys((prev) => ({
-                                  ...prev,
-                                  [key]: e.target.checked,
-                                }))
-                              }
-                            />
-                            <div className="font-medium">{key.replace(/_/g, " ")}</div>
-                          </label>
-                          <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div>
-                              <div className="text-xs text-muted-foreground">Original</div>
-                              <pre className="whitespace-pre-wrap max-h-32 overflow-auto p-2 rounded bg-muted text-xs">
-                                {typeof pair.original === "string" ? pair.original : JSON.stringify(pair.original, null, 2)}
-                              </pre>
-                            </div>
-                            <div>
-                              <div className="text-xs text-muted-foreground">Suggested</div>
-                              <pre className="whitespace-pre-wrap max-h-32 overflow-auto p-2 rounded bg-muted text-xs">
-                                {typeof pair.suggested === "string" ? pair.suggested : JSON.stringify(pair.suggested, null, 2)}
-                              </pre>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="mt-3 flex gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={async () => {
-                          // build updates from selected keys
-                          const keys = Object.keys(selectedSuggestKeys).filter((k) => selectedSuggestKeys[k]);
-                          if (keys.length === 0) {
-                            alert("No fields selected");
-                            return;
-                          }
-                          const updates: Record<string, unknown> = {};
-                          for (const k of keys) {
-                            const val = compareResult.diffs?.[k]?.suggested ?? (compareResult.suggested ? compareResult.suggested[k] : undefined);
-                            if (val !== undefined) updates[k] = val;
-                          }
-                          try {
-                            setApplying(true);
-                            const resp = await axios.post(
-                              `/api/cases/${encodeURIComponent(caseIdValue)}/compare/apply`,
-                              { updates },
-                              { headers: authHeaders },
-                            );
-                            const d = resp.data as any;
-                            if ((d as any)?.success && d.data) {
-                              // update UI copy in-place
-                              setFormState((prev) => (prev ? { ...prev, ...d.data } : prev));
-                              setCases((prev) => {
-                                const next = [...prev];
-                                if (next[currentIndex]) {
-                                  next[currentIndex] = {
-                                    ...next[currentIndex],
-                                    ...d.data,
-                                  };
-                                }
-                                return next;
-                              });
-                              setCompareResult(null);
-                              setSelectedSuggestKeys({});
-                              alert("Applied updates");
-                            } else if (d?.error) {
-                              alert(`Apply failed: ${d.error}`);
-                            } else {
-                              alert("Apply returned unexpected response");
-                            }
-                          } catch (err) {
-                            console.error(err);
-                            alert("Failed to apply updates");
-                          } finally {
-                            setApplying(false);
-                          }
-                        }}
-                        disabled={applying}
-                      >
-                        {applying ? "Applying..." : "Confirm & Apply"}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setCompareResult(null);
-                          setSelectedSuggestKeys({});
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                ) : compareResult.suggested && Object.keys(compareResult.suggested).length > 0 ? (
-                  <div>
-                    <div className="font-semibold mb-2">Suggested updates (no diffs)</div>
-                    <pre className="whitespace-pre-wrap text-sm">{JSON.stringify(compareResult.suggested, null, 2)}</pre>
-                    <div className="mt-3">
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => {
-                          setCompareResult(null);
-                          setSelectedSuggestKeys({});
-                        }}
-                      >
-                        Close
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-sm text-muted-foreground">No suggestions returned.</div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-      {formState && caseIdValue && (
-        <div className="mb-6">
-          <TimeProgressionEditor caseId={caseIdValue} readOnly={!editable} />
         </div>
       )}
       <form className="space-y-4">
@@ -1246,26 +1104,26 @@ export default function CaseViewerPage() {
         {/* Delete confirmation modal (two-step) */}
         {showDeleteModal && formState && (
           <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-            <div className={`rounded-lg shadow-lg max-w-md w-full p-6 ${deleteStep === 2 ? "bg-red-600 text-white" : "bg-white text-black"}`}>
+            <div className={`rounded-lg shadow-lg max-w-md w-full p-6 ${deleteStep === 2 ? "bg-amber-500 text-black" : "bg-white text-black"}`}>
               {deleteStep === 1 ? (
                 <>
-                  <h3 className="text-xl font-bold mb-2">Confirm Delete</h3>
+                  <h3 className="text-xl font-bold mb-2">Confirm Archive</h3>
                   <p className="mb-4">
-                    Are you sure you want to delete the case <strong>{formatValue(formState["id"])}</strong>?
+                    Are you sure you want to archive the case <strong>{formatValue(formState["id"])}</strong>?
                   </p>
                   <div className="flex justify-end gap-2">
                     <Button variant="ghost" onClick={() => setShowDeleteModal(false)}>
                       Cancel
                     </Button>
                     <Button className="bg-yellow-500 text-black hover:bg-yellow-600" onClick={() => setDeleteStep(2)}>
-                      Proceed to Delete
+                      Proceed to Archive
                     </Button>
                   </div>
                 </>
               ) : (
                 <>
                   <h3 className="text-xl font-bold mb-2">Final Confirmation</h3>
-                  <p className="mb-4">This action is irreversible. Deleting the case will remove it from the system permanently.</p>
+                  <p className="mb-4">This case will be archived and removed from the active list. You can restore it later from the database if needed.</p>
                   <div className="flex gap-2">
                     <Button
                       variant="ghost"
@@ -1281,17 +1139,22 @@ export default function CaseViewerPage() {
                         const id = formatValue(formState["id"]);
                         if (!id) return;
                         if (!authHeaders) {
-                          alert("You must be signed in to delete cases.");
+                          alert("You must be signed in to archive cases.");
                           return;
                         }
                         try {
                           setIsDeleting(true);
-                          const resp = await axios.delete(`/api/cases?id=${encodeURIComponent(id)}`, {
+                          console.log(`[ARCHIVE] Starting archive for case: ${id}`);
+                          const resp = await axios.delete(`/api/cases?id=${encodeURIComponent(id)}&mode=archive`, {
                             headers: authHeaders,
                           });
+                          console.log(`[ARCHIVE] Response received:`, resp.data);
                           const respData = resp.data as unknown;
                           const respObj = respData as Record<string, unknown>;
                           if (respObj && respObj["success"]) {
+                            console.log(`[ARCHIVE] Success confirmed, updating UI`);
+                            // Add a small delay to ensure database write completes
+                            await new Promise((resolve) => setTimeout(resolve, 500));
                             const next = cases.filter((c) => formatValue(c["id"]) !== id);
                             setCases(next);
                             const newIndex = Math.max(0, Math.min(currentIndex, next.length - 1));
@@ -1300,20 +1163,30 @@ export default function CaseViewerPage() {
                             setShowDeleteModal(false);
                             setEditable(false);
                             setExpandedField(null);
+                            console.log(`[ARCHIVE] Archive completed successfully`);
                           } else {
                             const errMsg = typeof respObj["error"] === "string" ? respObj["error"] : undefined;
-                            throw new Error(errMsg ?? "Delete failed");
+                            const fullMsg = errMsg ?? "Archive failed";
+                            console.error(`[ARCHIVE] API returned error: ${fullMsg}`);
+                            throw new Error(fullMsg);
                           }
                         } catch (err) {
-                          console.error("Error deleting case:", err);
-                          alert("Error deleting case. See console for details.");
-                        } finally {
+                          const errMsg = err instanceof Error ? err.message : String(err);
+                          console.error(`[ARCHIVE] Error archiving case:`, err);
+                          alert(`Error archiving case: ${errMsg}\n\nPlease check your permissions and try again. Make sure you are logged in as an admin.`);
                           setIsDeleting(false);
+                          // Keep modal open so user can try again
+                          return;
+                        } finally {
+                          // Only set isDeleting false here if we're not keeping modal open on error
+                          if (isDeleting) {
+                            setIsDeleting(false);
+                          }
                         }
                       }}
                       disabled={isDeleting}
                     >
-                      {isDeleting ? "Deleting..." : "Delete Case"}
+                      {isDeleting ? "Archiving..." : "Archive Case"}
                     </Button>
                   </div>
                 </>
@@ -1322,8 +1195,6 @@ export default function CaseViewerPage() {
           </div>
         )}
       </form>
-      {/* Inline admin debug panel (visible only to admins) */}
-      <AdminDebugPanel />
     </div>
   );
 }

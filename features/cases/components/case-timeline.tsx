@@ -35,7 +35,7 @@ export function CaseTimeline({ caseId, elapsedSeconds, className, onFastForward 
       <div className="mt-2">
         <strong>How Fake Time Works in Conversation Flow</strong>
         <ul className="list-disc ml-6 mt-2">
-          <li>"Fake time" means the simulation advances through key clinical moments, not real clock time.</li>
+          <li>&quot;Fake time&quot; means the simulation advances through key clinical moments, not real clock time.</li>
           <li>Each timepoint represents a new stage in the case, such as exam, diagnosis, or treatment.</li>
           <li>When you advance time, the conversation and available actions update to match the new stage.</li>
         </ul>
@@ -105,20 +105,22 @@ export function CaseTimeline({ caseId, elapsedSeconds, className, onFastForward 
       <div className="relative border-l-2 border-muted ml-2 space-y-6 pl-4 py-1">
         {timelineItems.map((item) => (
           <div key={item.id} className="relative">
-            <div className={cn(
-              "absolute -left-[21px] top-1 h-3 w-3 rounded-full border-2",
-              item.isUnlocked ? "bg-primary border-primary" : "bg-muted border-muted-foreground"
-            )} />
-            
+            <div
+              className={cn(
+                "absolute -left-[21px] top-1 h-3 w-3 rounded-full border-2",
+                item.isUnlocked ? "bg-primary border-primary" : "bg-muted border-muted-foreground",
+              )}
+            />
+
             <div className={cn("transition-opacity", item.isUnlocked ? "opacity-100" : "opacity-50")}>
               <div className="flex items-center gap-2">
                 <span className="font-medium text-sm">{item.label}</span>
                 {!item.isUnlocked && <Lock className="h-3 w-3 text-muted-foreground" />}
                 {!item.isUnlocked && onFastForward && (
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="h-6 px-2 ml-auto text-xs" 
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 ml-auto text-xs"
                     title="Advance to this timepoint"
                     onClick={() => onFastForward((item.available_after_hours || 0) * 3600)}
                   >
@@ -127,9 +129,7 @@ export function CaseTimeline({ caseId, elapsedSeconds, className, onFastForward 
                   </Button>
                 )}
               </div>
-              {item.summary && (
-                <p className="text-xs text-muted-foreground mt-1">{item.summary}</p>
-              )}
+              {item.summary && <p className="text-xs text-muted-foreground mt-1">{item.summary}</p>}
             </div>
           </div>
         ))}

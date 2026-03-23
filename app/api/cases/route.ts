@@ -41,6 +41,8 @@ function normalizeCaseBody(body: Record<string, unknown>): Record<string, unknow
   // Remove temporary UI-only fields that aren't database columns
   delete next["_ownerPersonaConfig"];
   delete next["_nursePersonaConfig"];
+  delete next["owner_persona_config"];
+  delete next["nurse_persona_config"];
 
   // estimated_time
   if (next["estimated_time"] !== undefined && next["estimated_time"] !== "") {
@@ -114,19 +116,39 @@ export async function GET(req: Request) {
     return auth.error;
   }
   const { supabase } = auth;
+  const url = new URL(req.url);
+  const includeArchived = url.searchParams.get("includeArchived") === "true";
   const { data, error } = await supabase.from("cases").select("*");
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  return NextResponse.json(data);
+
+  const rows = Array.isArray(data) ? data : [];
+  if (includeArchived) {
+    return NextResponse.json(rows);
+  }
+
+  const activeRows = rows.filter((row) => {
+    const settings = row && typeof row === "object" ? (row as Record<string, unknown>).settings : null;
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+      return true;
+    }
+    return (settings as Record<string, unknown>).archived !== true;
+  });
+
+  return NextResponse.json(activeRows);
 }
 
 export async function POST(req: Request) {
-  const auth = await requireUser(req, { requireAdmin: true });
+  const auth = await requireUser(req);
   if ("error" in auth) {
     return auth.error;
   }
-  const { supabase } = auth;
+  if (auth.role !== "admin" && auth.role !== "professor") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const supabase = auth.adminSupabase ?? auth.supabase;
   try {
     // Read raw text first and provide a clearer error for empty or malformed bodies.
     const raw = await req.text();
@@ -243,9 +265,12 @@ export async function POST(req: Request) {
 
 // Allow updating an existing case via PUT
 export async function PUT(req: Request) {
-  const auth = await requireUser(req, { requireAdmin: true });
+  const auth = await requireUser(req);
   if ("error" in auth) {
     return auth.error;
+  }
+  if (auth.role !== "admin" && auth.role !== "professor") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { supabase } = auth;
   try {
@@ -267,8 +292,7 @@ export async function PUT(req: Request) {
       .from("cases")
       .update(body)
       .eq("id", body.id)
-      .select()
-      .single();
+      .select();
 
     if (error) {
       console.error(`[cases PUT] Supabase update FAILED:`, JSON.stringify({
@@ -280,19 +304,30 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    console.log(`[cases PUT] Supabase update SUCCESS for case id="${data?.id}"`);
+    // Handle both single and multiple row responses
+    const updatedCase = Array.isArray(data) ? data[0] : data;
+    
+    if (!updatedCase) {
+      console.error(`[cases PUT] No rows updated for case id="${body.id}"`);
+      return NextResponse.json(
+        { error: `Case with id "${body.id}" not found` },
+        { status: 404 }
+      );
+    }
 
-    if (data?.id) {
+    console.log(`[cases PUT] Supabase update SUCCESS for case id="${updatedCase?.id}"`);
+
+    if (updatedCase?.id) {
       // Note: Personas are created only on case INSERT, not on UPDATE
       // Admin can modify personas via PersonaEditor in case-viewer
       
       try {
-        scheduleCasePersonaPortraitGeneration(supabase, openai, data.id);
+        scheduleCasePersonaPortraitGeneration(supabase, openai, updatedCase.id);
         scheduleCaseImageGeneration(
           supabase,
           openai,
-          data as Record<string, unknown>,
-          { force: !data?.image_url }
+          updatedCase as Record<string, unknown>,
+          { force: !updatedCase?.image_url }
         );
       } catch (scheduleErr) {
         console.error(`[cases PUT] Image scheduling FAILED:`, scheduleErr);
@@ -300,7 +335,7 @@ export async function PUT(req: Request) {
       }
     }
 
-    return NextResponse.json({ success: true, data });
+    return NextResponse.json({ success: true, data: updatedCase });
   } catch (err: unknown) {
     console.error(`[cases PUT] Unhandled exception:`, err);
     const msg = err instanceof Error ? err.message : String(err);
@@ -317,15 +352,111 @@ export async function DELETE(req: Request) {
   if ("error" in auth) {
     return auth.error;
   }
-  const { supabase } = auth;
+  const { supabase, user } = auth;
   try {
     const url = new URL(req.url);
     const id = url.searchParams.get("id");
+    const mode = url.searchParams.get("mode");
     if (!id) {
       return NextResponse.json(
         { error: "id query param is required" },
         { status: 400 }
       );
+    }
+
+    // Restore mode: remove archive markers and keep the case available in admin lists.
+    if (mode === "restore") {
+      const { data: row, error: fetchError } = await supabase
+        .from("cases")
+        .select("settings")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (fetchError) {
+        return NextResponse.json({ error: fetchError.message }, { status: 500 });
+      }
+
+      if (!row) {
+        return NextResponse.json({ error: "Case not found" }, { status: 404 });
+      }
+
+      const baseSettings =
+        row && typeof row === "object" && row.settings && typeof row.settings === "object" && !Array.isArray(row.settings)
+          ? ({ ...(row.settings as Record<string, unknown>) } as Record<string, unknown>)
+          : {};
+
+      delete baseSettings.archived;
+      delete baseSettings.archivedAt;
+      delete baseSettings.archivedBy;
+
+      const { error: restoreError } = await supabase
+        .from("cases")
+        .update({ settings: baseSettings })
+        .eq("id", id);
+
+      if (restoreError) {
+        return NextResponse.json({ error: restoreError.message }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, restored: true });
+    }
+
+    // Soft archive mode: keep row but mark it archived and unpublished.
+    if (mode === "archive") {
+      console.log(`[ARCHIVE] Beginning archive for case: ${id}`);
+      const { data: row, error: fetchError } = await supabase
+        .from("cases")
+        .select("settings")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (fetchError) {
+        console.error(`[ARCHIVE] Fetch error:`, fetchError);
+        return NextResponse.json({ error: fetchError.message }, { status: 500 });
+      }
+
+      if (!row) {
+        console.error(`[ARCHIVE] Case not found: ${id}`);
+        return NextResponse.json({ error: "Case not found" }, { status: 404 });
+      }
+
+      const baseSettings =
+        row && typeof row === "object" && row.settings && typeof row.settings === "object" && !Array.isArray(row.settings)
+          ? (row.settings as Record<string, unknown>)
+          : {};
+
+      const nextSettings: Record<string, unknown> = {
+        ...baseSettings,
+        archived: true,
+        archivedAt: new Date().toISOString(),
+        archivedBy: user.id,
+      };
+
+      console.log(`[ARCHIVE] Updated settings object:`, nextSettings);
+
+      const { error: archiveError, data: updateResult } = await supabase
+        .from("cases")
+        .update({
+          is_published: false,
+          settings: nextSettings,
+        })
+        .eq("id", id)
+        .select();
+
+      console.log(`[ARCHIVE] Update result:`, { error: archiveError, data: updateResult });
+
+      if (archiveError) {
+        console.error(`[ARCHIVE] Archive error:`, archiveError);
+        return NextResponse.json({ error: archiveError.message }, { status: 500 });
+      }
+
+      if (!updateResult || updateResult.length === 0) {
+        console.error(`[ARCHIVE] No rows updated for case: ${id}`);
+        return NextResponse.json({ error: "Failed to update case" }, { status: 500 });
+      }
+
+      console.log(`[ARCHIVE] Archive successful for case: ${id}`);
+      return NextResponse.json({ success: true, archived: true });
     }
 
     const { error } = await supabase.from("cases").delete().eq("id", id);

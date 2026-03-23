@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { debugEventBus } from "@/lib/debug-events-fixed";
 
 import { requireUser } from "@/app/api/_lib/auth";
 import { takeAsync, peekAsync } from "../store";
@@ -54,8 +53,6 @@ export async function GET(req: Request) {
     } catch (err) {
       console.warn("Failed to resolve TTS provider from config", err);
     }
-    debugEventBus.emitEvent("info", "api/tts/stream", `Selected TTS provider: ${selectedProvider}`, { voice });
-
     // Check if it's an ElevenLabs voice
     const elevenLabsVoices: Record<string, string> = {
       "charlie": "IKne3meq5aSn9XLyUdCD",
@@ -127,7 +124,6 @@ export async function GET(req: Request) {
     let providerRes: Response | null = null;
     try {
       if (selectedProvider === "aistudio" && AISTUDIO_KEY && AISTUDIO_TTS_URL) {
-        debugEventBus.emitEvent("info", "api/tts/stream", "Routing TTS to AI Studio", { voice, url: AISTUDIO_TTS_URL });
         providerRes = await fetch(AISTUDIO_TTS_URL, {
           method: "POST",
           headers: {
@@ -138,7 +134,6 @@ export async function GET(req: Request) {
           body: JSON.stringify({ text, voice }),
         });
       } else if (selectedProvider === "gemini" && GEMINI_KEY && GEMINI_TTS_URL) {
-        debugEventBus.emitEvent("info", "api/tts/stream", "Routing TTS to Gemini", { voice, url: GEMINI_TTS_URL });
         providerRes = await fetch(GEMINI_TTS_URL, {
           method: "POST",
           headers: {
@@ -169,7 +164,6 @@ export async function GET(req: Request) {
 
     // If we attempted to route to a provider but it failed, log and fall back to OpenAI below.
     if (selectedProvider !== "openai") {
-      debugEventBus.emitEvent("warning", "api/tts/stream", `Provider ${selectedProvider} failed or not configured, falling back to OpenAI`, { voice });
     }
 
     if (!OPENAI_KEY) {
@@ -198,7 +192,6 @@ export async function GET(req: Request) {
     if (!providerRes || !providerRes.ok) {
       const detail = providerRes ? await providerRes.text().catch(() => "") : "no response";
       console.error(`[tts stream] gpt-4o-mini-tts error: ${detail}`);
-      debugEventBus.emitEvent("error", "api/tts/stream", `gpt-4o-mini-tts unavailable (provider=${selectedProvider})`, { voice, detail });
       return NextResponse.json(
         {
           error: "TTS provider unavailable",

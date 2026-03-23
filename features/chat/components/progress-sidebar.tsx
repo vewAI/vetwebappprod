@@ -1,22 +1,20 @@
-"use client"
+"use client";
 
-import { CheckCircle, Circle, ChevronLeft } from "lucide-react"
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-import Link from "next/link"
-import { FontSizeToggle } from "@/features/navigation/components/font-size-toggle"
-import type { Case } from "@/features/case-selection/models/case"
-import type { Stage } from "@/features/stages/types"
+import { CheckCircle, Circle, ChevronLeft } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import type { Case } from "@/features/case-selection/models/case";
+import type { Stage } from "@/features/stages/types";
 
 type ProgressSidebarProps = {
-  caseItem: Case
-  stages: Stage[]
-  currentStageIndex: number
-  onStageSelect: (index: number) => void
-}
+  caseItem: Case;
+  stages: Stage[];
+  currentStageIndex: number;
+  onStageSelect: (index: number) => void;
+};
 
 export function ProgressSidebar({ caseItem, stages, currentStageIndex, onStageSelect }: ProgressSidebarProps) {
-
   return (
     <div className="flex h-full flex-col border-r bg-muted/20">
       <div className="border-b p-4 space-y-4">
@@ -27,7 +25,6 @@ export function ProgressSidebar({ caseItem, stages, currentStageIndex, onStageSe
               Back to Cases
             </Button>
           </Link>
-          <FontSizeToggle className="border rounded-md px-1" />
         </div>
         <div>
           <h2 className="text-lg font-semibold leading-tight">{caseItem.title}</h2>
@@ -40,7 +37,10 @@ export function ProgressSidebar({ caseItem, stages, currentStageIndex, onStageSe
       <div className="flex-1 overflow-y-auto p-4">
         <h3 className="mb-3 text-sm font-medium">Case Progress</h3>
         <div className="space-y-1">
-          {stages.map((stage, index) => (
+          {stages.map((stage, index) => {
+            const isFuture = index > currentStageIndex;
+            const visibleLabel = isFuture ? "Upcoming Stage" : stage.title;
+            return (
             <button
               key={stage.id}
               onClick={() => onStageSelect(index)}
@@ -49,14 +49,11 @@ export function ProgressSidebar({ caseItem, stages, currentStageIndex, onStageSe
                 currentStageIndex === index ? "bg-primary text-primary-foreground" : "hover:bg-muted",
               )}
             >
-              {stage.completed ? (
-                <CheckCircle className="mr-2 h-4 w-4 text-green-500" />
-              ) : (
-                <Circle className="mr-2 h-4 w-4" />
-              )}
-              <span className="text-left">{stage.title}</span>
+              {stage.completed ? <CheckCircle className="mr-2 h-4 w-4 text-green-500" /> : <Circle className="mr-2 h-4 w-4" />}
+              <span className="text-left">{visibleLabel}</span>
             </button>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -79,5 +76,5 @@ export function ProgressSidebar({ caseItem, stages, currentStageIndex, onStageSe
         </div>
       </div>
     </div>
-  )
+  );
 }

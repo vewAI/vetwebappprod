@@ -11,6 +11,10 @@ import React, {
 import { User, Session } from "@supabase/supabase-js";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import {
+  clearInvalidRefreshTokenState,
+  isRefreshTokenAuthError,
+} from "@/lib/supabase-auth-error-utils";
 
 // Define the shape of our auth context
 type AuthContextType = {
@@ -56,17 +60,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { data, error } = await supabase.auth.getSession();
 
         if (error) {
-          // Handle AuthApiError and refresh-token related failures gracefully.
-          // Prefer explicit error.code checks when available (e.g. "refresh_token_not_found").
           const errObj: any = error ?? {};
-          const errCode = String(errObj?.code ?? errObj?.name ?? "").toLowerCase();
-          const errMsg = String(errObj?.message ?? errCode ?? "").toLowerCase();
-
-          const looksLikeRefreshFailure =
-            errCode === "refresh_token_not_found" ||
-            errMsg.includes("refresh token") ||
-            errMsg.includes("invalid grant") ||
-            errMsg.includes("invalid refresh");
+          const looksLikeRefreshFailure = isRefreshTokenAuthError(errObj);
 
           // In production avoid noisy stack traces — still clear state and redirect.
           if (looksLikeRefreshFailure) {
@@ -74,22 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               console.warn("Clearing local auth state due to invalid refresh token", errObj);
             }
 
-            try {
-              // Sign out cleanly (will clear supabase client storage)
-              await supabase.auth.signOut();
-            } catch (e) {
-              // Fallback: try to clear common localStorage keys used by Supabase
-              try {
-                if (typeof window !== "undefined") {
-                  window.localStorage.removeItem("supabase.auth.token");
-                  window.localStorage.removeItem("sb-access-token");
-                  window.localStorage.removeItem("sb-refresh-token");
-                  window.localStorage.removeItem("supabase.auth");
-                }
-              } catch (__) {
-                /* ignore */
-              }
-            }
+            await clearInvalidRefreshTokenState(supabase);
 
             // Redirect to login so the developer can sign in again
             try {
@@ -176,7 +156,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (!res.ok) {
           const txt = await res.text().catch(() => "");
-          console.debug("Profile fetch failed:", res.status, txt);
           setRole(null);
           setProfileLoading(false);
           return;

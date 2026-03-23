@@ -30,7 +30,7 @@ export function CompletionDialog({
   }
 
   const handleRestartCase = () => {
-    router.push(`/case-${caseId}?reset=true`)
+    router.push(`/case/${caseId}/instructions`)
   }
 
   if (!isOpen) return null

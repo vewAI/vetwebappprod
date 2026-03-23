@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import dynamic from "next/dynamic";
 import { AdminTour } from "@/components/admin/AdminTour";
 import { HelpTip } from "@/components/ui/help-tip";
-import { DebugToggle } from "@/components/admin/DebugToggle";
 import { AppSpecsViewer } from "@/components/admin/AppSpecsViewer";
 
 export default function AdminPage() {
@@ -14,32 +13,17 @@ export default function AdminPage() {
   const [llmOpen, setLlmOpen] = React.useState(false);
   const [specsOpen, setSpecsOpen] = React.useState(false);
   const LLMProviderManager = dynamic(() => import("@/features/admin/components/LLMProviderManager"), { ssr: false });
-  // Start with a stable value for server rendering to avoid hydration mismatch.
-  // Read/write to localStorage only after mount.
-  const [debug, setDebug] = React.useState<boolean>(false);
 
   React.useEffect(() => {
-    // Initialize from localStorage on client only
     try {
-      const stored = window.localStorage.getItem("debugOverlay");
-      const initial = stored === "true";
-      setDebug(initial);
-      // Dispatch initial toggle so listeners receive correct state
-      window.dispatchEvent(new CustomEvent("debugOverlayToggle", { detail: initial }));
-    } catch (e) {
-      // ignore
+      // Cleanup legacy debug toggle preferences so old admin UI traces stay off.
+      window.localStorage.removeItem("debugOverlay");
+      window.localStorage.removeItem("admin_show_speech_debug");
+      window.dispatchEvent(new CustomEvent("debugOverlayToggle", { detail: false }));
+    } catch {
+      // no-op
     }
   }, []);
-
-  React.useEffect(() => {
-    // Persist changes to localStorage on client
-    try {
-      window.localStorage.setItem("debugOverlay", debug ? "true" : "false");
-      window.dispatchEvent(new CustomEvent("debugOverlayToggle", { detail: debug }));
-    } catch (e) {
-      // ignore
-    }
-  }, [debug]);
 
   const tourSteps = [
     { element: '#admin-title', popover: { title: 'Admin Dashboard', description: 'Welcome to the central hub for managing the application.' } },
@@ -58,7 +42,6 @@ export default function AdminPage() {
         </div>
         <AdminTour steps={tourSteps} tourId="admin-dashboard" />
       </div>
-      <DebugToggle enabled={debug} onToggle={setDebug} />
 
       <div className="grid gap-4">
         <div className="flex items-center gap-2">

@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAi from "openai";
 import { searchMerckManual } from "@/features/external-resources/services/merckService";
 import { requireUser } from "@/app/api/_lib/auth";
-import { debugEventBus } from "@/lib/debug-events-fixed";
 import pdf from "pdf-parse";
 import mammoth from "mammoth";
 
@@ -47,12 +46,6 @@ export async function POST(request: NextRequest) {
     const topic = hasReferences ? null : TOPICS[Math.floor(Math.random() * TOPICS.length)];
 
     if (!hasReferences) {
-      debugEventBus.emitEvent(
-        "info",
-        "api/cases/generate-random",
-        "Generating case from internal knowledge",
-        { topic }
-      );
     }
 
     // 3. Generate Case using OpenAI
@@ -151,7 +144,6 @@ export async function POST(request: NextRequest) {
     // 3. Generate Case using OpenAI (must succeed)
     if (!process.env.OPENAI_API_KEY) {
       console.error("OPENAI_API_KEY missing in server environment");
-      debugEventBus.emitEvent("error", "api/cases/generate-random", "OPENAI_API_KEY missing");
       return NextResponse.json({ error: "OpenAI API key not configured on server" }, { status: 500 });
     }
 
@@ -165,7 +157,6 @@ export async function POST(request: NextRequest) {
       const content = completion.choices?.[0]?.message?.content;
       if (!content) {
         console.error("OpenAI returned empty content for Merck-sourced generation", completion);
-        debugEventBus.emitEvent("error", "api/cases/generate-random", "OpenAI returned empty content", { completion });
         return NextResponse.json({ error: "OpenAI returned no content" }, { status: 502 });
       }
 
@@ -173,16 +164,13 @@ export async function POST(request: NextRequest) {
         caseData = JSON.parse(content);
       } catch (parseErr) {
         console.error("Failed to parse OpenAI content as JSON", parseErr, content);
-        debugEventBus.emitEvent("error", "api/cases/generate-random", "Failed to parse OpenAI JSON", { error: String(parseErr), content });
         return NextResponse.json({ error: "Failed to parse model output" }, { status: 502 });
       }
 
       const sourceMsg = hasReferences ? "uploaded references" : "expert knowledge";
-      debugEventBus.emitEvent("success", "api/cases/generate-random", `Case generated from ${sourceMsg}`, { title: caseData?.title ?? null });
       return NextResponse.json(caseData);
     } catch (openaiErr) {
       console.error("OpenAI generation failed for Merck-sourced case", openaiErr);
-      debugEventBus.emitEvent("error", "api/cases/generate-random", "OpenAI generation failed", { error: String(openaiErr), stack: (openaiErr as any)?.stack ?? null });
       return NextResponse.json({ error: "Failed to generate case from expert knowledge" }, { status: 502 });
     }
 

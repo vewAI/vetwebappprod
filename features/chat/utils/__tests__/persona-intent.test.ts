@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectPersonaSwitch, looksLikeLabRequest } from "@/features/chat/utils/persona-intent";
+import { detectPersonaSwitch, looksLikeLabRequest, looksLikePhysicalRequest } from "@/features/chat/utils/persona-intent";
 
 describe("detectPersonaSwitch", () => {
   it("detects owner switch phrases", () => {

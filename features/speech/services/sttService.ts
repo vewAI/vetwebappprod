@@ -1,4 +1,3 @@
-import { debugEventBus } from "@/lib/debug-events-fixed";
 
 // Global recognition instance
 type _ResultRow = Record<string, unknown>;
@@ -29,6 +28,26 @@ let starting = false;
 // Restart protection: avoid infinite start/stop loops by limiting attempts
 let restartAttempts = 0;
 const MAX_RESTARTS = 6; // after this many rapid restarts, stop and surface a warning
+
+// Case context for species-specific corrections (e.g., only replace 'other' -> 'udder' for bovine)
+let currentCaseSpecies: string | null = null;
+
+/**
+ * Set the current case species for STT post-processing.
+ * Call this when entering a case to enable species-aware corrections.
+ * Pass null to clear the context.
+ */
+export function setSttCaseSpecies(species: string | null): void {
+  currentCaseSpecies = species?.toLowerCase().trim() || null;
+}
+
+/**
+ * Check if current case is bovine (cow)
+ */
+function isBovineCase(): boolean {
+  if (!currentCaseSpecies) return false;
+  return /\b(cow|bovine|cattle|calf|heifer|bull|steer)\b/i.test(currentCaseSpecies);
+}
 
 // Global error handler type
 type ErrorHandler = (error: string) => void;
@@ -85,6 +104,10 @@ const CORRECTIONS: Record<string, string> = {
   rental: "rectal",
   // Short-hand mis-hearings for basophils
   baseball: "basophils",
+  // Common mis-transcription: 'finance' -> 'findings'
+  finance: "findings",
+  // Common mis-hearing of 'nurse' as 'north'
+  north: "nurse",
 };
 
 // Phrase-level corrections for multi-word mis-transcriptions.
@@ -106,14 +129,26 @@ const PHRASE_CORRECTIONS: Record<string, string> = {
   // Common mis-hearing: 'The Simpsons' (TV show) -> 'the symptoms'
   "the simpsons": "the symptoms",
   simpsons: "symptoms",
+  // User said 'cardiovascular oscillation' but meant 'cardiovascular auscultation'
+  "cardiovascular oscillation": "cardiovascular auscultation",
+  "cardiovascular oscillations": "cardiovascular auscultation",
 };
 
 // Common mis-hearing where users say something that sounds like 'ask quotation'
 // but actually mean 'auscultation'.
 PHRASE_CORRECTIONS["ask quotation"] = "auscultation";
+// Common mis-hearing: 'buy a chemistry' -> 'biochemistry'
+PHRASE_CORRECTIONS["buy a chemistry"] = "biochemistry";
+PHRASE_CORRECTIONS["buy chemistry"] = "biochemistry";
 // Common mis-hearing: 'baseball fields' -> 'basophils'
 PHRASE_CORRECTIONS["baseball fields"] = "basophils";
 PHRASE_CORRECTIONS["baseball field"] = "basophils";
+// Common mis-hearings for urinalysis
+PHRASE_CORRECTIONS["you're analysis"] = "urinalysis";
+PHRASE_CORRECTIONS["youre analysis"] = "urinalysis";
+PHRASE_CORRECTIONS["your analysis"] = "urinalysis";
+PHRASE_CORRECTIONS["you are analysis"] = "urinalysis";
+PHRASE_CORRECTIONS["ur analysis"] = "urinalysis";
 
 export function postProcessTranscript(text: string): string {
   let processed = text;
@@ -163,27 +198,26 @@ export function postProcessTranscript(text: string): string {
   const substitutions: Array<{ from: string; to: string }> = [];
 
   // Prefer veterinary sense for ambiguous tokens (e.g., 'other' -> 'udder').
-  // Only do these replacements on whole-word boundaries to avoid accidental
-  // mangling of unrelated words. Record substitutions for telemetry.
-  const beforeOther = processed;
-  processed = processed.replace(/\bother\b/gi, "udder");
-  if (processed !== beforeOther)
-    substitutions.push({ from: "other", to: "udder" });
-  const beforeOther2 = processed;
-  processed = processed.replace(
-    /\b(the|my|her|cow's|left|right|front|rear)\s+other\b/gi,
-    "$1 udder",
-  );
-  if (processed !== beforeOther2)
-    substitutions.push({ from: "other (positional)", to: "udder" });
-  const beforeOther3 = processed;
-  processed = processed.replace(
-    /\bother\s+(swelling|edema|pain|heat)\b/gi,
-    "udder $1",
-  );
-  if (processed !== beforeOther3)
-    substitutions.push({ from: "other <symptom>", to: "udder <symptom>" });
-
+  // ONLY apply for bovine cases (cow, cattle, etc.) - not for canine, feline, etc.
+  // Be conservative: only map standalone 'other' to 'udder' for short
+  // transcripts (likely a single-field response) or when symptom words are
+  // present (e.g., 'other swelling'). This avoids mangling longer sentences
+  // where 'other' is used generically.
+  if (isBovineCase()) {
+    const beforeOther = processed;
+    const wordCount = processed.trim() ? processed.trim().split(/\s+/).length : 0;
+    const symptomPattern = /\b(swelling|edema|pain|heat|swollen|inflamed)\b/i;
+    if (wordCount <= 6 || symptomPattern.test(processed)) {
+      processed = processed.replace(/\bother\b/gi, "udder");
+      if (processed !== beforeOther) substitutions.push({ from: "other", to: "udder" });
+    }
+    const beforeOther2 = processed;
+    processed = processed.replace(/\b(the|my|her|cow's|left|right|front|rear)\s+other\b/gi, "$1 udder");
+    if (processed !== beforeOther2) substitutions.push({ from: "other (positional)", to: "udder" });
+    const beforeOther3 = processed;
+    processed = processed.replace(/\bother\s+(swelling|edema|pain|heat)\b/gi, "udder $1");
+    if (processed !== beforeOther3) substitutions.push({ from: "other <symptom>", to: "udder <symptom>" });
+  }
   // If the recognized text contains common-language tokens that map to
   // veterinary terms, apply those corrections.
   // First apply phrase-level corrections to handle multi-word mis-hearings
@@ -192,8 +226,7 @@ export function postProcessTranscript(text: string): string {
     const pattern = new RegExp("\\b" + escaped + "\\b", "gi");
     const before = processed;
     const after = processed.replace(pattern, rightPhrase);
-    if (after !== before)
-      substitutions.push({ from: wrongPhrase, to: rightPhrase });
+    if (after !== before) substitutions.push({ from: wrongPhrase, to: rightPhrase });
     processed = after;
   }
 
@@ -216,49 +249,25 @@ export function postProcessTranscript(text: string): string {
     if (vetPattern.test(processed)) continue;
   }
 
-  // Emit lightweight telemetry so we can tune corrections without leaking
-  // user audio/text. This uses the existing debugEventBus.
-  try {
-    if (substitutions.length > 0) {
-      // Emit names only; do not include full transcripts to avoid PII leakage.
-      (debugEventBus as any).emitEvent?.(
-        "info",
-        "STT",
-        "Applied vet substitutions",
-        { substitutions },
-      );
-    }
-  } catch {
-    // ignore telemetry failures
-  }
-
   return processed;
 }
 
 export const isSpeechRecognitionSupported = (): boolean => {
   if (typeof window === "undefined") return false;
-  return !!(
-    (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-  );
+  return !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
 };
 
-export async function startListening(
-  callback: (text: string, isFinal: boolean) => void,
-  options?: StartListeningOptions,
-): Promise<boolean> {
-  debugEventBus.emitEvent("info", "STT", "Starting speech recognition");
+export async function startListening(callback: (text: string, isFinal: boolean) => void, options?: StartListeningOptions): Promise<boolean> {
   // Respect global suppression flag (set when playing TTS) to avoid
   // starting the microphone while assistant audio is playing.
   // Explicit suppression or cooldown period prevents starting
   if (sttSuppressed || Date.now() < sttSuppressedUntil) {
-    debugEventBus.emitEvent("info", "STT", "Start suppressed by global flag");
     return false;
   }
   // If we're in deaf mode, block starts entirely. Deaf mode is the highest
   // priority: even if the mic can technically start, we should not allow it
   // to begin while TTS playback is intended to be heard.
   if (isInDeafMode()) {
-    debugEventBus.emitEvent("info", "STT", "Start blocked: in deaf mode");
     return false;
   }
   // Stop any ongoing recognition to ensure a fresh instance
@@ -267,17 +276,10 @@ export async function startListening(
   // Check browser support
   if (!isSpeechRecognitionSupported()) {
     console.warn("Speech recognition not supported in this browser");
-    debugEventBus.emitEvent(
-      "warning",
-      "STT",
-      "Speech recognition not supported",
-    );
     return false;
   }
 
-  const SpeechRecognition =
-    (window as any).SpeechRecognition ||
-    (window as any).webkitSpeechRecognition;
+  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
   // Create and configure recognition
   recognition = new (SpeechRecognition as any)();
@@ -287,9 +289,7 @@ export async function startListening(
   let recognitionActive = false;
 
   // Try to add grammar list if supported
-  const SpeechGrammarList =
-    (window as any).SpeechGrammarList ||
-    (window as any).webkitSpeechGrammarList;
+  const SpeechGrammarList = (window as any).SpeechGrammarList || (window as any).webkitSpeechGrammarList;
   if (SpeechGrammarList) {
     const speechRecognitionList = new SpeechGrammarList();
     const grammar =
@@ -306,10 +306,7 @@ export async function startListening(
     return id;
   })();
 
-  if (
-    typeof navigator !== "undefined" &&
-    navigator.mediaDevices?.getUserMedia
-  ) {
+  if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
     try {
       // Apply noise suppression and echo cancellation constraints to help
       // filter out background noise and other people talking nearby.
@@ -317,18 +314,13 @@ export async function startListening(
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true,
-        ...(normalizedDeviceId
-          ? { deviceId: { exact: normalizedDeviceId } }
-          : {}),
+        ...(normalizedDeviceId ? { deviceId: { exact: normalizedDeviceId } } : {}),
       };
       micStream = await navigator.mediaDevices.getUserMedia({
         audio: audioConstraints,
       });
     } catch (err) {
-      console.warn(
-        "Microphone access failed; falling back to default device",
-        err,
-      );
+      console.warn("Microphone access failed; falling back to default device", err);
       micStream = null;
     }
   }
@@ -339,7 +331,6 @@ export async function startListening(
     recognition.interimResults = true;
 
     recognition.onstart = () => {
-      debugEventBus.emitEvent("success", "STT", "Speech recognition started");
       // reset restart attempts on successful start
       restartAttempts = 0;
       // mark active
@@ -349,12 +340,6 @@ export async function startListening(
     };
 
     recognition.onerror = (event: any) => {
-      debugEventBus.emitEvent(
-        "error",
-        "STT",
-        `Speech recognition error: ${event?.error}`,
-        { error: event?.error },
-      );
       const errCode = String(event?.error || "").toLowerCase();
 
       // Notify the hook about the specific error
@@ -363,67 +348,30 @@ export async function startListening(
       }
 
       // For some errors we should not attempt to automatically restart
-      const fatalErrors = [
-        "not-allowed",
-        "service-not-allowed",
-        "security",
-        "microphone-disabled",
-        "network",
-      ];
+      const fatalErrors = ["not-allowed", "service-not-allowed", "security", "microphone-disabled", "network"];
       try {
         if (fatalErrors.some((e) => errCode.includes(e))) {
           shouldRestart = false;
-          debugEventBus.emitEvent(
-            "warning",
-            "STT",
-            `Speech recognition fatal error, will not auto-restart: ${errCode}`,
-          );
           return;
         }
 
         // Treat 'aborted' and 'no-speech' as transient errors: try a quick soft restart
         if (errCode.includes("aborted") || errCode.includes("no-speech")) {
-          debugEventBus.emitEvent(
-            "warning",
-            "STT",
-            `Transient STT error detected (${errCode}) - scheduling quick restart`,
-          );
           // Attempt a gentle restart after a short pause, respecting suppression and restart caps
           try {
-            if (
-              !sttSuppressed &&
-              shouldRestart &&
-              restartAttempts < MAX_RESTARTS
-            ) {
+            if (!sttSuppressed && shouldRestart && restartAttempts < MAX_RESTARTS) {
               restartAttempts += 1;
               const shortDelay = 250; // short pause before restarting
               setTimeout(() => {
                 try {
                   if (sttSuppressed || Date.now() < sttSuppressedUntil) return;
                   if ((recognition as any)?._active) {
-                    debugEventBus.emitEvent(
-                      "info",
-                      "STT",
-                      "Restart suppressed: recognition already active",
-                    );
                     return;
                   }
-                  debugEventBus.emitEvent(
-                    "info",
-                    "STT",
-                    "Attempting quick restart after transient error",
-                    { errCode, attempt: restartAttempts },
-                  );
                   try {
                     starting = true;
                     recognition.start();
                   } catch (e) {
-                    debugEventBus.emitEvent(
-                      "info",
-                      "STT",
-                      "Quick restart failed or was duplicate",
-                      { error: String(e) },
-                    );
                   } finally {
                     starting = false;
                   }
@@ -447,11 +395,6 @@ export async function startListening(
         // DEAF MODE CHECK: If we're in deaf mode, completely ignore ALL results.
         // This is the bulletproof way to prevent mic from "hearing" TTS.
         if (Date.now() < deafUntil) {
-          debugEventBus.emitEvent(
-            "info",
-            "STT",
-            "Ignoring STT result - in deaf mode (TTS playing or recently ended)",
-          );
           return;
         }
 
@@ -460,10 +403,7 @@ export async function startListening(
         // event.results is a SpeechRecognitionResultList
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
-          const transcript =
-            result[0] && result[0].transcript
-              ? String(result[0].transcript)
-              : "";
+          const transcript = result[0] && result[0].transcript ? String(result[0].transcript) : "";
           if (result.isFinal) {
             finalT += transcript + " ";
           } else {
@@ -471,8 +411,7 @@ export async function startListening(
           }
         }
 
-        if (interim.trim())
-          callback(postProcessTranscript(interim.trim()), false);
+        if (interim.trim()) callback(postProcessTranscript(interim.trim()), false);
         if (finalT.trim()) callback(postProcessTranscript(finalT.trim()), true);
       } catch (e) {
         console.error("STT parse error", e);
@@ -483,7 +422,6 @@ export async function startListening(
     // expect continuous listening (shouldRestart). Guard against calling
     // start while a start is already in progress.
     recognition.onend = () => {
-      debugEventBus.emitEvent("info", "STT", "Speech recognition ended");
       // clear active marker so future starts are allowed
       try {
         (recognition as any)._active = false;
@@ -497,11 +435,6 @@ export async function startListening(
         // Protect against tight restart loops: allow a bounded number of restarts
         if (restartAttempts >= MAX_RESTARTS) {
           shouldRestart = false;
-          debugEventBus.emitEvent(
-            "warning",
-            "STT",
-            `Max restart attempts reached (${MAX_RESTARTS}). Auto-restart disabled.`,
-          );
           return;
         }
 
@@ -512,11 +445,6 @@ export async function startListening(
           try {
             // If we already consider recognition active, skip restarting
             if ((recognition as any)?._active) {
-              debugEventBus.emitEvent(
-                "info",
-                "STT",
-                "Restart suppressed: recognition already active",
-              );
               return;
             }
             starting = true;
@@ -528,27 +456,13 @@ export async function startListening(
               } catch {}
             } catch (e) {
               const errStr = String(e || "").toLowerCase();
-              if (
-                errStr.includes("recognition has already started") ||
-                errStr.includes("invalidstateerror")
-              ) {
+              if (errStr.includes("recognition has already started") || errStr.includes("invalidstateerror")) {
                 // benign race: recognition already started elsewhere - ignore
-                debugEventBus.emitEvent(
-                  "info",
-                  "STT",
-                  "Ignored duplicate recognition.start() (already started)",
-                );
               } else {
                 throw e;
               }
             }
           } catch (e) {
-            debugEventBus.emitEvent(
-              "error",
-              "STT",
-              "Failed to restart speech recognition",
-              { error: String(e) },
-            );
           } finally {
             starting = false;
           }
@@ -564,11 +478,6 @@ export async function startListening(
     if (recognition) {
       // If recognition is already active, return true without calling start again
       if ((recognition as any)?._active) {
-        debugEventBus.emitEvent(
-          "info",
-          "STT",
-          "Start skipped: recognition already active",
-        );
         return true;
       }
 
@@ -578,15 +487,7 @@ export async function startListening(
           recognition.start();
         } catch (err) {
           const es = String(err || "").toLowerCase();
-          if (
-            es.includes("recognition has already started") ||
-            es.includes("invalidstateerror")
-          ) {
-            debugEventBus.emitEvent(
-              "info",
-              "STT",
-              "Ignored duplicate start attempt (already started)",
-            );
+          if (es.includes("recognition has already started") || es.includes("invalidstateerror")) {
             starting = false;
             return true;
           }
@@ -667,12 +568,9 @@ export function abortListening(): void {
  * will be prevented. When clearing suppression, callers may choose to
  * restart listening as appropriate.
  */
-export function setSttSuppressed(
-  val: boolean,
-  skipCooldown = false,
-  reason?: string,
-) {
+export function setSttSuppressed(val: boolean, skipCooldown = false, reason?: string) {
   sttSuppressed = Boolean(val);
+  console.debug("sttService: setSttSuppressed ->", sttSuppressed, "skipCooldown:", skipCooldown, "reason:", reason);
   if (sttSuppressed) {
     // Ensure any active recognition is stopped immediately
     try {
@@ -686,20 +584,10 @@ export function setSttSuppressed(
     // When clearing suppression, also clear the timestamp-based cooldown.
     // If skipCooldown is true, clear immediately; otherwise add a short buffer.
     try {
-      sttSuppressedUntil = skipCooldown
-        ? 0
-        : Date.now() + STT_SUPPRESSION_COOLDOWN_MS;
+      sttSuppressedUntil = skipCooldown ? 0 : Date.now() + STT_SUPPRESSION_COOLDOWN_MS;
     } catch {}
   }
 
-  // Emit lightweight telemetry so we can trace suppression transitions
-  try {
-    (debugEventBus as any).emitEvent?.("info", "STT", "suppression_set", {
-      sttSuppressed,
-      sttSuppressedUntil,
-      reason: reason ?? null,
-    });
-  } catch {}
 }
 
 /**
@@ -715,11 +603,6 @@ export function setSttSuppressedFor(durationMs: number, reason?: string) {
       shouldRestart = false;
       if (recognition) recognition.abort();
     } catch {}
-    (debugEventBus as any).emitEvent?.("info", "STT", "suppression_set_for", {
-      durationMs,
-      sttSuppressedUntil,
-      reason: reason ?? null,
-    });
   } catch {}
 }
 
@@ -732,9 +615,7 @@ export function isSttSuppressed() {
  */
 export function canStartListening(): boolean {
   try {
-    return (
-      !sttSuppressed && Date.now() >= sttSuppressedUntil && !isInDeafMode()
-    );
+    return !sttSuppressed && Date.now() >= sttSuppressedUntil && !isInDeafMode();
   } catch (e) {
     return false;
   }
@@ -745,26 +626,56 @@ export function canStartListening(): boolean {
  * Returns a cancel function to abort the scheduled checks.
  * The predicate is polled every `intervalMs` up to `timeoutMs`.
  */
-import { scheduleClearSuppressionWhen as _scheduleClearSuppressionWhen } from "@/features/chat/utils/timers";
 
-export function scheduleClearSuppressionWhen(
-  predicate: () => boolean,
-  _intervalMs = 200,
-  timeoutMs = 8000,
-): { cancel: () => void } {
-  // Delegate polling implementation to shared timers helper and wire the
-  // resolution to clear STT suppression. Keep the same external shape
-  // so callers in the codebase are unaffected.
-  const handle = _scheduleClearSuppressionWhen(predicate, timeoutMs);
-  // When the shared promise resolves true, clear suppression (skip cooldown).
-  void handle.promise.then((ok) => {
+export function scheduleClearSuppressionWhen(predicate: () => boolean, intervalMs = 50, timeoutMs = 8000): { cancel: () => void } {
+  // Implement deterministic polling here to avoid relying on promise
+  // microtasks that can behave differently under fake timers. This keeps
+  // behavior predictable in tests and in production.
+  if (predicate()) {
     try {
-      if (ok) setSttSuppressed(false, true);
+      setSttSuppressed(false, true);
+    } catch {}
+    return { cancel: () => {} };
+  }
+
+  let resolved = false;
+  const start = Date.now();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const tick = () => {
+    try {
+      if (resolved) return;
+      if (predicate()) {
+        resolved = true;
+        try {
+          sttSuppressed = false;
+          sttSuppressedUntil = 0;
+        } catch {}
+        try {
+          setSttSuppressed(false, true);
+        } catch {}
+        return;
+      }
+      if (Date.now() - start >= timeoutMs) {
+        resolved = true;
+        return;
+      }
+      timer = setTimeout(tick, intervalMs);
     } catch (e) {
-      // ignore
+      resolved = true;
     }
-  });
-  return { cancel: handle.cancel };
+  };
+
+  timer = setTimeout(tick, intervalMs);
+
+  return {
+    cancel: () => {
+      try {
+        if (timer) clearTimeout(timer);
+      } catch {}
+      resolved = true;
+    },
+  };
 }
 
 /**
@@ -774,25 +685,16 @@ export function scheduleClearSuppressionWhen(
 export function enterDeafMode(durationMs = 0) {
   // If durationMs is 0, we're starting TTS - set a far future timestamp
   // The actual end will be set when exitDeafMode is called
-  deafUntil =
-    durationMs > 0 ? Date.now() + durationMs : Number.MAX_SAFE_INTEGER;
-  debugEventBus.emitEvent(
-    "info",
-    "STT",
-    `Entered deaf mode until ${deafUntil}`,
-  );
+  deafUntil = durationMs > 0 ? Date.now() + durationMs : Number.MAX_SAFE_INTEGER;
 }
 
 /**
  * Exit deaf mode after TTS ends. Adds a buffer period to catch any trailing audio.
  */
 export function exitDeafMode(bufferMs: number = DEAF_WINDOW_AFTER_TTS_MS) {
+  // Always keep a trailing deaf window so the mic doesn't pick up
+  // residual TTS audio. Default = ~1650ms (DEAF_WINDOW_AFTER_TTS_MS).
   deafUntil = Date.now() + bufferMs;
-  debugEventBus.emitEvent(
-    "info",
-    "STT",
-    `Exiting deaf mode, deaf until ${deafUntil} (${bufferMs}ms buffer)`,
-  );
 }
 
 /**
@@ -807,7 +709,6 @@ export function isInDeafMode(): boolean {
  */
 export function setGlobalPaused(paused: boolean) {
   globalPaused = Boolean(paused);
-  debugEventBus.emitEvent("info", "STT", `Global pause set to ${globalPaused}`);
 }
 
 /**
@@ -815,4 +716,15 @@ export function setGlobalPaused(paused: boolean) {
  */
 export function isGlobalPaused(): boolean {
   return globalPaused;
+}
+
+/**
+ * One-shot reset of all STT blocking state: suppression, deaf mode, global pause.
+ * Call this when the user explicitly wants STT to start (mic click, resume, etc.).
+ */
+export function clearAllSttBlocks() {
+  sttSuppressed = false;
+  sttSuppressedUntil = 0;
+  deafUntil = 0;
+  globalPaused = false;
 }

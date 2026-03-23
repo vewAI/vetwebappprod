@@ -1,6 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import PDFDocument from "pdfkit";
 
+function resolveTranscriptSpeaker(message: any): string {
+  const role = typeof message?.role === "string" ? message.role : "";
+  if (role === "user") return "STUDENT";
+
+  const personaRoleKey = typeof message?.personaRoleKey === "string" ? message.personaRoleKey : "";
+  const displayRole = typeof message?.displayRole === "string" ? message.displayRole.trim() : "";
+
+  if (personaRoleKey === "veterinary-nurse") {
+    return displayRole && !/nurse/i.test(displayRole) ? `VETERINARY NURSE (${displayRole.toUpperCase()})` : "VETERINARY NURSE";
+  }
+
+  if (personaRoleKey === "owner") {
+    return displayRole && !/owner|client/i.test(displayRole) ? `CLIENT (OWNER: ${displayRole.toUpperCase()})` : "CLIENT (OWNER)";
+  }
+
+  if (personaRoleKey === "lab-technician") {
+    return displayRole && !/lab|technician/i.test(displayRole) ? `LABORATORY TECHNICIAN (${displayRole.toUpperCase()})` : "LABORATORY TECHNICIAN";
+  }
+
+  if (displayRole) return displayRole.toUpperCase();
+
+  return "ASSISTANT";
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const { caseId, feedbackHtml, messages } = await req.json();
@@ -63,7 +87,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         doc.moveDown(1);
 
         messages.forEach((m: any) => {
-          const role = (m.displayRole || m.role || "unknown").toUpperCase();
+          const role = resolveTranscriptSpeaker(m);
           doc.fontSize(9).fillColor("#666666").text(`${role}:`, { continued: true });
           doc.fillColor("#000000").fontSize(10).text(` ${m.content || ""}`);
           doc.moveDown(0.5);

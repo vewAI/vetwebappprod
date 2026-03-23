@@ -133,7 +133,7 @@ export default function StudentDetailsPage() {
                       <div className="text-xs text-muted-foreground">{ac.case?.species} — {ac.case?.difficulty}</div>
                     </div>
                     <Button asChild size="sm">
-                      <Link href={`/case/${ac.case_id}`}>Open</Link>
+                      <Link href={`/case/${ac.case_id}/instructions`}>Open</Link>
                     </Button>
                   </li>
                 ))}

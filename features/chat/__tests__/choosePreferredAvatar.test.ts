@@ -1,4 +1,4 @@
-import test from "node:test";
+import { test } from "vitest";
 import assert from "node:assert";
 import { choosePreferredAvatar } from "@/features/chat/utils/avatar";
 
@@ -32,7 +32,10 @@ test("falls back to assistant role if present", () => {
 });
 
 test("falls back to first profile if none match", () => {
-  const list = [{ roleKey: "owner", displayName: "Owner" }, { roleKey: "lab", displayName: "Lab" }];
+  const list = [
+    { roleKey: "owner", displayName: "Owner" },
+    { roleKey: "lab", displayName: "Lab" },
+  ];
   const pick = choosePreferredAvatar(list);
   assert.strictEqual(pick, list[0]);
 });

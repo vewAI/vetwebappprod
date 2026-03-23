@@ -1,4 +1,3 @@
-import { debugEventBus } from '@/lib/debug-events-fixed';
 import { chatService } from '@/features/chat/services/chatService';
 import type { Message } from '@/features/chat/models/chat';
 
@@ -31,7 +30,7 @@ export async function sendPersonaGreeting(personaKey: string, deps: SendPersonaG
       // For UI-driven greeting we should NOT force the mic to resume to avoid accidental auto-listen.
       const forceResume = false;
       // Emit telemetry so QA can detect UI based greetings that intentionally don't resume the mic
-      try { debugEventBus.emitEvent?.('info','STT','persona_ui_greeting_no_resume',{ personaKey, wasListening: Boolean(isListening), reason: 'ui-greeting' }); } catch {}
+      
       try {
         await playTtsAndPauseStt(greeting, personaMeta?.voiceId, { roleKey: personaKey, displayRole: assistantMsg.displayRole, role: personaKey, caseId, forceResume } as any, personaMeta?.sex as any);
       } catch (e) {

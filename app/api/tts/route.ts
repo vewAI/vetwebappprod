@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/app/api/_lib/auth";
-import { debugEventBus } from "@/lib/debug-events-fixed";
 
 // Server-side TTS proxy to a third-party TTS service (OpenAI/E2E)
 // Expects JSON: { text: string, voice?: string }
@@ -101,7 +100,6 @@ export async function POST(req: Request) {
     if (!openAiRes.ok) {
       const errText = await openAiRes.text().catch(() => "");
       console.error("OpenAI TTS error (gpt-4o-mini-tts):", errText);
-      debugEventBus.emitEvent("error", "api/tts", "gpt-4o-mini-tts unavailable", { voice, detail: errText });
       return NextResponse.json(
         {
           error: "TTS provider unavailable",

@@ -98,7 +98,7 @@ export function AttemptCard({ attempt }: AttemptCardProps) {
           <CardFooter className="flex justify-end px-0">
             <div className="flex items-center gap-2">
               {attempt.completionStatus !== "completed" ? (
-                <Link href={`/${attempt.caseId}?attempt=${attempt.id}`}>
+                <Link href={`/case/${attempt.caseId}/attempt?attempt=${attempt.id}`}>
                   <Button size="sm" variant="ghost">
                     Continue
                     <ChevronRight className="ml-1 h-4 w-4" />

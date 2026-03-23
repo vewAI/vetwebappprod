@@ -10,13 +10,11 @@ export type TtsEventDetail = {
   roleKey?: string;
   displayRole?: string;
   messageId?: string;
+  forceResume?: boolean;
   metadata?: Record<string, unknown>;
 };
 
-export function dispatchTtsEvent(
-  eventName: TtsEventName,
-  detail?: TtsEventDetail
-) {
+export function dispatchTtsEvent(eventName: TtsEventName, detail?: TtsEventDetail) {
   if (typeof window === "undefined") return;
   try {
     window.dispatchEvent(new CustomEvent(eventName, { detail }));
