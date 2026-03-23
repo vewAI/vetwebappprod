@@ -1,0 +1,34 @@
+---
+description: Feature structure, app routing, and API patterns
+alwaysApply: true
+---
+
+# Architecture & File Structure
+
+## Feature Modules (features/*)
+
+Each feature is a self-contained silo:
+
+```
+[feature-name]/
+  README.spec.md   # The Blueprint — logic and models
+  models/          # TypeScript interfaces (exported from Spec)
+  components/      # UI components
+  services/        # Client-side business logic & API calls
+  hooks/           # React hooks
+  prompts/         # AI system prompts
+  __tests__/       # Unit tests (validating the Spec)
+```
+
+## App Routing (app/*)
+
+- **Pages**: `app/[route]/page.tsx` — Thin wrappers importing Feature Components
+- **API**: `app/api/[route]/route.ts` — Orchestrators, not business logic holders
+- **Auth**: Use `requireUser` from `@/app/api/_lib/auth` for middleware
+
+## Commands
+
+- `npm run dev` — Development (Turbopack)
+- `npm run lint` — Static analysis
+- `npm run test` — Unit tests co-located in features
+- `npm run seed:cases` — Reset DB state
