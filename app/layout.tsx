@@ -3,14 +3,12 @@ import { GeistSans, GeistMono } from "geist/font";
 import "./globals.css";
 import { AuthProvider } from "@/features/auth/services/authService";
 import { ProtectedRoute } from "@/features/auth/components/protected-route";
-import { AppChrome } from "@/components/app-chrome";
 import { SpeechDeviceProvider } from "@/features/speech/context/audio-device-context";
 import { FontSizeProvider } from "@/features/navigation/context/FontSizeContext";
 import MobileSpeechControls from "@/features/speech/components/mobile-speech-controls";
 import MainLayout from "@/components/layout/main-layout";
 
 const geistSans = GeistSans;
-
 const geistMono = GeistMono;
 
 export const metadata: Metadata = {
@@ -31,12 +29,11 @@ export default function RootLayout({
             <SpeechDeviceProvider>
               {process.env.NEXT_PUBLIC_ENABLE_AUTH_PROTECTION === "true" ? (
                 <ProtectedRoute>
-                  <AppChrome>{children}</AppChrome>
                   <MainLayout>{children}</MainLayout>
                   <MobileSpeechControls />
                 </ProtectedRoute>
               ) : (
-                <AppChrome>{children}</AppChrome>
+                <MainLayout>{children}</MainLayout>
               )}
             </SpeechDeviceProvider>
           </FontSizeProvider>

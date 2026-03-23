@@ -246,7 +246,7 @@ export function LoginForm() {
       }
 
       setMagicLinkSent(true);
-      setSuccess("Login link sent! <br />Check your email and click the link to sign in.");
+      setSuccess("Login link sent! Check your email and click the link to sign in.");
     } catch (err: unknown) {
       const errObj = err instanceof Error ? err : new Error(String(err));
       setError(errObj.message || "Failed to send login link");
