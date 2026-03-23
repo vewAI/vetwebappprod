@@ -9,7 +9,7 @@ import React, {
   ReactNode,
 } from "react";
 import { User, Session } from "@supabase/supabase-js";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 // Define the shape of our auth context
@@ -48,6 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isInitialized, setIsInitialized] = useState(false);
   const lastUserIdRef = useRef<string | null>(null);
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     const getInitialSession = async () => {
@@ -128,7 +129,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } else {
           // Handle explicit auth state changes
           if (event === "SIGNED_IN") {
-            router.push("/");
+            // Let /auth/callback control redirect (magic link → setup-passkey or /)
+            if (pathname !== "/auth/callback") {
+              router.push("/");
+            }
           } else if (event === "SIGNED_OUT") {
             router.push("/login");
           }
@@ -140,7 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       authListener.subscription.unsubscribe();
     };
-  }, [router]);
+  }, [router, pathname]);
 
   // Fetch profile (role) whenever session changes
   useEffect(() => {

@@ -11,8 +11,8 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
-    // Skip protection for the login page
-    if (pathname === "/login") {
+    // Skip protection for login and auth callback (callback needs to establish session)
+    if (pathname === "/login" || pathname === "/auth/callback") {
       return;
     }
 
@@ -42,9 +42,14 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
     }
   }, [user, loading, profileLoading, router, pathname]);
 
-  // Show loading screen while checking auth or profile
-  if (loading || profileLoading) {
+  // Show loading screen while checking auth or profile (except on callback, which needs to run)
+  const isCallback = pathname === "/auth/callback";
+  if (!isCallback && (loading || profileLoading)) {
     return <LoadingScreen />;
+  }
+
+  if (isCallback) {
+    return <>{children}</>;
   }
 
   // If path is within the admin area, ensure user is admin

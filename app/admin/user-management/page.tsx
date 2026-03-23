@@ -12,13 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Badge } from "@/components/ui/badge";
 import { AdminTour } from "@/components/admin/AdminTour";
 import { HelpTip } from "@/components/ui/help-tip";
-import { InstitutionDomainsModal } from "@/features/admin/components/InstitutionDomainsModal";
-
-type Institution = {
-  id: string;
-  name: string;
-  created_at: string;
-};
+import { InstitutionManagement, type Institution } from "@/features/admin/components/InstitutionManagement";
 
 type UserProfile = {
   id: string;
@@ -63,21 +57,13 @@ export default function UserManagementPage() {
   // Simple toast/notification state
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 
-  // Institution Form State
-  const [isInstDialogOpen, setIsInstDialogOpen] = useState(false);
-  const [instName, setInstName] = useState("");
-  const [instSubmitting, setInstSubmitting] = useState(false);
-  // Institution domains modal
-  const [domainsModalInstitution, setDomainsModalInstitution] = useState<Institution | null>(null);
-  const [isDomainsModalOpen, setIsDomainsModalOpen] = useState(false);
-
   useEffect(() => {
     fetchData();
   }, []);
 
-  const fetchData = async () => {
+  const fetchData = async (options?: { skipLoading?: boolean }) => {
     try {
-      setLoading(true);
+      if (!options?.skipLoading) setLoading(true);
       const token = await getAccessToken();
       const headers = { Authorization: `Bearer ${token}` };
 
@@ -93,7 +79,7 @@ export default function UserManagementPage() {
       const error = err as any;
       setError(error.response?.data?.error || error.message);
     } finally {
-      setLoading(false);
+      if (!options?.skipLoading) setLoading(false);
     }
   };
 
@@ -148,26 +134,6 @@ export default function UserManagementPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const error = err as any;
       alert(error.response?.data?.error || error.message);
-    }
-  };
-
-  const handleInstSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      setInstSubmitting(true);
-      const token = await getAccessToken();
-      await axios.post("/api/admin/institutions", { name: instName }, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setIsInstDialogOpen(false);
-      setInstName("");
-      await fetchData();
-    } catch (err: unknown) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const error = err as any;
-      alert(error.response?.data?.error || error.message);
-    } finally {
-      setInstSubmitting(false);
     }
   };
 
@@ -522,87 +488,8 @@ export default function UserManagementPage() {
       )}
 
       {activeTab === "institutions" && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Institutions</CardTitle>
-            {userRole === "admin" && (
-              <Dialog open={isInstDialogOpen} onOpenChange={setIsInstDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button>Create Institution</Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Create Institution</DialogTitle>
-                  </DialogHeader>
-                  <form onSubmit={handleInstSubmit} className="space-y-4">
-                    <div>
-                      <Label>Name</Label>
-                      <Input 
-                        value={instName} 
-                        onChange={e => setInstName(e.target.value)}
-                        required
-                      />
-                    </div>
-                    <Button type="submit" disabled={instSubmitting} className="w-full">
-                      {instSubmitting ? "Creating..." : "Create"}
-                    </Button>
-                  </form>
-                </DialogContent>
-              </Dialog>
-              
-            )}
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-md border">
-              <table className="w-full text-sm text-left">
-                <thead className="bg-muted/50 text-muted-foreground">
-                  <tr>
-                    <th className="p-3 font-medium">Name</th>
-                    <th className="p-3 font-medium">Created</th>
-                    {userRole === "admin" && <th className="p-3 font-medium text-right">Actions</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {institutions.map(inst => (
-                    <tr key={inst.id} className="border-t hover:bg-muted/50">
-                      <td className="p-3 font-medium">{inst.name}</td>
-                      <td className="p-3">{new Date(inst.created_at).toLocaleDateString()}</td>
-                      {userRole === "admin" && (
-                        <td className="p-3 text-right">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setDomainsModalInstitution(inst);
-                              setIsDomainsModalOpen(true);
-                            }}
-                          >
-                            Manage domains
-                          </Button>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                  {institutions.length === 0 && (
-                    <tr>
-                      <td colSpan={userRole === "admin" ? 3 : 2} className="p-8 text-center text-muted-foreground">No institutions found.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+        <InstitutionManagement institutions={institutions} onRefresh={() => fetchData({ skipLoading: true })} userRole={userRole ?? undefined} />
       )}
-
-      <InstitutionDomainsModal
-        institution={domainsModalInstitution}
-        open={isDomainsModalOpen}
-        onOpenChange={(open) => {
-          setIsDomainsModalOpen(open);
-          if (!open) setDomainsModalInstitution(null);
-        }}
-      />
     </div>
   );
 }

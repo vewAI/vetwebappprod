@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { startAuthentication } from "@simplewebauthn/browser";
 
 // UI Components
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -23,7 +24,7 @@ const AUTH_METHODS = {
 
 type AuthMethod = "password" | "otp" | "magiclink";
 
-const ENABLED_METHODS = ([["password", "Password"] as const, ["otp", "OTP Code"] as const, ["magiclink", "Magic Link"] as const] as const).filter(
+const ENABLED_METHODS = ([["password", "Password"] as const, ["otp", "OTP Code"] as const, ["magiclink", "Login Link"] as const] as const).filter(
   ([key]) => {
     if (key === "password") return AUTH_METHODS.password;
     if (key === "otp") return AUTH_METHODS.otpCode;
@@ -49,6 +50,8 @@ export function LoginForm() {
   const [otpSent, setOtpSent] = useState(false);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [passkeyError, setPasskeyError] = useState<string | null>(null);
 
   const email = localPart && selectedDomain ? `${localPart}@${selectedDomain}` : "";
 
@@ -162,6 +165,62 @@ export function LoginForm() {
     }
   };
 
+  const handlePasskeyLogin = async () => {
+    setPasskeyError(null);
+    setPasskeyLoading(true);
+
+    try {
+      const challengeRes = await fetch("/api/passkeys/auth/challenge", {
+        method: "POST",
+      });
+      if (!challengeRes.ok) {
+        const err = await challengeRes.json().catch(() => ({}));
+        throw new Error((err as { error?: string })?.error ?? "Failed to start passkey sign-in");
+      }
+      const options = await challengeRes.json();
+
+      console.log("Received passkey challenge:", options);
+
+      const credential = await startAuthentication({ optionsJSON: options });
+      console.log("Received passkey credential:", credential);
+
+      const verifyRes = await fetch("/api/passkeys/auth/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(credential),
+      });
+      if (!verifyRes.ok) {
+        const err = await verifyRes.json().catch(() => ({}));
+        throw new Error((err as { error?: string })?.error ?? "Failed to verify passkey");
+      }
+
+      const { token_hash, type } = (await verifyRes.json()) as {
+        token_hash?: string;
+        type?: string;
+      };
+      if (!token_hash || type !== "email") {
+        throw new Error("Invalid session response");
+      }
+
+      const { error: verifyError } = await supabase.auth.verifyOtp({
+        token_hash,
+        type: "email",
+      });
+      if (verifyError) throw verifyError;
+
+      router.push("/");
+    } catch (err) {
+      if (err instanceof Error) {
+        if (err.name === "NotAllowedError") return;
+        setPasskeyError(err.message);
+      } else {
+        setPasskeyError("Something went wrong");
+      }
+    } finally {
+      setPasskeyLoading(false);
+    }
+  };
+
   const handleSendMagicLink = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -177,21 +236,21 @@ export function LoginForm() {
       const { error: magicError } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          emailRedirectTo: `${typeof window !== "undefined" ? window.location.origin : ""}/auth/callback`,
+          emailRedirectTo: `${typeof window !== "undefined" ? window.location.origin : ""}/auth/callback?flow=magiclink`,
         },
       });
 
       if (magicError) {
-        setError(magicError.message || "Failed to send magic link");
+        setError(magicError.message || "Failed to send login link");
         return;
       }
 
       setMagicLinkSent(true);
-      setSuccess("Magic link sent! Check your email and click the link to sign in.");
+      setSuccess("Login link sent! <br />Check your email and click the link to sign in.");
     } catch (err: unknown) {
       const errObj = err instanceof Error ? err : new Error(String(err));
-      setError(errObj.message || "Failed to send magic link");
-      console.error("Magic link send error:", err);
+      setError(errObj.message || "Failed to send login link");
+      console.error("Login link send error:", err);
     } finally {
       setLoading(false);
     }
@@ -234,8 +293,7 @@ export function LoginForm() {
     <div className="w-full max-w-md">
       <Card className="mx-auto w-full shadow-2xl backdrop-blur-sm motion-safe:animate-in motion-safe:fade-in-50 motion-safe:slide-in-from-bottom-4">
         <CardHeader className="space-y-1 text-center">
-          <CardTitle className="text-2xl font-bold">Sign in</CardTitle>
-          <CardDescription>Choose your preferred authentication method</CardDescription>
+          <CardTitle className="text-2xl font-bold">Get Started...</CardTitle>
         </CardHeader>
 
         <CardContent className="pt-0 pb-4">
@@ -257,7 +315,7 @@ export function LoginForm() {
             )}
 
             {error && <div className="mt-4 rounded-md bg-destructive/15 p-3 text-sm text-destructive">{error}</div>}
-            {success && <div className="mt-4 rounded-md bg-green-500/15 p-3 text-sm text-green-700 dark:text-green-400">{success}</div>}
+            {success && <div className="mt-4 rounded-md bg-green-500/15 p-3 text-sm text-green-700 dark:text-green-400 text-center">{success}</div>}
 
             {AUTH_METHODS.password && (
               <TabsContent value="password" className="mt-6 space-y-4">
@@ -275,7 +333,7 @@ export function LoginForm() {
                       disabled={loading || formDisabled}
                     />
                   </div>
-                  <Button className="w-full" type="submit" disabled={loading || formDisabled}>
+                  <Button className="w-full bg-primary text-white hover:bg-primary/90" type="submit" disabled={loading || formDisabled}>
                     {loading ? "Signing in..." : "Sign in with Password"}
                   </Button>
                 </form>
@@ -327,8 +385,12 @@ export function LoginForm() {
               <TabsContent value="magiclink" className="mt-6 space-y-4">
                 <form onSubmit={handleSendMagicLink} className="space-y-4">
                   {renderEmailInput("magiclink-email", loading || magicLinkSent)}
-                  <Button className="w-full text-white" type="submit" disabled={loading || formDisabled || magicLinkSent}>
-                    {magicLinkSent ? "Check your email" : loading ? "Sending magic link..." : "Send magic link"}
+                  <Button
+                    className="w-full bg-primary text-white hover:bg-primary/90"
+                    type="submit"
+                    disabled={loading || formDisabled || magicLinkSent}
+                  >
+                    {magicLinkSent ? "Check your email" : loading ? "Sending login link..." : "Email a Login Link"}
                   </Button>
                 </form>
               </TabsContent>
@@ -336,6 +398,16 @@ export function LoginForm() {
           </Tabs>
         </CardContent>
       </Card>
+
+      <Card className="mt-4 border-primary/30 bg-gradient-to-br from-primary/10 to-primary/5 shadow-xl backdrop-blur-sm ring-1 ring-primary/20">
+        <CardContent className="">
+          {passkeyError && <div className="mb-4 rounded-md bg-destructive/15 p-3 text-sm text-destructive">{passkeyError}</div>}
+          <Button className="w-full bg-primary/90 text-white hover:bg-primary" onClick={handlePasskeyLogin} disabled={passkeyLoading}>
+            {passkeyLoading ? "Signing in..." : "Sign in with Passkey"}
+          </Button>
+        </CardContent>
+      </Card>
+
       <div className="mt-4 text-center text-sm text-white">Alpha version - Test accounts only</div>
     </div>
   );

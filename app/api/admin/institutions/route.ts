@@ -57,3 +57,37 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ institution: data });
 }
+
+export async function PATCH(request: NextRequest) {
+  const auth = await requireUser(request);
+  if ("error" in auth) return auth.error;
+  if (auth.role !== "admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const body = await request.json();
+  const id = body?.id;
+  const name = typeof body?.name === "string" ? body.name.trim() : "";
+
+  if (!id || !name) {
+    return NextResponse.json({ error: "id and name are required" }, { status: 400 });
+  }
+
+  const adminClient = getSupabaseAdminClient();
+  if (!adminClient) {
+    return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+  }
+
+  const { data, error } = await adminClient
+    .from("institutions")
+    .update({ name })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ institution: data });
+}

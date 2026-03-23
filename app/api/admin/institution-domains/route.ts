@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/app/api/_lib/auth";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
+/** Valid domain: labels of alphanumeric/hyphens, separated by dots, TLD 2+ chars (e.g. example.edu, sub.example.co.uk) */
+const DOMAIN_REGEX = /^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/;
+
 export async function GET(request: NextRequest) {
   const auth = await requireUser(request);
   if ("error" in auth) return auth.error;
@@ -55,6 +58,12 @@ export async function POST(request: NextRequest) {
   const trimmedDomain = domain.trim().toLowerCase();
   if (!trimmedDomain) {
     return NextResponse.json({ error: "domain cannot be empty" }, { status: 400 });
+  }
+  if (!DOMAIN_REGEX.test(trimmedDomain)) {
+    return NextResponse.json(
+      { error: "Invalid domain format. Use format like example.edu" },
+      { status: 400 }
+    );
   }
 
   const validRoles = ["student", "professor", "admin"] as const;

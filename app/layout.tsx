@@ -3,11 +3,9 @@ import { GeistSans, GeistMono } from "geist/font";
 import "./globals.css";
 import { AuthProvider } from "@/features/auth/services/authService";
 import { ProtectedRoute } from "@/features/auth/components/protected-route";
-import { Navbar } from "@/features/navigation/components/navbar";
-import { Footer } from "@/components/ui/footer";
+import { AppChrome } from "@/components/app-chrome";
 import { SpeechDeviceProvider } from "@/features/speech/context/audio-device-context";
 import { FontSizeProvider } from "@/features/navigation/context/FontSizeContext";
-import MobileSpeechControls from "@/features/speech/components/mobile-speech-controls";
 import { AdminDebugOverlay } from "@/features/admin/components/AdminDebugOverlay";
 
 const geistSans = GeistSans;
@@ -35,18 +33,10 @@ export default function RootLayout({
               <AdminDebugOverlay />
               {process.env.NEXT_PUBLIC_ENABLE_AUTH_PROTECTION === "true" ? (
                 <ProtectedRoute>
-                  <Navbar />
-                  <main className="flex-1">{children}</main>
-                  <Footer />
-                  <MobileSpeechControls />
+                  <AppChrome>{children}</AppChrome>
                 </ProtectedRoute>
               ) : (
-                <>
-                  <Navbar />
-                  <main className="flex-1">{children}</main>
-                  <Footer />
-                  <MobileSpeechControls />
-                </>
+                <AppChrome>{children}</AppChrome>
               )}
             </SpeechDeviceProvider>
           </FontSizeProvider>
