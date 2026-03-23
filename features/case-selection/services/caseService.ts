@@ -31,16 +31,18 @@ export type FetchCasesOptions = {
   includeUnpublished?: boolean;
 };
 
-export async function fetchCases(
-  options: FetchCasesOptions = {}
-): Promise<Case[]> {
-  let query = supabase
-    .from("cases")
-    .select("*")
-    .order("created_at", { ascending: true });
+export async function fetchCases(options: FetchCasesOptions = {}): Promise<Case[]> {
+  let query = supabase.from("cases").select("*").order("created_at", { ascending: true });
 
   if (!options.includeUnpublished) {
     query = query.eq("is_published", true);
+  }
+
+  // Filter out archived cases unless explicitly including them
+  // Archived cases have settings.archived === true
+  if (!options.includeUnpublished) {
+    // When fetching published cases, also exclude archived ones
+    query = query.is("settings->>archived", null).or("settings->>archived.eq.false");
   }
 
   if (options.category) {
@@ -70,9 +72,7 @@ export async function fetchCases(
   }
 
   if (options.search) {
-    query = query.or(
-      `title.ilike.%${options.search}%,description.ilike.%${options.search}%`
-    );
+    query = query.or(`title.ilike.%${options.search}%,description.ilike.%${options.search}%`);
   }
 
   const { data, error } = await query;
@@ -83,29 +83,16 @@ export async function fetchCases(
 export async function fetchCaseById(id: string): Promise<Case | null> {
   // Try exact match first
   try {
-    let { data } = await supabase
-      .from("cases")
-      .select("*")
-      .eq("id", id)
-      .single();
+    let { data } = await supabase.from("cases").select("*").eq("id", id).single();
     if (data) return mapDbCaseToCase(data);
 
     // Next try a slug column (if you have one) so URLs like /test-case-2 work
-    const { data: bySlug } = await supabase
-      .from("cases")
-      .select("*")
-      .eq("slug", id)
-      .single();
+    const { data: bySlug } = await supabase.from("cases").select("*").eq("slug", id).single();
     if (bySlug) return mapDbCaseToCase(bySlug);
 
     // Fallback: try prefix match on id (helps when DB ids include suffixes)
-    const { data: prefixMatch } = await supabase
-      .from("cases")
-      .select("*")
-      .ilike("id", `${id}%`)
-      .limit(1);
-    if (prefixMatch && prefixMatch.length > 0)
-      return mapDbCaseToCase(prefixMatch[0]);
+    const { data: prefixMatch } = await supabase.from("cases").select("*").ilike("id", `${id}%`).limit(1);
+    if (prefixMatch && prefixMatch.length > 0) return mapDbCaseToCase(prefixMatch[0]);
 
     return null;
   } catch (e) {
@@ -138,30 +125,26 @@ export async function fetchDisciplines(): Promise<string[]> {
 
 export async function fetchAssignedCases(userId: string): Promise<Case[]> {
   // 1. Get professors for this student
-  const { data: professors } = await supabase
-    .from("professor_students")
-    .select("professor_id")
-    .eq("student_id", userId);
+  const { data: professors } = await supabase.from("professor_students").select("professor_id").eq("student_id", userId);
 
   if (!professors || professors.length === 0) return [];
 
   const professorIds = professors.map((p) => p.professor_id);
 
   // 2. Get cases assigned by these professors
-  const { data: assignedCases } = await supabase
-    .from("professor_cases")
-    .select("case_id")
-    .in("professor_id", professorIds);
+  const { data: assignedCases } = await supabase.from("professor_cases").select("case_id").in("professor_id", professorIds);
 
   if (!assignedCases || assignedCases.length === 0) return [];
 
   const caseIds = assignedCases.map((c) => c.case_id);
 
-  // 3. Fetch case details
+  // 3. Fetch case details, excluding archived cases
   const { data: cases } = await supabase
     .from("cases")
     .select("*")
-    .in("id", caseIds);
+    .in("id", caseIds)
+    .is("settings->>archived", null)
+    .or("settings->>archived.eq.false");
 
   return (cases ?? []).map(mapDbCaseToCase);
 }
@@ -180,10 +163,7 @@ export function mapDbCaseToCase(dbCase: DbCase): Case {
       if (d === "Medium") return "Medium" as const;
       return "Easy" as const;
     })(),
-    estimatedTime:
-      typeof dbCase.estimated_time === "number"
-        ? dbCase.estimated_time
-        : Number(dbCase.estimated_time || 0),
+    estimatedTime: typeof dbCase.estimated_time === "number" ? dbCase.estimated_time : Number(dbCase.estimated_time || 0),
     imageUrl: dbCase.image_url ?? "",
     gifUrl: dbCase.gif_url ?? undefined,
     tags: dbCase.tags ?? [],

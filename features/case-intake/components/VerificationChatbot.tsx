@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import ThinkingAnimation from "./ThinkingAnimation";
 import { caseVerificationService } from "../services/caseVerificationService";
 import type { CaseVerificationItem, CaseVerificationResult, VerificationChatMessage } from "../models/caseVerification";
 
@@ -40,6 +41,8 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
   const [activeItemIndex, setActiveItemIndex] = useState(0);
   const [chatHistories, setChatHistories] = useState<Record<string, VerificationChatMessage[]>>({});
   const [inputText, setInputText] = useState("");
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [editorText, setEditorText] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [showingSuggestion, setShowingSuggestion] = useState(false);
   const [suggestedValue, setSuggestedValue] = useState("");
@@ -154,116 +157,32 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
     }));
   }, [activeItem, chatHistories]);
 
-  const sendMessage = useCallback(async () => {
-    if (!inputText.trim() || !activeItem || isSending) return;
-    const userText = inputText.trim();
+  const sendMessage = useCallback(
+    async (overrideText?: string) => {
+      const sourceText = overrideText !== undefined ? overrideText : inputText;
+      if (!sourceText.trim() || !activeItem || isSending) return;
+      const userText = sourceText.trim();
 
-    // If editing from suggestion, save directly without LLM processing
-    if (isEditingFromSuggestion) {
-      console.log(`[VERIFICATION] Saving edited text directly (not sending to LLM): ${activeItem.itemName}`);
-      setInputText("");
-      setIsEditingFromSuggestion(false);
-      setShowingSuggestion(false);
-      setSuggestedValue("");
+      // If editing from suggestion, save directly without LLM processing
+      if (isEditingFromSuggestion) {
+        console.log(`[VERIFICATION] Saving edited text directly (not sending to LLM): ${activeItem.itemName}`);
+        setInputText("");
+        setIsEditingFromSuggestion(false);
+        setShowingSuggestion(false);
+        setSuggestedValue("");
 
-      // Write the edited value directly to the form
-      // If the field already had content, append the new data; otherwise replace
-      const writeMode = activeItem.alreadyPresent && activeItem.existingValue ? "append" : "replace";
-      onFieldResolved(activeItem.targetField, userText, writeMode);
+        // Write the edited value directly to the form
+        // If the field already had content, append the new data; otherwise replace
+        const writeMode = activeItem.alreadyPresent && activeItem.existingValue ? "append" : "replace";
+        onFieldResolved(activeItem.targetField, userText, writeMode);
 
-      // Update item status and auto-advance
-      setItems((prevItems) => {
-        const updatedItems = prevItems.map((item, idx) =>
-          idx === activeItemIndex ? { ...item, status: "answered" as const, professorAnswer: userText } : item,
-        );
-
-        // Schedule auto-advance
-        setTimeout(() => {
-          const nextIdx = findNextPendingItemByRelevance(activeItemIndex, updatedItems);
-          if (nextIdx !== -1) {
-            setActiveItemIndex(nextIdx);
-            setShowingSuggestion(false);
-            setSuggestedValue("");
-            setInputText("");
-          }
-        }, 400);
-
-        return updatedItems;
-      });
-      return; // Exit early, don't send to LLM
-    }
-
-    setInputText("");
-    setIsSending(true);
-
-    const userMsg: VerificationChatMessage = {
-      id: `user-${Date.now()}`,
-      role: "user",
-      content: userText,
-      verificationItemId: activeItem.id,
-      timestamp: new Date().toISOString(),
-    };
-
-    const updatedChat = [...(chatHistories[activeItem.id] ?? []), userMsg];
-    setChatHistories((prev) => ({
-      ...prev,
-      [activeItem.id]: updatedChat,
-    }));
-
-    try {
-      // Build messages for the API (exclude greeting system messages, just role+content)
-      const apiMessages = updatedChat.map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
-
-      const response = await caseVerificationService.chat({
-        messages: apiMessages,
-        currentItem: activeItem,
-        caseContext,
-      });
-
-      // Check if response is a result (contains "Here's the result" or similar patterns)
-      const isResult =
-        response.reply.toLowerCase().includes("here's the result") || response.reply.toLowerCase().includes("final answer") || response.isResolved;
-
-      const assistantMsg: VerificationChatMessage = {
-        id: `assistant-${Date.now()}`,
-        role: "assistant",
-        content: response.reply,
-        verificationItemId: activeItem.id,
-        timestamp: new Date().toISOString(),
-      };
-
-      setChatHistories((prev) => ({
-        ...prev,
-        [activeItem.id]: [...(prev[activeItem.id] ?? []), userMsg, assistantMsg].filter(
-          (msg, idx, arr) => arr.findIndex((m) => m.id === msg.id) === idx,
-        ),
-      }));
-
-      if (isResult && response.extractedValue) {
-        setSuggestedValue(response.extractedValue);
-        setShowingSuggestion(true);
-      } else if (response.isResolved) {
-        // Write value into form
-        if (response.extractedValue) {
-          onFieldResolved(response.targetField, response.extractedValue, response.writeMode);
-        }
-
-        // Update item status AND schedule auto-advance via state updater
+        // Update item status and auto-advance
         setItems((prevItems) => {
           const updatedItems = prevItems.map((item, idx) =>
-            idx === activeItemIndex
-              ? {
-                  ...item,
-                  status: (response.extractedValue ? "answered" : "skipped") as "answered" | "skipped",
-                  professorAnswer: response.extractedValue ?? "",
-                }
-              : item,
+            idx === activeItemIndex ? { ...item, status: "answered" as const, professorAnswer: userText } : item,
           );
 
-          // Auto-advance using the updated items array, respecting visual order
+          // Schedule auto-advance
           setTimeout(() => {
             const nextIdx = findNextPendingItemByRelevance(activeItemIndex, updatedItems);
             if (nextIdx !== -1) {
@@ -276,34 +195,122 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
 
           return updatedItems;
         });
+        return; // Exit early, don't send to LLM
       }
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : "Connection error";
-      const errorAssistantMsg: VerificationChatMessage = {
-        id: `error-${Date.now()}`,
-        role: "assistant",
-        content: `Error: ${errMsg}. Please try again.`,
+
+      setInputText("");
+      setIsSending(true);
+
+      const userMsg: VerificationChatMessage = {
+        id: `user-${Date.now()}`,
+        role: "user",
+        content: userText,
         verificationItemId: activeItem.id,
         timestamp: new Date().toISOString(),
       };
+
+      const updatedChat = [...(chatHistories[activeItem.id] ?? []), userMsg];
       setChatHistories((prev) => ({
         ...prev,
-        [activeItem.id]: [...(prev[activeItem.id] ?? []), errorAssistantMsg],
+        [activeItem.id]: updatedChat,
       }));
-    } finally {
-      setIsSending(false);
-    }
-  }, [
-    inputText,
-    activeItem,
-    activeItemIndex,
-    isSending,
-    chatHistories,
-    caseContext,
-    onFieldResolved,
-    findNextPendingItemByRelevance,
-    isEditingFromSuggestion,
-  ]);
+
+      try {
+        // Build messages for the API (exclude greeting system messages, just role+content)
+        const apiMessages = updatedChat.map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
+
+        const response = await caseVerificationService.chat({
+          messages: apiMessages,
+          currentItem: activeItem,
+          caseContext,
+        });
+
+        // Check if response is a result (contains "Here's the result" or similar patterns)
+        const isResult =
+          response.reply.toLowerCase().includes("here's the result") || response.reply.toLowerCase().includes("final answer") || response.isResolved;
+
+        const assistantMsg: VerificationChatMessage = {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content: response.reply,
+          verificationItemId: activeItem.id,
+          timestamp: new Date().toISOString(),
+        };
+
+        setChatHistories((prev) => ({
+          ...prev,
+          [activeItem.id]: [...(prev[activeItem.id] ?? []), userMsg, assistantMsg].filter(
+            (msg, idx, arr) => arr.findIndex((m) => m.id === msg.id) === idx,
+          ),
+        }));
+
+        if (isResult && response.extractedValue) {
+          setSuggestedValue(response.extractedValue);
+          setShowingSuggestion(true);
+        } else if (response.isResolved) {
+          // Write value into form
+          if (response.extractedValue) {
+            onFieldResolved(response.targetField, response.extractedValue, response.writeMode);
+          }
+
+          // Update item status AND schedule auto-advance via state updater
+          setItems((prevItems) => {
+            const updatedItems = prevItems.map((item, idx) =>
+              idx === activeItemIndex
+                ? {
+                    ...item,
+                    status: (response.extractedValue ? "answered" : "skipped") as "answered" | "skipped",
+                    professorAnswer: response.extractedValue ?? "",
+                  }
+                : item,
+            );
+
+            // Auto-advance using the updated items array, respecting visual order
+            setTimeout(() => {
+              const nextIdx = findNextPendingItemByRelevance(activeItemIndex, updatedItems);
+              if (nextIdx !== -1) {
+                setActiveItemIndex(nextIdx);
+                setShowingSuggestion(false);
+                setSuggestedValue("");
+                setInputText("");
+              }
+            }, 400);
+
+            return updatedItems;
+          });
+        }
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : "Connection error";
+        const errorAssistantMsg: VerificationChatMessage = {
+          id: `error-${Date.now()}`,
+          role: "assistant",
+          content: `Error: ${errMsg}. Please try again.`,
+          verificationItemId: activeItem.id,
+          timestamp: new Date().toISOString(),
+        };
+        setChatHistories((prev) => ({
+          ...prev,
+          [activeItem.id]: [...(prev[activeItem.id] ?? []), errorAssistantMsg],
+        }));
+      } finally {
+        setIsSending(false);
+      }
+    },
+    [
+      inputText,
+      activeItem,
+      activeItemIndex,
+      isSending,
+      chatHistories,
+      caseContext,
+      onFieldResolved,
+      findNextPendingItemByRelevance,
+      isEditingFromSuggestion,
+    ],
+  );
 
   const handleSkip = useCallback(() => {
     if (!activeItem) return;
@@ -550,6 +557,11 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
                       </div>
                     </div>
                   ))}
+                  {waitingForSuggestion && (
+                    <div className="flex justify-center pt-2">
+                      <ThinkingAnimation />
+                    </div>
+                  )}
                   <div ref={messagesEndRef} />
                 </div>
 
@@ -633,15 +645,31 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
                   />
                   <div className="flex items-center gap-2">
                     <Button
-                      onClick={sendMessage}
+                      onClick={() => sendMessage()}
                       disabled={isSending || waitingForSuggestion || !inputText.trim() || activeItem.status !== "pending" || showingSuggestion}
                       size="sm"
                     >
                       {isSending ? "..." : "Send"}
                     </Button>
+                    <Button
+                      onClick={() => {
+                        setEditorText(inputText);
+                        setIsEditorOpen(true);
+                      }}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Expand
+                    </Button>
                     {!showingSuggestion && activeItem.status === "pending" && !activeItem.alreadyPresent && (
                       <Button onClick={handleGetAISuggestion} variant="outline" size="sm" disabled={waitingForSuggestion || isSending}>
-                        {waitingForSuggestion ? "..." : "AI Suggestion"}
+                        {waitingForSuggestion ? (
+                          <div className="flex items-center gap-2">
+                            <ThinkingAnimation small />
+                          </div>
+                        ) : (
+                          "AI Suggestion"
+                        )}
                       </Button>
                     )}
                     <Button onClick={handleSkip} variant="ghost" size="sm" disabled={activeItem.status !== "pending"}>
@@ -657,6 +685,53 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
         </div>
 
         {/* ── Footer ── */}
+        {/* ── Expanded editor modal ── */}
+        <Dialog open={isEditorOpen} onOpenChange={(v) => setIsEditorOpen(!!v)}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>Edit Response</DialogTitle>
+              <DialogDescription>Open editor for longer responses. Save to keep locally or Save & Send to send to the AI.</DialogDescription>
+            </DialogHeader>
+            <div className="p-2">
+              <textarea
+                value={editorText}
+                onChange={(e) => setEditorText(e.target.value)}
+                className="w-full min-h-[240px] p-3 border rounded-md bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 resize-vertical"
+              />
+            </div>
+            <div className="p-3 flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsEditorOpen(false);
+                }}
+                size="sm"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setInputText(editorText);
+                  setIsEditorOpen(false);
+                }}
+                size="sm"
+              >
+                Save
+              </Button>
+              <Button
+                onClick={async () => {
+                  // Send the editor content via existing sendMessage flow
+                  await sendMessage(editorText);
+                  setIsEditorOpen(false);
+                }}
+                size="sm"
+              >
+                Save & Send
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
         <div className="p-3 border-t flex items-center justify-between shrink-0">
           <div className="text-sm text-muted-foreground">
             {resolvedCount}/{actionableItems.length} items reviewed

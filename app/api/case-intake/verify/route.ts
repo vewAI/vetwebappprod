@@ -8,6 +8,9 @@ const SYSTEM_PROMPT = `You are an expert veterinary clinical educator and case d
 
 Your task: Perform a COMPREHENSIVE AUDIT of the case data for COMPLETENESS across ALL domains.
 
+CRITICAL — DATA PRESERVATION PRINCIPLE:
+Your job is to identify MISSING information, NOT to suggest removing or simplifying existing content. The professor is the clinical expert. If they included breed-specific notes, unusual observations, environmental details, management nuances, or seemingly minor clinical findings — those details are INTENTIONAL and CRITICAL to the case's educational value. The nuances that might seem like "noise" are exactly what makes clinical cases realistic and educational. When flagging items as "alreadyPresent", preserve and respect the existing content fully. Only flag items as "missing" if they are genuinely absent.
+
 The case data includes:
 - Case metadata: title, learner-facing summary, species, patient demographics
 - Clinical data: history/details, physical exam findings, diagnostic results, imaging
@@ -141,20 +144,14 @@ export async function POST(request: NextRequest) {
     const caseData = body.caseData;
 
     if (!caseData || typeof caseData !== "object") {
-      return NextResponse.json(
-        { error: "caseData is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "caseData is required" }, { status: 400 });
     }
 
     const species = String(caseData.species ?? "").trim();
     const condition = String(caseData.condition ?? "").trim();
 
     if (!species || !condition) {
-      return NextResponse.json(
-        { error: "Species and condition are required for verification." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Species and condition are required for verification." }, { status: 400 });
     }
 
     const userPayload = {
@@ -165,7 +162,7 @@ export async function POST(request: NextRequest) {
       physical_exam_findings: caseData.physical_exam_findings ?? "",
       diagnostic_findings: caseData.diagnostic_findings ?? "",
       owner_background: caseData.owner_background ?? "",
-      history_feedback: caseData.history_feedback ?? "",
+      get_history_feedback_prompt: caseData.get_history_feedback_prompt ?? "",
       tags: caseData.tags ?? "",
       patient_name: caseData.patient_name ?? "",
       patient_age: caseData.patient_age ?? "",
@@ -175,7 +172,7 @@ export async function POST(request: NextRequest) {
 
     let response;
     let lastError: Error | null = null;
-    
+
     // Try gpt-4o-mini first, fallback to gpt-3.5-turbo if project doesn't have access
     for (const model of ["gpt-4o-mini", "gpt-3.5-turbo"]) {
       try {
@@ -204,18 +201,12 @@ export async function POST(request: NextRequest) {
 
     if (!response) {
       const msg = lastError?.message || "No model available for verification";
-      return NextResponse.json(
-        { error: msg },
-        { status: 502 }
-      );
+      return NextResponse.json({ error: msg }, { status: 502 });
     }
 
     const content = response.choices?.[0]?.message?.content;
     if (!content) {
-      return NextResponse.json(
-        { error: "LLM returned no content" },
-        { status: 502 }
-      );
+      return NextResponse.json({ error: "LLM returned no content" }, { status: 502 });
     }
 
     const parsed = JSON.parse(content);
@@ -226,10 +217,7 @@ export async function POST(request: NextRequest) {
       condition: String(parsed.condition ?? condition),
       region: String(parsed.region ?? ""),
       overallAssessment: String(parsed.overallAssessment ?? ""),
-      completenessScore: Math.max(
-        0,
-        Math.min(100, Number(parsed.completenessScore) || 0)
-      ),
+      completenessScore: Math.max(0, Math.min(100, Number(parsed.completenessScore) || 0)),
       items: Array.isArray(parsed.items)
         ? parsed.items.map((item: Record<string, unknown>, idx: number) => ({
             id: String(item.id ?? `item-${idx + 1}`),

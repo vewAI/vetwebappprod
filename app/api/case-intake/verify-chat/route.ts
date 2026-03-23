@@ -16,15 +16,15 @@ export async function POST(request: NextRequest) {
     const { messages, currentItem, caseContext } = body;
 
     if (!currentItem || !caseContext) {
-      return NextResponse.json(
-        { error: "currentItem and caseContext are required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "currentItem and caseContext are required" }, { status: 400 });
     }
 
     const systemPrompt = `You are a fierce, expert veterinary clinical case reviewer. Your mission is to ensure this teaching case is BULLETPROOF — thorough enough that no student question or action could catch it unprepared. You are the professor's relentless guide toward a perfect case.
 
 You are NOT passive. You PUSH the professor to think deeply. If they give a vague answer, challenge them. If they skip something important, warn them what students will ask. You are direct, assertive, and demanding — but always professional.
+
+CRITICAL — DATA PRESERVATION RULE:
+You must NEVER suggest removing, simplifying, or shortening existing case data. The professor is the clinical expert. If they included breed-specific notes, unusual observations, environmental details, management nuances, or seemingly minor findings — those details are INTENTIONAL and CRITICAL to the case's educational value. Your job is to ADD missing information, not to prune or re-write what exists. When proposing extractedValue content, ALWAYS preserve every detail the professor has already provided. The nuances that might seem like "noise" are exactly what makes clinical cases realistic and educational.
 
 Context:
 - Species: ${caseContext.species}
@@ -56,11 +56,11 @@ Rules:
 - Speak in English. Be concise but relentless.
 - Think about what a student might say or do at every stage of the case. Anticipate their questions.
 - For physical exam: Push for ESSENTIAL findings that would be present in almost any case with this pathology. Get specific values with units (HR, RR, temp, CRT, mucous membrane colors, body condition score, etc.). Ask about OPTIONAL findings and warn against COUNTERPRODUCTIVE exams.
-- For diagnostics: Push for ESSENTIAL tests with exact values and reference ranges. Ask about OPTIONAL tests that add educational value. Warn against counterproductive tests (contraindicated, harmful, or cost-prohibitive).
+  - For diagnostics: Push for ESSENTIAL tests with exact values and reference ranges. Ask about OPTIONAL tests that add educational value. Warn against counterproductive tests (contraindicated, harmful, or cost-prohibitive). When discussing numeric lab results, REQUIRE a Markdown table representation for 'diagnostic_findings' (see formatting guidance below). Do NOT invent numeric values; if a value is not in the source, explicitly mark it as pending/unavailable.
 - For history/owner fields: push for details a student would uncover through questioning.
 - Format extractedValue as it should appear in the case field:
   - For physical_exam_findings: "Parameter: Value (units)" format, one per line
-  - For diagnostic_findings: "Test - Analyte: Value units (ref range)" format, one per line
+  - For diagnostic_findings: Use a Markdown table with columns: Test | Analyte | Value | Units | Reference Range | Note. Provide one analyte per row. For imaging or narrative findings, add short bullet points below the table. If a numeric value is not present in the source, explicitly mark it as pending/unavailable rather than inventing data.
   - For details: Natural paragraph text
   - For owner_background: Personality and communication notes
   - For description (learner-facing summary): CRITICAL - Present the case scenario showing observable signs, patient demographics, and relevant history. Do NOT include the diagnosis, confirmed pathology, or treatment plan. Students should discover the diagnosis themselves through questioning and testing.
@@ -92,7 +92,7 @@ Return ONLY JSON (no markdown, no commentary):
 
     let response;
     let lastError: Error | null = null;
-    
+
     // Try gpt-4o-mini first, fallback to gpt-3.5-turbo if project doesn't have access
     for (const model of ["gpt-4o-mini", "gpt-3.5-turbo"]) {
       try {
@@ -118,32 +118,21 @@ Return ONLY JSON (no markdown, no commentary):
 
     if (!response) {
       const msg = lastError?.message || "No model available for verification chat";
-      return NextResponse.json(
-        { error: msg },
-        { status: 502 }
-      );
+      return NextResponse.json({ error: msg }, { status: 502 });
     }
 
     const content = response.choices?.[0]?.message?.content;
     if (!content) {
-      return NextResponse.json(
-        { error: "LLM returned no content" },
-        { status: 502 }
-      );
+      return NextResponse.json({ error: "LLM returned no content" }, { status: 502 });
     }
 
     const parsed = JSON.parse(content);
 
     return NextResponse.json({
       reply: String(parsed.reply ?? ""),
-      extractedValue:
-        parsed.extractedValue !== null && parsed.extractedValue !== undefined
-          ? String(parsed.extractedValue)
-          : null,
+      extractedValue: parsed.extractedValue !== null && parsed.extractedValue !== undefined ? String(parsed.extractedValue) : null,
       isResolved: Boolean(parsed.isResolved),
-      targetField: String(
-        parsed.targetField ?? currentItem.targetField ?? "details"
-      ),
+      targetField: String(parsed.targetField ?? currentItem.targetField ?? "details"),
       writeMode: parsed.writeMode === "replace" ? "replace" : "append",
     });
   } catch (error) {

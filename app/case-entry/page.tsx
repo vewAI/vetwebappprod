@@ -16,6 +16,7 @@ import { TimeProgressionEditor } from "@/features/cases/components/case-time-pro
 import { AvatarSelector } from "@/features/cases/components/avatar-selector";
 import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
 import { VerificationChatbot } from "@/features/case-intake/components/VerificationChatbot";
+import { AnalysisLoadingOverlay } from "@/features/case-intake/components/AnalysisLoadingOverlay";
 import { caseVerificationService } from "@/features/case-intake/services/caseVerificationService";
 import type { CaseVerificationResult } from "@/features/case-intake/models/caseVerification";
 
@@ -590,21 +591,21 @@ Remain collaborative, use everyday language, and avoid offering your own medical
 
     const fieldNames: Record<string, string> = {
       description: "Learner-Facing Summary",
-      owner_background: "Owner Background",
-      get_history_feedback_prompt: "History Feedback Instructions",
-      owner_follow_up: "Owner Follow-up Script",
-      get_owner_follow_up_feedback_prompt: "Follow-up Feedback Instructions",
-      owner_diagnosis: "Diagnosis Conversation",
-      get_owner_prompt: "Owner Chat Prompt",
-      owner_follow_up_feedback: "Follow-up Feedback Prompt",
-      details: "Case Details",
+      owner_background: "Owner Personality & Context",
+      get_history_feedback_prompt: "History Feedback AI Rules",
+      owner_follow_up: "Owner Post-Exam Questions",
+      get_owner_follow_up_feedback_prompt: "Diagnostic Planning Feedback AI Rules",
+      owner_diagnosis: "Owner Diagnosis Reaction",
+      get_owner_prompt: "Owner AI Behaviour",
+      owner_follow_up_feedback: "Diagnostic Planning Rubric",
+      details: "Full Clinical History",
       physical_exam_findings: "Physical Exam Findings",
-      diagnostic_findings: "Diagnostic Findings",
-      get_physical_exam_prompt: "Physical Exam Prompt",
-      get_diagnostic_prompt: "Diagnostics Prompt",
-      get_owner_follow_up_prompt: "Owner Follow-up Prompt",
-      get_owner_diagnosis_prompt: "Owner Diagnosis Prompt",
-      get_overall_feedback_prompt: "Overall Feedback Prompt",
+      diagnostic_findings: "Lab & Diagnostic Results",
+      get_physical_exam_prompt: "Nurse AI Behaviour",
+      get_diagnostic_prompt: "Lab Technician AI Behaviour",
+      get_owner_follow_up_prompt: "Owner Follow-Up AI Behaviour",
+      get_owner_diagnosis_prompt: "Owner Diagnosis AI Behaviour",
+      get_overall_feedback_prompt: "Final Case Summary AI Rules",
     };
 
     const handleApply = () => {
@@ -948,37 +949,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
       )}
 
       {/* Loading/Countdown Modal During Analysis */}
-      {isAnalyzing && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg max-w-md w-full p-8 text-center">
-            <h2 className="text-2xl font-bold mb-6">Analyzing Case Data</h2>
-            <p className="text-base text-muted-foreground mb-4">Please wait a moment while we upload and analyze case data</p>
-            <div className="flex items-center justify-center mb-6">
-              <div className="relative w-24 h-24">
-                <svg className="w-full h-full" viewBox="0 0 100 100">
-                  <circle cx="50" cy="50" r="45" fill="none" stroke="#e5e7eb" strokeWidth="8" />
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="45"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="8"
-                    strokeDasharray={`${(countdown / 120) * 282.7} 282.7`}
-                    strokeLinecap="round"
-                    className="text-teal-600 transition-all duration-1000"
-                    transform="rotate(-90 50 50)"
-                  />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-2xl font-bold">{countdown}s</span>
-                </div>
-              </div>
-            </div>
-            <p className="text-sm text-muted-foreground">Clinical verification will start automatically</p>
-          </div>
-        </div>
-      )}
+      {isAnalyzing && <AnalysisLoadingOverlay countdown={countdown} isVerifying={isVerifying} />}
 
       {verificationResult && (
         <VerificationChatbot
