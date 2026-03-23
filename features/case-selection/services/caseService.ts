@@ -38,12 +38,10 @@ export async function fetchCases(options: FetchCasesOptions = {}): Promise<Case[
     query = query.eq("is_published", true);
   }
 
-  // Filter out archived cases unless explicitly including them
-  // Archived cases have settings.archived === true
-  if (!options.includeUnpublished) {
-    // When fetching published cases, also exclude archived ones
-    query = query.is("settings->>archived", null).or("settings->>archived.eq.false");
-  }
+  // NOTE: previously we filtered out archived cases here. That filter caused
+  // the home and /cases pages to return no results in some deployments
+  // (archive flag handling varied across rows). Roll back the archive
+  // exclusion so callers control whether to include archived cases.
 
   if (options.category) {
     query = query.eq("category", options.category);
@@ -138,13 +136,8 @@ export async function fetchAssignedCases(userId: string): Promise<Case[]> {
 
   const caseIds = assignedCases.map((c) => c.case_id);
 
-  // 3. Fetch case details, excluding archived cases
-  const { data: cases } = await supabase
-    .from("cases")
-    .select("*")
-    .in("id", caseIds)
-    .is("settings->>archived", null)
-    .or("settings->>archived.eq.false");
+  // 3. Fetch case details
+  const { data: cases } = await supabase.from("cases").select("*").in("id", caseIds);
 
   return (cases ?? []).map(mapDbCaseToCase);
 }
