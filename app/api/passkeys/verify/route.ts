@@ -1,3 +1,7 @@
+/**
+ * Finishes adding a passkey to the user's account. After the user creates a passkey on their device,
+ * this route confirms it is valid and stores it so they can sign in with it later.
+ */
 import { NextResponse } from "next/server";
 import { verifyRegistrationResponse } from "@simplewebauthn/server";
 import { requireUser } from "@/app/api/_lib/auth";

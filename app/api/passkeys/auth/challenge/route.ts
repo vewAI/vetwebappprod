@@ -1,3 +1,7 @@
+/**
+ * Starts the sign-in flow using a passkey. Creates a one-time challenge that the user's device
+ * must answer to prove they own the passkey. Does not require the user to be signed in.
+ */
 import { NextResponse } from "next/server";
 import { generateAuthenticationOptions } from "@simplewebauthn/server";
 import { relyingPartyID } from "@/lib/webauthn/config";

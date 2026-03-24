@@ -1,3 +1,7 @@
+/**
+ * Starts the process of adding a new passkey to the user's account.
+ * The user must already be signed in. Returns instructions for the device to create the passkey.
+ */
 import { NextResponse } from "next/server";
 import { generateRegistrationOptions } from "@simplewebauthn/server";
 import { requireUser } from "@/app/api/_lib/auth";

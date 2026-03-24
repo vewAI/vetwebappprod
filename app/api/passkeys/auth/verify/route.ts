@@ -1,3 +1,7 @@
+/**
+ * Completes sign-in with a passkey. Verifies that the user's device correctly answered the challenge
+ * and signs them in by creating a session, so they can access their account without a password.
+ */
 import { NextResponse } from "next/server";
 import { verifyAuthenticationResponse } from "@simplewebauthn/server";
 import { relyingPartyID, relyingPartyOrigin } from "@/lib/webauthn/config";

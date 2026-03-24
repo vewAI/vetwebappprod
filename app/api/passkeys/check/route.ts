@@ -1,3 +1,7 @@
+/**
+ * Tells whether the signed-in user has at least one passkey linked to their account.
+ * Used to show options like "Add passkey" or "Sign in with passkey" in the UI.
+ */
 import { NextResponse } from "next/server";
 import { requireUser } from "@/app/api/_lib/auth";
 import { countCredentialsForUser } from "@/lib/webauthn/store";
