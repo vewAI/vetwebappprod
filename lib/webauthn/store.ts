@@ -25,6 +25,7 @@ type CredentialRow = {
   created_at: string;
   updated_at: string;
   last_used_at: string | null;
+  expires_at: string;
 };
 
 function getAdmin(): SupabaseClient | null {
@@ -94,6 +95,14 @@ export async function getCredentialByCredentialId(credentialId: string): Promise
   return data as CredentialRow & { credential_id: string };
 }
 
+export async function deleteCredentialByCredentialId(credentialId: string): Promise<boolean> {
+  const admin = getAdmin();
+  if (!admin) return false;
+
+  const { error } = await admin.from("webauthn_credentials").delete().eq("credential_id", credentialId);
+  return !error;
+}
+
 export async function updateCredentialCounter(credentialId: string, newCounter: number): Promise<boolean> {
   const admin = getAdmin();
   if (!admin) return false;
@@ -160,6 +169,7 @@ export async function saveCredential(input: SaveCredentialInput): Promise<Creden
   if (!admin) return null;
 
   const publicKeyBase64 = isoBase64URL.fromBuffer(new Uint8Array(input.public_key));
+  const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
   const { data, error } = await admin
     .from("webauthn_credentials")
     .insert({
@@ -174,6 +184,7 @@ export async function saveCredential(input: SaveCredentialInput): Promise<Creden
       user_verification_status: input.user_verification_status,
       device_type: input.device_type,
       backup_state: input.backup_state,
+      expires_at: expiresAt,
     })
     .select()
     .single();

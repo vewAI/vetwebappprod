@@ -4,7 +4,28 @@
  */
 import { NextResponse } from "next/server";
 import { requireUser } from "@/app/api/_lib/auth";
-import { countCredentialsForUser } from "@/lib/webauthn/store";
+import { listCredentialsForUser } from "@/lib/webauthn/store";
+import { isoBase64URL } from "@simplewebauthn/server/helpers";
+
+async function hasPasskeyOnDevice(credentials: Array<{ id: string; transports: string[] }>): Promise<boolean> {
+  try {
+    await navigator.credentials.get({
+      publicKey: {
+        challenge: new Uint8Array(32), // dummy challenge
+        allowCredentials: credentials.map((c) => ({
+          id: isoBase64URL.toBuffer(c.id), // convert DB string → buffer
+          type: "public-key",
+        })),
+        userVerification: "preferred",
+      },
+      mediation: "silent",
+    });
+
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export async function GET(req: Request) {
   const authResult = await requireUser(req);
@@ -13,7 +34,14 @@ export async function GET(req: Request) {
   }
 
   const { user } = authResult;
-  const count = await countCredentialsForUser(user.id);
 
-  return NextResponse.json({ hasPasskey: count > 0 });
+  const existingCreds = await listCredentialsForUser(user.id);
+  const excludeCredentials = existingCreds.map((c) => ({
+    id: c.credential_id,
+    transports: c.transports as ("internal" | "hybrid" | "usb" | "nfc" | "ble" | "smart-card" | "cable")[],
+  }));
+
+  const hasPasskey = await hasPasskeyOnDevice(excludeCredentials);
+
+  return NextResponse.json({ hasPasskey: hasPasskey });
 }

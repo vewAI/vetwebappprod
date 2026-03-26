@@ -33,7 +33,7 @@ export async function POST(req: Request) {
       authenticatorSelection: {
         residentKey: "preferred",
         userVerification: "preferred",
-        authenticatorAttachment: "platform",
+        // authenticatorAttachment: "platform", // Omitting authenticatorAttachment = browser picks best available authenticator This allows mobile authenticators like Microsoft Authenticator to register a credential
       },
       excludeCredentials: excludeCredentials.length > 0 ? excludeCredentials : undefined,
     });

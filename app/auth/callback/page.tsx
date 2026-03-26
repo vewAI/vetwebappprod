@@ -17,10 +17,7 @@ export default function AuthCallbackPage() {
 
   useEffect(() => {
     const runRedirect = async (session: { access_token: string }) => {
-      const searchParams =
-        typeof window !== "undefined"
-          ? new URLSearchParams(window.location.search)
-          : new URLSearchParams();
+      const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
       const isMagicLink = searchParams.get("flow") === "magiclink";
       if (isMagicLink) {
         let lastError: Error | null = null;

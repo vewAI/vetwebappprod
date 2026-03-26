@@ -5,7 +5,13 @@
 import { NextResponse } from "next/server";
 import { verifyAuthenticationResponse } from "@simplewebauthn/server";
 import { relyingPartyID, relyingPartyOrigin } from "@/lib/webauthn/config";
-import { getChallengeByValue, deleteChallenge, getCredentialByCredentialId, updateCredentialCounter } from "@/lib/webauthn/store";
+import {
+  getChallengeByValue,
+  deleteChallenge,
+  getCredentialByCredentialId,
+  updateCredentialCounter,
+  deleteCredentialByCredentialId,
+} from "@/lib/webauthn/store";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { isoBase64URL } from "@simplewebauthn/server/helpers";
 
@@ -37,6 +43,11 @@ export async function POST(req: Request) {
   const credential = await getCredentialByCredentialId(credentialId);
   if (!credential) {
     return NextResponse.json({ error: "Unknown passkey" }, { status: 400 });
+  }
+
+  if (credential.expires_at && new Date(credential.expires_at) < new Date()) {
+    await deleteCredentialByCredentialId(credential.credential_id);
+    return NextResponse.json({ error: "Passkey expired. Please register a new passkey." }, { status: 401 });
   }
 
   const publicKeyBytes = isoBase64URL.toBuffer(credential.public_key); // straight from DB

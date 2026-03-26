@@ -8,9 +8,10 @@ import { startAuthentication } from "@simplewebauthn/browser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Key } from "lucide-react";
 
 // Auth Service
 import { useAuth } from "@/features/auth/services/authService";
@@ -178,11 +179,7 @@ export function LoginForm() {
         throw new Error((err as { error?: string })?.error ?? "Failed to start passkey sign-in");
       }
       const options = await challengeRes.json();
-
-      console.log("Received passkey challenge:", options);
-
       const credential = await startAuthentication({ optionsJSON: options });
-      console.log("Received passkey credential:", credential);
 
       const verifyRes = await fetch("/api/passkeys/auth/verify", {
         method: "POST",
@@ -246,7 +243,6 @@ export function LoginForm() {
       }
 
       setMagicLinkSent(true);
-      setSuccess("Login link sent! Check your email and click the link to sign in.");
     } catch (err: unknown) {
       const errObj = err instanceof Error ? err : new Error(String(err));
       setError(errObj.message || "Failed to send login link");
@@ -263,7 +259,7 @@ export function LoginForm() {
         <Input
           id={id}
           type="text"
-          placeholder="name"
+          placeholder="username"
           value={localPart}
           onChange={(e) => setLocalPart(e.target.value)}
           disabled={disabled}
@@ -292,11 +288,7 @@ export function LoginForm() {
   return (
     <div className="w-full max-w-md">
       <Card className="mx-auto w-full shadow-2xl backdrop-blur-sm motion-safe:animate-in motion-safe:fade-in-50 motion-safe:slide-in-from-bottom-4">
-        <CardHeader className="space-y-1 text-center">
-          <CardTitle className="text-2xl font-bold">Get Started...</CardTitle>
-        </CardHeader>
-
-        <CardContent className="pt-0 pb-4">
+        <CardContent className="">
           {noDomainsConfigured && (
             <div className="mb-4 rounded-md bg-amber-500/15 p-3 text-sm text-amber-700 dark:text-amber-400">
               No domains configured. Contact your administrator.
@@ -383,26 +375,45 @@ export function LoginForm() {
 
             {AUTH_METHODS.magicLink && (
               <TabsContent value="magiclink" className="mt-6 space-y-4">
-                <form onSubmit={handleSendMagicLink} className="space-y-4">
-                  {renderEmailInput("magiclink-email", loading || magicLinkSent)}
-                  <Button
-                    className="w-full bg-primary text-white hover:bg-primary/90"
-                    type="submit"
-                    disabled={loading || formDisabled || magicLinkSent}
-                  >
-                    {magicLinkSent ? "Check your email" : loading ? "Sending login link..." : "Email a Login Link"}
-                  </Button>
-                </form>
+                {magicLinkSent ? (
+                  <div className="space-y-4 text-center">
+                    <div className="rounded-md bg-green-500/15 p-4 text-sm text-green-700 dark:text-green-400">
+                      <p className="font-medium">Check your email!</p>
+                      <p className="my-2  ">
+                        A login link has been sent to <b>{email}</b>.
+                      </p>
+                      <p>Click the link in the email to sign in.</p>
+                    </div>
+                    <Button
+                      className="w-full bg-primary text-white hover:bg-primary/90"
+                      type="button"
+                      onClick={() => {
+                        setMagicLinkSent(false);
+                      }}
+                      disabled={loading}
+                    >
+                      Send Another Link
+                    </Button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleSendMagicLink} className="space-y-4">
+                    {renderEmailInput("magiclink-email", loading)}
+                    <Button className="w-full bg-primary text-white hover:bg-primary/90" type="submit" disabled={loading || formDisabled}>
+                      {loading ? "Sending login link..." : "Email a Login Link"}
+                    </Button>
+                  </form>
+                )}
               </TabsContent>
             )}
           </Tabs>
         </CardContent>
       </Card>
 
-      <Card className="mt-4 border-primary/30 bg-gradient-to-br from-primary/10 to-primary/5 shadow-xl backdrop-blur-sm ring-1 ring-primary/20">
+      <Card className="mx-auto w-full shadow-2xl backdrop-blur-sm mt-4 border-accent/50 bg-gradient-to-br from-accent/5 to-accent/10">
         <CardContent className="">
           {passkeyError && <div className="mb-4 rounded-md bg-destructive/15 p-3 text-sm text-destructive">{passkeyError}</div>}
-          <Button className="w-full bg-primary/90 text-white hover:bg-primary" onClick={handlePasskeyLogin} disabled={passkeyLoading}>
+          <Button className="w-full bg-primary text-white hover:bg-primary/90 gap-2" onClick={handlePasskeyLogin} disabled={passkeyLoading}>
+            <Key size={18} />
             {passkeyLoading ? "Signing in..." : "Sign in with Passkey"}
           </Button>
         </CardContent>
