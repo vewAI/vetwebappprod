@@ -1,0 +1,18 @@
+---
+description: Veterinary domain invariants (STT, time progression)
+globs: "features/**/*"
+alwaysApply: false
+---
+
+# Domain Logic & Rules (Invariant)
+
+## Speech-to-Text (STT)
+
+- **Rule**: STT outputs must be post-processed for veterinary context
+- **Implementation**: Use `features/speech/services/sttService.ts`
+- **Examples**: "Udder" > "Other"; "Creatinine" > "Creating"
+
+## Time Progression
+
+- **Rule**: Time is not linear; it is event-based (`CaseTimepoint`)
+- **Enforcement**: Updating time requires explicitly updating the AI context (System Prompt) to match the new CaseTimepoint

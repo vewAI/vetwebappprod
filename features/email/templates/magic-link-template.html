@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VewAi - Login Link</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Helvetica Neue', sans-serif;
+      line-height: 1.6;
+      color: #1f2937;
+      background-color: #f3f4f6;
+    }
+    
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #ffffff;
+    }
+    
+    .header {
+      background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+      padding: 40px 20px;
+      text-align: center;
+      color: white;
+    }
+    
+    .logo {
+      display: inline-block;
+      margin-bottom: 16px;
+    }
+    
+    .logo-img {
+      width: 60px;
+      height: 60px;
+    }
+    
+    .company-name {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin-top: 12px;
+    }
+    
+    .content {
+      padding: 40px 30px;
+    }
+    
+    .hero-title {
+      font-size: 24px;
+      font-weight: 600;
+      color: #1f2937;
+      margin-bottom: 16px;
+    }
+    
+    .hero-description {
+      font-size: 16px;
+      color: #6b7280;
+      margin-bottom: 32px;
+      line-height: 1.5;
+    }
+    
+    .cta-section {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    
+    .cta-button {
+      display: inline-block;
+      background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+      color: white;
+      padding: 16px 40px;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 16px;
+      transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+      border: none;
+      cursor: pointer;
+    }
+    
+    .cta-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4);
+    }
+    
+    .fallback-section {
+      background-color: #f9fafb;
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 32px;
+    }
+    
+    .fallback-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1f2937;
+      margin-bottom: 12px;
+    }
+    
+    .fallback-url {
+      font-size: 13px;
+      color: #2563eb;
+      word-break: break-all;
+      font-family: 'Monaco', 'Courier New', monospace;
+      background-color: #f3f4f6;
+      padding: 12px;
+      border-radius: 4px;
+      border-left: 3px solid #2563eb;
+    }
+    
+    .fallback-url a {
+      color: #2563eb;
+      text-decoration: underline;
+    }
+    
+    .info-box {
+      background-color: #dbeafe;
+      border: 1px solid #93c5fd;
+      border-radius: 6px;
+      padding: 16px;
+      margin-bottom: 32px;
+      font-size: 14px;
+      color: #1e40af;
+      line-height: 1.5;
+    }
+    
+    .security-note {
+      font-size: 13px;
+      color: #9ca3af;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid #e5e7eb;
+    }
+    
+    .footer {
+      background-color: #f9fafb;
+      padding: 32px 30px;
+      border-top: 1px solid #e5e7eb;
+      text-align: center;
+      font-size: 13px;
+      color: #6b7280;
+    }
+    
+    .footer-link {
+      color: #2563eb;
+      text-decoration: none;
+    }
+    
+    .footer-link:hover {
+      text-decoration: underline;
+    }
+    
+    .divider {
+      height: 1px;
+      background-color: #e5e7eb;
+      margin: 24px 0;
+    }
+    
+    @media (max-width: 600px) {
+      .container {
+        width: 100%;
+      }
+      
+      .content {
+        padding: 24px 16px;
+      }
+      
+      .header {
+        padding: 32px 16px;
+      }
+      
+      .hero-title {
+        font-size: 20px;
+      }
+      
+      .cta-button {
+        padding: 14px 32px;
+        font-size: 15px;
+      }
+      
+      .footer {
+        padding: 24px 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div class="logo">
+        <img src="https://fbqgvasmojoczpmeulqv.supabase.co/storage/v1/object/public/img/logo_transparent.png" alt="VewAi Logo" class="logo-img">
+      </div>
+      <div class="company-name">VewAi</div>
+    </div>
+    
+    <!-- Content -->
+    <div class="content">
+      <h1 class="hero-title">Sign In to VewAi</h1>
+      <p class="hero-description">
+        Click the button below to sign in to your VewAi account. This link will expire in 24 hours.
+      </p>
+      
+      <!-- CTA Button -->
+      <div class="cta-section">
+        <a href="{{ .ConfirmationURL }}" class="cta-button">Sign In Now</a>
+      </div>
+      
+      <!-- Fallback Link -->
+      <div class="fallback-section">
+        <div class="fallback-title">Or copy and paste this link into your browser:</div>
+        <div class="fallback-url">
+          <a href="{{ .ConfirmationURL }}">{{ .ConfirmationURL }}</a>
+        </div>
+      </div>
+      
+      <!-- Info Box -->
+      <div class="info-box">
+        <strong>This is a secure login link</strong> — it's unique to your account and can only be used once. The link will expire in 24 hours.
+      </div>
+      
+      <!-- Security Note -->
+      <p class="security-note">
+        <strong>Didn't request this email?</strong> If you didn't attempt to sign in, you can safely ignore this message. Your account remains secure and no one has accessed it.
+      </p>
+    </div>
+    
+    <!-- Footer -->
+    <div class="footer">
+      <p>VewAi Veterinary OSCE Simulator</p>
+     
+      <div class="divider"></div>
+      <p>© 2026 VewAi. All rights reserved.</p>
+    </div>
+  </div>
+</body>
+</html>

@@ -9,7 +9,6 @@ import MobileSpeechControls from "@/features/speech/components/mobile-speech-con
 import MainLayout from "@/components/layout/main-layout";
 
 const geistSans = GeistSans;
-
 const geistMono = GeistMono;
 
 export const metadata: Metadata = {
@@ -34,10 +33,7 @@ export default function RootLayout({
                   <MobileSpeechControls />
                 </ProtectedRoute>
               ) : (
-                <>
-                  <MainLayout>{children}</MainLayout>
-                  <MobileSpeechControls />
-                </>
+                <MainLayout>{children}</MainLayout>
               )}
             </SpeechDeviceProvider>
           </FontSizeProvider>
