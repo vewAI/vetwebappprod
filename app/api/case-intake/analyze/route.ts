@@ -246,6 +246,39 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Provide text or upload a file first." }, { status: 400 });
     }
 
+    // Guard: if the user provided only a very short input (e.g., "hello") or
+    // the text doesn't contain any species clues, skip the LLM to avoid it
+    // inventing species or other clinical details. Return a conservative
+    // fallback that preserves the user's raw input.
+    const lower = combinedInput.toLowerCase();
+    const speciesHints = [
+      "dog",
+      "canine",
+      "cat",
+      "feline",
+      "horse",
+      "equine",
+      "cow",
+      "bovine",
+      "sheep",
+      "ovine",
+      "goat",
+      "caprine",
+      "pig",
+      "porcine",
+      "camel",
+      "camelid",
+      "avian",
+      "bird",
+    ];
+
+    const hasSpeciesHint = speciesHints.some((s) => lower.includes(s));
+    const wordCount = combinedInput.split(/\s+/).filter(Boolean).length;
+    if (!hasSpeciesHint && (combinedInput.length < 40 || wordCount < 6)) {
+      // Return the safe fallback to avoid fabricating species/clinical data
+      return NextResponse.json(buildFallback(combinedInput));
+    }
+
     const exampleCase = auth.adminSupabase
       ? await auth.adminSupabase.from("cases").select("*").eq("id", "case-1").maybeSingle()
       : { data: null as Record<string, unknown> | null, error: null as unknown };
@@ -261,6 +294,9 @@ export async function POST(request: NextRequest) {
           )
         : {};
 
+    // Strengthen prompt: explicitly forbid inventing species or making up
+    // definitive patient attributes when they're not present in the source.
+    // If a value is missing, return an empty string or mark as missing.
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.2,
@@ -269,7 +305,7 @@ export async function POST(request: NextRequest) {
         {
           role: "system",
           content:
-            "You are a veterinary case structuring engine for an AI-powered clinical simulation platform. Return strict JSON only.\n\nYour job has TWO parts:\n1. EXTRACT: Pull factual data (species, condition, findings, vitals, lab values) directly from the source text.\n2. GENERATE: For ALL prompt, feedback, rubric, and persona fields you MUST generate rich, case-specific content. These fields power the AI simulation — the owner persona, nurse persona, lab technician persona, and the evaluation rubrics. Read each field's 'guide' carefully and produce content that matches.\n\nField categories:\n- Fields with 'EXTRACT' in guide → pull from source text\n- Fields with 'GENERATE' in guide → you MUST create case-specific content even if source doesn't mention it\n- Fields starting with 'get_' → these are LLM system prompts; write them as instructions to another AI\n- Fields ending in '_feedback' → these are evaluation rubrics; write them as assessment criteria\n- Fields like 'owner_background', 'owner_follow_up', 'owner_diagnosis' → character profiles and talking points\n\nFor each target field, return the value, missing flag, reason, and a suggestion in Spanish.\n\nCRITICAL RULES:\n- Every field in draftCase MUST have a substantive, non-empty value. No empty strings.\n- NEVER mark a prompt/feedback/persona field as missing. ALWAYS generate quality content for them.\n- For clinical data fields, only extract what the source provides. If truly absent, mark missing.\n- Content fields should be 3-10 sentences each. System prompts should be 5-10 sentences.\n- Personalize ALL generated content to THIS specific case (species, condition, patient name, scenario).",
+            "You are a veterinary case structuring engine for an AI-powered clinical simulation platform. Return strict JSON only.\n\nYour job has TWO parts:\n1. EXTRACT: Pull factual data (species, condition, findings, vitals, lab values) directly from the source text.\n2. GENERATE: For ALL prompt, feedback, rubric, and persona fields you MUST generate rich, case-specific content. These fields power the AI simulation — the owner persona, nurse persona, lab technician persona, and the evaluation rubrics. Read each field's 'guide' carefully and produce content that matches.\n\nField categories:\n- Fields with 'EXTRACT' in guide → pull from source text\n- Fields with 'GENERATE' in guide → you MUST create case-specific content even if source doesn't mention it\n- Fields starting with 'get_' → these are LLM system prompts; write them as instructions to another AI\n- Fields ending in '_feedback' → these are evaluation rubrics; write them as assessment criteria\n- Fields like 'owner_background', 'owner_follow_up', 'owner_diagnosis' → character profiles and talking points\n\nFor each target field, return the value, missing flag, reason, and a suggestion in Spanish.\n\nCRITICAL RULES:\n- DO NOT INVENT species, sexes, ages, or numeric clinical values that are not explicitly present in the source text. If a value is not present, return an empty string for that draft field and mark it as missing in the completionPlan.\n- NEVER mark a prompt/feedback/persona field as missing. ALWAYS generate quality content for them.\n- For clinical data fields, only extract what the source provides. If truly absent, mark missing.\n- Content fields should be 3-10 sentences each. System prompts should be 5-10 sentences.",
         },
         {
           role: "user",
