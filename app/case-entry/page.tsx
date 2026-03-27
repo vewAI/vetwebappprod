@@ -16,6 +16,7 @@ import { TimeProgressionEditor } from "@/features/cases/components/case-time-pro
 import { AvatarSelector } from "@/features/cases/components/avatar-selector";
 import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
 import { VerificationChatbot } from "@/features/case-intake/components/VerificationChatbot";
+import NurseIntroModal from "@/features/personas/components/NurseIntroModal";
 import { AnalysisLoadingOverlay } from "@/features/case-intake/components/AnalysisLoadingOverlay";
 import { caseVerificationService } from "@/features/case-intake/services/caseVerificationService";
 import type { CaseVerificationResult } from "@/features/case-intake/models/caseVerification";
@@ -105,6 +106,8 @@ export default function CaseEntryForm() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [countdown, setCountdown] = useState(120); // 2 minutes countdown
   const [analysis, setAnalysis] = useState<IntakeAnalysisResult | null>(null);
+  const [showNurseModal, setShowNurseModal] = useState(false);
+  const [nurseForModal, setNurseForModal] = useState<any | null>(null);
   const [wizardIndex, setWizardIndex] = useState(0);
   const [reviewed, setReviewed] = useState<Record<string, boolean>>({});
 
@@ -125,6 +128,39 @@ export default function CaseEntryForm() {
       setCountdown(120); // 2 minutes
     }
   }, [isAnalyzing]);
+
+  // 5-minute nurse intro modal: show once per session after species set on new case
+  useEffect(() => {
+    // Only trigger for new unsaved cases
+    if (savedCaseId) return;
+    const species = form.species?.trim();
+    if (!species) return;
+
+    const shownKey = `nurseIntroShown:${species}`;
+    if (typeof window !== "undefined" && sessionStorage.getItem(shownKey)) return;
+
+    const timer = setTimeout(
+      async () => {
+        try {
+          const token = await getAccessToken();
+          const headers = await buildAuthHeaders({ "Content-Type": "application/json" }, token);
+          const url = `/api/personas/nurse?species=${encodeURIComponent(species)}`;
+          const res = await fetch(url, { method: "GET", headers });
+          if (!res.ok) return;
+          const body = await res.json();
+          if (!body || !body.nurse) return;
+          setNurseForModal(body.nurse);
+          setShowNurseModal(true);
+          if (typeof window !== "undefined") sessionStorage.setItem(shownKey, "1");
+        } catch (err) {
+          console.warn("Could not load nurse intro data", err);
+        }
+      },
+      5 * 60 * 1000,
+    );
+
+    return () => clearTimeout(timer);
+  }, [form.species, savedCaseId]);
 
   const caseIdForMedia = useMemo(() => {
     const raw = form.id?.trim();
@@ -983,6 +1019,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
           />
         </DialogContent>
       </Dialog>
+      {nurseForModal && <NurseIntroModal open={showNurseModal} nurse={nurseForModal} onClose={() => setShowNurseModal(false)} />}
     </div>
   );
 }

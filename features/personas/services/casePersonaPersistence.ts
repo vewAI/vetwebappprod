@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PersonaSeed } from "@/features/personas/models/persona";
 import { buildPersonaSeeds } from "@/features/personas/services/personaSeedService";
+import { applySpecializedNurse } from "@/features/personas/services/nurseSpecializationService";
 
 type DbPersonaRow = {
   id?: string;
@@ -18,26 +19,20 @@ type DbPersonaRow = {
 
 /**
  * Ensures case_personas rows exist for a case.
- * 
+ *
  * SIMPLIFIED APPROACH (case-only personas):
  * - Each case has its own independent personas in case_personas table
  * - No global_personas dependency - personas are case-specific
  * - If admin selected a source persona (via AvatarSelector), we copy its data
  * - Otherwise we use generated defaults from persona templates
  */
-export async function ensureCasePersonas(
-  supabase: SupabaseClient,
-  caseId: string,
-  caseBody: Record<string, unknown>
-): Promise<void> {
+export async function ensureCasePersonas(supabase: SupabaseClient, caseId: string, caseBody: Record<string, unknown>): Promise<void> {
   const seeds = buildPersonaSeeds(caseId, caseBody);
   if (!seeds.length) return;
 
   const { data: existingRows, error: fetchError } = await supabase
     .from("case_personas")
-    .select(
-      "role_key, status, generated_by, display_name, prompt, behavior_prompt, metadata, image_url, last_generated_at"
-    )
+    .select("role_key, status, generated_by, display_name, prompt, behavior_prompt, metadata, image_url, last_generated_at")
     .eq("case_id", caseId);
 
   if (fetchError) {
@@ -60,11 +55,9 @@ export async function ensureCasePersonas(
 
   for (const seed of seeds) {
     const existing = existingRoleMap.get(seed.roleKey);
-    
+
     // If a source persona ID was specified (from AvatarSelector), load it to copy data
-    const sourcePersona = seed.sharedPersonaKey
-      ? await loadSourcePersona(supabase, seed.sharedPersonaKey, sourcePersonaCache)
-      : null;
+    const sourcePersona = seed.sharedPersonaKey ? await loadSourcePersona(supabase, seed.sharedPersonaKey, sourcePersonaCache) : null;
 
     // Build the persona data - prefer source persona data if available, then existing, then seed defaults
     const displayName = sourcePersona?.display_name ?? existing?.display_name ?? seed.displayName;
@@ -72,7 +65,7 @@ export async function ensureCasePersonas(
     const behaviorPrompt = sourcePersona?.behavior_prompt ?? existing?.behavior_prompt ?? seed.behaviorPrompt;
     const imageUrl = seed.imageUrl ?? sourcePersona?.image_url ?? existing?.image_url ?? null;
     const status = imageUrl ? "ready" : (existing?.status ?? "pending");
-    
+
     // Merge metadata
     const mergedMetadata = buildMetadata(sourcePersona?.metadata, existing?.metadata, seed);
 
@@ -112,21 +105,27 @@ export async function ensureCasePersonas(
   }
 
   if (pendingInserts.length) {
-    const { error: insertError } = await supabase
-      .from("case_personas")
-      .insert(pendingInserts);
+    const { error: insertError } = await supabase.from("case_personas").insert(pendingInserts);
     if (insertError) {
       console.error("Failed to insert case personas", insertError);
     }
   }
 
   if (pendingUpdates.length) {
-    const { error: updateError } = await supabase
-      .from("case_personas")
-      .upsert(pendingUpdates, { onConflict: "case_id,role_key" });
+    const { error: updateError } = await supabase.from("case_personas").upsert(pendingUpdates, { onConflict: "case_id,role_key" });
     if (updateError) {
       console.error("Failed to update case personas", updateError);
     }
+  }
+
+  // Attempt to apply a species-specialized nurse for this case.
+  try {
+    const species = String(caseBody?.["species"] ?? "");
+    if (species) {
+      await applySpecializedNurse(supabase, caseId, species);
+    }
+  } catch (e) {
+    console.warn("Failed to apply specialized nurse", e);
   }
 }
 
@@ -136,11 +135,7 @@ export async function ensureCasePersonas(
  * Format: "global:{uuid}" - legacy format, looks up global_personas for migration
  * Legacy: plain string - search by role_key in case_personas
  */
-async function loadSourcePersona(
-  supabase: SupabaseClient,
-  sourceKey: string,
-  cache: Map<string, DbPersonaRow | null>
-): Promise<DbPersonaRow | null> {
+async function loadSourcePersona(supabase: SupabaseClient, sourceKey: string, cache: Map<string, DbPersonaRow | null>): Promise<DbPersonaRow | null> {
   if (cache.has(sourceKey)) {
     return cache.get(sourceKey) ?? null;
   }
@@ -150,9 +145,7 @@ async function loadSourcePersona(
     const personaId = sourceKey.slice(5);
     const { data, error } = await supabase
       .from("case_personas")
-      .select(
-        "id, case_id, role_key, display_name, prompt, behavior_prompt, status, image_url, metadata"
-      )
+      .select("id, case_id, role_key, display_name, prompt, behavior_prompt, status, image_url, metadata")
       .eq("id", personaId)
       .maybeSingle();
 
@@ -172,9 +165,7 @@ async function loadSourcePersona(
     const personaId = sourceKey.slice(7);
     const { data, error } = await supabase
       .from("global_personas")
-      .select(
-        "id, role_key, display_name, prompt, behavior_prompt, status, image_url, metadata"
-      )
+      .select("id, role_key, display_name, prompt, behavior_prompt, status, image_url, metadata")
       .eq("id", personaId)
       .maybeSingle();
 
@@ -201,9 +192,7 @@ async function loadSourcePersona(
   // Legacy fallback: search by role_key (for old data)
   const { data, error } = await supabase
     .from("case_personas")
-    .select(
-      "id, case_id, role_key, display_name, prompt, behavior_prompt, status, image_url, metadata"
-    )
+    .select("id, case_id, role_key, display_name, prompt, behavior_prompt, status, image_url, metadata")
     .eq("role_key", sourceKey)
     .not("image_url", "is", null)
     .order("created_at", { ascending: true })
@@ -223,11 +212,7 @@ async function loadSourcePersona(
 /**
  * Build merged metadata for a persona
  */
-function buildMetadata(
-  sourceMetadata: unknown,
-  existingMetadata: unknown,
-  seed: PersonaSeed
-): Record<string, unknown> | null {
+function buildMetadata(sourceMetadata: unknown, existingMetadata: unknown, seed: PersonaSeed): Record<string, unknown> | null {
   const source = toRecord(sourceMetadata);
   const existing = toRecord(existingMetadata);
   const seedMeta = seed.metadata ?? {};

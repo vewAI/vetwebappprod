@@ -9,16 +9,7 @@ type MergeOptions = {
 };
 
 const SPECIES_KEYWORDS: Record<string, string[]> = {
-  equine: [
-    "horse",
-    "equine",
-    "mare",
-    "stallion",
-    "gelding",
-    "foal",
-    "filly",
-    "colt",
-  ],
+  equine: ["horse", "equine", "mare", "stallion", "gelding", "foal", "filly", "colt"],
   bovine: ["cow", "bovine", "cattle", "heifer", "bull", "calf", "dairy"],
   canine: ["dog", "canine", "puppy", "bitch"],
   feline: ["cat", "feline", "kitten", "queen", "tom"],
@@ -45,7 +36,7 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function normalizeSpeciesKey(species: string | null | undefined): string | null {
+export function normalizeSpeciesKey(species: string | null | undefined): string | null {
   const lower = species ? species.toLowerCase() : "";
   if (!lower) return null;
   for (const [key, synonyms] of Object.entries(SPECIES_KEYWORDS)) {
@@ -79,10 +70,7 @@ function coerceStringToSpecies(value: string, targetKey: string): string {
   return updated;
 }
 
-export function scrubConflictingSpeciesStrings(
-  body: CasePayload,
-  species: string | null | undefined
-) {
+export function scrubConflictingSpeciesStrings(body: CasePayload, species: string | null | undefined) {
   const targetKey = normalizeSpeciesKey(species);
   if (!targetKey) return;
   for (const [key, value] of Object.entries(body)) {
@@ -96,17 +84,9 @@ export function scrubConflictingSpeciesStrings(
   }
 }
 
-function ensureField(
-  body: CasePayload,
-  key: CaseFieldKey,
-  value: string | Record<string, unknown>
-) {
+function ensureField(body: CasePayload, key: CaseFieldKey, value: string | Record<string, unknown>) {
   const current = body[key];
-  if (
-    current === undefined ||
-    current === null ||
-    (typeof current === "string" && current.trim() === "")
-  ) {
+  if (current === undefined || current === null || (typeof current === "string" && current.trim() === "")) {
     body[key] = value;
   }
 }
@@ -118,12 +98,9 @@ export function applyCaseDefaults(body: CasePayload) {
   const speciesLower = species.toLowerCase();
   const condition = String(body["condition"] ?? "").trim();
   const conditionLower = condition.toLowerCase();
-  const ownerLabel = species
-    ? `${species} owner`
-    : "Animal owner";
+  const ownerLabel = species ? `${species} owner` : "Animal owner";
   const patientLabel = species || "patient";
-  const conditionDescription =
-    condition || "their current medical concern";
+  const conditionDescription = condition || "their current medical concern";
 
   const diagnostic_findings_template =
     "Share diagnostic results only for investigations the learner specifically ordered. When a requested test is inappropriate or unavailable, explain why and suggest more suitable options.";
@@ -133,21 +110,13 @@ export function applyCaseDefaults(body: CasePayload) {
     : `A ${patientLabel.toLowerCase()} presenting for ${conditionDescription}.`;
 
   const details_template: Record<string, unknown> = {
-    presenting_complaint: String(
-      body["description"] ?? `Presenting for ${conditionDescription}`
-    ),
-    duration: body["estimated_time"]
-      ? `${body["estimated_time"]} minutes`
-      : "Unknown",
+    presenting_complaint: String(body["description"] ?? `Presenting for ${conditionDescription}`),
+    duration: body["estimated_time"] ? `${body["estimated_time"]} minutes` : "Unknown",
     learning_objectives: "Add learning objectives relevant to this scenario.",
   };
 
   let difficulty_template = "Easy";
-  if (
-    /severe|shock|critical|collapse|fracture|laminitis|sepsis|er/i.test(
-      conditionLower
-    )
-  ) {
+  if (/severe|shock|critical|collapse|fracture|laminitis|sepsis|er/i.test(conditionLower)) {
     difficulty_template = "Hard";
   } else if (/moderate|chronic|recurring|suspected/i.test(conditionLower)) {
     difficulty_template = "Medium";
@@ -155,8 +124,7 @@ export function applyCaseDefaults(body: CasePayload) {
 
   const estimated_time_template = 15;
 
-  let physical_exam_findings_template =
-    `Provide vital signs and pertinent positive/negative findings for this ${patientLabel.toLowerCase()}. Include details that align with ${conditionDescription}.`;
+  let physical_exam_findings_template = `Provide vital signs and pertinent positive/negative findings for this ${patientLabel.toLowerCase()}. Include details that align with ${conditionDescription}.`;
   if (speciesLower.includes("horse") || speciesLower.includes("equine")) {
     physical_exam_findings_template =
       "List physical exam findings for an equine patient, highlighting abnormalities relevant to the suspected diagnosis.";
@@ -193,10 +161,7 @@ export function applyCaseDefaults(body: CasePayload) {
   ensureField(body, "description", description_template);
   ensureField(body, "details", details_template);
 
-  if (
-    body["estimated_time"] === undefined ||
-    Number.isNaN(Number(body["estimated_time"]))
-  ) {
+  if (body["estimated_time"] === undefined || Number.isNaN(Number(body["estimated_time"]))) {
     body["estimated_time"] = estimated_time_template;
   }
 
@@ -209,43 +174,16 @@ export function applyCaseDefaults(body: CasePayload) {
   ensureField(body, "owner_follow_up_feedback", owner_follow_up_feedback_template);
   ensureField(body, "owner_diagnosis", owner_diagnosis_template);
   ensureField(body, "get_owner_prompt", get_owner_prompt_template);
-  ensureField(
-    body,
-    "get_history_feedback_prompt",
-    get_history_feedback_prompt_template
-  );
-  ensureField(
-    body,
-    "get_physical_exam_prompt",
-    get_physical_exam_prompt_template
-  );
+  ensureField(body, "get_history_feedback_prompt", get_history_feedback_prompt_template);
+  ensureField(body, "get_physical_exam_prompt", get_physical_exam_prompt_template);
   ensureField(body, "get_diagnostic_prompt", get_diagnostic_prompt_template);
-  ensureField(
-    body,
-    "get_owner_follow_up_prompt",
-    get_owner_follow_up_prompt_template
-  );
-  ensureField(
-    body,
-    "get_owner_follow_up_feedback_prompt",
-    get_owner_follow_up_feedback_prompt_template
-  );
-  ensureField(
-    body,
-    "get_owner_diagnosis_prompt",
-    get_owner_diagnosis_prompt_template
-  );
-  ensureField(
-    body,
-    "get_overall_feedback_prompt",
-    get_overall_feedback_prompt_template
-  );
+  ensureField(body, "get_owner_follow_up_prompt", get_owner_follow_up_prompt_template);
+  ensureField(body, "get_owner_follow_up_feedback_prompt", get_owner_follow_up_feedback_prompt_template);
+  ensureField(body, "get_owner_diagnosis_prompt", get_owner_diagnosis_prompt_template);
+  ensureField(body, "get_overall_feedback_prompt", get_overall_feedback_prompt_template);
 }
 
-export async function enrichCaseWithModel(
-  body: CasePayload,
-  openai: OpenAi
-): Promise<CasePayload> {
+export async function enrichCaseWithModel(body: CasePayload, openai: OpenAi): Promise<CasePayload> {
   const species = typeof body["species"] === "string" ? body["species"] : "";
   const condition = typeof body["condition"] === "string" ? body["condition"] : "";
   const patientName = typeof body["title"] === "string" ? body["title"] : "";
@@ -308,22 +246,14 @@ export async function enrichCaseWithModel(
   return {};
 }
 
-export function mergeAugmentedFields(
-  base: CasePayload,
-  augment: CasePayload,
-  options: MergeOptions = {}
-): CasePayload {
+export function mergeAugmentedFields(base: CasePayload, augment: CasePayload, options: MergeOptions = {}): CasePayload {
   const { appendStrings = false, species = null } = options;
   const targetSpeciesKey = normalizeSpeciesKey(species);
   const result: CasePayload = { ...base };
 
   for (const key of Object.keys(augment)) {
     const nextValue = augment[key];
-    if (
-      nextValue === undefined ||
-      nextValue === null ||
-      (typeof nextValue === "string" && nextValue.trim() === "")
-    ) {
+    if (nextValue === undefined || nextValue === null || (typeof nextValue === "string" && nextValue.trim() === "")) {
       continue;
     }
 
@@ -339,9 +269,7 @@ export function mergeAugmentedFields(
           if (!coercedKey || coercedKey === targetSpeciesKey) {
             candidate = coerced;
           } else {
-            console.warn(
-              `Skipping conflicting species content for field ${key}; expected ${targetSpeciesKey}, received ${nextSpeciesKey}`
-            );
+            console.warn(`Skipping conflicting species content for field ${key}; expected ${targetSpeciesKey}, received ${nextSpeciesKey}`);
             continue;
           }
         }

@@ -481,6 +481,21 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
               {resolvedCount}/{actionableItems.length} items reviewed
             </span>
             {allResolved && <span className="text-emerald-600 dark:text-emerald-400 font-medium">✓ Verification complete</span>}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                caseVerificationService.downloadVerificationQuestions(items, {
+                  caseId: (verificationResult as any)?.caseId,
+                  title: (verificationResult as any)?.title,
+                  species: caseContext.species,
+                  condition: caseContext.condition,
+                  patientName: caseContext.patientName,
+                })
+              }
+            >
+              Download Questions
+            </Button>
           </div>
         </DialogHeader>
 
