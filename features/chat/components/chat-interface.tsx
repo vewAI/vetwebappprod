@@ -1064,7 +1064,7 @@ export function ChatInterface({
             if (normFinal && normAssistant && normFinal === normAssistant && recentTts) {
               lastFinalHandledRef.current = trimmed;
               // helpful UX hint when auto-send would have been triggered but was suppressed by TTS echo
-              
+
               return;
             }
 
@@ -1161,7 +1161,6 @@ export function ChatInterface({
               // This prevents the mic from "auto-sending" captured TTS audio
               // But schedule a retry so the message isn't lost
               if (isInDeafMode()) {
-                
                 // Schedule a retry in 1.5s to send the message after deaf mode clears
                 autoSendFinalTimerRef.current = window.setTimeout(() => {
                   autoSendFinalTimerRef.current = null;
@@ -1235,7 +1234,6 @@ export function ChatInterface({
                 "those",
               ];
               if (incompleteBlockers.includes(finalLastWord)) {
-                
                 // show a brief hint so users understand why auto-send didn't fire
                 try {
                   setTimepointToast({ title: "Auto-send blocked", body: "Message looks incomplete — tap Send to send it anyway." });
@@ -1551,6 +1549,24 @@ export function ChatInterface({
 
   const personaToastTimerRef = useRef<number | null>(null);
   const voiceModeToastTimerRef = useRef<number | null>(null);
+  const initialPersonaToastFiredRef = useRef(false);
+
+  // Show an initial "Speak to the …" toast when the chat first mounts so the
+  // student always knows which persona is active at the start of each case.
+  useEffect(() => {
+    if (initialPersonaToastFiredRef.current) return;
+    initialPersonaToastFiredRef.current = true;
+    const t = window.setTimeout(() => {
+      const lbl = activePersona === "veterinary-nurse" ? "Speak to the Nurse" : "Speak to the Owner";
+      setTimepointToast({ title: lbl, body: "" });
+      personaToastTimerRef.current = window.setTimeout(() => {
+        hideTimepointToastWithFade(300);
+        personaToastTimerRef.current = null;
+      }, 3500);
+    }, 800);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Persist persona-specific input drafts to localStorage and show a brief
   // toast when the user switches persona.
@@ -1603,17 +1619,16 @@ export function ChatInterface({
       } catch (e) {}
 
       // show a short toast to confirm persona switch
-      const displayName = personaDirectory?.[next]?.displayName ?? (next === "owner" ? "OWNER" : "NURSE");
-      const toastTitle = next === "veterinary-nurse" ? "Hello Doc" : `Talking to ${displayName}`;
+      const toastTitle = next === "veterinary-nurse" ? "Speak to the Nurse" : "Speak to the Owner";
       setTimepointToast({ title: toastTitle, body: "" });
-      // Hide after 2s (clear any prior timer first)
+      // Hide after 3.5s (clear any prior timer first)
       if (personaToastTimerRef.current) {
         window.clearTimeout(personaToastTimerRef.current);
       }
       personaToastTimerRef.current = window.setTimeout(() => {
         hideTimepointToastWithFade(300);
         personaToastTimerRef.current = null;
-      }, 2000);
+      }, 3500);
 
       // Also append a short assistant greeting when switching to nurse via the UI
       try {
@@ -1629,7 +1644,6 @@ export function ChatInterface({
             const stage = stages?.[currentStageIndex];
             const stageTitle = (stage?.title ?? "").toLowerCase();
             // Emit event for QA tracing
-            
 
             const attemptAdvanceTo = async (predicate: (label: string) => boolean) => {
               for (let i = 0; i < 6; i++) {
@@ -1645,12 +1659,10 @@ export function ChatInterface({
             };
 
             if (/history/.test(stageTitle) || /history taking/.test(stageTitle)) {
-              
               void attemptAdvanceTo((l) => /physical/.test(l));
             }
 
             if (/diagnostic/.test(stageTitle) || /diagnostic planning/.test(stageTitle)) {
-              
               void attemptAdvanceTo((l) => /laboratory|lab|tests/.test(l));
             }
           } catch (e) {
@@ -1969,7 +1981,6 @@ export function ChatInterface({
       const roleName = stage.role ?? "Virtual Assistant";
       const normalizedRoleKey = stage.personaRoleKey ?? resolveChatPersonaRoleKey(stage.role, roleName);
       const personaMeta = await ensurePersonaMetadata(normalizedRoleKey);
-      
 
       let voiceSex: "male" | "female" | "neutral" =
         personaMeta?.sex === "male" || personaMeta?.sex === "female" || personaMeta?.sex === "neutral"
@@ -2113,7 +2124,7 @@ export function ChatInterface({
     const now = Date.now();
     if (lastSubmissionRef.current && lastSubmissionRef.current.content === trimmed && now - lastSubmissionRef.current.timestamp < 2500) {
       console.warn("Duplicate submission blocked by ref-check:", { text: trimmed, source: options?.source ?? "unknown" });
-      
+
       // If this was an auto-send, show a small hint to the user explaining why it was blocked
       if (options?.source === "auto") {
         try {
@@ -2128,7 +2139,6 @@ export function ChatInterface({
     // Record the UI-selected persona at the moment of send to avoid race
     // conditions where the server reply might be attributed to another role.
     selectedPersonaAtSendRef.current = activePersona;
-    
 
     // Update submission tracker immediately
     lastSubmissionRef.current = { content: trimmed, timestamp: now };
@@ -2358,7 +2368,7 @@ export function ChatInterface({
             newText: trimmed,
             source: options?.source ?? "unknown",
           });
-          
+
           if (options?.source === "auto") {
             try {
               setTimepointToast({ title: "Auto-send blocked", body: "A recent message was already sent — tap Send to force it." });
@@ -2455,7 +2465,6 @@ export function ChatInterface({
         const nextIndex = Math.min(currentStageIndex + 1, stages.length - 1);
         const nextTitle = stages[nextIndex]?.title ?? `Stage ${nextIndex + 1}`;
         setPendingStageAdvance({ stageIndex: nextIndex, title: nextTitle });
-        
       } else if (stageResult.status !== "ready") {
         // Allow a high-confidence user request to move into Physical Examination
         // even if assistant findings are not yet present. This supports students
@@ -2467,7 +2476,7 @@ export function ChatInterface({
             const nextIndex = Math.min(currentStageIndex + 1, stages.length - 1);
             const nextTitle = stages[nextIndex]?.title ?? `Stage ${nextIndex + 1}`;
             setPendingStageAdvance({ stageIndex: nextIndex, title: nextTitle });
-            
+
             reset();
             baseInputRef.current = "";
             return;
@@ -2513,12 +2522,10 @@ export function ChatInterface({
     // Prevent double-sends for the same message id when multiple triggers fire simultaneously
     if (!sendingMessageIdsRef.current) sendingMessageIdsRef.current = new Set<string>();
     if (userMessage && sendingMessageIdsRef.current.has(userMessage.id)) {
-      
       return;
     }
 
     setIsLoading(true);
-    
 
     try {
       // If we previously inserted a '...' placeholder waiting for continuation,
@@ -2839,7 +2846,7 @@ export function ChatInterface({
       } catch (e) {}
 
       setIsLoading(false);
-      
+
       // Reset interim transcripts after a send
       reset();
       // Clear base input buffer after a send so future dictation starts
@@ -2944,7 +2951,7 @@ export function ChatInterface({
         });
       }
       try {
-} catch (e) {
+      } catch (e) {
         // non-fatal
       }
 
@@ -3521,7 +3528,6 @@ export function ChatInterface({
             try {
               // GUARD: If we're in deaf mode (TTS playing or just ended), skip auto-send
               if (isInDeafMode()) {
-                
                 // show a short hint for transcript-auto blocked sends
                 try {
                   setTimepointToast({ title: "Auto-send blocked", body: "Audio playback detected — tap Send to force your message." });
@@ -4015,11 +4021,10 @@ export function ChatInterface({
   const handleSubmit = async (e: React.FormEvent) => {
     try {
       e.preventDefault();
-      
+
       // Delegate to shared sendUserMessage helper and mark as manual so it bypasses auto-send blocks
       await sendUserMessage(input, undefined, { source: "manual" });
     } finally {
-      
       // Clear the base input buffer and visible input when the user clicks Send
       try {
         baseInputRef.current = "";
@@ -4272,7 +4277,6 @@ export function ChatInterface({
           // so that the resume logic knows this was a TTS-paused mic and will
           // deterministically attempt to restart it after playback completes.
           wasMicPausedForTtsRef.current = !userToggledOffRef.current && wasListening;
-          
 
           // Do NOT stop the mic or toggle the visible mic UI here. The
           // `playTtsAndPauseStt` helper will handle suppression/abort and
@@ -4299,7 +4303,7 @@ export function ChatInterface({
         // For non-sensitive intros allow auto-resume so the mic is
         // reliably restarted after playback when it was previously listening.
         // Use skipResume=false (explicit) to avoid leaving the mic disabled.
-        
+
         await playTtsAndPauseStt(introText, assistantMsg.voiceId ?? voiceForRole, introMeta, personaMeta?.sex as any, false);
       } catch (e) {
         try {
@@ -4396,8 +4400,6 @@ export function ChatInterface({
         } else {
           // If we intentionally skipped TTS for this intro, log for diagnostics.
           if (skipIntroTts) {
-            
-
             // Ensure voice mode is available after the intro when TTS is intentionally skipped.
             // Activate voice mode unless the user explicitly toggled it off previously.
             try {
@@ -4451,7 +4453,7 @@ export function ChatInterface({
     if (!pendingStageAdvance) return;
     const { stageIndex } = pendingStageAdvance;
     setPendingStageAdvance(null);
-    
+
     // If a direct proceed handler is available, call it immediately.
     if (handleProceedRef.current && !isAdvancingRef.current) {
       try {
@@ -4470,7 +4472,6 @@ export function ChatInterface({
     const declined = pendingStageAdvance;
     setPendingStageAdvance(null);
     lockStageIntent("stay");
-    
   };
 
   const groupedVisibleMessages = useMemo(() => {
