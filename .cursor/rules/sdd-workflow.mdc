@@ -1,0 +1,31 @@
+---
+description: Spec-first workflow and Micro-Spec protocol
+alwaysApply: true
+---
+
+# Spec-Driven Development (SDD)
+
+## Prime Directive: Spec First
+
+Never implement code without a defined Spec. Define the interface/behavior first, then implement.
+
+**Workflow:**
+1. **Draft** — Create/Update `README.spec.md` in the feature directory
+2. **Verify** — Ask the user to confirm the logic/data model
+3. **Implement** — Write code that strictly adheres to the Spec
+
+## Micro-Spec Protocol
+
+Every feature folder (e.g., `features/chat/`) must contain `README.spec.md` with:
+
+- **User Story**: 1-2 sentences on what this feature achieves
+- **Data Model**: TypeScript interface definitions (Source of Truth)
+- **API Contract**: Input parameters and response shapes for API routes
+- **Component Tree**: Bullet points of UI components and their props
+- **Critical Rules**: Domain-specific constraints
+
+## Tech Stack
+
+- Next.js 13+ (App Router), TypeScript, Tailwind CSS
+- Supabase (Auth, DB, Storage), OpenAI API
+- Feature-based modularity; React Hooks, Context (minimal global state)

@@ -1,0 +1,41 @@
+---
+description: Modeling, services, and UI implementation guidelines
+globs: "**/*.ts, **/*.tsx"
+alwaysApply: false
+---
+
+# Implementation Guidelines
+
+## Phase A: Modeling
+
+- Define types strictly in `models/`
+- Prefer `interface` over `type`
+- If Zod schema needed for validation, define alongside the interface
+
+## Phase B: Services
+
+- Client services: `features/*/services/`
+- Use `buildAuthHeaders` and `axios`
+- Handle `navigator.onLine` checks for offline scenarios
+- Server: Keep API routes thin; delegate complex logic to utility functions
+
+## Phase C: UI
+
+- Use Tailwind CSS with `cn` (clsx + tailwind-merge)
+- Components should be "dumb" where possible, receiving data via Props from Spec
+
+## Service Example
+
+```typescript
+import { buildAuthHeaders } from "@/lib/auth-headers";
+import { UserProfile } from "../models";
+import axios from "axios";
+
+export const authService = {
+  login: async (creds: LoginCredentials): Promise<UserProfile> => {
+    const headers = await buildAuthHeaders({});
+    const res = await axios.post("/api/auth/login", creds, { headers });
+    return res.data.user;
+  },
+};
+```
