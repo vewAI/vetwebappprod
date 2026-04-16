@@ -1,20 +1,10 @@
 "use client";
 
-import React, {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  useRef,
-  ReactNode,
-} from "react";
+import React, { createContext, useContext, useEffect, useState, useRef, ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import {
-  clearInvalidRefreshTokenState,
-  isRefreshTokenAuthError,
-} from "@/lib/supabase-auth-error-utils";
+import { clearInvalidRefreshTokenState, isRefreshTokenAuthError } from "@/lib/supabase-auth-error-utils";
 
 // Define the shape of our auth context
 type AuthContextType = {
@@ -94,31 +84,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     getInitialSession();
 
     // Set up a listener for auth state changes
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (event, newSession) => {
-        setSession(newSession);
-        setLoading(false);
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      setSession(newSession);
+      setLoading(false);
 
-        // Only handle redirects during initial auth events or explicit sign-in/out actions
-        if (!isInitialized) {
-          setIsInitialized(true);
-          // Initial auth check - redirect only if needed
-          if (!newSession && event === "INITIAL_SESSION") {
-            router.push("/login");
+      // Only handle redirects during initial auth events or explicit sign-in/out actions
+      if (!isInitialized) {
+        setIsInitialized(true);
+        // Initial auth check - redirect only if needed
+        if (!newSession && event === "INITIAL_SESSION") {
+          router.push("/login");
+        }
+      } else {
+        // Handle explicit auth state changes
+        if (event === "SIGNED_IN") {
+          // Avoid forcing a redirect when the user is already on an authenticated page
+          // such as /admin or /case-entry. Only redirect after explicit sign-in flows.
+          if (pathname === "/login" || pathname === "/auth/callback") {
+            router.push("/");
           }
-        } else {
-          // Handle explicit auth state changes
-          if (event === "SIGNED_IN") {
-            // Let /auth/callback control redirect (magic link → setup-passkey or /)
-            if (pathname !== "/auth/callback") {
-              router.push("/");
-            }
-          } else if (event === "SIGNED_OUT") {
-            router.push("/login");
-          }
+        } else if (event === "SIGNED_OUT") {
+          router.push("/login");
         }
       }
-    );
+    });
 
     // Clean up the listener when the component unmounts
     return () => {
@@ -131,12 +120,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const fetchProfile = async () => {
       const currentUserId = session?.user?.id;
       const isSameUser = currentUserId && currentUserId === lastUserIdRef.current;
-      
+
       // Only show loading state if user changed or we don't have a role yet
       if (!isSameUser || !role) {
         setProfileLoading(true);
       }
-      
+
       // If we don't have a user id or an access token, skip fetching
       if (!currentUserId || !session?.access_token) {
         setRole(null);
@@ -165,25 +154,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const profile = json?.profile ?? null;
         setRole(profile?.role ?? null);
         setForcePasswordChange(profile?.force_password_change ?? false);
-        
+
         if (profile?.force_password_change) {
-            router.push("/change-password");
+          router.push("/change-password");
         }
 
         setProfileLoading(false);
         lastUserIdRef.current = currentUserId;
       } catch (err) {
-        console.error(
-          "Unexpected error fetching profile via /api/profile:",
-          err
-        );
+        console.error("Unexpected error fetching profile via /api/profile:", err);
         // If the profile endpoint is temporarily unreachable (network error),
         // fall back to any role present in the session JWT metadata so that
         // users (e.g. professors) don't lose access unnecessarily.
-        const fallbackRole =
-          session?.user?.app_metadata?.role ??
-          session?.user?.user_metadata?.role ??
-          null;
+        const fallbackRole = session?.user?.app_metadata?.role ?? session?.user?.user_metadata?.role ?? null;
         setRole(fallbackRole ?? null);
         setForcePasswordChange(false);
         setProfileLoading(false);

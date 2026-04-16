@@ -4,12 +4,19 @@ import React from "react";
 import { useProfessor } from "../hooks/useProfessor";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import { CreateStudentDialog } from "./CreateStudentDialog";
+import { CreateCourseDialog } from "./CreateCourseDialog";
+import { CourseList } from "./CourseList";
 import { ProfessorAnalytics } from "./ProfessorAnalytics";
+import { PendingReviewsCard } from "./PendingReviewsCard";
+import { RecentActivityFeed } from "./RecentActivityFeed";
+import { NotificationBadge } from "./NotificationBadge";
 
 export function ProfessorDashboard() {
   const { cases, students, loading, isProfessor, error } = useProfessor();
+  const [courseRefreshKey, setCourseRefreshKey] = React.useState(0);
 
   if (!isProfessor) {
     return (
@@ -21,7 +28,33 @@ export function ProfessorDashboard() {
   }
 
   if (loading) {
-    return <div className="p-8">Loading dashboard...</div>;
+    return (
+      <div className="container mx-auto p-6 space-y-8">
+        <Skeleton className="h-9 w-64" />
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Card key={i} className="min-h-36 p-2">
+              <CardContent className="space-y-2 pt-4">
+                <Skeleton className="h-3 w-1/2" />
+                <Skeleton className="h-5 w-1/4" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <Skeleton className="h-6 w-32" />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Card key={i}>
+              <CardContent className="p-4 space-y-3">
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-3 w-1/2" />
+                <Skeleton className="h-8 w-full" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   if (error) {
@@ -32,8 +65,10 @@ export function ProfessorDashboard() {
     <div className="container mx-auto p-6 space-y-8">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">Professor Dashboard</h1>
+        <NotificationBadge />
         <div className="space-x-2">
           <CreateStudentDialog />
+          <CreateCourseDialog onCreated={() => setCourseRefreshKey((k) => k + 1)} />
           <Button asChild variant="outline">
             <Link href="/case-entry">Create New Case</Link>
           </Button>
@@ -68,23 +103,18 @@ export function ProfessorDashboard() {
                 <div className="text-lg font-semibold">{students.length}</div>
               </CardContent>
             </Card>
-            <Card className="min-h-36 p-2 h-full transition-all duration-300 ease-out hover:bg-muted/100 dark:hover:bg-muted/80 shadow-lg bg-muted/50 border border-transparent border-teal-500/30">
-              <CardHeader className="pb-1 grow text-center px-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground text-teal-600">
-                  Pending Reviews
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="py-2 px-3">
-                <div className="text-lg font-semibold">
-                  0
-                  <span className="text-xs text-muted-foreground ps-2">
-                    (Coming soon)
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
+            <PendingReviewsCard />
           </div>
         </div>
+        <div>
+          <RecentActivityFeed />
+        </div>
+      </div>
+
+      {/* Courses Section */}
+      <div>
+        <h2 className="text-xl font-bold mb-4">Courses</h2>
+        <CourseList refreshKey={courseRefreshKey} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

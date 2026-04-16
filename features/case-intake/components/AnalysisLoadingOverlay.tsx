@@ -117,9 +117,9 @@ export function AnalysisLoadingOverlay({ countdown, isVerifying }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-2xl w-full my-8 overflow-hidden">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-4xl w-full my-8 overflow-hidden">
         {/* ── Gradient Header ── */}
-        <div className="bg-gradient-to-r from-teal-600 via-emerald-600 to-cyan-600 px-8 py-6 text-white relative overflow-hidden">
+        <div className="bg-gradient-to-r from-teal-600 via-emerald-600 to-cyan-600 px-8 pt-6 pb-4 text-white relative overflow-hidden">
           {/* Animated shimmer */}
           <div
             className="absolute inset-0 opacity-20"
@@ -128,11 +128,11 @@ export function AnalysisLoadingOverlay({ countdown, isVerifying }: Props) {
               animation: "shimmer 2.5s infinite",
             }}
           />
-          <h2 className="text-2xl font-bold relative z-10">{isVerifying ? "Running Clinical Verification..." : "Building Your Simulation"}</h2>
-          <p className="text-teal-100 text-sm mt-1 relative z-10">Translating your clinical expertise into a structured teaching experience</p>
+          <h2 className="text-xl font-bold relative z-10">{isVerifying ? "Running Clinical Verification..." : "Building Your Simulation"}</h2>
+          <p className="text-teal-100 text-xs mt-0.5 relative z-10">Translating your clinical expertise into a structured teaching experience</p>
         </div>
 
-        <div className="px-8 py-6 space-y-6">
+        <div className="px-8 py-4 space-y-4">
           {/* ── Progress Bar ── */}
           <div className="space-y-2">
             <div className="flex justify-between text-xs text-muted-foreground">
@@ -148,14 +148,14 @@ export function AnalysisLoadingOverlay({ countdown, isVerifying }: Props) {
           </div>
 
           {/* ── Pipeline Phases ── */}
-          <div className="space-y-3">
+          <div className="space-y-2">
             {PIPELINE_PHASES.map((phase, idx) => {
               const isActive = idx === activePhase;
               const isDone = idx < activePhase;
               return (
                 <div
                   key={phase.id}
-                  className={`flex items-start gap-3 rounded-lg border px-4 py-3 transition-all duration-500 ${
+                  className={`flex items-start gap-2 rounded-lg border px-3 py-2 transition-all duration-500 ${
                     isActive
                       ? "border-teal-300 bg-teal-50/80 dark:bg-teal-950/30 dark:border-teal-700 shadow-sm"
                       : isDone
@@ -163,9 +163,9 @@ export function AnalysisLoadingOverlay({ countdown, isVerifying }: Props) {
                         : "border-gray-100 dark:border-gray-800 opacity-40"
                   }`}
                 >
-                  <span className="text-xl mt-0.5 shrink-0">{isDone ? "✅" : phase.icon}</span>
+                  <span className="text-lg mt-0 shrink-0">{isDone ? "✅" : phase.icon}</span>
                   <div className="min-w-0">
-                    <p className={`font-semibold text-sm ${isActive ? "text-teal-800 dark:text-teal-200" : ""}`}>
+                    <p className={`font-semibold text-xs ${isActive ? "text-teal-800 dark:text-teal-200" : ""}`}>
                       {phase.title}
                       {isActive && (
                         <span className="inline-flex ml-2">
@@ -183,20 +183,20 @@ export function AnalysisLoadingOverlay({ countdown, isVerifying }: Props) {
           </div>
 
           {/* ── Process Explanation Cards ── */}
-          <div className="space-y-3 pt-2">
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">What Happens Next</h3>
-            <div className="grid gap-3">
+          <div className="space-y-2 pt-1">
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">What Happens Next</h3>
+            <div className="grid gap-2">
               {PROCESS_CARDS.map((card, idx) => (
                 <div
                   key={card.title}
-                  className={`flex items-start gap-3 rounded-lg border border-gray-100 dark:border-gray-800 px-4 py-3 transition-all duration-700 ${
+                  className={`flex items-start gap-2 rounded-lg border border-gray-100 dark:border-gray-800 px-3 py-2 transition-all duration-700 ${
                     idx < visibleCards ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3"
                   }`}
                   style={{ transitionDelay: `${idx * 100}ms` }}
                 >
-                  <span className="text-lg shrink-0">{card.icon}</span>
+                  <span className="text-base shrink-0">{card.icon}</span>
                   <div>
-                    <p className="font-medium text-sm">{card.title}</p>
+                    <p className="font-medium text-xs">{card.title}</p>
                     <p className="text-xs text-muted-foreground mt-0.5">{card.body}</p>
                   </div>
                 </div>
@@ -205,7 +205,7 @@ export function AnalysisLoadingOverlay({ countdown, isVerifying }: Props) {
           </div>
 
           {/* ── Under the Hood Toggle ── */}
-          <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
+          <div className="pt-1 border-t border-gray-100 dark:border-gray-800">
             <button
               type="button"
               onClick={() => setShowPrompt(!showPrompt)}

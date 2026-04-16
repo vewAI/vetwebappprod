@@ -1,15 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
+import { createOpenAIClient } from "@/lib/llm/openaiClient";
 import { requireUser } from "@/app/api/_lib/auth";
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const SYSTEM_PROMPT = `You are an expert veterinary clinical educator and case designer. You are reviewing a veterinary teaching case for an AI-powered clinical simulation platform where veterinary students will interact with AI personas (owner, nurse, lab technician) to practice clinical reasoning.
 
 Your task: Perform a COMPREHENSIVE AUDIT of the case data for COMPLETENESS across ALL domains.
 
-CRITICAL — DATA PRESERVATION PRINCIPLE:
-Your job is to identify MISSING information, NOT to suggest removing or simplifying existing content. The professor is the clinical expert. If they included breed-specific notes, unusual observations, environmental details, management nuances, or seemingly minor clinical findings — those details are INTENTIONAL and CRITICAL to the case's educational value. The nuances that might seem like "noise" are exactly what makes clinical cases realistic and educational. When flagging items as "alreadyPresent", preserve and respect the existing content fully. Only flag items as "missing" if they are genuinely absent.
+CRITICAL — DATA vs EDUCATIONAL INSTRUCTIONS DISTINCTION:
+Distinguish between TWO types of "missing":
+1. **MISSING CLINICAL DATA** = Information that does not exist anywhere in the case (not in source text, not in structured fields). Examples: "Exact antibiotic dosages", "Owner's cost estimate", "Heart rate value". These are genuine gaps.
+2. **MISSING EDUCATIONAL INSTRUCTIONS** = Information exists in the case, but lacks explicit teaching guidance. Examples: "The treatment protocol is described but lacks step-by-step student instructions", or "Owner's anxiety is stated as 'Moderate' but lacks detailed guidance on how the student should assess this". These are enhancements, NOT critical gaps.
+
+**RULE: Only flag as "missing" if the CLINICAL DATA itself doesn't exist. If the data exists but educational instructions could be enhanced, mark as "alreadyPresent" with relevance="optional".**
+
+DATA PRESERVATION PRINCIPLE:
+Your job is to identify MISSING CLINICAL DATA, NOT to suggest removing or simplifying existing content. The professor is the clinical expert. If they included breed-specific notes, unusual observations, environmental details, management nuances, or seemingly minor clinical findings — those details are INTENTIONAL and CRITICAL to the case's educational value. The nuances that might seem like "noise" are exactly what makes clinical cases realistic and educational. When flagging items as "alreadyPresent", preserve and respect the existing content fully. Only flag items as "missing" if they are genuinely absent.
+
+SOURCE TEXT CROSS-REFERENCE (MANDATORY):
+If the case data includes a "_sourceText" field, it contains the ORIGINAL text the professor pasted. Before flagging ANY item as "missing", check the source text FIRST. If the information exists in the source text (even if it wasn't perfectly extracted into the structured field), mark the item as "alreadyPresent" and include the relevant excerpt as the existingValue. Do NOT ask the professor to re-provide data they already included in their original input.
+
+Examples:
+- Treatment protocol exists in source text describing catheter removal, LMWH, NSAIDs, antibiotics → Mark as "alreadyPresent: true", NOT missing
+- Owner's anxiety level is stated as "Moderate" in source text → Mark as "alreadyPresent: true", NOT missing
+- Owner's follow-up questions are listed in source text → Mark as "alreadyPresent: true", NOT missing
+- Exact dosages are not mentioned anywhere → Mark as "alreadyPresent: false", IS missing (clinical data gap)
 
 The case data includes:
 - Case metadata: title, learner-facing summary, species, patient demographics
@@ -104,16 +118,24 @@ Verify: Are ESSENTIAL tests documented with exact values, units, AND reference r
 - Do documented signs match the frequency profile of the suspected diagnosis?
 - Is the severity progression realistic?
 
-For each missing or incomplete item you identify:
-1. targetField: the case field it belongs to (e.g., details, physical_exam_findings, diagnostic_findings, description, get_physical_exam_prompt, get_diagnostic_prompt, owner_background, get_owner_prompt, owner_follow_up, get_owner_follow_up_prompt, owner_diagnosis, get_owner_diagnosis_prompt, owner_follow_up_feedback, get_owner_follow_up_feedback_prompt, get_history_feedback_prompt, get_overall_feedback_prompt)
+For each item you identify:
+1. targetField: the case field it belongs to
 2. category: physical_exam | laboratory | imaging | history | treatment | differential_diagnosis | owner_communication | biosecurity | educational_prompt | other
 3. itemName: specific item name (e.g., "Serum Amylase", "Heart Rate", "Owner Personality Background")
-4. relevance: mandatory | recommended | optional | unnecessary
+4. relevance: 
+   - "mandatory" = Critical clinical data that MUST exist (e.g., vital signs, laboratory values, diagnosis)
+   - "recommended" = Important clinical context that should exist (e.g., prior history, diagnostic reasoning)
+   - "optional" = Valuable but not essential (e.g., advanced imaging, specialist consultations)
 5. expectedFrequency: always | usually | sometimes | rarely | never
-6. alreadyPresent: boolean
-7. existingValue: the value from the case if present (first 200 chars if long)
+6. alreadyPresent: TRUE if the clinical DATA exists anywhere (source text or structured fields), FALSE only if genuinely absent
+7. existingValue: the value from the case/source if present (first 200 chars if long). Include quoted excerpt from sourceText if you found it there.
 8. reasoning: why this item matters for this specific case
-9. suggestedPrompt: a conversational question to ask the professor (IN ENGLISH) to get this data
+9. suggestedPrompt: a conversational question to ask the professor (IN ENGLISH) to provide ONLY IF alreadyPresent=false
+
+CRITICAL GUIDANCE:
+- If information exists in the source text or case fields, set alreadyPresent=true. Do NOT suggest asking for it again.
+- If you are tempted to ask about "how the student should learn this", remember: that's an educational instruction enhancement, not a data gap.
+- Only set alreadyPresent=false for items where the CLINICAL DATA itself is missing (not the teaching method).
 
 Return JSON:
 {
@@ -126,11 +148,12 @@ Return JSON:
   "counts": { "mandatory": N, "recommended": N, "optional": N, "unnecessary": N, "alreadyPresent": N, "missing": N }
 }
 
-IMPORTANT:
-- Be thorough. Generate 20-50 items depending on case complexity.
-- Sort items: mandatory missing first, then recommended missing, then optional missing, then mandatory present, then recommended present, then optional present, then unnecessary items.
-- Flag any items that have missing data even if they seem less important (e.g., description, educational prompts).
-- For educational prompts and conversation data, be specific about what's missing (e.g., "Owner's attitude toward surgery" if it's not documented).`;
+IMPORTANT FINAL RULES:
+- Be thorough. Generate 15-40 items depending on case complexity.
+- Sort items: mandatory missing first, then recommended missing, then optional missing, then all present items (sorted by relevance).
+- ONLY flag as "missing" if the CLINICAL DATA itself is absent. Do not flag as "missing" if the data exists but educational instructions could be more detailed.
+- For items marked "alreadyPresent=true", keep them in the list (to show the professor what was already recognized) but do not include a suggestedPrompt or ask them to re-provide.
+- If the source text contains relevant information, include a brief quoted excerpt in existingValue so the professor can verify you found it.`;
 
 export async function POST(request: NextRequest) {
   const auth = await requireUser(request);
@@ -154,24 +177,66 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Species and condition are required for verification." }, { status: 400 });
     }
 
-    const userPayload = {
-      species: caseData.species ?? "",
-      condition: caseData.condition ?? "",
-      category: caseData.category ?? "",
-      details: caseData.details ?? "",
-      physical_exam_findings: caseData.physical_exam_findings ?? "",
-      diagnostic_findings: caseData.diagnostic_findings ?? "",
-      owner_background: caseData.owner_background ?? "",
-      get_history_feedback_prompt: caseData.get_history_feedback_prompt ?? "",
-      tags: caseData.tags ?? "",
-      patient_name: caseData.patient_name ?? "",
-      patient_age: caseData.patient_age ?? "",
-      patient_sex: caseData.patient_sex ?? "",
-      title: caseData.title ?? "",
-    };
+    // Send ALL form fields so the LLM can see what's already populated.
+    // Previously only a subset was sent, causing the LLM to flag populated fields as missing.
+    const allFieldKeys = Object.keys(caseData);
+    const userPayload: Record<string, string> = {};
+    for (const key of allFieldKeys) {
+      const val = caseData[key];
+      if (typeof val === "string" && val.trim()) {
+        userPayload[key] = val;
+      }
+    }
+    // Always include core fields even if empty (the LLM needs to know they're blank)
+    for (const core of [
+      "species",
+      "condition",
+      "category",
+      "title",
+      "patient_name",
+      "patient_age",
+      "patient_sex",
+      "details",
+      "physical_exam_findings",
+      "diagnostic_findings",
+      "description",
+      "difficulty",
+      "estimated_time",
+      "findings_release_strategy",
+      "tags",
+      "owner_background",
+      "owner_follow_up",
+      "owner_diagnosis",
+      "history_feedback",
+      "owner_follow_up_feedback",
+      "get_owner_prompt",
+      "get_history_feedback_prompt",
+      "get_physical_exam_prompt",
+      "get_diagnostic_prompt",
+      "get_owner_follow_up_prompt",
+      "get_owner_follow_up_feedback_prompt",
+      "get_owner_diagnosis_prompt",
+      "get_overall_feedback_prompt",
+    ]) {
+      if (!userPayload[core]) userPayload[core] = "";
+    }
+
+    // Include original source text so the LLM can cross-reference what the professor pasted
+    const sourceText = String(body.sourceText ?? "").trim();
+    if (sourceText) {
+      userPayload._sourceText = sourceText;
+    }
 
     let response;
     let lastError: Error | null = null;
+
+    // Create validated OpenAI client for this request
+    let openai: any;
+    try {
+      openai = await createOpenAIClient();
+    } catch (err: any) {
+      return NextResponse.json({ error: err?.message ?? String(err) }, { status: 500 });
+    }
 
     // Try gpt-4o-mini first, fallback to gpt-3.5-turbo if project doesn't have access
     for (const model of ["gpt-4o-mini", "gpt-3.5-turbo"]) {

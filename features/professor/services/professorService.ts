@@ -120,18 +120,68 @@ export const professorService = {
     return data || [];
   },
 
-  async postFeedback(professorId: string, studentId: string, message: string, meta?: Record<string, unknown>) {
+  async postFeedback(professorId: string, studentId: string, message: string, meta?: Record<string, unknown>, caseId?: string) {
     const payload: any = {
       professor_id: professorId,
       student_id: studentId,
       message,
       metadata: meta || null,
+      sender_role: 'professor',
+      case_id: caseId || null,
       created_at: new Date().toISOString(),
     };
 
     const { data, error } = await supabase.from('professor_feedback').insert(payload).select().single();
     if (error) throw error;
     return data;
+  },
+
+  // Case-specific feedback methods
+  async getFeedbackForCase(studentId: string, caseId: string) {
+    const { data, error } = await supabase
+      .from('professor_feedback')
+      .select('*')
+      .eq('student_id', studentId)
+      .eq('case_id', caseId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async postCaseFeedback(
+    professorId: string,
+    studentId: string,
+    caseId: string,
+    message: string,
+    senderRole: 'professor' | 'student' = 'professor'
+  ) {
+    const payload: any = {
+      professor_id: professorId,
+      student_id: studentId,
+      case_id: caseId,
+      message,
+      sender_role: senderRole,
+      metadata: null,
+      created_at: new Date().toISOString(),
+    };
+    const { data, error } = await supabase.from('professor_feedback').insert(payload).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  async getUnreadFeedbackCount(studentId: string, caseId?: string): Promise<number> {
+    let query = supabase
+      .from('professor_feedback')
+      .select('id', { count: 'exact', head: true })
+      .eq('student_id', studentId)
+      .is('read_at', null)
+      .eq('sender_role', 'professor');
+    if (caseId) {
+      query = query.eq('case_id', caseId);
+    }
+    const { count, error } = await query;
+    if (error) throw error;
+    return count ?? 0;
   },
 
   // Case assignment to student

@@ -4,10 +4,7 @@ import crypto from "crypto";
 import { ensureCasePersonas } from "@/features/personas/services/casePersonaPersistence";
 import { scheduleCasePersonaPortraitGeneration } from "@/features/personas/services/personaImageService";
 import { scheduleCaseImageGeneration } from "@/features/cases/services/caseImageService";
-import {
-  normalizeCaseMedia,
-  type CaseMediaItem,
-} from "@/features/cases/models/caseMedia";
+import { normalizeCaseMedia, type CaseMediaItem } from "@/features/cases/models/caseMedia";
 import {
   applyCaseDefaults,
   enrichCaseWithModel,
@@ -23,8 +20,7 @@ function normalizeIncomingMedia(raw: unknown): CaseMediaItem[] {
   return normalized.map((item) => {
     const hasId = typeof item.id === "string" && item.id.trim().length > 0;
     const generatedId =
-      typeof (crypto as unknown as { randomUUID?: () => string }).randomUUID ===
-        "function"
+      typeof (crypto as unknown as { randomUUID?: () => string }).randomUUID === "function"
         ? (crypto as unknown as { randomUUID: () => string }).randomUUID()
         : `${Date.now()}-${Math.random()}`;
     return {
@@ -84,7 +80,10 @@ function normalizeCaseBody(body: Record<string, unknown>): Record<string, unknow
   // tags
   if (next["tags"] !== undefined) {
     if (typeof next["tags"] === "string") {
-      next["tags"] = next["tags"].split(",").map((t: string) => t.trim()).filter((t: string) => t.length > 0);
+      next["tags"] = next["tags"]
+        .split(",")
+        .map((t: string) => t.trim())
+        .filter((t: string) => t.length > 0);
     } else if (!Array.isArray(next["tags"])) {
       next["tags"] = [];
     }
@@ -153,10 +152,7 @@ export async function POST(req: Request) {
     // Read raw text first and provide a clearer error for empty or malformed bodies.
     const raw = await req.text();
     if (!raw || raw.trim() === "") {
-      return NextResponse.json(
-        { error: "Empty request body" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Empty request body" }, { status: 400 });
     }
 
     let parsed: unknown;
@@ -194,9 +190,7 @@ export async function POST(req: Request) {
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/(^-|-$)/g, "");
-      const suffix = crypto?.randomUUID
-        ? crypto.randomUUID().split("-")[0]
-        : String(Date.now());
+      const suffix = crypto?.randomUUID ? crypto.randomUUID().split("-")[0] : String(Date.now());
       body["id"] = `${slug}-${suffix}`;
     }
 
@@ -214,8 +208,7 @@ export async function POST(req: Request) {
       console.warn("Could not write case checkpoint:", ckErr);
     }
 
-    const baseSpecies =
-      typeof body["species"] === "string" ? body["species"] : null;
+    const baseSpecies = typeof body["species"] === "string" ? body["species"] : null;
     scrubConflictingSpeciesStrings(body, baseSpecies);
     applyCaseDefaults(body);
 
@@ -232,12 +225,9 @@ export async function POST(req: Request) {
       console.warn("LLM enrichment failed for new case:", llmErr);
     }
 
-    // Insert into Supabase and request the inserted row(s) back
-    // using .select() so the response contains the inserted record instead of null.
-    const { data, error } = await supabase
-      .from("cases")
-      .insert([body])
-      .select();
+    // Upsert into Supabase: insert if new, update if exists (based on id conflict)
+    // This prevents duplicate key errors when saving a case that already exists
+    const { data, error } = await supabase.from("cases").upsert([body], { onConflict: "id" }).select();
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -246,20 +236,12 @@ export async function POST(req: Request) {
     if (insertedCase?.id) {
       await ensureCasePersonas(supabase, insertedCase.id, body);
       scheduleCasePersonaPortraitGeneration(supabase, openai, insertedCase.id);
-      scheduleCaseImageGeneration(
-        supabase,
-        openai,
-        insertedCase as Record<string, unknown>,
-        { force: !insertedCase?.image_url }
-      );
+      scheduleCaseImageGeneration(supabase, openai, insertedCase as Record<string, unknown>, { force: !insertedCase?.image_url });
     }
     return NextResponse.json({ success: true, data });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json(
-      { error: msg || "Unknown error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: msg || "Unknown error" }, { status: 500 });
   }
 }
 
@@ -276,43 +258,36 @@ export async function PUT(req: Request) {
   try {
     let body = await req.json();
     console.log(`[cases PUT] Updating case id="${body?.id}"`);
-    
+
     if (!body || !body.id) {
-      return NextResponse.json(
-        { error: "id is required for update" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "id is required for update" }, { status: 400 });
     }
 
     body = normalizeCaseBody(body);
 
     // Try to update the row
     console.log(`[cases PUT] Calling supabase.update for case id="${body.id}"`);
-    const { data, error } = await supabase
-      .from("cases")
-      .update(body)
-      .eq("id", body.id)
-      .select();
+    const { data, error } = await supabase.from("cases").update(body).eq("id", body.id).select();
 
     if (error) {
-      console.error(`[cases PUT] Supabase update FAILED:`, JSON.stringify({
-        code: error.code,
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-      }));
+      console.error(
+        `[cases PUT] Supabase update FAILED:`,
+        JSON.stringify({
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+        }),
+      );
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     // Handle both single and multiple row responses
     const updatedCase = Array.isArray(data) ? data[0] : data;
-    
+
     if (!updatedCase) {
       console.error(`[cases PUT] No rows updated for case id="${body.id}"`);
-      return NextResponse.json(
-        { error: `Case with id "${body.id}" not found` },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: `Case with id "${body.id}" not found` }, { status: 404 });
     }
 
     console.log(`[cases PUT] Supabase update SUCCESS for case id="${updatedCase?.id}"`);
@@ -320,15 +295,10 @@ export async function PUT(req: Request) {
     if (updatedCase?.id) {
       // Note: Personas are created only on case INSERT, not on UPDATE
       // Admin can modify personas via PersonaEditor in case-viewer
-      
+
       try {
         scheduleCasePersonaPortraitGeneration(supabase, openai, updatedCase.id);
-        scheduleCaseImageGeneration(
-          supabase,
-          openai,
-          updatedCase as Record<string, unknown>,
-          { force: !updatedCase?.image_url }
-        );
+        scheduleCaseImageGeneration(supabase, openai, updatedCase as Record<string, unknown>, { force: !updatedCase?.image_url });
       } catch (scheduleErr) {
         console.error(`[cases PUT] Image scheduling FAILED:`, scheduleErr);
         // Don't fail the whole request for scheduling issues
@@ -339,10 +309,7 @@ export async function PUT(req: Request) {
   } catch (err: unknown) {
     console.error(`[cases PUT] Unhandled exception:`, err);
     const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json(
-      { error: msg || "Unknown error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: msg || "Unknown error" }, { status: 500 });
   }
 }
 
@@ -358,19 +325,12 @@ export async function DELETE(req: Request) {
     const id = url.searchParams.get("id");
     const mode = url.searchParams.get("mode");
     if (!id) {
-      return NextResponse.json(
-        { error: "id query param is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "id query param is required" }, { status: 400 });
     }
 
     // Restore mode: remove archive markers and keep the case available in admin lists.
     if (mode === "restore") {
-      const { data: row, error: fetchError } = await supabase
-        .from("cases")
-        .select("settings")
-        .eq("id", id)
-        .maybeSingle();
+      const { data: row, error: fetchError } = await supabase.from("cases").select("settings").eq("id", id).maybeSingle();
 
       if (fetchError) {
         return NextResponse.json({ error: fetchError.message }, { status: 500 });
@@ -389,10 +349,7 @@ export async function DELETE(req: Request) {
       delete baseSettings.archivedAt;
       delete baseSettings.archivedBy;
 
-      const { error: restoreError } = await supabase
-        .from("cases")
-        .update({ settings: baseSettings })
-        .eq("id", id);
+      const { error: restoreError } = await supabase.from("cases").update({ settings: baseSettings }).eq("id", id);
 
       if (restoreError) {
         return NextResponse.json({ error: restoreError.message }, { status: 500 });
@@ -404,11 +361,7 @@ export async function DELETE(req: Request) {
     // Soft archive mode: keep row but mark it archived and unpublished.
     if (mode === "archive") {
       console.log(`[ARCHIVE] Beginning archive for case: ${id}`);
-      const { data: row, error: fetchError } = await supabase
-        .from("cases")
-        .select("settings")
-        .eq("id", id)
-        .maybeSingle();
+      const { data: row, error: fetchError } = await supabase.from("cases").select("settings").eq("id", id).maybeSingle();
 
       if (fetchError) {
         console.error(`[ARCHIVE] Fetch error:`, fetchError);
@@ -467,9 +420,6 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ success: true });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json(
-      { error: msg || "Unknown error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: msg || "Unknown error" }, { status: 500 });
   }
 }

@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
+import { createOpenAIClient } from "@/lib/llm/openaiClient";
 import pdf from "pdf-parse";
 import mammoth from "mammoth";
 import { requireUser } from "@/app/api/_lib/auth";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// NOTE: openai client will be created per-request after validating the
+// configured provider and API key. This prevents accidentally sending
+// a non-OpenAI key (for example a Google API key) to OpenAI and producing
+// confusing errors in logs.
 
 type CompletionItem = {
   fieldKey: string;
@@ -297,6 +300,30 @@ export async function POST(request: NextRequest) {
     // Strengthen prompt: explicitly forbid inventing species or making up
     // definitive patient attributes when they're not present in the source.
     // If a value is missing, return an empty string or mark as missing.
+    // Resolve LLM provider for this feature. If a non-OpenAI provider is
+    // configured, return a helpful error (caller can fall back to a
+    // provider-specific implementation later).
+    try {
+      const llm = await import("@/lib/llm");
+      const provider = await llm.resolveProviderForFeature("chat");
+      if (provider !== "openai") {
+        return NextResponse.json(
+          { error: `LLM provider '${provider}' is configured. This endpoint currently requires an OpenAI provider.` },
+          { status: 500 },
+        );
+      }
+    } catch (__) {
+      // If provider resolution fails, assume OpenAI (backwards compatibility)
+    }
+
+    // Create validated OpenAI client for this request
+    let openai: any;
+    try {
+      openai = await createOpenAIClient();
+    } catch (err: any) {
+      return NextResponse.json({ error: err?.message ?? String(err) }, { status: 500 });
+    }
+
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.2,

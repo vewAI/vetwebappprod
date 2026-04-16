@@ -5,14 +5,18 @@ export const caseVerificationService = {
   /**
    * Trigger deep clinical verification of the case data.
    */
-  async verify(caseData: Record<string, string>): Promise<CaseVerificationResult> {
+  async verify(caseData: Record<string, string>, sourceText?: string): Promise<CaseVerificationResult> {
     const headers = await buildAuthHeaders({
       "Content-Type": "application/json",
     });
+    const body: Record<string, unknown> = { caseData };
+    if (sourceText?.trim()) {
+      body.sourceText = sourceText;
+    }
     const res = await fetch("/api/case-intake/verify", {
       method: "POST",
       headers,
-      body: JSON.stringify({ caseData }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

@@ -9,12 +9,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import StudentFeedback from '@/features/professor/components/StudentFeedback';
+import { CaseFeedbackThread } from '@/features/professor/components/CaseFeedbackThread';
 import AssignCaseDialog from '@/features/professor/components/AssignCaseDialog';
+import { StudentEvolutionAnalysis } from '@/features/professor/components/StudentEvolutionAnalysis';
 import { professorService } from '@/features/professor/services/professorService';
+import { useAuth } from '@/features/auth/services/authService';
 
 export default function StudentDetailsPage() {
   const params = useParams();
   const studentId = params.id as string;
+  const { user } = useAuth();
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [student, setStudent] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -29,7 +33,7 @@ export default function StudentDetailsPage() {
           .select('*')
           .eq('user_id', studentId)
           .single();
-        
+
         setStudent(profile);
 
         // Fetch attempts
@@ -62,7 +66,7 @@ export default function StudentDetailsPage() {
   if (!student) return <div className="p-8">Student not found</div>;
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="container mx-auto p-6 space-y-6 max-w-5xl">
       <div className="flex items-center justify-between">
         <div>
             <h1 className="text-3xl font-bold">{student.full_name || student.email}</h1>
@@ -72,6 +76,12 @@ export default function StudentDetailsPage() {
             <Link href="/professor">Back to Dashboard</Link>
         </Button>
       </div>
+
+      {/* Student Evolution Analysis */}
+      <StudentEvolutionAnalysis
+        studentId={studentId}
+        studentName={student.full_name || student.email}
+      />
 
       <Card>
         <CardHeader>
@@ -83,32 +93,46 @@ export default function StudentDetailsPage() {
           ) : (
             <div className="space-y-4">
               {attempts.map((attempt) => (
-                <div key={attempt.id} className="border p-4 rounded-lg flex justify-between items-center">
-                  <div>
-                    <h3 className="font-semibold">{attempt.title}</h3>
-                    <p className="text-sm text-gray-500">
-                      {new Date(attempt.createdAt).toLocaleString()}
-                    </p>
-                    <div className="flex gap-2 mt-1">
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                            attempt.completionStatus === 'completed' ? 'bg-green-100 text-green-800' : 
-                            attempt.completionStatus === 'abandoned' ? 'bg-red-100 text-red-800' : 
-                            'bg-blue-100 text-blue-800'
-                        }`}>
-                            {attempt.completionStatus}
-                        </span>
-                        {attempt.professorFeedback && (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-800">
-                                Feedback Given
-                            </span>
-                        )}
+                <div key={attempt.id} className="border p-4 rounded-lg">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="font-semibold">{attempt.title}</h3>
+                      <p className="text-sm text-gray-500">
+                        {new Date(attempt.createdAt).toLocaleString()}
+                      </p>
+                      <div className="flex gap-2 mt-1">
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              attempt.completionStatus === 'completed' ? 'bg-green-100 text-green-800' :
+                              attempt.completionStatus === 'abandoned' ? 'bg-red-100 text-red-800' :
+                              'bg-blue-100 text-blue-800'
+                          }`}>
+                              {attempt.completionStatus}
+                          </span>
+                          {attempt.professorFeedback && (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-800">
+                                  Feedback Given
+                              </span>
+                          )}
+                      </div>
                     </div>
+                    <Button asChild size="sm">
+                      <Link href={`/professor/students/${studentId}/attempts/${attempt.id}`}>
+                          Review Attempt
+                      </Link>
+                    </Button>
                   </div>
-                  <Button asChild>
-                    <Link href={`/professor/students/${studentId}/attempts/${attempt.id}`}>
-                        Review
-                    </Link>
-                  </Button>
+                  {/* Show AI feedback preview for completed attempts */}
+                  {attempt.completionStatus === 'completed' && attempt.overallFeedback && (
+                    <details className="mt-3">
+                      <summary className="text-xs font-medium text-muted-foreground cursor-pointer hover:text-foreground">
+                        View AI Feedback
+                      </summary>
+                      <div
+                        className="mt-2 prose prose-sm dark:prose-invert max-w-none text-xs bg-muted/30 rounded p-3"
+                        dangerouslySetInnerHTML={{ __html: attempt.overallFeedback }}
+                      />
+                    </details>
+                  )}
                 </div>
               ))}
             </div>
@@ -127,14 +151,26 @@ export default function StudentDetailsPage() {
             ) : (
               <ul className="space-y-3">
                 {assignedCases.map((ac: any) => (
-                  <li key={ac.id} className="border p-3 rounded flex justify-between items-center">
-                    <div>
-                      <div className="font-semibold">{ac.case?.title}</div>
-                      <div className="text-xs text-muted-foreground">{ac.case?.species} — {ac.case?.difficulty}</div>
+                  <li key={ac.id} className="border p-3 rounded">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <div className="font-semibold">{ac.case?.title}</div>
+                        <div className="text-xs text-muted-foreground">{ac.case?.species} — {ac.case?.difficulty}</div>
+                      </div>
+                      <Button asChild size="sm">
+                        <Link href={`/case/${ac.case_id}/instructions`}>Open</Link>
+                      </Button>
                     </div>
-                    <Button asChild size="sm">
-                      <Link href={`/case/${ac.case_id}/instructions`}>Open</Link>
-                    </Button>
+                    {user?.id && (
+                      <div className="mt-3 border-t pt-3">
+                        <CaseFeedbackThread
+                          professorId={user.id}
+                          studentId={studentId}
+                          caseId={ac.case_id}
+                          caseTitle={ac.case?.title}
+                        />
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>

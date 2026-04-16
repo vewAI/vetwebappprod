@@ -1,41 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAi from "openai";
+import { createOpenAIClient } from "@/lib/llm/openaiClient";
 import { saveFeedback } from "@/features/attempts/services/attemptService";
-
-const openai = new OpenAi({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 export async function POST(request: NextRequest) {
   try {
-    const {
-      messages,
-      stageIndex,
-      feedbackPrompt: feedbackPromptFromClient,
-      attemptId,
-    } = await request.json();
+    const { messages, stageIndex, feedbackPrompt: feedbackPromptFromClient, attemptId } = await request.json();
 
     if (!messages || !Array.isArray(messages)) {
-      return NextResponse.json(
-        { error: "Messages array is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Messages array is required" }, { status: 400 });
     }
 
     if (!attemptId) {
-      return NextResponse.json(
-        { error: "attemptId is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "attemptId is required" }, { status: 400 });
     }
 
     // Require the prompt to be provided by the client
     const feedbackPrompt = feedbackPromptFromClient;
     if (!feedbackPrompt) {
-      return NextResponse.json(
-        { error: "feedbackPrompt is required in the request body." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "feedbackPrompt is required in the request body." }, { status: 400 });
+    }
+
+    // Create validated OpenAI client for this request
+    let openai: any;
+    try {
+      openai = await createOpenAIClient();
+    } catch (err: any) {
+      console.error("OpenAI client creation failed for feedback API:", err);
+      return NextResponse.json({ error: err?.message ?? String(err) }, { status: 500 });
     }
 
     // Call OpenAI API
@@ -47,8 +38,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Format the feedback with HTML
-    const feedbackContent =
-      response.choices[0].message.content || "No feedback available.";
+    const feedbackContent = response.choices[0].message.content || "No feedback available.";
 
     // Convert markdown-like formatting to HTML
     const formattedFeedback = feedbackContent
@@ -71,11 +61,7 @@ export async function POST(request: NextRequest) {
       .replace(/<p><\/p>/g, ""); // Remove empty paragraphs
 
     // Save the feedback to the database
-    const saveResult = await saveFeedback(
-      attemptId,
-      stageIndex,
-      wrappedFeedback
-    );
+    const saveResult = await saveFeedback(attemptId, stageIndex, wrappedFeedback);
 
     if (!saveResult) {
       console.error("Failed to save feedback to database");
@@ -95,7 +81,7 @@ export async function POST(request: NextRequest) {
         error: "Failed to generate feedback",
         details: error instanceof Error ? error.message : String(error),
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

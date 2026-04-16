@@ -15,6 +15,7 @@ import { transformAttemptSummary } from "@/features/attempts/mappers/attempt-map
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { professorService } from "@/features/professor/services/professorService";
 
 type Role = "student" | "professor" | "admin" | null;
 
@@ -112,9 +113,11 @@ export default function HomePage() {
   const [studentAttempts, setStudentAttempts] = useState<AttemptSummary[]>([]);
   const [professorAttempts, setProfessorAttempts] = useState<AttemptSummary[]>([]);
   const [latestCases, setLatestCases] = useState<Case[]>([]);
+  const [assignedCases, setAssignedCases] = useState<any[]>([]);
   const [loadingStudentAttempts, setLoadingStudentAttempts] = useState(false);
   const [loadingProfessorAttempts, setLoadingProfessorAttempts] = useState(false);
   const [loadingCases, setLoadingCases] = useState(false);
+  const [loadingAssignedCases, setLoadingAssignedCases] = useState(false);
 
   useEffect(() => {
     if (role === "student") {
@@ -135,6 +138,17 @@ export default function HomePage() {
           setProfessorAttempts(attempts);
         })
         .finally(() => setLoadingProfessorAttempts(false));
+    }
+  }, [role, user?.id]);
+
+  useEffect(() => {
+    if (role === "student" && user?.id) {
+      setLoadingAssignedCases(true);
+      professorService
+        .getAssignedCasesForStudent(user.id)
+        .then((cases) => setAssignedCases(Array.isArray(cases) ? cases : []))
+        .catch(() => setAssignedCases([]))
+        .finally(() => setLoadingAssignedCases(false));
     }
   }, [role, user?.id]);
 
@@ -175,6 +189,15 @@ export default function HomePage() {
           tone: "success",
         });
       }
+
+      if (assignedCases.length > 0) {
+        items.push({
+          id: "student-assigned-cases",
+          title: "Cases assigned by your professor",
+          description: `You have ${assignedCases.length} case${assignedCases.length > 1 ? "s" : ""} assigned by your professor. Check the assigned cases section below.`,
+          tone: "info",
+        });
+      }
     }
 
     if (role === "professor") {
@@ -201,7 +224,7 @@ export default function HomePage() {
     }
 
     return items;
-  }, [role, studentAttempts, professorAttempts]);
+  }, [role, studentAttempts, professorAttempts, assignedCases]);
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-background via-background to-muted/40 ">
@@ -225,13 +248,14 @@ export default function HomePage() {
                 rotation.
               </p>
               <div className="flex flex-wrap gap-3">
-                <Link href="/cases">
-                  <Button size="sm" className="rounded-full bg-primary-foreground text-primary hover:bg-white dark:text-white/90">
+                <Link href="/cases" className="rounded-full">
+                  <Button asChild size="sm" className="rounded-full bg-primary-foreground text-primary hover:bg-white dark:text-white/90">
                     Browse all cases
                   </Button>
                 </Link>
-                <Link href="/case-selection">
+                <Link href="/case-selection" className="rounded-full">
                   <Button
+                    asChild
                     size="sm"
                     variant="outline"
                     className="rounded-full border-primary-foreground/40 bg-primary/10 text-primary-foreground hover:bg-primary/20 hover:text-primary-foreground dark:text-white/50"
@@ -280,6 +304,49 @@ export default function HomePage() {
           <NotificationsBar notifications={notifications} />
         </div>
 
+        {/* Student assigned cases */}
+        {role === "student" && assignedCases.length > 0 && (
+          <div className="motion-safe:animate-in motion-safe:fade-in-50 motion-safe:slide-in-from-bottom-4">
+            <SectionHeader
+              label="Assigned Cases"
+              title="Cases assigned by your professor"
+              description="Your professor has assigned these cases for you to complete."
+              action={
+                <Link href="/case-selection" className="rounded-full">
+                  <Button asChild variant="ghost" size="sm">
+                    View all
+                  </Button>
+                </Link>
+              }
+            />
+            {loadingAssignedCases ? (
+              <div className="p-4 text-sm text-muted-foreground">Loading assigned cases...</div>
+            ) : (
+              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {assignedCases.map((ac) => {
+                  if (!ac.case) return null;
+                  return (
+                    <CaseCard
+                      key={ac.id}
+                      caseItem={{
+                        id: ac.case_id,
+                        title: ac.case.title || "",
+                        description: "",
+                        species: ac.case.species || "",
+                        condition: "",
+                        category: "",
+                        difficulty: ac.case.difficulty || "Easy",
+                        estimatedTime: 0,
+                        imageUrl: ac.case.image_url || "",
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Role-specific attempts */}
         {role === "student" && (
           <div className="motion-safe:animate-in motion-safe:fade-in-50 motion-safe:slide-in-from-bottom-4">
@@ -288,8 +355,8 @@ export default function HomePage() {
               title="Recent attempts"
               description="Pick up where you left off or review your most recent simulated cases."
               action={
-                <Link href="/attempts">
-                  <Button variant="ghost" size="sm">
+                <Link href="/attempts" className="rounded-full">
+                  <Button asChild variant="ghost" size="sm">
                     View all attempts
                   </Button>
                 </Link>
@@ -319,13 +386,13 @@ export default function HomePage() {
               description="Support your students with timely feedback on their completed attempts."
               action={
                 <div className="flex gap-2">
-                  <Link href="/case-entry">
-                    <Button variant="outline" size="sm">
+                  <Link href="/case-entry" className="rounded-full">
+                    <Button asChild variant="outline" size="sm">
                       Add New Case
                     </Button>
                   </Link>
-                  <Link href="/professor">
-                    <Button variant="ghost" size="sm">
+                  <Link href="/professor" className="rounded-full">
+                    <Button asChild variant="ghost" size="sm">
                       Open professor dashboard
                     </Button>
                   </Link>
@@ -356,8 +423,8 @@ export default function HomePage() {
             description="Explore newly added or recently updated cases to keep your skills sharp."
             action={
               <div className="flex gap-2">
-                <Link href="/cases">
-                  <Button variant="outline" size="sm">
+                <Link href="/cases" className="rounded-full">
+                  <Button asChild variant="outline" size="sm">
                     Browse all cases
                   </Button>
                 </Link>

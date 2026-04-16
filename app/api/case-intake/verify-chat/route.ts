@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
+import { createOpenAIClient } from "@/lib/llm/openaiClient";
 import { requireUser } from "@/app/api/_lib/auth";
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export async function POST(request: NextRequest) {
   const auth = await requireUser(request);
@@ -40,6 +38,14 @@ Current item being discussed:
 - Relevance: ${currentItem.relevance}
 - Expected frequency: ${currentItem.expectedFrequency}
 - Existing value in case: ${currentItem.existingValue || "(none)"}
+- Already present in source: ${currentItem.alreadyPresent ? "YES" : "NO"}
+
+ABSOLUTE RULE — DO NOT RE-ASK FOR DATA ALREADY PROVIDED:
+If "Existing value in case" contains substantive content (not "(none)"), this means the professor ALREADY provided this data in their original case input or the AI already extracted it from their source text. In this case:
+1. DO NOT ask the professor to provide this information again.
+2. Start by confirming: "The case already includes [summary of existing data]. Does this look correct and complete?"
+3. Only probe for MISSING SUB-PARTS that are not covered by the existing value. For example, if vitals show temp and HR but not RR, ask ONLY about RR — do not re-ask about temp or HR.
+4. If the existing value is comprehensive and complete, immediately set isResolved=true with extractedValue set to the existing value (or null if no changes needed).
 
 Your approach:
 1. Open with a direct question about the specific clinical data needed. Explain WHY a student would ask for it.
@@ -89,6 +95,14 @@ Return ONLY JSON (no markdown, no commentary):
           }))
         : []),
     ];
+
+    // Create validated OpenAI client for this request
+    let openai: any;
+    try {
+      openai = await createOpenAIClient();
+    } catch (err: any) {
+      return NextResponse.json({ error: err?.message ?? String(err) }, { status: 500 });
+    }
 
     let response;
     let lastError: Error | null = null;

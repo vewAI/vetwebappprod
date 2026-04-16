@@ -122,24 +122,24 @@ export async function fetchDisciplines(): Promise<string[]> {
 }
 
 export async function fetchAssignedCases(userId: string): Promise<Case[]> {
-  // 1. Get professors for this student
-  const { data: professors } = await supabase.from("professor_students").select("professor_id").eq("student_id", userId);
+  // Query cases explicitly assigned to this student via professor_assigned_cases
+  const { data: assignments, error: assignError } = await supabase
+    .from("professor_assigned_cases")
+    .select("case_id")
+    .eq("student_id", userId);
 
-  if (!professors || professors.length === 0) return [];
+  if (assignError || !assignments || assignments.length === 0) return [];
 
-  const professorIds = professors.map((p) => p.professor_id);
+  const caseIds = assignments.map((a) => a.case_id);
 
-  // 2. Get cases assigned by these professors
-  const { data: assignedCases } = await supabase.from("professor_cases").select("case_id").in("professor_id", professorIds);
+  const { data: cases, error: casesError } = await supabase
+    .from("cases")
+    .select("*")
+    .in("id", caseIds);
 
-  if (!assignedCases || assignedCases.length === 0) return [];
+  if (casesError || !cases) return [];
 
-  const caseIds = assignedCases.map((c) => c.case_id);
-
-  // 3. Fetch case details
-  const { data: cases } = await supabase.from("cases").select("*").in("id", caseIds);
-
-  return (cases ?? []).map(mapDbCaseToCase);
+  return cases.map(mapDbCaseToCase);
 }
 
 export function mapDbCaseToCase(dbCase: DbCase): Case {

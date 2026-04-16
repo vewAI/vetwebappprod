@@ -37,7 +37,11 @@ interface VerificationChatbotProps {
 }
 
 export function VerificationChatbot({ open, onClose, verificationResult, caseContext, onFieldResolved, onComplete }: VerificationChatbotProps) {
-  const [items, setItems] = useState<CaseVerificationItem[]>(verificationResult.items);
+  // Filter: only show items that are MISSING (alreadyPresent: false)
+  // Skip items that already exist in the case data
+  const missingItems = verificationResult.items.filter((item) => !item.alreadyPresent);
+
+  const [items, setItems] = useState<CaseVerificationItem[]>(missingItems);
   const [activeItemIndex, setActiveItemIndex] = useState(0);
   const [chatHistories, setChatHistories] = useState<Record<string, VerificationChatMessage[]>>({});
   const [inputText, setInputText] = useState("");
@@ -50,6 +54,13 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
   const [isEditingFromSuggestion, setIsEditingFromSuggestion] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const messageIdCounterRef = useRef(0);
+
+  // Generate unique message IDs to avoid React key collisions
+  const generateMessageId = (prefix: string): string => {
+    messageIdCounterRef.current += 1;
+    return `${prefix}-${Date.now()}-${messageIdCounterRef.current}`;
+  };
 
   const activeItem: CaseVerificationItem | undefined = items[activeItemIndex];
   const activeItemId = activeItem?.id ?? "";
@@ -202,7 +213,7 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
       setIsSending(true);
 
       const userMsg: VerificationChatMessage = {
-        id: `user-${Date.now()}`,
+        id: generateMessageId("user"),
         role: "user",
         content: userText,
         verificationItemId: activeItem.id,
@@ -233,7 +244,7 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
           response.reply.toLowerCase().includes("here's the result") || response.reply.toLowerCase().includes("final answer") || response.isResolved;
 
         const assistantMsg: VerificationChatMessage = {
-          id: `assistant-${Date.now()}`,
+          id: generateMessageId("assistant"),
           role: "assistant",
           content: response.reply,
           verificationItemId: activeItem.id,
@@ -285,7 +296,7 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : "Connection error";
         const errorAssistantMsg: VerificationChatMessage = {
-          id: `error-${Date.now()}`,
+          id: generateMessageId("error"),
           role: "assistant",
           content: `Error: ${errMsg}. Please try again.`,
           verificationItemId: activeItem.id,
@@ -369,7 +380,7 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
     Provide a detailed, realistic suggestion that would be appropriate for teaching this case.`;
 
     const userMsg: VerificationChatMessage = {
-      id: `user-suggestion-${Date.now()}`,
+      id: generateMessageId("user-suggestion"),
       role: "user",
       content: suggestPrompt,
       verificationItemId: activeItem.id,
@@ -395,7 +406,7 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
       });
 
       const assistantMsg: VerificationChatMessage = {
-        id: `assistant-${Date.now()}`,
+        id: generateMessageId("assistant"),
         role: "assistant",
         content: response.reply,
         verificationItemId: activeItem.id,
@@ -414,7 +425,7 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : "Connection error";
       const errorAssistantMsg: VerificationChatMessage = {
-        id: `error-${Date.now()}`,
+        id: generateMessageId("error"),
         role: "assistant",
         content: `Error: ${errMsg}. Please try again.`,
         verificationItemId: activeItem.id,

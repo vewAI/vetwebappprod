@@ -14,7 +14,7 @@ function formatDiagnosticFinding(key: string, value: any): string {
   return String(value);
 }
 
-import OpenAi from "openai";
+import { createOpenAIClient } from "@/lib/llm/openaiClient";
 import { NextRequest, NextResponse } from "next/server";
 import { getRoleInfoPrompt } from "@/features/role-info/services/roleInfoService";
 import { getStagesForCase } from "@/features/stages/services/stageService";
@@ -33,16 +33,14 @@ import { normalizeCaseMedia, type CaseMediaItem } from "@/features/cases/models/
 import { searchMerckManual } from "@/features/external-resources/services/merckService";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
-const openai = new OpenAi({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 export async function POST(request: NextRequest) {
   const auth = await requireUser(request);
   if ("error" in auth) {
     return auth.error;
   }
   const { supabase } = auth;
+  // Create validated OpenAI client for this request
+  const openai = await createOpenAIClient();
   try {
     const { messages, stageIndex, caseId, attemptId } = await request.json();
 
@@ -292,7 +290,6 @@ export async function POST(request: NextRequest) {
           content: roleInfoPromptContent,
         });
         console.log(`[chat] Injected roleInfoPrompt for personaRoleKey="${personaRoleKey}" due to persona and stage or explicit request.`);
-        
       } else {
         console.log(
           `[chat] Skipped roleInfoPrompt injection for personaRoleKey="${personaRoleKey}" looksLikeFindingsRequest=${looksLikeFindingsRequest}`,
@@ -970,7 +967,6 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
     // physical findings (e.g. 'rumen turnover') from being detected when
     // the user asked directly. Process physical-stage requests here.
     if (isPhysicalStage) {
-      
       const diagField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["diagnostic_findings"] : null;
       const physField = caseRecord && typeof caseRecord === "object" ? (caseRecord as Record<string, unknown>)["physical_exam_findings"] : null;
       const diagText = typeof diagField === "string" ? diagField : "";
@@ -981,7 +977,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
       // However, when the case's findings_release_strategy is 'on_demand', do NOT inject the full
       // dataset unless the student explicitly requested specific parameters. Instead return a
       // clarifying prompt for general requests.
-      const strategy = caseRecord && typeof caseRecord === "object" ? (caseRecord as any)["findings_release_strategy"] : undefined;
+      const strategy = caseRecord && typeof caseRecord === "object" ? (caseRecord as any)["findings_release_strategy"] || "on_demand" : "on_demand";
       const isOnDemand = strategy === "on_demand";
       const personaIsNurseOrLab =
         Boolean(personaRoleKey && (personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician")) ||
@@ -1052,7 +1048,7 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
               } else {
                 // No matching lines found for this requested canonical key.
                 // Emit telemetry for triage so we can inspect physText and requested keys.
-                
+
                 // Mark missing values as NOT_AVAILABLE so the LLM can craft a helpful reply (see guidance below)
                 const species = caseRecord && typeof caseRecord === "object" ? String((caseRecord as any).species ?? "").trim() : "";
                 const condition = caseRecord && typeof caseRecord === "object" ? String((caseRecord as any).condition ?? "").trim() : "";
@@ -1085,13 +1081,11 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
               role: "system",
               content: `PHYSICAL_EXAM_FINDINGS (requested subset):\n${snippet}`,
             });
-            
           } else if (physText && !isOnDemand) {
             enhancedMessages.unshift({
               role: "system",
               content: `PHYSICAL_EXAM_FINDINGS (from DB):\n${physText}`,
             });
-            
           }
         }
       }

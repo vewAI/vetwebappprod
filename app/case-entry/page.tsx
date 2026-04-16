@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,6 @@ import { useAuth } from "@/features/auth/services/authService";
 import ImageUploader from "@/components/ui/image-uploader";
 import { caseFieldMeta, createEmptyCaseFormState, orderedCaseFieldKeys, type CaseFieldKey, getFieldMeta } from "@/features/cases/fieldMeta";
 import { CaseMediaEditor } from "@/features/cases/components/case-media-editor";
-import { TimeProgressionEditor } from "@/features/cases/components/case-time-progression-editor";
 import { AvatarSelector } from "@/features/cases/components/avatar-selector";
 import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
 import { VerificationChatbot } from "@/features/case-intake/components/VerificationChatbot";
@@ -20,6 +19,7 @@ import NurseIntroModal from "@/features/personas/components/NurseIntroModal";
 import { AnalysisLoadingOverlay } from "@/features/case-intake/components/AnalysisLoadingOverlay";
 import { caseVerificationService } from "@/features/case-intake/services/caseVerificationService";
 import type { CaseVerificationResult } from "@/features/case-intake/models/caseVerification";
+import { useCaseEntryDraft } from "@/features/cases/hooks/useCaseEntryDraft";
 
 type IntakeCompletionItem = {
   fieldKey: string;
@@ -91,6 +91,7 @@ export default function CaseEntryForm() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
+  const [showErrorModal, setShowErrorModal] = useState(false);
   const [mediaItems, setMediaItems] = useState<CaseMediaItem[]>([]);
   const [savedCaseId, setSavedCaseId] = useState<string>("");
 
@@ -110,6 +111,77 @@ export default function CaseEntryForm() {
   const [nurseForModal, setNurseForModal] = useState<any | null>(null);
   const [wizardIndex, setWizardIndex] = useState(0);
   const [reviewed, setReviewed] = useState<Record<string, boolean>>({});
+
+  // Draft auto-save / restore
+  const draft = useCaseEntryDraft();
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [lastAutoSave, setLastAutoSave] = useState<string | null>(null);
+  const formRef = useRef(form);
+  formRef.current = form;
+  const intakeTextRef = useRef(intakeText);
+  intakeTextRef.current = intakeText;
+  const savedCaseIdRef = useRef(savedCaseId);
+  savedCaseIdRef.current = savedCaseId;
+
+  // Restore draft on mount
+  useEffect(() => {
+    if (draftRestored) return;
+    const data = draft.restore();
+    if (data) {
+      setForm(data.form);
+      setIntakeText(data.intakeText ?? "");
+      if (data.savedCaseId) setSavedCaseId(data.savedCaseId);
+    }
+    setDraftRestored(true);
+  }, [draftRestored]);
+
+  // Auto-save every 5 seconds
+  useEffect(() => {
+    if (!draftRestored) return;
+    const interval = setInterval(() => {
+      const f = formRef.current;
+      // Only save if there's meaningful content
+      const hasContent = Object.values(f).some((v) => v && v.trim().length > 0) || (intakeTextRef.current?.trim().length ?? 0) > 0;
+      if (!hasContent) return;
+      draft.saveDraft({
+        form: f,
+        intakeText: intakeTextRef.current,
+        savedCaseId: savedCaseIdRef.current,
+      });
+      setLastAutoSave(new Date().toISOString());
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [draftRestored]);
+
+  // Save draft immediately on beforeunload
+  useEffect(() => {
+    if (!draftRestored) return;
+    const handler = () => {
+      const f = formRef.current;
+      const hasContent = Object.values(f).some((v) => v && v.trim().length > 0) || (intakeTextRef.current?.trim().length ?? 0) > 0;
+      if (!hasContent) return;
+      draft.saveDraft({
+        form: f,
+        intakeText: intakeTextRef.current,
+        savedCaseId: savedCaseIdRef.current,
+      });
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [draftRestored]);
+
+  // Warn before leaving page when form is dirty
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      const f = formRef.current;
+      const hasContent = Object.values(f).some((v) => v && v.trim().length > 0) || (intakeTextRef.current?.trim().length ?? 0) > 0;
+      if (!hasContent) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, []);
 
   // Countdown timer during analysis
   useEffect(() => {
@@ -208,7 +280,9 @@ export default function CaseEntryForm() {
 
       const data = (await response.json()) as IntakeAnalysisResult | { error?: string };
       if (!response.ok) {
-        throw new Error((data as { error?: string })?.error ?? "Failed to analyze source text");
+        const errMsg = (data as { error?: string })?.error ?? "Failed to analyze source text";
+        console.error("[CASE-ENTRY] Analyze API error:", response.status, errMsg);
+        throw new Error(errMsg);
       }
 
       const result = data as IntakeAnalysisResult;
@@ -216,9 +290,9 @@ export default function CaseEntryForm() {
       setWizardIndex(0);
       setReviewed({});
       // Split draft: identity fields go straight to form, clinical fields wait for chatbot review
-      const draft = result.draftCase ?? {};
+      const draftCase = result.draftCase ?? {};
       const identityPatch: Record<string, string> = {};
-      for (const [key, value] of Object.entries(draft)) {
+      for (const [key, value] of Object.entries(draftCase)) {
         if (!isCaseFieldKey(key)) continue;
         if (IDENTITY_FIELDS.has(key)) {
           identityPatch[key] = String(value ?? "");
@@ -235,22 +309,27 @@ export default function CaseEntryForm() {
       try {
         // Pass the FULL draft to verify so it can see what the AI suggested
         const formWithDraft = { ...createEmptyCaseFormState() };
-        for (const [key, value] of Object.entries(draft)) {
+        for (const [key, value] of Object.entries(draftCase)) {
           if (isCaseFieldKey(key)) formWithDraft[key] = String(value ?? "");
         }
-        const verifyResult = await caseVerificationService.verify(formWithDraft);
+        // Pass original source text so the verify LLM can cross-reference what the professor pasted
+        const verifyResult = await caseVerificationService.verify(formWithDraft, intakeText);
         setVerificationResult(verifyResult);
         setShowVerificationChat(true);
         setSuccess("Clinical verification ready. Review each AI suggestion with the guide.");
       } catch (verifyErr) {
         const msg = verifyErr instanceof Error ? verifyErr.message : String(verifyErr);
+        console.error("[CASE-ENTRY] Verification error:", msg);
         setError(msg || "Analysis succeeded but verification failed. You can retry below.");
+        setShowErrorModal(true);
       } finally {
         setIsVerifying(false);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      console.error("[CASE-ENTRY] Analyze error:", msg);
       setError(msg || "Could not analyze the input text.");
+      setShowErrorModal(true);
     } finally {
       setIsAnalyzing(false);
     }
@@ -555,19 +634,8 @@ Remain collaborative, use everyday language, and avoid offering your own medical
 
       const headers = await buildAuthHeaders();
 
-      // Check if this is an existing case (already saved) or a new case
-      // Only treat as existing if we previously saved this case (savedCaseId is set AND matches current form.id)
-      // If user changed the ID to something new, it's a POST (create new), not a PUT (update existing)
-      const isExistingCase = Boolean(savedCaseId && form.id === savedCaseId);
-
-      let response;
-      if (isExistingCase) {
-        // Use PUT to update existing case
-        response = await axios.put("/api/cases", payload, { headers });
-      } else {
-        // Use POST to create new case
-        response = await axios.post("/api/cases", payload, { headers });
-      }
+      // Always use POST with upsert logic on backend (handles both insert and update)
+      const response = await axios.post("/api/cases", payload, { headers });
 
       const inserted = (response.data?.data?.[0] ?? response.data?.data) as { id?: string } | undefined;
       const createdId = String(inserted?.id ?? payload.id ?? "").trim();
@@ -576,6 +644,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
       }
 
       setSuccess("Case saved successfully.");
+      draft.clearDraft();
       if (createdId) {
         setForm((prev) => ({ ...prev, id: createdId }));
       }
@@ -696,7 +765,14 @@ Remain collaborative, use everyday language, and avoid offering your own medical
     <div className="max-w-3xl mx-auto p-8 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Add New Case</h1>
+        {lastAutoSave && <span className="text-xs text-muted-foreground">Draft saved {new Date(lastAutoSave).toLocaleTimeString()}</span>}
       </div>
+
+      {draftRestored && draft.hasDraft && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          Draft recovered from a previous session. Your work has been restored.
+        </div>
+      )}
 
       <div className="rounded-lg border border-border p-4 space-y-4 bg-card">
         <div>
@@ -721,7 +797,11 @@ Remain collaborative, use everyday language, and avoid offering your own medical
         </div>
 
         <div className="flex items-center gap-3">
-          <Button type="button" onClick={handleAnalyzeCaseSource} disabled={isAnalyzing || isVerifying || (!intakeText.trim() && !intakeFile)}>
+          <Button
+            type="button"
+            onClick={handleAnalyzeCaseSource}
+            disabled={isAnalyzing || isVerifying || (!intakeText.trim() && !intakeFile) || analysis !== null}
+          >
             {isAnalyzing ? (isVerifying ? "Verifying..." : "Analyzing...") : "Analyze and Verify Case"}
           </Button>
           {intakeFile && <span className="text-xs text-muted-foreground">Selected: {intakeFile.name}</span>}
@@ -921,10 +1001,6 @@ Remain collaborative, use everyday language, and avoid offering your own medical
               <h3 className="text-lg font-medium mb-4">Case Media</h3>
               <CaseMediaEditor caseId={caseIdForMedia} value={mediaItems} onChange={setMediaItems} />
             </div>
-
-            <div className="border border-dashed border-muted-foreground/40 rounded-lg p-4">
-              <TimeProgressionEditor caseId={caseIdForMedia} />
-            </div>
           </div>
         )}
 
@@ -1008,7 +1084,10 @@ Remain collaborative, use everyday language, and avoid offering your own medical
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>AI-Generated Field Suggestions</DialogTitle>
-            <DialogDescription>Review the AI suggestions for empty fields and select which ones to apply to your case.</DialogDescription>
+            <DialogDescription>
+              Review the AI suggestions for empty fields and select which ones to apply to your case. NO WORRIES! You'll be able to edit each field
+              afterwards so if in doubt leave them all checked and click on the button below.
+            </DialogDescription>
           </DialogHeader>
 
           <AutoFillSuggestionsPanel
@@ -1019,6 +1098,20 @@ Remain collaborative, use everyday language, and avoid offering your own medical
           />
         </DialogContent>
       </Dialog>
+
+      {/* Error Modal — stays open until user closes it */}
+      <Dialog open={showErrorModal} onOpenChange={setShowErrorModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Analysis Error</DialogTitle>
+            <DialogDescription>{error}</DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button onClick={() => setShowErrorModal(false)}>Acknowledge</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {nurseForModal && <NurseIntroModal open={showNurseModal} nurse={nurseForModal} onClose={() => setShowNurseModal(false)} />}
     </div>
   );

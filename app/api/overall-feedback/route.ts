@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server";
-import { OpenAI } from "openai";
+import { createOpenAIClient } from "@/lib/llm/openaiClient";
 import { case1RoleInfo } from "@/features/role-info/case1";
 import type { Message } from "@/features/chat/models/chat";
 import { requireUser } from "@/app/api/_lib/auth";
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 function resolveSpeakerLabel(msg: Message): string {
   if (msg.role === "user") {
@@ -58,11 +54,7 @@ export async function POST(request: Request) {
     // Fetch case row so we can inject case-specific prompts when available
     let caseRow: Record<string, unknown> | null = null;
     try {
-      const { data, error } = await supabase
-        .from("cases")
-        .select("*")
-        .eq("id", caseId)
-        .maybeSingle();
+      const { data, error } = await supabase.from("cases").select("*").eq("id", caseId).maybeSingle();
       if (!error && data) caseRow = data as Record<string, unknown>;
     } catch (e) {
       console.warn("Could not fetch case row for overall feedback:", e);
@@ -94,40 +86,49 @@ export async function POST(request: Request) {
         }
       } else {
         //use directly as string if not function
-        feedbackPrompt =
-          case1RoleInfo.getOverallFeedbackPrompt as unknown as string;
+        feedbackPrompt = case1RoleInfo.getOverallFeedbackPrompt as unknown as string;
       }
-    } 
-    
+    }
+
     // Generic fallback if still no prompt
     if (!feedbackPrompt) {
-       feedbackPrompt = `Please provide constructive feedback for the student's performance using the context below. Focus on history taking, physical exam thoroughness, diagnostic reasoning, and client communication.\n\n${context}`;
+      feedbackPrompt = `Please provide constructive feedback for the student's performance using the context below. Focus on history taking, physical exam thoroughness, diagnostic reasoning, and client communication.\n\n${context}`;
     }
 
     // If OpenAI API key is not configured, return a helpful fallback
     if (!process.env.OPENAI_API_KEY) {
-      console.warn(
-        "OPENAI_API_KEY is not set; returning fallback overall feedback"
-      );
+      console.warn("OPENAI_API_KEY is not set; returning fallback overall feedback");
       const fallback = `<p>Examination completed. Automated detailed feedback is unavailable because the AI service is not configured. Here are a few suggestions you can review:</p><ul><li>Did you collect a clear history and relevant risk factors?</li><li>Were your physical examination findings systematic and documented?</li><li>Were test selections justified and prioritized?</li><li>Did you communicate next steps and biosecurity clearly to the client?</li></ul><p>Please enable the OpenAI API key to generate richer, tailored feedback.</p>`;
       return NextResponse.json({ feedback: fallback });
     }
 
     // Generate feedback using OpenAI (wrapped in try/catch to allow fallback)
     let feedbackContent = "";
+
+    // Create validated OpenAI client; if creation fails, log and fall back to conservative feedback
+    let openai: any = null;
     try {
-      const promptToSend = `${feedbackPrompt ?? `Please provide constructive feedback for the student's performance using the context below:\n\n${context}`}\n\nTRANSCRIPT ROLE INTERPRETATION (STRICT):\n- Treat "Student" as the learner.\n- Treat "Client (Owner...)" as owner/client persona turns.\n- Treat "Veterinary Nurse (...)" as nurse persona turns, NOT as owner/client.\n- Do not merge owner and nurse into a single "client" role when evaluating communication.`;
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [{ role: "system", content: promptToSend }],
-        temperature: 0.7,
-        max_tokens: 2000,
-      });
-      feedbackContent = response.choices?.[0]?.message?.content ?? "";
-    } catch (aiErr) {
-      console.error("OpenAI call failed for overall feedback:", aiErr);
-      // Provide a conservative fallback feedback so the UI still shows something
-      feedbackContent = `Examination completed. Automated detailed feedback is currently unavailable due to an upstream error. Consider the following review points:\n\n- History: Was sufficient information gathered from the client?\n- Physical exam: Were findings documented and prioritized?\n- Diagnostics: Were test requests appropriate and justified?\n- Client communication: Were recommendations and biosecurity clearly explained?\n\nPlease try again later or enable the AI service for full feedback.`;
+      openai = await createOpenAIClient();
+    } catch (clientErr) {
+      console.error("OpenAI client creation failed for overall feedback:", clientErr);
+      feedbackContent = `Examination completed. Automated detailed feedback is currently unavailable because the AI service is not configured correctly. Please enable a valid OpenAI API key.`;
+    }
+
+    if (openai) {
+      try {
+        const promptToSend = `${feedbackPrompt ?? `Please provide constructive feedback for the student's performance using the context below:\n\n${context}`}\n\nTRANSCRIPT ROLE INTERPRETATION (STRICT):\n- Treat "Student" as the learner.\n- Treat "Client (Owner...)" as owner/client persona turns.\n- Treat "Veterinary Nurse (...)" as nurse persona turns, NOT as owner/client.\n- Do not merge owner and nurse into a single "client" role when evaluating communication.`;
+        const response = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [{ role: "system", content: promptToSend }],
+          temperature: 0.7,
+          max_tokens: 2000,
+        });
+        feedbackContent = response.choices?.[0]?.message?.content ?? "";
+      } catch (aiErr) {
+        console.error("OpenAI call failed for overall feedback:", aiErr);
+        // Provide a conservative fallback feedback so the UI still shows something
+        feedbackContent = `Examination completed. Automated detailed feedback is currently unavailable due to an upstream error. Consider the following review points:\n\n- History: Was sufficient information gathered from the client?\n- Physical exam: Were findings documented and prioritized?\n- Diagnostics: Were test requests appropriate and justified?\n- Client communication: Were recommendations and biosecurity clearly explained?\n\nPlease try again later or enable the AI service for full feedback.`;
+      }
     }
 
     // Format the feedback with simple HTML using regex replacements
@@ -153,9 +154,6 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("Error generating overall feedback:", error);
     const errorMessage = `<p>Unable to generate feedback at this time. Please try again later.</p>`;
-    return NextResponse.json(
-      { feedback: errorMessage, error: "Failed to generate feedback" },
-      { status: 500 }
-    );
+    return NextResponse.json({ feedback: errorMessage, error: "Failed to generate feedback" }, { status: 500 });
   }
 }

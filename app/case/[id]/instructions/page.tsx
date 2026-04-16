@@ -76,7 +76,7 @@ export default function CaseInstructionsPage() {
         const profId = match ? match.professor_id || match.professorId || null : null;
         if (!cancelled) setAssignedProfessorId(profId);
         if (profId) {
-          const resp = await fetch(`/api/professor-feedback?studentId=${encodeURIComponent(user.id)}`, { headers: { Accept: "application/json" } });
+          const resp = await fetch(`/api/professor-feedback?studentId=${encodeURIComponent(user.id)}&caseId=${encodeURIComponent(id)}`, { headers: { Accept: "application/json" } });
           if (resp.ok) {
             const json = await resp.json();
             if (!cancelled) setProfessorFeedback(Array.isArray(json.feedback) ? json.feedback : []);
@@ -283,12 +283,24 @@ export default function CaseInstructionsPage() {
             <div className="mt-6">
               <h3 className="text-lg font-semibold mb-2">Professor Feedback</h3>
               {professorFeedback.length === 0 ? (
-                <div className="text-sm text-muted-foreground">No feedback yet from your professor.</div>
+                <div className="text-sm text-muted-foreground">No feedback yet from your professor for this case.</div>
               ) : (
                 <div className="space-y-3">
                   {professorFeedback.map((f) => (
-                    <div key={f.id} className="p-3 rounded-md border bg-background">
-                      <div className="text-xs text-muted-foreground mb-1">{new Date(f.created_at).toLocaleString()}</div>
+                    <div
+                      key={f.id}
+                      className={`p-3 rounded-md border ${
+                        f.sender_role === 'student'
+                          ? 'bg-blue-50 border-blue-200 ml-8'
+                          : 'bg-background'
+                      }`}
+                    >
+                      <div className="text-xs text-muted-foreground mb-1 flex items-center gap-2">
+                        <span className="font-medium">
+                          {f.sender_role === 'student' ? 'You' : 'Professor'}
+                        </span>
+                        <span>{new Date(f.created_at).toLocaleString()}</span>
+                      </div>
                       <div className="text-sm whitespace-pre-wrap">{f.message}</div>
                     </div>
                   ))}
@@ -324,6 +336,8 @@ export default function CaseInstructionsPage() {
                             professorId: assignedProfessorId,
                             studentId,
                             message: replyText,
+                            caseId: id,
+                            senderRole: 'student',
                           }),
                         });
                         if (resp.ok) {

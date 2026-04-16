@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
+import { createOpenAIClient } from "@/lib/llm/openaiClient";
 import { requireUser } from "@/app/api/_lib/auth";
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export async function POST(request: NextRequest) {
   const auth = await requireUser(request);
@@ -103,6 +101,14 @@ Return a JSON object with ONLY these fields (one per empty field passed to you):
 
 Only include fields that are in the emptyFields list passed. Set other fields to null.
 `;
+
+    // Create validated OpenAI client for this request
+    let openai: any;
+    try {
+      openai = await createOpenAIClient();
+    } catch (err: any) {
+      return NextResponse.json({ error: err?.message ?? String(err) }, { status: 500 });
+    }
 
     let response;
     let lastError: Error | null = null;
