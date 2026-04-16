@@ -56,6 +56,10 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messageIdCounterRef = useRef(0);
 
+  // Track which fields have been modified during THIS verification session
+  // This ensures that multiple items writing to the same field append instead of replace
+  const fieldsModifiedThisSession = useRef<Set<string>>(new Set());
+
   // Generate unique message IDs to avoid React key collisions
   const generateMessageId = (prefix: string): string => {
     messageIdCounterRef.current += 1;
@@ -183,9 +187,19 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
         setSuggestedValue("");
 
         // Write the edited value directly to the form
-        // If the field already had content, append the new data; otherwise replace
-        const writeMode = activeItem.alreadyPresent && activeItem.existingValue ? "append" : "replace";
+        // If the field was already modified in this session OR had content originally, append the new data; otherwise replace
+        const hasExistingContent = activeItem.alreadyPresent && activeItem.existingValue;
+        const wasModifiedThisSession = fieldsModifiedThisSession.current.has(activeItem.targetField);
+        const writeMode = hasExistingContent || wasModifiedThisSession ? "append" : "replace";
+
+        console.log(
+          `[VERIFICATION] Field "${activeItem.targetField}" writeMode="${writeMode}" (hasExisting=${hasExistingContent}, modifiedThisSession=${wasModifiedThisSession})`,
+        );
+
         onFieldResolved(activeItem.targetField, userText, writeMode);
+
+        // Track that this field has been modified in this session
+        fieldsModifiedThisSession.current.add(activeItem.targetField);
 
         // Update item status and auto-advance
         setItems((prevItems) => {
@@ -264,7 +278,18 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
         } else if (response.isResolved) {
           // Write value into form
           if (response.extractedValue) {
-            onFieldResolved(response.targetField, response.extractedValue, response.writeMode);
+            // Determine writeMode: if field was already modified in this session, always append
+            const wasModifiedThisSession = fieldsModifiedThisSession.current.has(response.targetField);
+            const finalWriteMode = wasModifiedThisSession ? "append" : response.writeMode;
+
+            console.log(
+              `[VERIFICATION] Resolving field "${response.targetField}" writeMode="${finalWriteMode}" (wasModifiedThisSession=${wasModifiedThisSession}, originalMode="${response.writeMode}")`,
+            );
+
+            onFieldResolved(response.targetField, response.extractedValue, finalWriteMode);
+
+            // Track that this field has been modified in this session
+            fieldsModifiedThisSession.current.add(response.targetField);
           }
 
           // Update item status AND schedule auto-advance via state updater
@@ -346,7 +371,10 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
     if (!activeItem) return;
     // Write the existing value into the form when the professor confirms
     if (activeItem.existingValue) {
+      console.log(`[VERIFICATION] Confirming "${activeItem.itemName}" already present, appending to field "${activeItem.targetField}"`);
       onFieldResolved(activeItem.targetField, activeItem.existingValue, "append");
+      // Track that this field has been modified in this session
+      fieldsModifiedThisSession.current.add(activeItem.targetField);
     }
     setItems((prevItems) => {
       const updatedItems = prevItems.map((item, idx) => (idx === activeItemIndex ? { ...item, status: "accepted" as const } : item));
@@ -443,7 +471,11 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
   const handleApproveSuggestion = useCallback(() => {
     if (!activeItem || !suggestedValue) return;
 
+    console.log(`[VERIFICATION] Approving suggestion for "${activeItem.itemName}" into field "${activeItem.targetField}"`);
     onFieldResolved(activeItem.targetField, suggestedValue, "append");
+
+    // Track that this field has been modified in this session
+    fieldsModifiedThisSession.current.add(activeItem.targetField);
 
     setItems((prevItems) => {
       const updatedItems = prevItems.map((item, idx) =>
