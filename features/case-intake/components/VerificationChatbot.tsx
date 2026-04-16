@@ -61,9 +61,10 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
   const fieldsModifiedThisSession = useRef<Set<string>>(new Set());
 
   // Generate unique message IDs to avoid React key collisions
+  // Use only counter (guarantees uniqueness per session, never repeats)
   const generateMessageId = (prefix: string): string => {
     messageIdCounterRef.current += 1;
-    return `${prefix}-${Date.now()}-${messageIdCounterRef.current}`;
+    return `${prefix}-${messageIdCounterRef.current}`;
   };
 
   const activeItem: CaseVerificationItem | undefined = items[activeItemIndex];
