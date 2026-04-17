@@ -362,6 +362,11 @@ export default function CaseEntryForm() {
       console.warn(`[FIELD-RESOLVED] Unknown targetField "${targetField}" (normalized: "${normalized}") – skipping`);
       return;
     }
+    // `details` holds the professor's original source text and must never be overwritten.
+    if (normalized === "details") {
+      console.warn(`[FIELD-RESOLVED] Blocked write to "details" — this field preserves the original source text.`);
+      return;
+    }
     console.log(`[FIELD-RESOLVED] Writing to "${normalized}" (from "${targetField}") mode=${writeMode} (${value.length} chars)`);
     setForm((prev) => {
       const existing = prev[normalized] || "";
@@ -377,6 +382,7 @@ export default function CaseEntryForm() {
     setSuccess("Verification complete. Data has been integrated into the form.");
 
     // Detect empty fields that should be auto-filled (use actual form keys)
+    // `details` is excluded because it holds the professor's original source text and must never be overwritten by the LLM.
     const emptyFields = [
       "description",
       "owner_background",
@@ -386,7 +392,6 @@ export default function CaseEntryForm() {
       "owner_diagnosis",
       "get_owner_prompt",
       "owner_follow_up_feedback",
-      "details",
       "physical_exam_findings",
       "diagnostic_findings",
       "get_physical_exam_prompt",

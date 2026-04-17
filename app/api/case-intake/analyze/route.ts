@@ -401,6 +401,10 @@ export async function POST(request: NextRequest) {
       draftCase[field.key] = String(draftCaseRaw[field.key] ?? "").trim();
     }
 
+    // Preserve the original source text verbatim in `details`.
+    // The LLM must never overwrite this field — it is the professor's raw input.
+    draftCase["details"] = combinedInput;
+
     const completionByField = new Map<string, any>();
     for (const item of completionPlanRaw) {
       if (!item || typeof item !== "object") continue;

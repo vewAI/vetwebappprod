@@ -54,6 +54,7 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
   const [isEditingFromSuggestion, setIsEditingFromSuggestion] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const sessionIdRef = useRef(Math.random().toString(36).slice(2, 8));
   const messageIdCounterRef = useRef(0);
 
   // Track which fields have been modified during THIS verification session
@@ -64,7 +65,7 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
   // Use only counter (guarantees uniqueness per session, never repeats)
   const generateMessageId = (prefix: string): string => {
     messageIdCounterRef.current += 1;
-    return `${prefix}-${messageIdCounterRef.current}`;
+    return `${prefix}-${sessionIdRef.current}-${messageIdCounterRef.current}`;
   };
 
   const activeItem: CaseVerificationItem | undefined = items[activeItemIndex];
