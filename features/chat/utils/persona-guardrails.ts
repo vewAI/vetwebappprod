@@ -1,11 +1,12 @@
 import { normalizeRoleKey } from "@/features/avatar/utils/role-utils";
 
-export const ALLOWED_CHAT_PERSONA_KEYS = ["owner", "veterinary-nurse"] as const;
+export const ALLOWED_CHAT_PERSONA_KEYS = ["owner", "veterinary-nurse", "lab-technician"] as const;
 
 export type AllowedChatPersonaKey = (typeof ALLOWED_CHAT_PERSONA_KEYS)[number];
 
 const allowedPersonaSet = new Set<string>(ALLOWED_CHAT_PERSONA_KEYS);
 const OWNER_HINTS = ["owner", "client", "producer", "farmer", "guardian"];
+const LAB_HINTS = ["lab", "laboratory"];
 const NURSE_HINTS = ["nurse", "technician", "tech", "assistant", "staff"];
 
 export function isAllowedChatPersonaKey(value?: string | null): value is AllowedChatPersonaKey {
@@ -15,12 +16,9 @@ export function isAllowedChatPersonaKey(value?: string | null): value is Allowed
 
 function classifyByHint(label: string): AllowedChatPersonaKey | null {
   const lower = label.toLowerCase();
-  if (NURSE_HINTS.some((hint) => lower.includes(hint))) {
-    return "veterinary-nurse";
-  }
-  if (OWNER_HINTS.some((hint) => lower.includes(hint))) {
-    return "owner";
-  }
+  if (LAB_HINTS.some((hint) => lower.includes(hint))) return "lab-technician";
+  if (NURSE_HINTS.some((hint) => lower.includes(hint))) return "veterinary-nurse";
+  if (OWNER_HINTS.some((hint) => lower.includes(hint))) return "owner";
   return null;
 }
 

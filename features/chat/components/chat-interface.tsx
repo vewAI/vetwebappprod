@@ -349,6 +349,7 @@ export function ChatInterface({
   const [personaDrafts, setPersonaDrafts] = useState<Record<AllowedChatPersonaKey, string>>({
     owner: "",
     "veterinary-nurse": "",
+    "lab-technician": "",
   });
 
   const draftLocalStorageKey = (persona: AllowedChatPersonaKey) => `chat-draft-${attemptId ?? "noattempt"}-${persona}`;
@@ -358,7 +359,8 @@ export function ChatInterface({
     try {
       const ownerDraft = attemptId ? window.localStorage.getItem(draftLocalStorageKey("owner")) : null;
       const nurseDraft = attemptId ? window.localStorage.getItem(draftLocalStorageKey("veterinary-nurse")) : null;
-      setPersonaDrafts({ owner: ownerDraft ?? "", "veterinary-nurse": nurseDraft ?? "" });
+      const labDraft = attemptId ? window.localStorage.getItem(draftLocalStorageKey("lab-technician")) : null;
+      setPersonaDrafts({ owner: ownerDraft ?? "", "veterinary-nurse": nurseDraft ?? "", "lab-technician": labDraft ?? "" });
     } catch (e) {
       // ignore localStorage failures
     }
@@ -487,6 +489,7 @@ export function ChatInterface({
   const [showNotepadByPersona, setShowNotepadByPersona] = useState<Record<AllowedChatPersonaKey, boolean>>({
     owner: false,
     "veterinary-nurse": false,
+    "lab-technician": false,
   });
   const [timeSpentSeconds, setTimeSpentSeconds] = useState(initialTimeSpentSeconds);
   const [ttsEnabled, setTtsEnabled] = useState<boolean>(() => Boolean(attemptId) || true);

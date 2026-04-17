@@ -464,7 +464,10 @@ export function resolvePersonaRoleKey(
 
   // Owner/Client roles → owner persona
   if (lower.includes("owner") || lower.includes("client")) return "owner";
-  
+
+  // Lab technician → own persona (check before generic catch-all)
+  if (lower.includes("lab") && lower.includes("technician")) return "lab-technician";
+
   // All other clinical staff roles → veterinary-nurse persona
   // This includes: nurse, technician, lab technician, assistant, etc.
   // Each case has only ONE nurse persona that handles all non-owner stages

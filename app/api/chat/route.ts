@@ -258,7 +258,7 @@ export async function POST(request: NextRequest) {
         /laboratory|\blab\b|tests/.test(stageTitleLower) ||
         (/treatment/.test(stageTitleLower) && /plan/.test(stageTitleLower))
       ) {
-        if (personaRoleKey !== "veterinary-nurse") {
+        if (personaRoleKey !== "veterinary-nurse" && personaRoleKey !== "lab-technician") {
           console.log(
             `[chat] Overriding personaRoleKey (${personaRoleKey}) → veterinary-nurse due to stage "${stageDescriptor?.title ?? stageRole}"`,
           );
@@ -278,7 +278,7 @@ export async function POST(request: NextRequest) {
         /\b(findings|vitals|results|diagnostic results|test results|what\b.*\b(vitals|findings|results)|show\b.*\b(findings|results|vitals))\b/i.test(
           userQ,
         );
-      const personaEligible = personaRoleKey === "veterinary-nurse" || /nurse|lab|laboratory/i.test(String(stageRole ?? ""));
+      const personaEligible = personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician" || /nurse|lab|laboratory/i.test(String(stageRole ?? ""));
       const stageTitleHere = String(stageDescriptor?.title ?? stageRole ?? "");
       const isNurseStageContext = /physical|laboratory|\blab\b|treatment/i.test(stageTitleHere) && !/planning/i.test(stageTitleHere);
       // Inject role behavior prompt for nurse/lab personas when either the user explicitly requested
@@ -472,8 +472,13 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     // prevents stale or prior-stage identities from influencing the assistant.
     if (personaRoleKey) {
       try {
-        const otherPersonaLabel = personaRoleKey === "owner" ? "Veterinary Nurse" : "Owner";
-        const currentPersonaLabel = personaRoleKey === "owner" ? "Owner" : "Veterinary Nurse";
+        const personaDisplayNames: Record<string, string> = {
+          owner: "Owner",
+          "veterinary-nurse": "Veterinary Nurse",
+          "lab-technician": "Laboratory Technician",
+        };
+        const currentPersonaLabel = personaDisplayNames[personaRoleKey] ?? personaRoleKey;
+        const otherPersonaLabel = Object.values(personaDisplayNames).filter((name) => name !== currentPersonaLabel).join(" or ");
         const personaIdentityMsg = `PERSONA IDENTITY (STRICT): You are EXCLUSIVELY answering as "${displayRole ?? personaRoleKey}" (role: ${personaRoleKey}, the ${currentPersonaLabel}). Do NOT impersonate, adopt the tone of, or claim to be any other persona. The conversation history may contain messages from the ${otherPersonaLabel} persona — those are clearly labeled as [${otherPersonaLabel.toUpperCase()} PERSONA] and are provided for context only. You MUST NOT continue their voice, their concerns, or their perspective. Use the display name "${displayRole ?? personaRoleKey}" when asked for your name. Stay strictly in character as the ${currentPersonaLabel}.`;
         enhancedMessages.unshift({
           role: "system",
@@ -1431,6 +1436,7 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
         const p = msg.personaRoleKey;
         if (p === "owner") base.name = "pet_owner";
         else if (p === "veterinary-nurse") base.name = "veterinary_nurse";
+        else if (p === "lab-technician") base.name = "lab_technician";
       } else if (msg.role === "user") {
         base.name = "student";
       }

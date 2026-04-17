@@ -142,6 +142,7 @@ const STAGE_TYPE_BY_ID: Record<StageTypeId, StageTypeDefinition> = STAGE_TYPES.r
 const PERSONA_OPTIONS = [
   { value: "owner", label: "Client / Owner" },
   { value: "veterinary-nurse", label: "Veterinary Nurse" },
+  { value: "lab-technician", label: "Laboratory Technician" },
 ];
 
 const ROLE_INFO_OPTIONS = [

@@ -17,6 +17,7 @@ export function transformNurseAssistantMessage(
       /nurse|lab|laboratory/.test(roleLower);
     const isNursePersona =
       personaKey === "veterinary-nurse" ||
+      personaKey === "lab-technician" ||
       /nurse|lab/.test(personaKey || roleLower);
     if (!isSensitiveStage || !isNursePersona)
       return { message: aiMessage, allowTts: true };
