@@ -80,6 +80,7 @@ const IDENTITY_FIELDS: ReadonlySet<string> = new Set([
   "difficulty",
   "estimated_time",
   "region",
+  "details",
 ]);
 
 export default function CaseEntryForm() {
