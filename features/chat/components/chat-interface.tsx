@@ -626,6 +626,10 @@ export function ChatInterface({
     () => getPersonaMetadata("veterinary-nurse")?.portraitUrl ?? personaDirectory?.["veterinary-nurse"]?.portraitUrl,
     [getPersonaMetadata, personaDirectory],
   );
+  const labTechPortraitUrl = useMemo(
+    () => getPersonaMetadata("lab-technician")?.portraitUrl ?? personaDirectory?.["lab-technician"]?.portraitUrl,
+    [getPersonaMetadata, personaDirectory],
+  );
   const stageKeywordSets = useMemo(() => {
     return stages.map((stage, index) => {
       const keywords = new Set<string>();
@@ -4674,17 +4678,30 @@ export function ChatInterface({
               )}
             </div>
 
-            {/* Right persona - NURSE button with portrait */}
-            <PersonaButton
-              roleKey="veterinary-nurse"
-              label="NURSE"
-              portraitUrl={nursePortraitUrl}
-              fallbackText="NUR"
-              isActive={activePersona === "veterinary-nurse"}
-              onClick={() => handleSetActivePersona("veterinary-nurse")}
-              testId="nurse-tab"
-              align="start"
-            />
+            {/* Right persona - NURSE or LAB TECH button with portrait */}
+            {activePersona === "lab-technician" ? (
+              <PersonaButton
+                roleKey="lab-technician"
+                label="LAB TECH"
+                portraitUrl={labTechPortraitUrl}
+                fallbackText="LAB"
+                isActive={activePersona === "lab-technician"}
+                onClick={() => handleSetActivePersona("lab-technician")}
+                testId="lab-tech-tab"
+                align="start"
+              />
+            ) : (
+              <PersonaButton
+                roleKey="veterinary-nurse"
+                label="NURSE"
+                portraitUrl={nursePortraitUrl}
+                fallbackText="NUR"
+                isActive={activePersona === "veterinary-nurse"}
+                onClick={() => handleSetActivePersona("veterinary-nurse")}
+                testId="nurse-tab"
+                align="start"
+              />
+            )}
 
             {/* Next stage control (large button) */}
             <div className="relative flex items-center justify-end gap-2">

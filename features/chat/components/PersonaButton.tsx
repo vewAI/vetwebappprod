@@ -4,7 +4,7 @@ import React, { memo, useState } from "react";
 
 export type PersonaButtonProps = {
   /** The role key (for data attributes) */
-  roleKey: "owner" | "veterinary-nurse";
+  roleKey: "owner" | "veterinary-nurse" | "lab-technician";
   /** Display label for the button */
   label: string;
   /** Portrait image URL (optional) */
