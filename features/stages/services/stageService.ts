@@ -100,7 +100,7 @@ const STAGE_TIP_FALLBACKS: Record<string, string> = {
     "Stage tip: Explain the final diagnostic and treatment options you can offer.",
 };
 
-function classifyStageForTip(title: string | undefined, description: string | undefined): keyof typeof STAGE_TIP_FALLBACKS {
+export function classifyStageForTip(title: string | undefined, description: string | undefined): keyof typeof STAGE_TIP_FALLBACKS {
   const source = `${title ?? ""} ${description ?? ""}`.toLowerCase();
   if (source.includes("history")) return "history";
   if (source.includes("physical")) return "physical";

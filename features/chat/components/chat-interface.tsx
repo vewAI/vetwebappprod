@@ -4,7 +4,7 @@ import type React from "react";
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 
-import { SendIcon, PenLine, Play, Pause } from "lucide-react";
+import { SendIcon, PenLine, Play, Pause, Lightbulb, LightbulbOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
@@ -39,6 +39,7 @@ import { useSaveAttempt } from "@/features/attempts/hooks/useSaveAttempt";
 import type { Message } from "@/features/chat/models/chat";
 import type { Stage } from "@/features/stages/types";
 import { getStageTip } from "@/features/stages/services/stageService";
+import { getStudentGuidance } from "@/features/stages/services/studentGuidance";
 import { chatService } from "@/features/chat/services/chatService";
 import { getOrAssignVoiceForRole, isSupportedVoice } from "@/features/speech/services/voiceMap";
 import type { TtsEventDetail } from "@/features/speech/models/tts-events";
@@ -345,6 +346,19 @@ export function ChatInterface({
   }, [caseId]);
   // Active persona tab shown in the UI (owner | veterinary-nurse). Default to nurse to match prior UX.
   const [activePersona, setActivePersona] = useState<AllowedChatPersonaKey>("veterinary-nurse");
+  // Guided mode: student-friendly stage guidance (persisted to localStorage)
+  const [guidedMode, setGuidedMode] = useState<boolean>(() => {
+    try {
+      return typeof window !== "undefined" && window.localStorage.getItem("guided-mode") === "true";
+    } catch { return false; }
+  });
+  const toggleGuidedMode = useCallback(() => {
+    setGuidedMode((prev) => {
+      const next = !prev;
+      try { window.localStorage.setItem("guided-mode", String(next)); } catch {}
+      return next;
+    });
+  }, []);
   // Per-persona draft persistence (in-memory + localStorage per attempt)
   const [personaDrafts, setPersonaDrafts] = useState<Record<AllowedChatPersonaKey, string>>({
     owner: "",
@@ -4008,22 +4022,28 @@ export function ChatInterface({
 
     const stage = stages[currentStageIndex];
     const stageTitle = stage?.title ?? `Stage ${currentStageIndex + 1}`;
-    const tip = getStageTip(caseId, currentStageIndex);
 
+    if (guidedMode) {
+      const guidance = getStudentGuidance(stage?.title, stage?.description);
+      if (guidance) {
+        setStageIndicator({
+          title: `${stageTitle} — Guided Mode`,
+          body: `**What you should do:** ${guidance.whatToDo}\n\n**Tips:**\n${guidance.tips.map((t) => `• ${t}`).join("\n")}`,
+        });
+        const timer = setTimeout(() => setStageIndicator(null), 12000);
+        return () => clearTimeout(timer);
+      }
+    }
+
+    const tip = getStageTip(caseId, currentStageIndex);
     if (tip) {
-      setStageIndicator({
-        title: stageTitle,
-        body: tip,
-      });
-      // Auto-hide after 8 seconds
-      const timer = setTimeout(() => {
-        setStageIndicator(null);
-      }, 8000);
+      setStageIndicator({ title: stageTitle, body: tip });
+      const timer = setTimeout(() => setStageIndicator(null), 8000);
       return () => clearTimeout(timer);
     } else {
       setStageIndicator(null);
     }
-  }, [introMounted]);
+  }, [introMounted, guidedMode, currentStageIndex, stages, caseId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     try {
@@ -4584,15 +4604,24 @@ export function ChatInterface({
       {/* Stage Tip Toast (central, non-blocking) */}
       {stageIndicator && (
         <div className="fixed top-24 left-0 right-0 flex justify-center pointer-events-none z-40">
-          <div className="bg-muted/90 backdrop-blur-sm border border-border text-foreground px-4 py-3 rounded-lg shadow-lg max-w-md text-center pointer-events-auto animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="bg-muted/90 backdrop-blur-sm border border-border text-foreground px-5 py-3 rounded-lg shadow-lg max-w-lg pointer-events-auto animate-in fade-in slide-in-from-top-4 duration-300">
             <div className="font-semibold text-sm mb-1">{stageIndicator.title}</div>
-            <div className="text-sm">{stageIndicator.body}</div>
+            <div className="text-sm whitespace-pre-line text-left">{stageIndicator.body}</div>
             <button onClick={() => setStageIndicator(null)} className="absolute top-1 right-2 text-muted-foreground hover:text-foreground">
               ×
             </button>
           </div>
         </div>
       )}
+
+      {/* Guided mode toggle */}
+      <button
+        onClick={toggleGuidedMode}
+        className={`fixed top-4 right-4 z-50 p-2 rounded-full border shadow-sm transition-colors ${guidedMode ? "bg-amber-100 border-amber-400 text-amber-700 dark:bg-amber-900 dark:border-amber-600 dark:text-amber-200" : "bg-background border-border text-muted-foreground hover:text-foreground"}`}
+        title={guidedMode ? "Disable guided mode" : "Enable guided mode"}
+      >
+        {guidedMode ? <Lightbulb className="h-5 w-5" /> : <LightbulbOff className="h-5 w-5" />}
+      </button>
 
       {/* Chat messages area */}
       <div id="chat-messages" className="flex-1 overflow-y-auto p-4">

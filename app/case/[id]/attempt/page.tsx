@@ -34,6 +34,16 @@ export default function CaseChatPage() {
   const [isMobile, setIsMobile] = useState(false);
   // Hide the left-stage sidebar by default to provide a focused workspace
   const [showSidebar, setShowSidebar] = useState(false);
+  // Guided mode: read from localStorage (chat-interface manages the toggle)
+  const [guidedMode, setGuidedMode] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      try { setGuidedMode(window.localStorage.getItem("guided-mode") === "true"); } catch {}
+    };
+    check();
+    const interval = setInterval(check, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const tourSteps = [
     {
@@ -337,6 +347,7 @@ export default function CaseChatPage() {
           stages={stages}
           currentStageIndex={currentStageIndex}
           onStageSelect={(i: number) => setCurrentStageIndex(i)}
+          guidedMode={guidedMode}
         />
       </div>
 
