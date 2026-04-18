@@ -18,7 +18,7 @@ type ProgressSidebarProps = {
 
 export function ProgressSidebar({ caseItem, stages, currentStageIndex, onStageSelect, guidedMode }: ProgressSidebarProps) {
   const currentStage = stages[currentStageIndex];
-  const guidance = guidedMode ? getStudentGuidance(currentStage?.title, currentStage?.description) : null;
+  const guidance = guidedMode ? getStudentGuidance(currentStage) : null;
 
   return (
     <div className="flex h-full flex-col border-r bg-muted/20">

@@ -1,9 +1,18 @@
-import { classifyStageForTip } from "./stageService";
+import type { Stage } from "@/features/stages/types";
 
 export type StageGuidance = {
   title: string;
   whatToDo: string;
   tips: string[];
+};
+
+const STAGE_TYPE_TO_GUIDANCE_KEY: Record<string, string> = {
+  history: "history",
+  physical: "physical",
+  diagnostic: "diagnostics",
+  laboratory: "lab",
+  treatment: "plan",
+  communication: "communication",
 };
 
 const STUDENT_GUIDANCE: Record<string, StageGuidance> = {
@@ -79,10 +88,12 @@ const STUDENT_GUIDANCE: Record<string, StageGuidance> = {
   },
 };
 
-export function getStudentGuidance(
-  stageTitle?: string,
-  stageDescription?: string,
-): StageGuidance | null {
-  const key = classifyStageForTip(stageTitle, stageDescription);
+export function getStudentGuidance(stage?: Stage): StageGuidance | null {
+  if (!stage) return null;
+  const stageType = (stage.settings as Record<string, unknown>)?.stage_type;
+  const key = stageType && typeof stageType === "string" && STAGE_TYPE_TO_GUIDANCE_KEY[stageType]
+    ? STAGE_TYPE_TO_GUIDANCE_KEY[stageType]
+    : null;
+  if (!key) return null;
   return STUDENT_GUIDANCE[key] ?? null;
 }

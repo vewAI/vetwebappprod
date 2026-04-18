@@ -4024,7 +4024,7 @@ export function ChatInterface({
     const stageTitle = stage?.title ?? `Stage ${currentStageIndex + 1}`;
 
     if (guidedMode) {
-      const guidance = getStudentGuidance(stage?.title, stage?.description);
+      const guidance = getStudentGuidance(stage);
       if (guidance) {
         setStageIndicator({
           title: `${stageTitle} — Guided Mode`,
