@@ -111,56 +111,6 @@ const TARGET_FIELDS: Array<{ key: string; label: string; guide: string }> = [
     guide:
       "GENERATE a rubric for evaluating diagnostic planning communication. Include: Did student explain test rationale? Discuss costs? Address biosecurity/isolation? Handle owner concerns? Provide timeline? 4-6 criteria.",
   },
-
-  // ── System prompts for AI personas (GENERATE as LLM instructions) ──
-  {
-    key: "get_owner_prompt",
-    label: "Owner chat prompt",
-    guide:
-      "GENERATE a system prompt (5-10 sentences) for the owner AI persona during live chat. Include: 'You are [name], the [role] of [patient]...', personality traits, presenting complaint in owner's words, what info to volunteer upfront vs withhold until asked, emotional arc, language style (plain, avoid jargon).",
-  },
-  {
-    key: "get_history_feedback_prompt",
-    label: "History feedback instructions",
-    guide:
-      "GENERATE LLM instructions: 'FIRST check for minimal interaction (< 3 substantive questions → give guidance mode). For sufficient interaction, evaluate against these domains: [list THIS case's key history domains]. Highlight what was done well, identify gaps, suggest 2-3 follow-up questions.'",
-  },
-  {
-    key: "get_physical_exam_prompt",
-    label: "Physical exam prompt",
-    guide:
-      "GENERATE a system prompt for the nurse persona: 'You are a veterinary nurse supporting the examination of [patient]. Share only the specific finding the student asks about. If the request is vague, ask them to specify. Never interpret findings or suggest diagnoses.'",
-  },
-  {
-    key: "get_diagnostic_prompt",
-    label: "Diagnostics prompt",
-    guide:
-      "GENERATE a system prompt for the lab technician: 'You are a laboratory technician reporting results for [patient]. Release one result at a time when asked. State if a test is pending. Do not interpret beyond raw data. Include units.'",
-  },
-  {
-    key: "get_owner_follow_up_prompt",
-    label: "Owner follow-up prompt",
-    guide:
-      "GENERATE a prompt for the owner during post-exam discussion: 'You are [owner name] discussing next steps. Ask about: which tests and why, costs, how long results take, animal comfort. Become more cooperative once the student explains clearly.'",
-  },
-  {
-    key: "get_owner_follow_up_feedback_prompt",
-    label: "Follow-up feedback instructions",
-    guide:
-      "GENERATE a rubric: 'Evaluate the student on: diagnostic prioritization, cost/logistics communication, handling of owner concerns, biosecurity advice if applicable, overall communication clarity.'",
-  },
-  {
-    key: "get_owner_diagnosis_prompt",
-    label: "Owner diagnosis prompt",
-    guide:
-      "GENERATE a prompt for the owner receiving results: 'You are [owner name] hearing the diagnosis. Ask about: treatment plan, duration, costs, prognosis, monitoring at home, risk to other animals. React naturally.'",
-  },
-  {
-    key: "get_overall_feedback_prompt",
-    label: "Overall feedback prompt",
-    guide:
-      "GENERATE: 'Evaluate the student across all stages. Case-specific objectives: [list 4-6 learning objectives for THIS case]. Check: history thoroughness, exam strategy, diagnostic reasoning, client communication, biosecurity/management advice. Use Calgary-Cambridge framework for communication assessment.'",
-  },
 ];
 
 function roleForbidden(role: string | null): boolean {

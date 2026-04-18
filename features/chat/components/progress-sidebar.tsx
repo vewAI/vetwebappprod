@@ -61,8 +61,27 @@ export function ProgressSidebar({ caseItem, stages, currentStageIndex, onStageSe
           })}
         </div>
 
+        {guidedMode !== undefined && (
+          <button
+            onClick={() => {
+              const next = !guidedMode;
+              window.localStorage.setItem("guided-mode", String(next));
+              window.dispatchEvent(new Event("guided-mode-change"));
+            }}
+            className={cn(
+              "mt-4 flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
+              guidedMode
+                ? "bg-amber-100 text-amber-800 hover:bg-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-950/60"
+                : "bg-muted text-muted-foreground hover:bg-muted/80",
+            )}
+          >
+            <Lightbulb className={cn("h-4 w-4", guidedMode && "text-amber-600 dark:text-amber-400")} />
+            <span>{guidedMode ? "Guided mode ON" : "Enable guided mode"}</span>
+          </button>
+        )}
+
         {guidance && (
-          <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
+          <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
             <div className="flex items-center gap-2 mb-2">
               <Lightbulb className="h-4 w-4 text-amber-600 dark:text-amber-400" />
               <span className="text-sm font-semibold text-amber-800 dark:text-amber-200">What to do here</span>

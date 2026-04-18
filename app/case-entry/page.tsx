@@ -388,19 +388,11 @@ export default function CaseEntryForm() {
       "description",
       "history_feedback",
       "owner_background",
-      "get_history_feedback_prompt",
       "owner_follow_up",
-      "get_owner_follow_up_feedback_prompt",
       "owner_diagnosis",
-      "get_owner_prompt",
       "owner_follow_up_feedback",
       "physical_exam_findings",
       "diagnostic_findings",
-      "get_physical_exam_prompt",
-      "get_diagnostic_prompt",
-      "get_owner_follow_up_prompt",
-      "get_owner_diagnosis_prompt",
-      "get_overall_feedback_prompt",
     ].filter((field) => {
       const value = form[field as CaseFieldKey];
       return !value || (typeof value === "string" && value.trim() === "");
@@ -858,6 +850,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
 
         {orderedCaseFieldKeys.map((key) => {
           const meta = caseFieldMeta[key];
+          if (meta.isSystem) return null;
           const helpId = meta.help ? `${key}-help` : undefined;
 
           if (meta.options && meta.options.length > 0) {

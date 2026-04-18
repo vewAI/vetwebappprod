@@ -4614,15 +4614,6 @@ export function ChatInterface({
         </div>
       )}
 
-      {/* Guided mode toggle */}
-      <button
-        onClick={toggleGuidedMode}
-        className={`fixed top-4 right-4 z-50 p-2 rounded-full border shadow-sm transition-colors ${guidedMode ? "bg-amber-100 border-amber-400 text-amber-700 dark:bg-amber-900 dark:border-amber-600 dark:text-amber-200" : "bg-background border-border text-muted-foreground hover:text-foreground"}`}
-        title={guidedMode ? "Disable guided mode" : "Enable guided mode"}
-      >
-        {guidedMode ? <Lightbulb className="h-5 w-5" /> : <LightbulbOff className="h-5 w-5" />}
-      </button>
-
       {/* Chat messages area */}
       <div id="chat-messages" className="flex-1 overflow-y-auto p-4">
         <div className="mx-auto max-w-3xl">

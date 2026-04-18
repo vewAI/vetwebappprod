@@ -51,6 +51,8 @@ export type CaseFieldMeta = {
   /** New persona editor field type */
   isPersonaEditor?: boolean;
   personaRole?: "owner" | "nurse";
+  /** System-managed fields hidden from case forms. Populated by ROLE_PROMPT_DEFINITIONS at runtime. */
+  isSystem?: boolean;
 };
 
 const metaList: CaseFieldMeta[] = [
@@ -272,6 +274,7 @@ const metaList: CaseFieldMeta[] = [
     help: "Behind-the-scenes instructions for the owner AI during live history-taking. Auto-generated from Owner Personality & Context — only edit if you need specific tweaks.",
     multiline: true,
     rows: 5,
+    isSystem: true,
   },
   {
     key: "get_history_feedback_prompt",
@@ -280,6 +283,7 @@ const metaList: CaseFieldMeta[] = [
     help: "Behind-the-scenes rules for the AI that scores history-taking. Auto-generated from the History-Taking Rubric — edit only for fine-tuning.",
     multiline: true,
     rows: 5,
+    isSystem: true,
   },
   {
     key: "get_physical_exam_prompt",
@@ -288,6 +292,7 @@ const metaList: CaseFieldMeta[] = [
     help: "Behind-the-scenes instructions for the nurse AI that shares exam findings. Auto-generated — only edit for specific behaviour tweaks.",
     multiline: true,
     rows: 4,
+    isSystem: true,
   },
   {
     key: "get_diagnostic_prompt",
@@ -296,6 +301,7 @@ const metaList: CaseFieldMeta[] = [
     help: "Behind-the-scenes instructions for the lab technician AI. Auto-generated — only edit for specific result-release behaviour.",
     multiline: true,
     rows: 4,
+    isSystem: true,
   },
   {
     key: "get_owner_follow_up_prompt",
@@ -304,6 +310,7 @@ const metaList: CaseFieldMeta[] = [
     help: "Behind-the-scenes instructions for the owner AI during the post-exam conversation. Auto-generated from Owner Post-Exam Questions.",
     multiline: true,
     rows: 4,
+    isSystem: true,
   },
   {
     key: "get_owner_follow_up_feedback_prompt",
@@ -312,6 +319,7 @@ const metaList: CaseFieldMeta[] = [
     help: "Behind-the-scenes rules for the AI that scores the diagnostic planning stage. Auto-generated from the Diagnostic Planning Rubric.",
     multiline: true,
     rows: 4,
+    isSystem: true,
   },
   {
     key: "get_owner_diagnosis_prompt",
@@ -320,6 +328,7 @@ const metaList: CaseFieldMeta[] = [
     help: "Behind-the-scenes instructions for the owner AI when receiving the diagnosis. Auto-generated from Owner Diagnosis Reaction.",
     multiline: true,
     rows: 4,
+    isSystem: true,
   },
   {
     key: "get_overall_feedback_prompt",
@@ -328,6 +337,7 @@ const metaList: CaseFieldMeta[] = [
     help: "Behind-the-scenes rules for the AI that produces the final performance summary. Auto-generated — edit only to adjust scoring criteria.",
     multiline: true,
     rows: 4,
+    isSystem: true,
   },
 ];
 
