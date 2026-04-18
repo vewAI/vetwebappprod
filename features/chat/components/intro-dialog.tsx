@@ -13,11 +13,13 @@ export type IntroDialogProps = {
   mounted: boolean;
   onClose: () => void;
   // onContinue receives the chosen mode and optional settings (e.g., autoSendStt)
-  onContinue?: (mode: "voice" | "text", opts?: { autoSendStt?: boolean }) => void;
+  onContinue?: (mode: "voice" | "text", opts?: { autoSendStt?: boolean; guidedMode?: boolean }) => void;
+  /** When true, show a guided-mode suggestion (first attempt on this case). */
+  showGuidedModeSuggestion?: boolean;
   className?: string;
 };
 
-export function IntroDialog({ mounted, onClose, onContinue, className }: IntroDialogProps) {
+export function IntroDialog({ mounted, onClose, onContinue, showGuidedModeSuggestion, className }: IntroDialogProps) {
   // Internal flag used to differentiate user-initiated closes (Close/Continue)
   // from backdrop/ESC attempts. We only act when the user clicked our buttons.
   const internalCloseRequestedRef = useRef(false);
@@ -45,6 +47,9 @@ export function IntroDialog({ mounted, onClose, onContinue, className }: IntroDi
       return true;
     }
   });
+
+  // Guided mode suggestion (only shown for first attempt)
+  const [enableGuided, setEnableGuided] = React.useState<boolean>(true);
 
   // Keep storage in sync when user updates the toggle here
   React.useEffect(() => {
@@ -81,7 +86,7 @@ export function IntroDialog({ mounted, onClose, onContinue, className }: IntroDi
     internalCloseRequestedRef.current = true;
     try {
       // Pass autoSendStt selection to parent so it can update its state as well
-      onContinue?.(mode, { autoSendStt });
+      onContinue?.(mode, { autoSendStt, guidedMode: enableGuided });
     } catch (e) {
       // ignore
     }
@@ -227,7 +232,18 @@ export function IntroDialog({ mounted, onClose, onContinue, className }: IntroDi
             </div>
           </div>
           <DialogFooter className={`sm:justify-between sm:items-end ${className ?? ""}`}>
-            <span className="text-xs text-muted-foreground">You can toggle voice mode and mic later using the mic button</span>
+            {showGuidedModeSuggestion ? (
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <Checkbox
+                  checked={enableGuided}
+                  onCheckedChange={(v) => setEnableGuided(Boolean(v))}
+                  className="data-[state=checked]:bg-amber-500 data-[state=checked]:border-amber-500 data-[state=checked]:text-white"
+                />
+                <span className="text-xs text-muted-foreground">Enable guided mode <span className="text-amber-600">(recommended for first attempt)</span></span>
+              </label>
+            ) : (
+              <span className="text-xs text-muted-foreground">You can toggle voice mode and mic later using the mic button</span>
+            )}
             <Button
               onClick={handleContinue}
               disabled={mode === "voice" && !labelsAvailable}

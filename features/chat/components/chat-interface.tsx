@@ -4569,11 +4569,18 @@ export function ChatInterface({
       <IntroDialog
         mounted={introMounted}
         onClose={() => setIntroMounted(false)}
-        onContinue={async (mode: "text" | "voice", opts?: { autoSendStt?: boolean }) => {
+        showGuidedModeSuggestion={initialMessages.length === 0}
+        onContinue={async (mode: "text" | "voice", opts?: { autoSendStt?: boolean; guidedMode?: boolean }) => {
           setIntroMounted(false);
           // Reflect the user's auto-send choice in the chat state if provided
           if (opts && typeof opts.autoSendStt !== "undefined") {
             setAutoSendStt(Boolean(opts.autoSendStt));
+          }
+          // Apply guided mode choice from intro dialog
+          if (opts && typeof opts.guidedMode !== "undefined") {
+            const next = opts.guidedMode;
+            setGuidedMode(next);
+            try { localStorage.setItem("guided-mode", String(next)); } catch {}
           }
           if (mode === "voice") {
             // Ensure voice mode is enabled (this will request permission if needed)
