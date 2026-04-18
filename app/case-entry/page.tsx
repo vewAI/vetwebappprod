@@ -386,6 +386,7 @@ export default function CaseEntryForm() {
     // `details` is excluded because it holds the professor's original source text and must never be overwritten by the LLM.
     const emptyFields = [
       "description",
+      "history_feedback",
       "owner_background",
       "get_history_feedback_prompt",
       "owner_follow_up",

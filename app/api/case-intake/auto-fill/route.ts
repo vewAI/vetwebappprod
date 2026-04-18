@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
 
     const fieldDescriptions: Record<string, string> = {
       description: "A compelling one-paragraph overview for learners describing the case and its clinical significance",
+      history_feedback: "A structured rubric listing the 5-8 key history domains the student should explore for THIS case (e.g., onset/duration, diet, vaccination, exposure risks, prior episodes). For each domain, note what a thorough answer looks like.",
       owner_background: "The owner/caretaker's personality, concerns, communication style, and relationship with the animal",
       get_history_feedback_prompt: "LLM instructions for evaluating the student's history-taking and gathering of clinical information",
       owner_follow_up: "Dialogue template for the owner persona during diagnostic planning and treatment discussion",
@@ -82,6 +83,7 @@ ${fieldsDescription}
 Return a JSON object with ONLY these fields (one per empty field passed to you):
 {
   "description": "string or null",
+  "history_feedback": "string or null",
   "owner_background": "string or null",
   "get_history_feedback_prompt": "string or null",
   "owner_follow_up": "string or null",
@@ -89,7 +91,6 @@ Return a JSON object with ONLY these fields (one per empty field passed to you):
   "owner_diagnosis": "string or null",
   "get_owner_prompt": "string or null",
   "owner_follow_up_feedback": "string or null",
-  "details": "string or null",
   "physical_exam_findings": "string or null",
   "diagnostic_findings": "string or null",
   "get_physical_exam_prompt": "string or null",

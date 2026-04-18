@@ -71,7 +71,9 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
   const activeItem: CaseVerificationItem | undefined = items[activeItemIndex];
   const activeItemId = activeItem?.id ?? "";
 
-  const currentChat = chatHistories[activeItemId] ?? [];
+  const currentChat = (chatHistories[activeItemId] ?? []).filter(
+    (msg, idx, arr) => arr.findIndex((m) => m.id === msg.id) === idx,
+  );
 
   // Helper function to find next pending item following visual order (mandatory → recommended → optional)
   const findNextPendingItemByRelevance = useCallback((currentIdx: number, itemsList: CaseVerificationItem[]): number => {
