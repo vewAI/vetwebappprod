@@ -103,11 +103,12 @@ const STAGE_TIP_FALLBACKS: Record<string, string> = {
 export function classifyStageForTip(title: string | undefined, description: string | undefined): keyof typeof STAGE_TIP_FALLBACKS {
   const source = `${title ?? ""} ${description ?? ""}`.toLowerCase();
   if (source.includes("history")) return "history";
-  if (source.includes("physical") || source.includes("exam")) return "physical";
+  if (source.includes("physical") || source.includes("physical exam")) return "physical";
   if (source.includes("diagnostic") || source.includes("follow-up")) return "diagnostics";
-  if (source.includes("lab") || source.includes("laboratory")) return "lab";
+  if (source.includes("lab") || source.includes("laboratory") || source.includes("test")) return "lab";
+  if (source.includes("communication") || source.includes("client")) return "communication";
   if (source.includes("plan") || source.includes("treatment") || source.includes("diagnosis")) return "plan";
-  if (source.includes("communication")) return "communication";
+  if (source.includes("exam")) return "physical";
   return "plan";
 }
 

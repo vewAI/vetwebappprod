@@ -68,13 +68,13 @@ const STUDENT_GUIDANCE: Record<string, StageGuidance> = {
   communication: {
     title: "Client Communication",
     whatToDo:
-      "Explain the diagnosis, prognosis, and treatment plan to the owner in plain language. Address their questions about home care, follow-up, and costs.",
+      "Explain to the owner the treatment you are giving the animal and why, the prognosis, what to expect, and expected timelines. Be empathetic and use plain language.",
     tips: [
-      "Use simple, non-technical language the owner can understand",
-      "Explain the diagnosis and what it means practically",
-      "Discuss prognosis honestly — best case, worst case, and most likely",
-      "Provide clear home care instructions and warning signs to watch for",
-      "Discuss follow-up visits and long-term management",
+      "Explain each treatment and why it's necessary in simple terms",
+      "Discuss the prognosis — best case, worst case, and most likely outcome",
+      "Give a realistic timeline for recovery and what milestones to watch for",
+      "Provide clear home care instructions and warning signs that require urgent return",
+      "Address costs, follow-up visits, and long-term management honestly",
     ],
   },
 };
