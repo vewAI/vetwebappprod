@@ -879,6 +879,7 @@ export default function CaseViewerPage() {
         {formState &&
           orderedCaseFieldKeys.map((key) => {
             const meta = caseFieldMeta[key];
+            if (meta.isSystem) return null;
             const helpId = meta.help ? `${key}-help` : undefined;
             const rawValue = formState[key];
             const automation = automationState[key];
