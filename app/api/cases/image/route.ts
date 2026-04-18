@@ -51,9 +51,10 @@ export async function PUT(req: Request) {
 }
 
 export async function POST(req: Request) {
-  if (!openai) {
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!openai && !geminiKey) {
     return NextResponse.json(
-      { error: "OPENAI_API_KEY is not configured for image generation." },
+      { error: "No image generation provider configured. Set OPENAI_API_KEY or GEMINI_API_KEY." },
       { status: 500 }
     );
   }
@@ -67,9 +68,13 @@ export async function POST(req: Request) {
     const body = await req.json();
     const idRaw = body?.id;
     const forceRaw = body?.force;
+    const providerRaw = body?.provider;
 
     const id = typeof idRaw === "string" ? idRaw.trim() : "";
     const force = forceRaw === undefined ? true : Boolean(forceRaw);
+    const provider = providerRaw === "gemini" || providerRaw === "openai"
+      ? providerRaw
+      : undefined;
 
     if (!id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
@@ -96,7 +101,7 @@ export async function POST(req: Request) {
       supabase,
       openai,
       caseRow as Record<string, unknown>,
-      { force }
+      { force, provider }
     );
 
     if (!imageUrl) {

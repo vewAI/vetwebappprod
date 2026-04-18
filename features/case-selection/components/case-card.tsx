@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -13,7 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Clock, Tag, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type { Case } from "@/features/case-selection/models/case";
 
 type CaseCardProps = {
@@ -21,44 +20,34 @@ type CaseCardProps = {
 };
 
 export function CaseCard({ caseItem }: CaseCardProps) {
-  const [isHovered, setIsHovered] = useState(false);
-
-  // Use gifUrl if available and hovered, otherwise fallback to imageUrl
-  const displayImage =
-    isHovered && caseItem.gifUrl ? caseItem.gifUrl : caseItem.imageUrl;
+  const imageSrc =
+    /^https?:\/\//.test(String(caseItem.imageUrl ?? ""))
+      ? String(caseItem.imageUrl)
+      : "/placeholder.svg";
 
   return (
     <Card
-      className="pt-0 overflow-hidden transition-all duration-300 hover:shadow-lg"
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      // Mobile focus handling
-      onFocus={() => setIsHovered(true)}
-      onBlur={() => setIsHovered(false)}
-      tabIndex={0} // Make focusable
+      className="group pt-0 overflow-hidden transition-all duration-300 hover:shadow-lg"
+      tabIndex={0}
     >
       <div className="relative h-48 w-full overflow-hidden bg-gray-100">
-        <img
-          src={
-            /^https?:\/\//.test(String(displayImage ?? ""))
-              ? String(displayImage)
-              : "/placeholder.svg"
-          }
-          alt={caseItem.title}
-          className={`w-full h-full object-contain object-center transition-transform duration-500 ${
-            isHovered ? "scale-105" : "scale-100"
-          }`}
-        />
         <Image
-          src={displayImage}
+          src={imageSrc}
           alt={caseItem.title}
           fill
-          className={" object-cover " + (isHovered ? "scale-105" : "scale-100")}
+          className="object-cover transition-[transform,filter] duration-700 ease-out group-hover:scale-110 group-hover:brightness-105"
           sizes="500px"
           priority={false}
         />
+        {/* Gradient overlay on hover */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
+        <div className="absolute bottom-0 left-0 right-0 translate-y-2 opacity-0 transition-all duration-500 group-hover:translate-y-0 group-hover:opacity-100 p-3">
+          <p className="text-white text-xs line-clamp-2 font-medium drop-shadow-md">
+            {caseItem.description}
+          </p>
+        </div>
         {caseItem.difficulty && (
-          <div className="absolute right-3 top-3">
+          <div className="absolute right-3 top-3 z-10">
             <Badge
               variant={
                 caseItem.difficulty === "Easy"

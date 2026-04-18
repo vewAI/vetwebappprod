@@ -14,6 +14,9 @@ const CASE_IMAGE_MODEL =
   process.env.PERSONA_IMAGE_MODEL ??
   "dall-e-3";
 
+const CASE_IMAGE_PROVIDER =
+  (process.env.CASE_IMAGE_PROVIDER ?? "openai").toLowerCase();
+
 const ALLOWED_SIZES = new Set([
   "1024x1024",
   "1024x1536",
@@ -30,6 +33,7 @@ const DEFAULT_CASE_IMAGE_SIZE =
 
 type GenerateOptions = {
   force?: boolean;
+  provider?: "gemini" | "openai";
 };
 
 function pluckString(value: unknown): string {
@@ -54,10 +58,22 @@ function truncatePrompt(value: string): string {
   return `${value.slice(0, MAX_PROMPT_LENGTH - 3)}...`;
 }
 
+const SPECIES_ENVIRONMENT: Record<string, string> = {
+  equine: "in a clean stable or pasture setting",
+  bovine: "on a farm with natural rural lighting",
+  canine: "in a modern veterinary clinic exam room",
+  feline: "in a quiet veterinary examination room",
+  ovine: "in an open field or farm pen",
+  caprine: "in a farmyard or pastoral setting",
+  porcine: "in a clean farm environment",
+  camelid: "in an open pastoral or farm setting",
+  avian: "in a clinical avian examination setting",
+};
+
 function buildPromptFromCase(caseData: CaseRecord): string {
   const title = pluckString(caseData["title"]);
   const condition = pluckString(caseData["condition"]);
-  const species = pluckString(caseData["species"]);
+  const species = pluckString(caseData["species"]).toLowerCase();
   const description = pluckString(caseData["description"]);
 
   const details = (() => {
@@ -75,14 +91,18 @@ function buildPromptFromCase(caseData: CaseRecord): string {
     return "";
   })();
 
-  const baseAnimal = firstNonEmpty(title, species, condition).toLowerCase();
-  const subject = baseAnimal
-    ? `a ${baseAnimal}`
-    : "an animal patient relevant to the veterinary case";
+  const patientName = pluckString(caseData["patient_name"]);
+  const subject = patientName
+    ? `${patientName} the ${species || "animal"}`
+    : species
+      ? `a ${species} patient`
+      : "an animal patient";
+
+  const env = SPECIES_ENVIRONMENT[species] ?? "in a professional veterinary setting";
 
   const conditionClause = condition
-    ? `showing clinical features consistent with ${condition.toLowerCase()}`
-    : "capturing the primary clinical concern";
+    ? `presenting with clinical signs consistent with ${condition.toLowerCase()}`
+    : "showing the primary clinical concern";
 
   const descriptiveBits = [description, details]
     .map((segment) => segment.replace(/\s+/g, " ").trim())
@@ -91,11 +111,11 @@ function buildPromptFromCase(caseData: CaseRecord): string {
     .join(" ");
 
   const prompt = [
-    "Hyper-realistic veterinary photograph",
-    `of ${subject}`,
+    "Professional veterinary clinical photograph",
+    `of ${subject} ${env}`,
     conditionClause,
-    descriptiveBits ? `Context: ${descriptiveBits}` : "",
-    "Cinematic lighting, shallow depth of field, professional documentary style, 8k detail, high dynamic range",
+    descriptiveBits ? `Clinical context: ${descriptiveBits.slice(0, 300)}` : "",
+    "Realistic medical documentation style, natural clinical lighting, detailed and accurate anatomy, no text overlays or diagrams",
   ]
     .filter(Boolean)
     .join(". ");
@@ -105,24 +125,90 @@ function buildPromptFromCase(caseData: CaseRecord): string {
 
 function buildSafetyFallbackPrompt(caseData: CaseRecord): string {
   const title = pluckString(caseData["title"]);
-  const species = pluckString(caseData["species"]);
+  const species = pluckString(caseData["species"]).toLowerCase();
   const condition = pluckString(caseData["condition"]);
 
   const baseAnimal = firstNonEmpty(title, species).toLowerCase();
   const subject = baseAnimal
     ? `a ${baseAnimal}`
-    : "an animal patient relevant to the veterinary scenario";
+    : "an animal patient in a veterinary setting";
+
+  const env = SPECIES_ENVIRONMENT[species] ?? "in a professional veterinary setting";
 
   const prompt = [
-    "Documentary-style veterinary photograph",
-    `of ${subject}`,
-    condition ? `gentle focus on wellbeing during ${condition.toLowerCase()}` : "",
-    "Natural lighting, compassionate tone, high detail",
+    "Gentle veterinary photograph",
+    `of ${subject} ${env}`,
+    condition ? `resting comfortably, focus on overall wellbeing during ${condition.toLowerCase()}` : "",
+    "Natural lighting, compassionate clinical tone, high detail",
   ]
     .filter(Boolean)
     .join(". ");
 
   return truncatePrompt(prompt);
+}
+
+// ── Gemini Imagen via REST ──
+
+async function generateWithGemini(
+  prompt: string,
+): Promise<Buffer | null> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return null;
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "x-goog-api-key": key,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      instances: [{ prompt }],
+      parameters: {
+        sampleCount: 1,
+        aspectRatio: "1:1",
+        personGeneration: "dont_allow",
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Gemini Imagen responded ${res.status}: ${text}`);
+  }
+
+  const data = await res.json();
+  const b64 = data?.predictions?.[0]?.bytesBase64Encoded;
+  if (!b64) {
+    throw new Error("Gemini Imagen returned no image data");
+  }
+
+  return Buffer.from(b64, "base64");
+}
+
+// ── OpenAI DALL-E ──
+
+async function generateWithOpenAI(
+  openai: OpenAI,
+  prompt: string,
+): Promise<Buffer | null> {
+  const response = await openai.images.generate({
+    model: CASE_IMAGE_MODEL,
+    prompt,
+    n: 1,
+    size: DEFAULT_CASE_IMAGE_SIZE as Parameters<
+      OpenAI["images"]["generate"]
+    >[0]["size"],
+    response_format: "b64_json",
+  });
+
+  const b64 = response.data?.[0]?.b64_json;
+  if (!b64) {
+    throw new Error("DALL-E returned no image data");
+  }
+
+  return Buffer.from(b64, "base64");
 }
 
 async function uploadImage(
@@ -158,7 +244,7 @@ async function uploadImage(
 
 export async function generateCaseImage(
   supabase: SupabaseClient,
-  openai: OpenAI,
+  openai: OpenAI | null,
   caseData: CaseRecord,
   options: GenerateOptions = {}
 ): Promise<string | null> {
@@ -183,56 +269,48 @@ export async function generateCaseImage(
     candidatePrompts.push(fallbackPrompt);
   }
 
-  let lastError: unknown = null;
-  let response: Awaited<ReturnType<OpenAI["images"]["generate"]>> | null =
-    null;
+  const requestedProvider = options.provider ?? CASE_IMAGE_PROVIDER;
+  const providers = requestedProvider === "gemini"
+    ? ["gemini", "openai"]
+    : ["openai"];
 
-  for (const prompt of candidatePrompts) {
-    try {
-      response = await openai.images.generate({
-        model: CASE_IMAGE_MODEL,
-        prompt,
-        n: 1,
-        size: DEFAULT_CASE_IMAGE_SIZE as Parameters<
-          OpenAI["images"]["generate"]
-        >[0]["size"],
-        response_format: "b64_json",
-      });
-      lastError = null;
-      break;
-    } catch (error) {
-      lastError = error;
-      const message =
-        error && typeof error === "object"
-          ? "message" in error
-            ? String((error as { message?: unknown }).message ?? "")
-            : ""
-          : "";
-      const isSafetyRejection =
-        typeof message === "string" &&
-        message.toLowerCase().includes("safety") &&
-        message.toLowerCase().includes("prompt");
+  let imageBuffer: Buffer | null = null;
 
-      if (!isSafetyRejection) {
-        break;
+  for (const provider of providers) {
+    for (const prompt of candidatePrompts) {
+      try {
+        if (provider === "gemini") {
+          imageBuffer = await generateWithGemini(prompt);
+        } else if (openai) {
+          imageBuffer = await generateWithOpenAI(openai, prompt);
+        }
+
+        if (imageBuffer) break;
+      } catch (error) {
+        const message =
+          error && typeof error === "object"
+            ? "message" in error
+              ? String((error as { message?: unknown }).message ?? "")
+              : ""
+            : "";
+        console.warn(`[case-image] ${provider} attempt failed: ${message}`);
+
+        const isSafetyRejection =
+          typeof message === "string" &&
+          message.toLowerCase().includes("safety") &&
+          message.toLowerCase().includes("prompt");
+
+        if (!isSafetyRejection) break;
       }
     }
+    if (imageBuffer) break;
   }
 
-  if (!response) {
-    if (lastError instanceof Error) {
-      throw lastError;
-    }
-    throw new Error("Case image generation failed without a response");
+  if (!imageBuffer) {
+    throw new Error("Case image generation failed across all providers");
   }
 
-  const b64 = response.data?.[0]?.b64_json;
-  if (!b64) {
-    throw new Error("Case image generation returned no data");
-  }
-
-  const buffer = Buffer.from(b64, "base64");
-  const publicUrl = await uploadImage(supabase, caseId, buffer);
+  const publicUrl = await uploadImage(supabase, caseId, imageBuffer);
 
   const { error } = await supabase
     .from("cases")
