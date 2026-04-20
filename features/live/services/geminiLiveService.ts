@@ -1,8 +1,6 @@
 import {
-  LIVE_AUDIO_CONFIG,
   GEMINI_LIVE_MODEL,
   type LiveEvent,
-  type LiveEventType,
 } from "../types";
 
 export type LiveServiceCallbacks = {
@@ -10,11 +8,6 @@ export type LiveServiceCallbacks = {
 };
 
 const GEMINI_WS_BASE = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent";
-
-let messageIdCounter = 0;
-function nextId(): string {
-  return `msg_${Date.now()}_${++messageIdCounter}`;
-}
 
 export class GeminiLiveService {
   private ws: WebSocket | null = null;
@@ -75,20 +68,19 @@ export class GeminiLiveService {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
     const setupMessage = {
-      id: nextId(),
       setup: {
         model: `models/${GEMINI_LIVE_MODEL}`,
-        generation_config: {
-          response_modalities: ["AUDIO"],
-          speech_config: {
-            voice_config: {
-              prebuilt_voice_config: {
-                voice_name: "Orus",
+        generationConfig: {
+          responseModalities: ["AUDIO"],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: "Orus",
               },
             },
           },
         },
-        system_instruction: {
+        systemInstruction: {
           parts: [{ text: systemInstruction }],
         },
       },
@@ -162,12 +154,11 @@ export class GeminiLiveService {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
     const message = {
-      id: nextId(),
-      realtime_input: {
-        media_chunks: [
+      realtimeInput: {
+        mediaChunks: [
           {
             data: arrayBufferToBase64(pcmChunk),
-            mime_type: "audio/pcm;rate=16000",
+            mimeType: "audio/pcm;rate=16000",
           },
         ],
       },
@@ -180,15 +171,14 @@ export class GeminiLiveService {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
     const message = {
-      id: nextId(),
-      client_content: {
+      clientContent: {
         turns: [
           {
             role: "user",
             parts: [{ text }],
           },
         ],
-        turn_complete: true,
+        turnComplete: true,
       },
     };
 
@@ -207,10 +197,9 @@ export class GeminiLiveService {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
     const message = {
-      id: nextId(),
-      client_content: {
+      clientContent: {
         turns: [],
-        turn_complete: true,
+        turnComplete: true,
       },
     };
 
