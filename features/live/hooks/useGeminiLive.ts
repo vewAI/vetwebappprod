@@ -20,6 +20,7 @@ export type UseGeminiLiveResult = {
   sendText: (text: string) => void;
   switchPersona: (persona: PersonaInstruction) => void;
   interrupt: () => void;
+  setOnAudio: (cb: ((chunks: ArrayBuffer[]) => void) | null) => void;
 };
 
 let entryIdCounter = 0;
@@ -34,6 +35,7 @@ export function useGeminiLive(): UseGeminiLiveResult {
 
   const audioChunksRef = useRef<ArrayBuffer[]>([]);
   const onAudioRef = useRef<((chunks: ArrayBuffer[]) => void) | null>(null);
+  const personaRef = useRef<PersonaInstruction | null>(null);
 
   // Initialize service once
   useEffect(() => {
@@ -48,11 +50,10 @@ export function useGeminiLive(): UseGeminiLiveResult {
             if (event.data instanceof ArrayBuffer) {
               audioChunksRef.current.push(event.data);
               setIsSpeaking(true);
-              onAudioRef.current?.(audioChunksRef.current);
             }
             break;
           case "textReceived":
-            if (typeof event.data === "string" && currentPersona) {
+            if (typeof event.data === "string" && personaRef.current) {
               setTranscript((prev) => [
                 ...prev,
                 {
@@ -77,10 +78,15 @@ export function useGeminiLive(): UseGeminiLiveResult {
               ]);
             }
             break;
-          case "turnComplete":
+          case "turnComplete": {
+            const chunks = audioChunksRef.current;
+            if (chunks.length > 0) {
+              onAudioRef.current?.([...chunks]);
+              audioChunksRef.current = [];
+            }
             setIsSpeaking(false);
-            audioChunksRef.current = [];
             break;
+          }
           case "interrupted":
             setIsSpeaking(false);
             audioChunksRef.current = [];
@@ -101,13 +107,13 @@ export function useGeminiLive(): UseGeminiLiveResult {
     return () => {
       serviceRef.current?.disconnect();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const connect = useCallback(async (token: string, persona: PersonaInstruction) => {
     if (!serviceRef.current) return;
     setStatus("connecting");
     setCurrentPersona(persona);
+    personaRef.current = persona;
     setError(null);
     setTranscript([]);
 
@@ -135,6 +141,7 @@ export function useGeminiLive(): UseGeminiLiveResult {
 
   const switchPersona = useCallback((persona: PersonaInstruction) => {
     setCurrentPersona(persona);
+    personaRef.current = persona;
     serviceRef.current?.sendSystemInstruction(persona.systemInstruction);
   }, []);
 
@@ -142,6 +149,10 @@ export function useGeminiLive(): UseGeminiLiveResult {
     serviceRef.current?.interrupt();
     setIsSpeaking(false);
     audioChunksRef.current = [];
+  }, []);
+
+  const setOnAudio = useCallback((cb: ((chunks: ArrayBuffer[]) => void) | null) => {
+    onAudioRef.current = cb;
   }, []);
 
   return {
@@ -156,5 +167,6 @@ export function useGeminiLive(): UseGeminiLiveResult {
     sendText,
     switchPersona,
     interrupt,
+    setOnAudio,
   };
 }

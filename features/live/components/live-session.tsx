@@ -52,26 +52,16 @@ export function LiveSession({
   // Wire mic audio to live session
   useEffect(() => {
     mic.onAudioData?.((chunk) => {
-      if (live.status === "connected") {
-        live.sendAudio(chunk);
-      }
+      live.sendAudio(chunk);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live.status]);
+  }, [mic, live]);
 
   // Wire live audio output to player
   useEffect(() => {
-    // The live hook exposes a way to receive audio chunks
-    // We handle this in the onEvent callback via play
-  }, []);
-
-  // Handle audio playback from live session
-  useEffect(() => {
-    const handleAudioChunks = () => {
-      // Access internal audio chunks from the live service
-    };
-    return handleAudioChunks;
-  }, []);
+    live.setOnAudio((chunks) => {
+      player.play(chunks);
+    });
+  }, [live, player]);
 
   // Connect on mount
   useEffect(() => {
