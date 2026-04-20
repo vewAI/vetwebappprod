@@ -51,7 +51,12 @@ export function LiveSession({
 
   // Wire mic audio to live session
   useEffect(() => {
+    let chunkCount = 0;
     mic.onAudioData?.((chunk) => {
+      chunkCount++;
+      if (chunkCount <= 3) {
+        console.log("[Session] Mic chunk sent:", chunk.byteLength, "bytes (#" + chunkCount + ")");
+      }
       live.sendAudio(chunk);
     });
   }, [mic, live]);
@@ -59,6 +64,7 @@ export function LiveSession({
   // Wire live audio output to player
   useEffect(() => {
     live.setOnAudio((chunks) => {
+      console.log("[Session] Playing audio:", chunks.length, "chunks,", chunks.reduce((s, c) => s + c.byteLength, 0), "bytes total");
       player.play(chunks);
     });
   }, [live, player]);
@@ -66,7 +72,10 @@ export function LiveSession({
   // Connect on mount
   useEffect(() => {
     async function init() {
-      if (!persona) return;
+      if (!persona) {
+        console.log("[Session] No persona yet, skipping init");
+        return;
+      }
 
       try {
         const { getAccessToken } = await import("@/lib/auth-headers");
@@ -87,9 +96,10 @@ export function LiveSession({
         }
 
         const { token } = await tokenRes.json();
+        console.log("[Session] Got token, connecting with persona:", persona.displayName);
         await live.connect(token, persona);
       } catch (err) {
-        console.error("Live session init failed:", err);
+        console.error("[Session] Init failed:", err);
       }
     }
 

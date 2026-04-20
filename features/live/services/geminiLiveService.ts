@@ -15,6 +15,8 @@ export class GeminiLiveService {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private setupResolve: (() => void) | null = null;
+  private audioChunkCount = 0;
 
   constructor(callbacks: LiveServiceCallbacks) {
     this.callbacks = callbacks;
@@ -24,6 +26,7 @@ export class GeminiLiveService {
     this.disconnect();
 
     const url = `${GEMINI_WS_BASE}?key=${encodeURIComponent(token)}`;
+    console.log("[Live] Connecting to Gemini Live API...");
 
     return new Promise((resolve, reject) => {
       try {
@@ -31,16 +34,30 @@ export class GeminiLiveService {
 
         this.ws.onopen = () => {
           this.reconnectAttempts = 0;
+          console.log("[Live] WebSocket opened, sending setup...");
           this.sendSetup(systemInstruction);
-          this.callbacks.onEvent({ type: "connected" });
-          resolve();
+          // Wait for setupComplete before resolving
+          this.setupResolve = () => {
+            console.log("[Live] Setup complete, session ready");
+            this.callbacks.onEvent({ type: "connected" });
+            resolve();
+          };
+          // Timeout fallback — if no setupComplete in 5s, resolve anyway
+          setTimeout(() => {
+            if (this.setupResolve) {
+              console.log("[Live] No setupComplete received, resolving anyway");
+              this.setupResolve();
+              this.setupResolve = null;
+            }
+          }, 5000);
         };
 
         this.ws.onmessage = (event) => {
           this.handleMessage(event);
         };
 
-        this.ws.onerror = () => {
+        this.ws.onerror = (e) => {
+          console.error("[Live] WebSocket error", e);
           this.callbacks.onEvent({
             type: "error",
             data: "WebSocket connection error",
@@ -48,6 +65,7 @@ export class GeminiLiveService {
         };
 
         this.ws.onclose = (event) => {
+          console.log("[Live] WebSocket closed", event.code, event.reason);
           const wasIntentional = event.code === 1000;
           this.callbacks.onEvent({
             type: wasIntentional ? "disconnected" : "error",
@@ -86,14 +104,21 @@ export class GeminiLiveService {
       },
     };
 
+    console.log("[Live] Setup message model:", setupMessage.setup.model);
     this.ws.send(JSON.stringify(setupMessage));
   }
 
   private handleMessage(event: MessageEvent): void {
     try {
-      const data = JSON.parse(typeof event.data === "string" ? event.data : "{}");
+      const raw = typeof event.data === "string" ? event.data : "{}";
+      const data = JSON.parse(raw);
+
+      // Log every message for debugging
+      const keys = Object.keys(data);
+      console.log("[Live] Received message:", keys.join(", "));
 
       if (data.error) {
+        console.error("[Live] API error:", data.error);
         this.callbacks.onEvent({
           type: "error",
           data: data.error.message ?? "Unknown API error",
@@ -101,17 +126,30 @@ export class GeminiLiveService {
         return;
       }
 
+      // Setup complete
+      if (data.setupComplete) {
+        console.log("[Live] Setup complete received");
+        if (this.setupResolve) {
+          this.setupResolve();
+          this.setupResolve = null;
+        }
+        return;
+      }
+
       // Audio response from model
       if (data.serverContent?.modelTurn?.parts) {
+        console.log("[Live] Model turn received, parts:", data.serverContent.modelTurn.parts.length);
         for (const part of data.serverContent.modelTurn.parts) {
           if (part.inlineData?.data) {
             const pcmBuffer = base64ToArrayBuffer(part.inlineData.data);
+            console.log("[Live] Audio chunk:", pcmBuffer.byteLength, "bytes");
             this.callbacks.onEvent({
               type: "audioReceived",
               data: pcmBuffer,
             });
           }
           if (part.text) {
+            console.log("[Live] Text part:", part.text.substring(0, 100));
             this.callbacks.onEvent({
               type: "textReceived",
               data: part.text,
@@ -122,6 +160,7 @@ export class GeminiLiveService {
 
       // Input transcription (what the user said)
       if (data.serverContent?.inputTranscription?.text) {
+        console.log("[Live] User transcription:", data.serverContent.inputTranscription.text);
         this.callbacks.onEvent({
           type: "inputTranscription",
           data: data.serverContent.inputTranscription.text,
@@ -130,6 +169,7 @@ export class GeminiLiveService {
 
       // Model output transcription
       if (data.serverContent?.transcription?.text) {
+        console.log("[Live] Model transcription:", data.serverContent.transcription.text);
         this.callbacks.onEvent({
           type: "textReceived",
           data: data.serverContent.transcription.text,
@@ -138,21 +178,24 @@ export class GeminiLiveService {
 
       // Turn complete
       if (data.serverContent?.turnComplete) {
+        console.log("[Live] Turn complete (audio chunks received:", this.audioChunkCount + ")");
         this.callbacks.onEvent({ type: "turnComplete" });
       }
 
       // Interruption
       if (data.serverContent?.interrupted) {
+        console.log("[Live] Interrupted");
         this.callbacks.onEvent({ type: "interrupted" });
       }
-    } catch {
-      // Non-JSON or unexpected format — ignore
+    } catch (e) {
+      console.warn("[Live] Failed to parse message:", e);
     }
   }
 
   sendAudio(pcmChunk: ArrayBuffer): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
+    this.audioChunkCount++;
     const message = {
       realtimeInput: {
         mediaChunks: [
@@ -186,8 +229,6 @@ export class GeminiLiveService {
   }
 
   sendSystemInstruction(systemInstruction: string): void {
-    // Gemini Live doesn't support mid-session system instruction changes via setup.
-    // Instead, send as a client_content turn with context.
     this.sendText(
       `[SYSTEM: Your persona and instructions have changed. New instructions follow. Adopt this new persona immediately.]\n\n${systemInstruction}`
     );
