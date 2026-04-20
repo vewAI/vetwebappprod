@@ -79,9 +79,15 @@ export function LiveSession({
       if (!persona) return;
 
       try {
+        const { getAccessToken } = await import("@/lib/auth-headers");
+        const accessToken = await getAccessToken().catch(() => null);
+
         const tokenRes = await fetch("/api/live/token", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          },
           body: JSON.stringify({ caseId: caseItem.id }),
         });
 
@@ -137,9 +143,15 @@ export function LiveSession({
     live.disconnect();
 
     try {
+      const { getAccessToken } = await import("@/lib/auth-headers");
+      const accessToken = await getAccessToken().catch(() => null);
+
       await fetch("/api/live/session", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
         body: JSON.stringify({
           attemptId,
           currentStageIndex: progress.currentStageIndex,
