@@ -16,31 +16,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "caseId is required" }, { status: 400 });
     }
 
-    // Check for existing in-progress attempt — use limit(1) to avoid
-    // "multiple rows" error when user has several in-progress attempts
-    const { data: existing, error: existingErr } = await supabase
+    // Close any previous in-progress attempts for this case+user
+    await supabase
       .from("attempts")
-      .select("id, last_stage_index")
+      .update({ completion_status: "abandoned" })
       .eq("case_id", caseId)
       .eq("user_id", user.id)
-      .eq("completion_status", "in_progress")
-      .order("created_at", { ascending: false })
-      .limit(1);
-
-    if (existingErr) {
-      return NextResponse.json(
-        { error: existingErr.message },
-        { status: 500 }
-      );
-    }
-
-    if (existing && existing.length > 0) {
-      return NextResponse.json({
-        attemptId: existing[0].id,
-        currentStageIndex: existing[0].last_stage_index ?? 0,
-        resumed: true,
-      });
-    }
+      .eq("completion_status", "in_progress");
 
     // Create new attempt
     const title = `Live — ${new Date().toISOString()}`;
