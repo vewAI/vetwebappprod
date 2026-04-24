@@ -123,8 +123,22 @@ export function LiveSession({
   useEffect(() => {
     // Count user turns from transcript
     const userTurns = live.transcript.filter((e) => e.speaker === "user").length;
-    // Simple turn counting
+    if (userTurns > 0) {
+      progress.recordTurn();
+    }
   }, [live.transcript]);
+
+  // Auto-advance stage when enough turns completed and AI finishes speaking
+  useEffect(() => {
+    if (progress.canAdvance && !live.isSpeaking && live.status === "connected") {
+      const timer = setTimeout(() => {
+        if (progress.currentStageIndex < progress.stages.length - 1) {
+          progress.advanceStage();
+        }
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [progress.canAdvance, live.isSpeaking, live.status, progress]);
 
   const handleToggleMic = useCallback(async () => {
     if (mic.isRecording) {
@@ -202,24 +216,12 @@ export function LiveSession({
         />
       </div>
 
-      {/* Transcript (toggleable) */}
-      {showTranscript && (
-        <LiveTranscript
-          entries={live.transcript}
-          personaName={persona?.displayName ?? "AI"}
-          isOpen={showTranscript}
-        />
-      )}
-
-      {/* Transcript toggle */}
-      <div className="flex justify-center">
-        <button
-          onClick={() => setShowTranscript((prev) => !prev)}
-          className="text-xs text-muted-foreground hover:text-foreground transition-colors px-4 py-1"
-        >
-          {showTranscript ? "Hide transcript" : "Show transcript"}
-        </button>
-      </div>
+      {/* Transcript */}
+      <LiveTranscript
+        entries={live.transcript}
+        personaName={persona?.displayName ?? "AI"}
+        isOpen={true}
+      />
 
       {/* Bottom: Controls */}
       <LiveControls
