@@ -23,9 +23,12 @@ export function buildPersonaSystemInstruction(params: {
   const stageType = getStageType(stage);
 
   const patientContext = [
-    `Patient: ${caseItem.species}`,
+    `Patient: ${caseItem.patientName ?? "Unnamed"}, ${caseItem.species}`,
+    caseItem.patientAge ? `Age: ${caseItem.patientAge}` : "",
+    caseItem.patientSex ? `Sex: ${caseItem.patientSex}` : "",
     caseItem.condition ? `Presenting complaint: ${caseItem.condition}` : "",
     `Case: ${caseItem.title}`,
+    caseItem.description ? `Description: ${caseItem.description}` : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -40,6 +43,12 @@ export function buildPersonaSystemInstruction(params: {
     ? `\nOWNER BACKGROUND:\n${ownerBackground}`
     : "";
 
+  const clinicalData = buildClinicalDataSection(caseItem, personaRoleKey);
+
+  const stagePromptSection = stage.stagePrompt
+    ? `\nSTAGE INSTRUCTIONS:\n${stage.stagePrompt}`
+    : "";
+
   const instruction = [
     `You are ${displayName}, a ${roleLabel} in a veterinary clinical simulation.`,
     "",
@@ -52,16 +61,18 @@ export function buildPersonaSystemInstruction(params: {
     stageGuidance,
     behaviorSection,
     ownerSection,
+    clinicalData,
+    stagePromptSection,
     "",
     "RULES:",
     "- Stay in character at all times — you are a real person, not an AI assistant",
     "- Respond naturally as a real person would in a clinical setting",
     "- React emotionally as your character would — worried, relieved, confused, annoyed",
+    "- Keep your tone calm and measured — avoid exaggerated or theatrical emotions",
     "- Keep responses conversational and concise — this is voice, not text",
     "- If the student asks about something outside your knowledge, say you don't know rather than making things up",
     "- Never break character or acknowledge that this is a simulation",
     "- Use natural speech patterns: hesitations, filler words, emotions",
-    "- Keep your tone calm and measured — avoid exaggerated or theatrical emotions",
   ].join("\n");
 
   return {
@@ -70,6 +81,29 @@ export function buildPersonaSystemInstruction(params: {
     portraitUrl: persona?.portraitUrl,
     systemInstruction: instruction,
   };
+}
+
+function buildClinicalDataSection(caseItem: Case, personaRoleKey: string): string {
+  const isClinical = personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician";
+  if (!isClinical) return "";
+
+  const sections: string[] = ["\nCLINICAL DATA (factual reference — report values accurately when asked):"];
+
+  if (caseItem.details) {
+    sections.push(`\nCase Details:\n${caseItem.details}`);
+  }
+
+  if (caseItem.physicalExamFindings) {
+    sections.push(`\nPhysical Examination Findings:\n${caseItem.physicalExamFindings}`);
+  }
+
+  if (caseItem.diagnosticFindings) {
+    sections.push(`\nDiagnostic/Lab Results:\n${caseItem.diagnosticFindings}`);
+  }
+
+  if (sections.length === 1) return "";
+
+  return sections.join("\n");
 }
 
 function getRoleLabel(roleKey: string): string {

@@ -19,6 +19,12 @@ type DbCase = {
   is_published?: boolean | null;
   media?: unknown;
   owner_background?: string | null;
+  physical_exam_findings?: string | null;
+  diagnostic_findings?: string | null;
+  details?: string | null;
+  patient_name?: string | null;
+  patient_age?: string | null;
+  patient_sex?: string | null;
 };
 
 export type FetchCasesOptions = {
@@ -164,5 +170,11 @@ export function mapDbCaseToCase(dbCase: DbCase): Case {
     isPublished: dbCase.is_published ?? false,
     media: normalizeCaseMedia(dbCase.media),
     ownerBackground: dbCase.owner_background ?? undefined,
+    physicalExamFindings: dbCase.physical_exam_findings ?? undefined,
+    diagnosticFindings: dbCase.diagnostic_findings ?? undefined,
+    details: dbCase.details ?? undefined,
+    patientName: dbCase.patient_name ?? undefined,
+    patientAge: dbCase.patient_age ?? undefined,
+    patientSex: dbCase.patient_sex ?? undefined,
   };
 }

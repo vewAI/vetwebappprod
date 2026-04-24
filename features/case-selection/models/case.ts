@@ -15,4 +15,10 @@ export type Case = {
     isPublished?: boolean
     media?: CaseMediaItem[]
     ownerBackground?: string
+    physicalExamFindings?: string
+    diagnosticFindings?: string
+    details?: string
+    patientName?: string
+    patientAge?: string
+    patientSex?: string
 };
