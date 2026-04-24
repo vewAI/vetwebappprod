@@ -20,7 +20,7 @@ export class GeminiLiveService {
     try {
       const { GoogleGenAI, Modality } = await import("@google/genai/web");
 
-      const ai = new GoogleGenAI({ apiKey: token });
+      const ai = new GoogleGenAI({ apiKey: token, httpOptions: { apiVersion: "v1alpha" } });
 
       this.session = await ai.live.connect({
         model: "gemini-3.1-flash-live-preview",
