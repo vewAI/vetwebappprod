@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     // In production, consider using ephemeral tokens from a Token Server.
     return NextResponse.json({
       token: apiKey,
-      model: "gemini-live-2.5-flash-preview",
+      model: "gemini-3.1-flash-live-preview",
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

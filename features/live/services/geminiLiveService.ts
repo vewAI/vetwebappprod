@@ -23,7 +23,7 @@ export class GeminiLiveService {
       const ai = new GoogleGenAI({ apiKey: token });
 
       this.session = await ai.live.connect({
-        model: "gemini-live-2.5-flash-preview",
+        model: "gemini-3.1-flash-live-preview",
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {

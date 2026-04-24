@@ -60,7 +60,7 @@ export const LIVE_AUDIO_CONFIG: AudioConfig = {
 };
 
 export const GEMINI_LIVE_MODEL =
-  "gemini-live-2.5-flash-preview";
+  "gemini-3.1-flash-live-preview";
 
 export const STAGE_TYPE_TO_PERSONA: Record<string, string> = {
   history: "owner",
