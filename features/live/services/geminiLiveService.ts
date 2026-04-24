@@ -18,7 +18,7 @@ export class GeminiLiveService {
     console.log("[Live] Connecting via @google/genai SDK...");
 
     try {
-      const { GoogleGenAI, Modality } = await import("@google/genai");
+      const { GoogleGenAI, Modality } = await import("@google/genai/web");
 
       const ai = new GoogleGenAI({ apiKey: token });
 
@@ -66,9 +66,10 @@ export class GeminiLiveService {
       console.log("[Live] Connected successfully");
     } catch (err) {
       console.error("[Live] Connect failed:", err);
+      const msg = err instanceof Error ? err.message : String(err);
       this.callbacks.onEvent({
         type: "error",
-        data: err instanceof Error ? err.message : "Connection failed",
+        data: msg,
       });
       throw err;
     }
