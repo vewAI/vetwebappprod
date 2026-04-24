@@ -29,7 +29,7 @@ export class GeminiLiveService {
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: {
-                voiceName: "Orus",
+                voiceName: "Kore",
               },
             },
           },
