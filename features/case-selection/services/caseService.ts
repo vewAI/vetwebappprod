@@ -18,6 +18,7 @@ type DbCase = {
   tags?: string[] | null;
   is_published?: boolean | null;
   media?: unknown;
+  owner_background?: string | null;
 };
 
 export type FetchCasesOptions = {
@@ -162,5 +163,6 @@ export function mapDbCaseToCase(dbCase: DbCase): Case {
     tags: dbCase.tags ?? [],
     isPublished: dbCase.is_published ?? false,
     media: normalizeCaseMedia(dbCase.media),
+    ownerBackground: dbCase.owner_background ?? undefined,
   };
 }

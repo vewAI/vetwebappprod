@@ -31,15 +31,20 @@ export function usePersonaSwitcher(
     // Get persona data from directory
     const personaEntry = personaDirectory[personaRoleKey];
 
+    // Inject owner_background for owner personas
+    const ownerBackground = personaRoleKey === "owner" ? caseItem.ownerBackground : undefined;
+
     return buildPersonaSystemInstruction({
       caseItem,
       stage,
       personaRoleKey,
+      ownerBackground,
       persona: personaEntry
         ? {
             displayName: personaEntry.displayName,
             portraitUrl: personaEntry.portraitUrl,
             sex: personaEntry.sex,
+            behaviorPrompt: personaEntry.behaviorPrompt,
           }
         : undefined,
     });

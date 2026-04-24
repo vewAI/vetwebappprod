@@ -13,9 +13,10 @@ export function buildPersonaSystemInstruction(params: {
   caseItem: Case;
   stage: Stage;
   personaRoleKey: string;
+  ownerBackground?: string;
   persona?: PersonaRow;
 }): PersonaInstruction {
-  const { caseItem, stage, personaRoleKey, persona } = params;
+  const { caseItem, stage, personaRoleKey, ownerBackground, persona } = params;
 
   const displayName = persona?.displayName ?? personaRoleKey;
   const roleLabel = getRoleLabel(personaRoleKey);
@@ -35,6 +36,10 @@ export function buildPersonaSystemInstruction(params: {
 
   const stageGuidance = getStageGuidance(stageType, personaRoleKey);
 
+  const ownerSection = ownerBackground
+    ? `\nOWNER BACKGROUND:\n${ownerBackground}`
+    : "";
+
   const instruction = [
     `You are ${displayName}, a ${roleLabel} in a veterinary clinical simulation.`,
     "",
@@ -46,6 +51,7 @@ export function buildPersonaSystemInstruction(params: {
     "",
     stageGuidance,
     behaviorSection,
+    ownerSection,
     "",
     "RULES:",
     "- Stay in character at all times — you are a real person, not an AI assistant",

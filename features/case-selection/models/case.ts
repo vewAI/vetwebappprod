@@ -14,4 +14,5 @@ export type Case = {
     tags?: string[]
     isPublished?: boolean
     media?: CaseMediaItem[]
+    ownerBackground?: string
 };

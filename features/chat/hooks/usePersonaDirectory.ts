@@ -13,6 +13,7 @@ export type PersonaEntry = {
   portraitUrl?: string;
   voiceId?: string;
   sex?: "male" | "female" | "neutral";
+  behaviorPrompt?: string;
 };
 
 export type UsePersonaDirectoryResult = {
@@ -186,6 +187,7 @@ export function usePersonaDirectory(caseId: string): UsePersonaDirectoryResult {
             portraitUrl: candidatePortraitUrl ?? existing?.portraitUrl,
             voiceId: candidateVoiceId ?? existing?.voiceId,
             sex: candidateSex ?? existing?.sex,
+            behaviorPrompt: (typeof row?.behavior_prompt === "string" ? row.behavior_prompt : undefined) ?? existing?.behaviorPrompt,
           };
 
           console.debug("personaDirectory load", {
