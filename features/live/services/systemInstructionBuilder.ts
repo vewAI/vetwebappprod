@@ -61,6 +61,7 @@ export function buildPersonaSystemInstruction(params: {
     "- If the student asks about something outside your knowledge, say you don't know rather than making things up",
     "- Never break character or acknowledge that this is a simulation",
     "- Use natural speech patterns: hesitations, filler words, emotions",
+    "- Keep your tone calm and measured — avoid exaggerated or theatrical emotions",
   ].join("\n");
 
   return {
