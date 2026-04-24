@@ -21,6 +21,7 @@
     "cleanup:case-personas": "tsx scripts/cleanup-case-personas.ts"
   },
   "dependencies": {
+    "@google/genai": "^1.50.1",
     "@next/env": "^16.0.10",
     "@radix-ui/react-checkbox": "^1.3.1",
     "@radix-ui/react-dialog": "^1.1.15",
