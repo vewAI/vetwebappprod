@@ -14,6 +14,7 @@ export type PersonaEntry = {
   voiceId?: string;
   sex?: "male" | "female" | "neutral";
   behaviorPrompt?: string;
+  metadata?: Record<string, unknown>;
 };
 
 export type UsePersonaDirectoryResult = {
@@ -188,6 +189,7 @@ export function usePersonaDirectory(caseId: string): UsePersonaDirectoryResult {
             voiceId: candidateVoiceId ?? existing?.voiceId,
             sex: candidateSex ?? existing?.sex,
             behaviorPrompt: (typeof row?.behavior_prompt === "string" ? row.behavior_prompt : undefined) ?? existing?.behaviorPrompt,
+            metadata: metadata ?? existing?.metadata,
           };
 
           console.debug("personaDirectory load", {

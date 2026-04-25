@@ -297,6 +297,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Inject the case `details` field as a fallback reference for nurse/lab personas.
+    // When specific physical exam or lab values are missing, the agent can consult
+    // the full case details to find relevant information.
+    if (caseRecord && typeof caseRecord === "object") {
+      const detailsField = (caseRecord as Record<string, unknown>)["details"];
+      const detailsText = typeof detailsField === "string" ? detailsField.trim() : "";
+      if (detailsText && (personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician")) {
+        enhancedMessages.unshift({
+          role: "system",
+          content: `CASE DETAILS (fallback reference — use only when physical exam findings or lab results don't cover what the student asked):\n${detailsText}`,
+        });
+      }
+    }
+
     // Enforce on_demand findings release after persona resolution so we know
     // NOTE: The on_demand clarifying prompt ("Please request a specific finding...")
     // has been removed. Previously it would intercept general findings requests and
@@ -535,6 +549,24 @@ DO NOT generate markdown image links (like ![alt](url)) or text descriptions of 
     if (personaBehaviorPrompt && /(?:invent|guess|fabricat|plausibl)/i.test(personaBehaviorPrompt)) {
       console.warn("Rejected persona behavior prompt due to fabrication instructions", { caseId, personaRoleKey });
       personaBehaviorPrompt = undefined;
+    }
+
+    // Inject species-specific clinical knowledge for nurse/lab personas.
+    // The nurse_specializations data is stored in personaRow.metadata.nurseSpecialization.
+    if (personaRow?.metadata && typeof personaRow.metadata === "object" && (personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician")) {
+      try {
+        const { formatSpeciesKnowledgePrompt, extractSpecializationFromMetadata } = await import("@/features/personas/services/speciesKnowledgeFormatter");
+        const spec = extractSpecializationFromMetadata(personaRow.metadata as Record<string, unknown>);
+        if (spec) {
+          const knowledge = formatSpeciesKnowledgePrompt(spec);
+          if (knowledge) {
+            enhancedMessages.unshift({ role: "system", content: knowledge });
+            console.log(`[chat] Injected species knowledge for personaRoleKey="${personaRoleKey}"`);
+          }
+        }
+      } catch (e) {
+        console.warn("[chat] Failed to inject species knowledge", e);
+      }
     }
 
     let personaVoiceId: string | undefined = undefined;
@@ -1391,7 +1423,7 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     // deterministic setting to reduce the chance of interpretive language being generated.
     const isSensitivePersona = personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician";
     const isOwnerPersonaForTemp = personaRoleKey === "owner";
-    const tempForCall = isSensitivePersona && (isPhysicalStage || isLabStage) ? 0.0 : isOwnerPersonaForTemp ? 0.2 : 0.7;
+    const tempForCall = isSensitivePersona && (isPhysicalStage || isLabStage) ? 0.2 : isOwnerPersonaForTemp ? 0.4 : 0.7;
 
     // Persona-boundary annotation
     // The conversation history may contain assistant messages from a different

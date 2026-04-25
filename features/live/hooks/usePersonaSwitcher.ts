@@ -6,6 +6,7 @@ import type { Stage } from "@/features/stages/types";
 import type { PersonaEntry } from "@/features/chat/hooks/usePersonaDirectory";
 import { STAGE_TYPE_TO_PERSONA, type PersonaInstruction } from "../types";
 import { buildPersonaSystemInstruction } from "../services/systemInstructionBuilder";
+import { formatSpeciesKnowledgePrompt, extractSpecializationFromMetadata } from "@/features/personas/services/speciesKnowledgeFormatter";
 
 export function usePersonaSwitcher(
   caseItem: Case | null,
@@ -34,6 +35,15 @@ export function usePersonaSwitcher(
     // Inject owner_background for owner personas
     const ownerBackground = personaRoleKey === "owner" ? caseItem.ownerBackground : undefined;
 
+    // Extract and format species-specific knowledge for nurse/lab personas
+    let speciesKnowledge: string | undefined;
+    if ((personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician") && personaEntry?.metadata) {
+      const spec = extractSpecializationFromMetadata(personaEntry.metadata);
+      if (spec) {
+        speciesKnowledge = formatSpeciesKnowledgePrompt(spec);
+      }
+    }
+
     return buildPersonaSystemInstruction({
       caseItem,
       stage,
@@ -45,6 +55,7 @@ export function usePersonaSwitcher(
             portraitUrl: personaEntry.portraitUrl,
             sex: personaEntry.sex,
             behaviorPrompt: personaEntry.behaviorPrompt,
+            speciesKnowledge,
           }
         : undefined,
     });

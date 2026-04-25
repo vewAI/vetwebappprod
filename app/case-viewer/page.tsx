@@ -67,6 +67,7 @@ export default function CaseViewerPage() {
   // Persona configs for owner and nurse
   const [ownerPersonaConfig, setOwnerPersonaConfig] = useState<Partial<PersonaConfig>>({});
   const [nursePersonaConfig, setNursePersonaConfig] = useState<Partial<PersonaConfig>>({});
+  const [nurseSpecialization, setNurseSpecialization] = useState<Record<string, unknown> | null>(null);
   const [personaConfigsDirty, setPersonaConfigsDirty] = useState(false);
   const [automationState, setAutomationState] = useState<
     Record<
@@ -150,6 +151,11 @@ export default function CaseViewerPage() {
         setOwnerPersonaConfig(extractPersonaConfig(ownerRow));
         setNursePersonaConfig(extractPersonaConfig(nurseRow));
         setPersonaConfigsDirty(false);
+
+        // Extract nurse specialization data for read-only display
+        const nurseMetadata = nurseRow?.metadata && typeof nurseRow.metadata === "object" ? (nurseRow.metadata as Record<string, unknown>) : null;
+        const nurseSpec = nurseMetadata?.nurseSpecialization ?? null;
+        setNurseSpecialization(nurseSpec as Record<string, unknown> | null);
 
         // Get all case personas for display
         let combined = [...list];
@@ -284,7 +290,7 @@ export default function CaseViewerPage() {
 
       const configs = [
         { roleKey: "owner", config: ownerPersonaConfig },
-        { roleKey: "veterinary-nurse", config: nursePersonaConfig },
+        // Nurse is auto-assigned from nurse_specializations; do not save manually
       ];
 
       for (const { roleKey, config } of configs) {
@@ -847,10 +853,15 @@ export default function CaseViewerPage() {
               <PersonaEditor role="owner" caseId={caseIdValue} value={ownerPersonaConfig} onChange={handleOwnerPersonaChange} readOnly={!editable} />
             </div>
 
-            {/* Nurse Persona */}
+            {/* Nurse Persona — Auto-assigned based on species */}
             <div>
-              <h3 className="font-medium mb-3 text-lg">Veterinary Nurse</h3>
-              <PersonaEditor role="nurse" caseId={caseIdValue} value={nursePersonaConfig} onChange={handleNursePersonaChange} readOnly={!editable} />
+              <div className="flex items-center gap-2 mb-3">
+                <h3 className="font-medium text-lg">Veterinary Nurse</h3>
+                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                  {"Auto-assigned (" + (formState?.species ?? "Unknown species") + ")"}
+                </span>
+              </div>
+              <PersonaEditor role="nurse" caseId={caseIdValue} value={nursePersonaConfig} onChange={handleNursePersonaChange} readOnly={true} specializationData={nurseSpecialization as any} />
             </div>
           </div>
         </div>

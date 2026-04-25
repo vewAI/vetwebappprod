@@ -56,6 +56,8 @@ type PersonaEditorProps = {
   onChange: (config: PersonaConfig) => void;
   /** Read-only mode (view mode) */
   readOnly?: boolean;
+  /** Nurse specialization data for read-only display */
+  specializationData?: Record<string, unknown> | null;
 };
 
 /**
@@ -69,6 +71,7 @@ export function PersonaEditor({
   value,
   onChange,
   readOnly,
+  specializationData,
 }: PersonaEditorProps) {
   const [avatarTemplates, setAvatarTemplates] = useState<AvatarTemplate[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
@@ -242,30 +245,90 @@ export function PersonaEditor({
 
   // Read-only view
   if (readOnly) {
+    const specData = specializationData;
+    const vitalRanges = specData?.vitalReferenceRanges as Record<string, string> | undefined;
+    const labRanges = specData?.labReferenceRanges as Record<string, string> | undefined;
+    const pathologies = specData?.commonPathologies as string[] | undefined;
+    const skills = specData?.skills as Array<{ name: string; category?: string }> | undefined;
+
     return (
-      <div className="flex items-start gap-4 p-4 border rounded-lg bg-muted/30">
-        {config.imageUrl ? (
-          <div className="relative h-20 w-20 overflow-hidden rounded-full border-2 border-primary/20 flex-shrink-0">
-            <Image
-              src={config.imageUrl}
-              alt={config.displayName}
-              fill
-              className="object-cover"
-              unoptimized
-            />
-          </div>
-        ) : (
-          <div className="h-20 w-20 rounded-full border-2 border-dashed border-muted-foreground/30 flex items-center justify-center flex-shrink-0">
-            <User className="h-8 w-8 text-muted-foreground/50" />
-          </div>
-        )}
-        <div className="flex-1 min-w-0">
-          <h4 className="font-medium text-lg truncate">{config.displayName}</h4>
-          <div className="text-sm text-muted-foreground space-y-1 mt-1">
-            <p>Gender: <span className="capitalize">{config.sex}</span></p>
-            <p>Voice: {VOICE_PRESETS.find((v) => v.id === config.voiceId)?.label ?? config.voiceId}</p>
+      <div className="p-4 border rounded-lg bg-muted/30 space-y-3">
+        <div className="flex items-start gap-4">
+          {config.imageUrl ? (
+            <div className="relative h-20 w-20 overflow-hidden rounded-full border-2 border-primary/20 flex-shrink-0">
+              <Image
+                src={config.imageUrl}
+                alt={config.displayName}
+                fill
+                className="object-cover"
+                unoptimized
+              />
+            </div>
+          ) : (
+            <div className="h-20 w-20 rounded-full border-2 border-dashed border-muted-foreground/30 flex items-center justify-center flex-shrink-0">
+              <User className="h-8 w-8 text-muted-foreground/50" />
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <h4 className="font-medium text-lg truncate">{config.displayName}</h4>
+            <div className="text-sm text-muted-foreground space-y-1 mt-1">
+              <p>Gender: <span className="capitalize">{config.sex}</span></p>
+              <p>Voice: {VOICE_PRESETS.find((v) => v.id === config.voiceId)?.label ?? config.voiceId}</p>
+            </div>
           </div>
         </div>
+
+        {/* Species Specialization Details */}
+        {role === "nurse" && specData && (
+          <div className="border-t pt-3 space-y-2">
+            {skills && skills.length > 0 && (
+              <div>
+                <h5 className="text-xs font-medium text-muted-foreground uppercase mb-1">Specialized Skills</h5>
+                <div className="flex flex-wrap gap-1">
+                  {skills.map((s, i) => (
+                    <span key={i} className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">{s.name}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {vitalRanges && Object.keys(vitalRanges).length > 0 && (
+              <details className="text-sm">
+                <summary className="cursor-pointer text-muted-foreground font-medium text-xs">
+                  Vital Ranges ({Object.keys(vitalRanges).length})
+                </summary>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1 ml-2">
+                  {Object.entries(vitalRanges).map(([k, v]) => (
+                    <span key={k} className="text-xs"><strong>{k}:</strong> {v}</span>
+                  ))}
+                </div>
+              </details>
+            )}
+            {labRanges && Object.keys(labRanges).length > 0 && (
+              <details className="text-sm">
+                <summary className="cursor-pointer text-muted-foreground font-medium text-xs">
+                  Lab Reference Ranges ({Object.keys(labRanges).length})
+                </summary>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1 ml-2 max-h-32 overflow-y-auto">
+                  {Object.entries(labRanges).map(([k, v]) => (
+                    <span key={k} className="text-xs"><strong>{k}:</strong> {v}</span>
+                  ))}
+                </div>
+              </details>
+            )}
+            {pathologies && pathologies.length > 0 && (
+              <details className="text-sm">
+                <summary className="cursor-pointer text-muted-foreground font-medium text-xs">
+                  Common Pathologies ({pathologies.length})
+                </summary>
+                <div className="flex flex-wrap gap-1 mt-1 ml-2">
+                  {pathologies.map((p, i) => (
+                    <span key={i} className="text-xs bg-muted px-2 py-0.5 rounded-full">{p}</span>
+                  ))}
+                </div>
+              </details>
+            )}
+          </div>
+        )}
       </div>
     );
   }

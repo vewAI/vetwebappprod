@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import OpenAi from "openai";
 import crypto from "crypto";
 import { ensureCasePersonas } from "@/features/personas/services/casePersonaPersistence";
+import { applySpecializedNurse } from "@/features/personas/services/nurseSpecializationService";
 import { scheduleCasePersonaPortraitGeneration } from "@/features/personas/services/personaImageService";
 import { scheduleCaseImageGeneration } from "@/features/cases/services/caseImageService";
 import { normalizeCaseMedia, type CaseMediaItem } from "@/features/cases/models/caseMedia";
@@ -293,8 +294,15 @@ export async function PUT(req: Request) {
     console.log(`[cases PUT] Supabase update SUCCESS for case id="${updatedCase?.id}"`);
 
     if (updatedCase?.id) {
-      // Note: Personas are created only on case INSERT, not on UPDATE
-      // Admin can modify personas via PersonaEditor in case-viewer
+      // Re-apply species-specialized nurse when species changes during edit
+      const newSpecies = String(body["species"] ?? "").trim();
+      if (newSpecies) {
+        try {
+          await applySpecializedNurse(supabase, updatedCase.id, newSpecies);
+        } catch (e) {
+          console.warn("[cases PUT] Failed to re-apply specialized nurse", e);
+        }
+      }
 
       try {
         scheduleCasePersonaPortraitGeneration(supabase, openai, updatedCase.id);

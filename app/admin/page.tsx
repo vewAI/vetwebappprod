@@ -89,8 +89,15 @@ export default function AdminPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button className="w-full justify-start" onClick={() => router.push("/admin/nurse-specializations")}>
+            Nurse Specializations
+          </Button>
+          <HelpTip content="Manage species-specific veterinary nurse personas with clinical knowledge bases." />
+        </div>
+
+        <div className="flex items-center gap-2">
           <Button className="w-full justify-start" variant="outline" onClick={() => setSpecsOpen(true)}>
-            📋 App Specifications Reference
+            App Specifications Reference
           </Button>
           <HelpTip content="View core prompt templates, stage definitions, and voice configuration values used by the app." />
           <AppSpecsViewer open={specsOpen} onOpenChange={setSpecsOpen} />
