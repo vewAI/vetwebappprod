@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { Case } from "@/features/case-selection/models/case";
 import type { Stage } from "@/features/stages/types";
 import type { PersonaEntry } from "@/features/chat/hooks/usePersonaDirectory";
@@ -69,14 +69,15 @@ export function LiveSession({
     });
   }, [live, player]);
 
-  // Connect on mount
+  // Connect when persona becomes available
+  const hasConnectedRef = useRef(false);
   useEffect(() => {
-    async function init() {
-      if (!persona) {
-        console.log("[Session] No persona yet, skipping init");
-        return;
-      }
+    if (!persona || hasConnectedRef.current) return;
 
+    let cancelled = false;
+    hasConnectedRef.current = true;
+
+    async function init() {
       try {
         const { getAccessToken } = await import("@/lib/auth-headers");
         const accessToken = await getAccessToken().catch(() => null);
@@ -96,20 +97,25 @@ export function LiveSession({
         }
 
         const { token } = await tokenRes.json();
+        if (cancelled || !persona) return;
         console.log("[Session] Got token, connecting with persona:", persona.displayName);
         await live.connect(token, persona);
       } catch (err) {
-        console.error("[Session] Init failed:", err);
+        if (!cancelled) {
+          console.error("[Session] Init failed:", err);
+          hasConnectedRef.current = false;
+        }
       }
     }
 
     init();
 
     return () => {
+      cancelled = true;
       live.disconnect();
+      hasConnectedRef.current = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [persona]);
 
   // Switch persona when stage changes
   useEffect(() => {

@@ -1152,9 +1152,12 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
         const caseSpecies = String((caseRecord as any).species ?? "").trim() || undefined;
         const labResultsPayload = parseLabResults(diagText, caseSpecies);
 
-        // Truly broad requests that warrant showing ALL panels
+        // Broad requests that warrant showing panels (structured table).
+        // Matches common student phrasings but NOT specific single-value requests.
         const isFullResultsRequest =
-          /\b(all\s*(?:results|labs|bloodwork|values|tests|findings)|full\s*(?:bloodwork|panel|results|workup|blood\s*work)|complete\s*(?:blood|panel|results)|bloodwork|blood\s*work|show\s*(?:me\s*)?(?:all|everything|the\s*results)|printout|entire\s*(?:panel|results))\b/i.test(
+          /\b(?:all\s*(?:results|labs|bloodwork|values|tests|findings)|full\s*(?:bloodwork|panel|results|workup|blood\s*work)|complete\s*(?:blood|panel|results)|bloodwork|blood\s*work|show\s*(?:me\s*)?(?:all|everything|the\s*results|results)|printout|entire\s*(?:panel|results)|lab\s*(?:results|values|tests|findings|work)|blood\s*(?:test|panel|work)\s*results?|test\s*results|diagnostic\s*results|(?:what\s*(?:are|were)\s*(?:the\s*)?(?:the\s*)?(?:lab|blood|test|diagnostic)\s*(?:results|values|findings))|results\s*(?:please|plz|now|from\s*(?:the\s*)?(?:lab|blood|test)))\b/i.test(
+            userText,
+          ) || /\b(?:show|give|tell|get|see|read|pull\s*up|bring\s*up)\s+(?:me\s+)?(?:the\s+)?(?:results|labs|bloodwork|lab\s*values|test\s*results|blood\s*(?:test|panel|work)\s*results?|diagnostic\s*results)\b/i.test(
             userText,
           );
 

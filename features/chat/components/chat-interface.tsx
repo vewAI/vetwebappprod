@@ -4023,18 +4023,6 @@ export function ChatInterface({
     const stage = stages[currentStageIndex];
     const stageTitle = stage?.title ?? `Stage ${currentStageIndex + 1}`;
 
-    if (guidedMode) {
-      const guidance = getStudentGuidance(stage);
-      if (guidance) {
-        setStageIndicator({
-          title: `${stageTitle} — Guided Mode`,
-          body: `**What you should do:** ${guidance.whatToDo}\n\n**Tips:**\n${guidance.tips.map((t) => `• ${t}`).join("\n")}`,
-        });
-        const timer = setTimeout(() => setStageIndicator(null), 12000);
-        return () => clearTimeout(timer);
-      }
-    }
-
     const tip = getStageTip(caseId, currentStageIndex);
     if (tip) {
       setStageIndicator({ title: stageTitle, body: tip });
@@ -4043,7 +4031,7 @@ export function ChatInterface({
     } else {
       setStageIndicator(null);
     }
-  }, [introMounted, guidedMode, currentStageIndex, stages, caseId]);
+  }, [introMounted, currentStageIndex, stages, caseId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     try {
@@ -4624,6 +4612,28 @@ export function ChatInterface({
       {/* Chat messages area */}
       <div id="chat-messages" className="flex-1 overflow-y-auto p-4">
         <div className="mx-auto max-w-3xl">
+          {/* Persistent guided mode panel */}
+          {guidedMode && (() => {
+            const g = getStudentGuidance(stages[currentStageIndex]);
+            if (!g) return null;
+            return (
+              <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <Lightbulb className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  <span className="text-sm font-semibold text-amber-800 dark:text-amber-200">{g.title}</span>
+                </div>
+                <p className="text-sm text-amber-900 dark:text-amber-100 mb-2">{g.whatToDo}</p>
+                <ul className="text-xs text-amber-800 dark:text-amber-200 space-y-1">
+                  {g.tips.map((tip, i) => (
+                    <li key={i} className="flex items-start gap-1.5">
+                      <span className="text-amber-500 mt-0.5">&bull;</span>
+                      <span>{tip}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })()}
           {/* Persona filter is controlled by the big OWNER / VOICE MODE / NURSE controls above */}
           <div className="space-y-4">
             {/* Group consecutive messages by same role/persona/stage into a single visual entry */}
@@ -4866,6 +4876,16 @@ export function ChatInterface({
             </div>
 
             <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`flex items-center gap-1 text-xs ${guidedMode ? "bg-amber-100 text-amber-800 hover:bg-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-950/60" : ""}`}
+                onClick={toggleGuidedMode}
+              >
+                {guidedMode ? <Lightbulb className="h-3.5 w-3.5" /> : <LightbulbOff className="h-3.5 w-3.5" />}
+                {guidedMode ? "Guide ON" : "Guide OFF"}
+              </Button>
+
               <Button
                 variant="ghost"
                 size="sm"
