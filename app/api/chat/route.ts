@@ -1146,26 +1146,72 @@ REFERENCE CONTEXT:\n${ragContext}\n\nSTUDENT REQUEST:\n${userQuery}`;
         // If user asked specifically for a test or value, try to return the matching lines
         const diagText = diag as string;
 
-        // Structured lab result table path. For general bloodwork/lab requests,
-        // prefer returning concise spoken text plus a deterministic payload.
+        // Structured lab result table path. For broad/generic requests for all
+        // results, return the full structured table. For category-specific requests
+        // (CBC, electrolytes, etc.), filter to matching panels only.
         const caseSpecies = String((caseRecord as any).species ?? "").trim() || undefined;
         const labResultsPayload = parseLabResults(diagText, caseSpecies);
-        const isGeneralLabRequest =
-          /\b(results|bloodwork|bloods|blood\s*work|labs|all|full|complete|show|display|printout|report|cbc|hematology|haematology|analysis|analyse|analisis|analytics|overview|summary|panel|workup)\b/i.test(
+
+        // Truly broad requests that warrant showing ALL panels
+        const isFullResultsRequest =
+          /\b(all\s*(?:results|labs|bloodwork|values|tests|findings)|full\s*(?:bloodwork|panel|results|workup|blood\s*work)|complete\s*(?:blood|panel|results)|bloodwork|blood\s*work|show\s*(?:me\s*)?(?:all|everything|the\s*results)|printout|entire\s*(?:panel|results))\b/i.test(
             userText,
           );
-        if (labResultsPayload && labResultsPayload.panels.length > 0 && isGeneralLabRequest) {
-          return NextResponse.json({
-            content: "Here are the results.",
-            displayRole,
-            portraitUrl: personaImageUrl,
-            voiceId: personaVoiceId,
-            personaSex,
-            personaRoleKey,
-            media: [],
-            patientSex,
-            labResults: labResultsPayload,
-          });
+
+        // Category-specific requests — filter to matching panels
+        const PANEL_SYNONYMS: Record<string, string[]> = {
+          "Haematology": ["cbc", "haematology", "hematology", "complete blood count", "blood count", "full blood count", "fbc"],
+          "Biochemistry": ["biochemistry", "chemistry panel", "chemistries", "biochem", "metabolic panel"],
+          "Electrolytes": ["electrolytes", "lytes", "sodium potassium chloride", "na k cl"],
+          "Urinalysis": ["urinalysis", "urine", "urine analysis"],
+          "Coagulation": ["coagulation", "coag", "clotting", "pt aptt", "pt/inr"],
+          "Serology": ["serology", "serological", "antibody", " titre", "titer"],
+          "Blood Gas": ["blood gas", "bg", "abg", "venous blood gas", "vbg", "acid-base"],
+          "Endocrine": ["endocrine", "hormone", "thyroid", "t4", "cortisol", "acth"],
+        };
+
+        const requestedPanels: string[] = [];
+        for (const [panelTitle, syns] of Object.entries(PANEL_SYNONYMS)) {
+          if (syns.some((s) => userText.includes(s))) {
+            requestedPanels.push(panelTitle);
+          }
+        }
+
+        if (labResultsPayload && labResultsPayload.panels.length > 0) {
+          if (isFullResultsRequest) {
+            // Return all panels
+            return NextResponse.json({
+              content: "Here are the results.",
+              displayRole,
+              portraitUrl: personaImageUrl,
+              voiceId: personaVoiceId,
+              personaSex,
+              personaRoleKey,
+              media: [],
+              patientSex,
+              labResults: labResultsPayload,
+            });
+          }
+
+          if (requestedPanels.length > 0) {
+            // Filter to only matching panels (case-insensitive title match)
+            const filteredPanels = labResultsPayload.panels.filter((panel) =>
+              requestedPanels.some((rp) => panel.title.toLowerCase().includes(rp.toLowerCase()))
+            );
+            if (filteredPanels.length > 0) {
+              return NextResponse.json({
+                content: "Here are the results.",
+                displayRole,
+                portraitUrl: personaImageUrl,
+                voiceId: personaVoiceId,
+                personaSex,
+                personaRoleKey,
+                media: [],
+                patientSex,
+                labResults: { panels: filteredPanels },
+              });
+            }
+          }
         }
 
         // Find diagnostic canonical key from user text
