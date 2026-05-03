@@ -71,8 +71,10 @@ export function LiveSession({
 
   // Connect when persona becomes available
   const hasConnectedRef = useRef(false);
+  const retryCountRef = useRef(0);
   useEffect(() => {
-    if (!persona || hasConnectedRef.current) return;
+    if (!persona) return;
+    if (hasConnectedRef.current) return;
 
     let cancelled = false;
     hasConnectedRef.current = true;
@@ -82,6 +84,7 @@ export function LiveSession({
         const { getAccessToken } = await import("@/lib/auth-headers");
         const accessToken = await getAccessToken().catch(() => null);
 
+        console.log("[Session] Fetching token for case:", caseItem.id);
         const tokenRes = await fetch("/api/live/token", {
           method: "POST",
           headers: {
@@ -92,12 +95,12 @@ export function LiveSession({
         });
 
         if (!tokenRes.ok) {
-          const err = await tokenRes.json();
+          const err = await tokenRes.json().catch(() => ({ error: `HTTP ${tokenRes.status}` }));
           throw new Error(err.error ?? "Failed to get token");
         }
 
         const { token } = await tokenRes.json();
-        if (cancelled || !persona) return;
+        if (cancelled) return;
         console.log("[Session] Got token, connecting with persona:", persona.displayName);
         await live.connect(token, persona);
       } catch (err) {
@@ -116,6 +119,25 @@ export function LiveSession({
       hasConnectedRef.current = false;
     };
   }, [persona]);
+
+  // Auto-reconnect on unexpected disconnect
+  useEffect(() => {
+    if (live.status === "connected") {
+      retryCountRef.current = 0;
+      return;
+    }
+    if (live.status !== "disconnected" || !persona) return;
+    if (retryCountRef.current >= 3) return;
+
+    const delay = Math.min(2000 * Math.pow(2, retryCountRef.current), 10000);
+    retryCountRef.current++;
+    console.log(`[Session] Reconnecting in ${delay}ms (attempt ${retryCountRef.current})`);
+
+    const timer = setTimeout(() => {
+      hasConnectedRef.current = false;
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [live.status, persona]);
 
   // Switch persona when stage changes
   useEffect(() => {
@@ -242,10 +264,15 @@ export function LiveSession({
         onToggleMute={handleToggleMute}
       />
 
-      {/* Error display */}
+      {/* Error / status display */}
       {live.error && (
         <div className="mx-4 mb-4 rounded-lg bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-600 dark:text-red-400">
           {live.error}
+        </div>
+      )}
+      {!live.error && live.status === "disconnected" && retryCountRef.current >= 3 && (
+        <div className="mx-4 mb-4 rounded-lg bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-600 dark:text-amber-400">
+          Connection lost. Tap the mic to retry or end the session.
         </div>
       )}
     </div>

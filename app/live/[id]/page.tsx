@@ -116,8 +116,8 @@ export default function LiveSessionPage() {
     initSession();
   }, [caseId, user]);
 
-  // Loading state
-  if (isLoading || !caseData || stages.length === 0 || !session) {
+  // Loading state — wait for personas too so LiveSession always gets a populated directory
+  if (isLoading || !caseData || stages.length === 0 || !session || !personaDir.isReady) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -130,7 +130,9 @@ export default function LiveSessionPage() {
                 ? "Loading stages..."
                 : !session
                   ? "Creating session..."
-                  : "Initializing..."}
+                  : !personaDir.isReady
+                    ? "Loading personas..."
+                    : "Initializing..."}
         </p>
         <Link href="/">
           <Button variant="ghost" size="sm">
