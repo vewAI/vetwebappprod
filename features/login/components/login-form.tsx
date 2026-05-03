@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Key } from "lucide-react";
 
 // Auth Service
@@ -39,8 +38,7 @@ const DEFAULT_METHOD = (ENABLED_METHODS[0]?.[0] ?? "password") as AuthMethod;
 export function LoginForm() {
   const router = useRouter();
   const { user, signIn } = useAuth();
-  const [localPart, setLocalPart] = useState("");
-  const [selectedDomain, setSelectedDomain] = useState("");
+  const [email, setEmail] = useState("");
   const [domains, setDomains] = useState<string[]>([]);
   const [domainsLoading, setDomainsLoading] = useState(true);
   const [password, setPassword] = useState("");
@@ -53,8 +51,6 @@ export function LoginForm() {
   const [success, setSuccess] = useState<string | null>(null);
   const [passkeyLoading, setPasskeyLoading] = useState(false);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
-
-  const email = localPart && selectedDomain ? `${localPart}@${selectedDomain}` : "";
 
   // Fetch allowed domains
   useEffect(() => {
@@ -74,19 +70,57 @@ export function LoginForm() {
     }
   }, [user, router]);
 
+  const getValidatedEmail = () => {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setError("Please enter your email");
+      return null;
+    }
+
+    const emailMatch = trimmedEmail.match(/^([^@\s]+)@([^@\s]+)$/);
+    if (!emailMatch) {
+      setError("Please enter a valid email address");
+      return null;
+    }
+
+    if (domainsLoading) {
+      setError("Allowed domains are still loading. Please try again.");
+      return null;
+    }
+
+    if (domains.length === 0) {
+      setError("No domains configured. Contact your administrator.");
+      return null;
+    }
+
+    const [, local, domain] = emailMatch;
+    const normalizedDomain = domain.toLowerCase();
+    const isAllowedDomain = domains.some((allowedDomain) => allowedDomain.toLowerCase() === normalizedDomain);
+
+    if (!isAllowedDomain) {
+      setError("The email address is not valid");
+      return null;
+    }
+
+    return `${local}@${normalizedDomain}`;
+  };
+
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccess(null);
 
-    if (!localPart || !selectedDomain || !password) {
+    if (!password) {
       setError("Please enter email and password");
       return;
     }
 
+    const validatedEmail = getValidatedEmail();
+    if (!validatedEmail) return;
+
     try {
       setLoading(true);
-      await signIn(email, password);
+      await signIn(validatedEmail, password);
     } catch (err: unknown) {
       const errObj = err instanceof Error ? err : new Error(String(err));
       setError(errObj.message || "Failed to sign in");
@@ -102,15 +136,13 @@ export function LoginForm() {
     setError(null);
     setSuccess(null);
 
-    if (!localPart || !selectedDomain) {
-      setError("Please enter your email");
-      return;
-    }
+    const validatedEmail = getValidatedEmail();
+    if (!validatedEmail) return;
 
     try {
       setLoading(true);
       const { error: otpError } = await supabase.auth.signInWithOtp({
-        email,
+        email: validatedEmail,
         options: {},
       });
 
@@ -135,15 +167,18 @@ export function LoginForm() {
     setError(null);
     setSuccess(null);
 
-    if (!localPart || !selectedDomain || !otp) {
+    if (!otp) {
       setError("Please enter email and OTP");
       return;
     }
 
+    const validatedEmail = getValidatedEmail();
+    if (!validatedEmail) return;
+
     try {
       setLoading(true);
       const { error: verifyError } = await supabase.auth.verifyOtp({
-        email,
+        email: validatedEmail,
         token: otp,
         type: "email",
       });
@@ -223,15 +258,13 @@ export function LoginForm() {
     setError(null);
     setSuccess(null);
 
-    if (!localPart || !selectedDomain) {
-      setError("Please enter your email");
-      return;
-    }
+    const validatedEmail = getValidatedEmail();
+    if (!validatedEmail) return;
 
     try {
       setLoading(true);
       const { error: magicError } = await supabase.auth.signInWithOtp({
-        email,
+        email: validatedEmail,
         options: {
           emailRedirectTo: `${typeof window !== "undefined" ? window.location.origin : ""}/auth/callback?flow=magiclink`,
         },
@@ -255,30 +288,14 @@ export function LoginForm() {
   const renderEmailInput = (id: string, disabled?: boolean) => (
     <div className="space-y-2">
       <Label htmlFor={id}>Email</Label>
-      <div className="flex items-center gap-2">
-        <Input
-          id={id}
-          type="text"
-          placeholder="username"
-          value={localPart}
-          onChange={(e) => setLocalPart(e.target.value)}
-          disabled={disabled}
-          className="flex-1"
-        />
-        <span className="text-muted-foreground shrink-0">@</span>
-        <Select value={selectedDomain} onValueChange={setSelectedDomain} disabled={disabled || domainsLoading}>
-          <SelectTrigger className="w-[140px] shrink-0">
-            <SelectValue placeholder="Domain" />
-          </SelectTrigger>
-          <SelectContent>
-            {domains.map((d) => (
-              <SelectItem key={d} value={d}>
-                {d}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      <Input
+        id={id}
+        type="email"
+        placeholder="you@yourdomain.com"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        disabled={disabled}
+      />
     </div>
   );
 
