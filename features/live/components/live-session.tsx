@@ -81,6 +81,7 @@ export function LiveSession({
 
     async function init() {
       try {
+        if (!persona) return;
         const { getAccessToken } = await import("@/lib/auth-headers");
         const accessToken = await getAccessToken().catch(() => null);
 
