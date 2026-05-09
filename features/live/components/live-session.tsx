@@ -61,11 +61,13 @@ export function LiveSession({
     });
   }, [mic, live]);
 
-  // Wire live audio output to player
+  // Wire live audio output to player (streaming for low latency)
   useEffect(() => {
-    live.setOnAudio((chunks) => {
-      console.log("[Session] Playing audio:", chunks.length, "chunks,", chunks.reduce((s, c) => s + c.byteLength, 0), "bytes total");
-      player.play(chunks);
+    live.setOnAudioStream((chunk) => {
+      player.enqueue(chunk);
+    });
+    live.setOnAudioFlush(() => {
+      player.flush();
     });
   }, [live, player]);
 
@@ -104,6 +106,11 @@ export function LiveSession({
         if (cancelled) return;
         console.log("[Session] Got token, connecting with persona:", persona.displayName);
         await live.connect(token, persona);
+
+        // If owner persona, trigger them to start speaking
+        if (persona.roleKey === "owner") {
+          live.sendText("[The veterinarian has just arrived and is ready to see you. Greet them and explain why you are here today.]");
+        }
       } catch (err) {
         if (!cancelled) {
           console.error("[Session] Init failed:", err);

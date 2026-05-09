@@ -6,15 +6,30 @@ import { LIVE_AUDIO_CONFIG } from "../types";
 export type UseAudioPlayerResult = {
   isPlaying: boolean;
   play: (chunks: ArrayBuffer[]) => void;
+  enqueue: (chunk: ArrayBuffer) => void;
+  flush: () => void;
   stop: () => void;
   setOnPlayingChange: (cb: ((playing: boolean) => void) | null) => void;
 };
+
+function pcmToAudioBuffer(ctx: AudioContext, chunk: ArrayBuffer): AudioBuffer {
+  const pcm = new Int16Array(chunk);
+  const float32 = new Float32Array(pcm.length);
+  for (let i = 0; i < pcm.length; i++) {
+    float32[i] = pcm[i] / 32768;
+  }
+  const buffer = ctx.createBuffer(1, float32.length, LIVE_AUDIO_CONFIG.outputSampleRate);
+  buffer.getChannelData(0).set(float32);
+  return buffer;
+}
 
 export function useAudioPlayer(): UseAudioPlayerResult {
   const [isPlaying, setIsPlaying] = useState(false);
   const contextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const queueRef = useRef<AudioBuffer[]>([]);
   const playingCbRef = useRef<((playing: boolean) => void) | null>(null);
+  const stoppedRef = useRef(false);
 
   const getContext = useCallback(() => {
     if (!contextRef.current || contextRef.current.state === "closed") {
@@ -25,60 +40,70 @@ export function useAudioPlayer(): UseAudioPlayerResult {
     return contextRef.current;
   }, []);
 
+  const drainQueue = useCallback(() => {
+    if (stoppedRef.current) return;
+    if (queueRef.current.length === 0) {
+      setIsPlaying(false);
+      playingCbRef.current?.(false);
+      return;
+    }
+
+    const ctx = getContext();
+    const buffer = queueRef.current.shift()!;
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.onended = () => {
+      sourceRef.current = null;
+      drainQueue();
+    };
+
+    sourceRef.current = source;
+    setIsPlaying(true);
+    playingCbRef.current?.(true);
+    source.start();
+  }, [getContext]);
+
   const stop = useCallback(() => {
+    stoppedRef.current = true;
     if (sourceRef.current) {
-      try {
-        sourceRef.current.stop();
-      } catch {
-        // already stopped
-      }
+      try { sourceRef.current.stop(); } catch { /* */ }
       sourceRef.current = null;
     }
+    queueRef.current = [];
     setIsPlaying(false);
     playingCbRef.current?.(false);
   }, []);
 
+  const enqueue = useCallback((chunk: ArrayBuffer) => {
+    stoppedRef.current = false;
+    const ctx = getContext();
+    const buffer = pcmToAudioBuffer(ctx, chunk);
+    queueRef.current.push(buffer);
+    if (!sourceRef.current) {
+      drainQueue();
+    }
+  }, [getContext, drainQueue]);
+
+  const flush = useCallback(() => {
+    stoppedRef.current = false;
+    if (!sourceRef.current && queueRef.current.length > 0) {
+      drainQueue();
+    }
+  }, [drainQueue]);
+
   const play = useCallback(
     (chunks: ArrayBuffer[]) => {
       if (chunks.length === 0) return;
-
       stop();
-
+      stoppedRef.current = false;
       const ctx = getContext();
-      const totalLength = chunks.reduce((sum, c) => sum + c.byteLength / 2, 0);
-      const pcm = new Int16Array(totalLength);
-
-      let offset = 0;
       for (const chunk of chunks) {
-        const view = new Int16Array(chunk);
-        pcm.set(view, offset);
-        offset += view.length;
+        queueRef.current.push(pcmToAudioBuffer(ctx, chunk));
       }
-
-      // Convert S16 to float32 for Web Audio
-      const float32 = new Float32Array(pcm.length);
-      for (let i = 0; i < pcm.length; i++) {
-        float32[i] = pcm[i] / 32768;
-      }
-
-      const buffer = ctx.createBuffer(1, float32.length, LIVE_AUDIO_CONFIG.outputSampleRate);
-      buffer.getChannelData(0).set(float32);
-
-      const source = ctx.createBufferSource();
-      source.buffer = buffer;
-      source.connect(ctx.destination);
-      source.onended = () => {
-        setIsPlaying(false);
-        playingCbRef.current?.(false);
-        sourceRef.current = null;
-      };
-
-      sourceRef.current = source;
-      setIsPlaying(true);
-      playingCbRef.current?.(true);
-      source.start();
+      drainQueue();
     },
-    [getContext, stop]
+    [getContext, stop, drainQueue]
   );
 
   const setOnPlayingChange = useCallback((cb: ((playing: boolean) => void) | null) => {
@@ -92,5 +117,5 @@ export function useAudioPlayer(): UseAudioPlayerResult {
     };
   }, [stop]);
 
-  return { isPlaying, play, stop, setOnPlayingChange };
+  return { isPlaying, play, enqueue, flush, stop, setOnPlayingChange };
 }

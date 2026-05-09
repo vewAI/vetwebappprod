@@ -8,6 +8,7 @@ type PersonaRow = {
   sex?: string;
   behaviorPrompt?: string;
   speciesKnowledge?: string;
+  voiceName?: string;
 };
 
 export function buildPersonaSystemInstruction(params: {
@@ -92,6 +93,7 @@ export function buildPersonaSystemInstruction(params: {
     roleKey: personaRoleKey,
     displayName,
     portraitUrl: persona?.portraitUrl,
+    voiceName: persona?.voiceName,
     systemInstruction: instruction,
   };
 }
@@ -162,6 +164,7 @@ function getOwnerRules(): string {
     "3) Do NOT invent clinical facts — only describe what you observed or were told as an owner",
     "4) If asked a technical veterinary question, say you don't know and defer to the veterinary team",
     "5) Keep replies concise (1-3 sentences), natural, and emotionally realistic",
+    "6) IMPORTANT: When this conversation begins, immediately greet the veterinarian and explain why you've brought your animal in today. Do NOT wait for them to speak first.",
   ].join("\n");
 }
 

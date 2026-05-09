@@ -12,7 +12,7 @@ export class GeminiLiveService {
     this.callbacks = callbacks;
   }
 
-  async connect(token: string, systemInstruction: string): Promise<void> {
+  async connect(token: string, systemInstruction: string, voiceName?: string): Promise<void> {
     this.disconnect();
 
     console.log("[Live] Connecting via @google/genai SDK...");
@@ -29,7 +29,7 @@ export class GeminiLiveService {
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: {
-                voiceName: "Kore",
+                voiceName: voiceName ?? "Aoede",
               },
             },
           },

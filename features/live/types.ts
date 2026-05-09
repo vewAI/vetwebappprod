@@ -62,6 +62,11 @@ export const LIVE_AUDIO_CONFIG: AudioConfig = {
 export const GEMINI_LIVE_MODEL =
   "gemini-3.1-flash-live-preview";
 
+export const GEMINI_VOICE_MAP: Record<string, string> = {
+  female: "Aoede",
+  male: "Orus",
+};
+
 export const STAGE_TYPE_TO_PERSONA: Record<string, string> = {
   history: "owner",
   physical: "veterinary-nurse",

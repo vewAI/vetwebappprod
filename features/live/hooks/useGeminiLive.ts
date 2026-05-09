@@ -21,6 +21,8 @@ export type UseGeminiLiveResult = {
   switchPersona: (persona: PersonaInstruction) => void;
   interrupt: () => void;
   setOnAudio: (cb: ((chunks: ArrayBuffer[]) => void) | null) => void;
+  setOnAudioStream: (cb: ((chunk: ArrayBuffer) => void) | null) => void;
+  setOnAudioFlush: (cb: (() => void) | null) => void;
 };
 
 let entryIdCounter = 0;
@@ -35,7 +37,10 @@ export function useGeminiLive(): UseGeminiLiveResult {
 
   const audioChunksRef = useRef<ArrayBuffer[]>([]);
   const onAudioRef = useRef<((chunks: ArrayBuffer[]) => void) | null>(null);
+  const onAudioStreamRef = useRef<((chunk: ArrayBuffer) => void) | null>(null);
+  const onAudioFlushRef = useRef<(() => void) | null>(null);
   const personaRef = useRef<PersonaInstruction | null>(null);
+  const tokenRef = useRef<string | null>(null);
 
   // Initialize service once
   useEffect(() => {
@@ -50,6 +55,7 @@ export function useGeminiLive(): UseGeminiLiveResult {
             if (event.data instanceof ArrayBuffer) {
               audioChunksRef.current.push(event.data);
               setIsSpeaking(true);
+              onAudioStreamRef.current?.(event.data);
             }
             break;
           case "textReceived":
@@ -84,6 +90,7 @@ export function useGeminiLive(): UseGeminiLiveResult {
               onAudioRef.current?.([...chunks]);
               audioChunksRef.current = [];
             }
+            onAudioFlushRef.current?.();
             setIsSpeaking(false);
             break;
           }
@@ -114,11 +121,12 @@ export function useGeminiLive(): UseGeminiLiveResult {
     setStatus("connecting");
     setCurrentPersona(persona);
     personaRef.current = persona;
+    tokenRef.current = token;
     setError(null);
     setTranscript([]);
 
     try {
-      await serviceRef.current.connect(token, persona.systemInstruction);
+      await serviceRef.current.connect(token, persona.systemInstruction, persona.voiceName);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Connection failed");
       setStatus("error");
@@ -141,8 +149,21 @@ export function useGeminiLive(): UseGeminiLiveResult {
 
   const switchPersona = useCallback((persona: PersonaInstruction) => {
     setCurrentPersona(persona);
+    const prev = personaRef.current;
     personaRef.current = persona;
-    serviceRef.current?.sendSystemInstruction(persona.systemInstruction);
+
+    // If voice changed, need to reconnect; otherwise just update instruction
+    if (prev?.voiceName !== persona.voiceName && tokenRef.current) {
+      serviceRef.current?.disconnect();
+      setStatus("connecting");
+      serviceRef.current?.connect(tokenRef.current, persona.systemInstruction, persona.voiceName)
+        .catch((err: unknown) => {
+          setError(err instanceof Error ? err.message : "Reconnection failed");
+          setStatus("error");
+        });
+    } else {
+      serviceRef.current?.sendSystemInstruction(persona.systemInstruction);
+    }
   }, []);
 
   const interrupt = useCallback(() => {
@@ -153,6 +174,14 @@ export function useGeminiLive(): UseGeminiLiveResult {
 
   const setOnAudio = useCallback((cb: ((chunks: ArrayBuffer[]) => void) | null) => {
     onAudioRef.current = cb;
+  }, []);
+
+  const setOnAudioStream = useCallback((cb: ((chunk: ArrayBuffer) => void) | null) => {
+    onAudioStreamRef.current = cb;
+  }, []);
+
+  const setOnAudioFlush = useCallback((cb: (() => void) | null) => {
+    onAudioFlushRef.current = cb;
   }, []);
 
   return {
@@ -168,5 +197,7 @@ export function useGeminiLive(): UseGeminiLiveResult {
     switchPersona,
     interrupt,
     setOnAudio,
+    setOnAudioStream,
+    setOnAudioFlush,
   };
 }

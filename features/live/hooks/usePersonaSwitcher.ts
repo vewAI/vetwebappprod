@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import type { Case } from "@/features/case-selection/models/case";
 import type { Stage } from "@/features/stages/types";
 import type { PersonaEntry } from "@/features/chat/hooks/usePersonaDirectory";
-import { STAGE_TYPE_TO_PERSONA, type PersonaInstruction } from "../types";
+import { STAGE_TYPE_TO_PERSONA, GEMINI_VOICE_MAP, type PersonaInstruction } from "../types";
 import { buildPersonaSystemInstruction } from "../services/systemInstructionBuilder";
 import { formatSpeciesKnowledgePrompt, extractSpecializationFromMetadata } from "@/features/personas/services/speciesKnowledgeFormatter";
 
@@ -56,6 +56,7 @@ export function usePersonaSwitcher(
             sex: personaEntry.sex,
             behaviorPrompt: personaEntry.behaviorPrompt,
             speciesKnowledge,
+            voiceName: personaEntry.sex ? GEMINI_VOICE_MAP[personaEntry.sex] ?? "Aoede" : "Aoede",
           }
         : undefined,
     });
