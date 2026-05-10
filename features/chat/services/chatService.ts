@@ -224,7 +224,11 @@ export const chatService = {
   createErrorMessage: (error: unknown, stageIndex: number): Message => ({
     id: typeof crypto !== "undefined" && (crypto as any).randomUUID ? `error-${(crypto as any).randomUUID()}` : `error-${Date.now()}`,
     role: "system",
-    content: typeof error === "string" ? error : "Sorry, there was an error processing your request. Please try again.",
+    content: typeof error === "string"
+      ? error
+      : error instanceof Error && error.message
+        ? `Error: ${error.message}. Please retry.`
+        : "Failed to get a response. Please retry your message.",
     timestamp: new Date().toISOString(),
     stageIndex,
     displayRole: "Virtual Examiner",

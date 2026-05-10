@@ -488,6 +488,27 @@ export function ChatInterface({
     }
   }, [currentStageIndex, stages]);
 
+  // Rollback cleanup: when user navigates back to a previous stage, clear stuck state
+  useEffect(() => {
+    if (currentStageIndex < prevStageIndexRef.current) {
+      setIsLoading(false);
+      isAdvancingRef.current = false;
+      clearStageIntentLocks();
+      nurseGreetingSentRef.current = false;
+      ownerGreetingSentRef.current = false;
+      try { clearAllSttBlocks(); } catch {}
+      // Restore correct persona for the target stage
+      const targetStage = stages?.[currentStageIndex];
+      try {
+        const normalized = isAllowedChatPersonaKey(targetStage?.personaRoleKey)
+          ? targetStage.personaRoleKey
+          : resolveChatPersonaRoleKey(targetStage?.role, targetStage?.role ?? "");
+        setActivePersona(normalized);
+      } catch {}
+    }
+    prevStageIndexRef.current = currentStageIndex;
+  }, [currentStageIndex, stages]);
+
   // Small wrapper to preserve the original signature and pass the live messages array
   const transformNurseAssistantMessage = (
     aiMessage: Message,
@@ -1664,27 +1685,34 @@ export function ChatInterface({
           try {
             const stage = stages?.[currentStageIndex];
             const stageTitle = (stage?.title ?? "").toLowerCase();
-            // Emit event for QA tracing
 
-            const attemptAdvanceTo = async (predicate: (label: string) => boolean) => {
-              for (let i = 0; i < 6; i++) {
-                const s = stages?.[currentStageIndex];
-                const sTitle = (s?.title ?? "").toLowerCase();
-                if (predicate(sTitle)) return true;
-                try {
-                  onProceedToNextStage(messages, 0);
-                } catch {}
-                await new Promise((r) => setTimeout(r, 220));
+            // Guard: only auto-advance if the current stage has sufficient turns
+            const stageReadiness = evaluateStageCompletion(currentStageIndex, messages);
+            const hasEnoughTurns = stageReadiness.metrics.userTurns >= 2;
+
+            if (hasEnoughTurns && stageReadiness.status !== "insufficient") {
+              const attemptAdvanceTo = async (predicate: (label: string) => boolean) => {
+                for (let i = 0; i < 6; i++) {
+                  const s = stages?.[currentStageIndex];
+                  const sTitle = (s?.title ?? "").toLowerCase();
+                  if (predicate(sTitle)) return true;
+                  try {
+                    onProceedToNextStage(messages, 0);
+                  } catch {}
+                  await new Promise((r) => setTimeout(r, 220));
+                }
+                return false;
+              };
+
+              if (/history/.test(stageTitle) || /history taking/.test(stageTitle)) {
+                void attemptAdvanceTo((l) => /physical/.test(l));
               }
-              return false;
-            };
 
-            if (/history/.test(stageTitle) || /history taking/.test(stageTitle)) {
-              void attemptAdvanceTo((l) => /physical/.test(l));
-            }
-
-            if (/diagnostic/.test(stageTitle) || /diagnostic planning/.test(stageTitle)) {
-              void attemptAdvanceTo((l) => /laboratory|lab|tests/.test(l));
+              if (/diagnostic/.test(stageTitle) || /diagnostic planning/.test(stageTitle)) {
+                void attemptAdvanceTo((l) => /laboratory|lab|tests/.test(l));
+              }
+            } else {
+              console.log("[Stage] Skipping auto-advance: userTurns:", stageReadiness.metrics.userTurns, "status:", stageReadiness.status);
             }
           } catch (e) {
             // ignore
@@ -2854,9 +2882,12 @@ export function ChatInterface({
         setMessages((prev) => prev.map((m) => (m.id === userMessage!.id ? { ...m, status: "failed" } : m)));
         if (maybeNetwork) {
           enqueuePendingMessage(userMessage, currentStageIndex, caseId);
-          setConnectionNotice("Connection interrupted. We'll save your message and retry automatically.");
         }
       }
+
+      // Show connection notice for ALL failures (not just network)
+      const errorDetail = error instanceof Error ? error.message : String(error);
+      setConnectionNotice(`Failed to send message: ${errorDetail}. Tap Retry on your message to try again.`);
 
       const errorMessage = chatService.createErrorMessage(error, currentStageIndex);
       setMessages((prev) => [...prev, errorMessage]);
@@ -3328,6 +3359,8 @@ export function ChatInterface({
   // Track which stage-intro strings we've already appended during this attempt
   // to avoid repeating the same intro (e.g., nurse intro) multiple times.
   const sentStageIntroRef = useRef<Set<string>>(new Set());
+  // Track previous stage index to detect rollback navigation
+  const prevStageIndexRef = useRef<number>(currentStageIndex);
 
   const sendOwnerGreetingIfNeeded = useCallback(async () => {
     try {
