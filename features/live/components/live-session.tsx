@@ -107,9 +107,12 @@ export function LiveSession({
         console.log("[Session] Got token, connecting with persona:", persona.displayName);
         await live.connect(token, persona);
 
-        // If owner persona, trigger them to start speaking
+        // Auto-start mic so the student can speak immediately
+        await mic.start();
+
+        // If owner persona, send a silent trigger to make them speak first
         if (persona.roleKey === "owner") {
-          live.sendText("[The veterinarian has just arrived and is ready to see you. Greet them and explain why you are here today.]");
+          live.sendText("[SYS_TRIGGER]");
         }
       } catch (err) {
         if (!cancelled) {

@@ -3,40 +3,46 @@
 import { useRef, useEffect, useState } from "react";
 import type { TranscriptEntry } from "../types";
 
+const HIDDEN_PATTERNS = ["[SYS_TRIGGER]", "[The veterinarian has just arrived"];
+
 type LiveTranscriptProps = {
   entries: TranscriptEntry[];
   personaName: string;
   isOpen: boolean;
 };
 
+function isHiddenEntry(text: string): boolean {
+  return HIDDEN_PATTERNS.some((p) => text.includes(p));
+}
+
 export function LiveTranscript({ entries, personaName, isOpen }: LiveTranscriptProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
   const [visibleEntry, setVisibleEntry] = useState<TranscriptEntry | null>(null);
   const [isFading, setIsFading] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const textRef = useRef<HTMLSpanElement>(null);
 
-  // Show entries one at a time with enough time to read
+  // Filter hidden entries and show the latest visible one
+  const visibleEntries = entries.filter((e) => !isHiddenEntry(e.text));
+
   useEffect(() => {
-    if (entries.length === 0) {
+    if (visibleEntries.length === 0) {
       setVisibleEntry(null);
       return;
     }
 
-    const latest = entries[entries.length - 1];
+    const latest = visibleEntries[visibleEntries.length - 1];
 
-    // Clear any pending timer
     if (timerRef.current) {
       clearTimeout(timerRef.current);
     }
 
-    // If same entry is already showing, skip
     if (visibleEntry?.id === latest.id) return;
 
     setIsFading(false);
     setVisibleEntry(latest);
 
-    // Estimate reading time: ~50ms per character, min 3s, max 12s
-    const readTime = Math.max(3000, Math.min(12000, latest.text.length * 50));
+    // Reading time: ~60ms per character, min 4s, max 15s
+    const readTime = Math.max(4000, Math.min(15000, latest.text.length * 60));
     timerRef.current = setTimeout(() => {
       setIsFading(true);
     }, readTime);
@@ -46,37 +52,41 @@ export function LiveTranscript({ entries, personaName, isOpen }: LiveTranscriptP
         clearTimeout(timerRef.current);
       }
     };
-  }, [entries]);
+  }, [visibleEntries.length]);
 
   if (!isOpen) return null;
 
-  const latest = entries[entries.length - 1];
-
   return (
-    <div
-      ref={containerRef}
-      className="h-9 flex items-center px-4 bg-muted/20 border-t border-border overflow-hidden"
-    >
-      {latest ? (
+    <div className="h-10 flex items-center px-4 bg-muted/30 border-t border-border">
+      {visibleEntry ? (
         <div
-          className={`flex items-center gap-2 text-sm transition-opacity duration-500 whitespace-nowrap ${
-            isFading ? "opacity-40" : "opacity-100"
+          className={`flex items-center gap-2 w-full transition-opacity duration-700 ${
+            isFading ? "opacity-30" : "opacity-100"
           }`}
         >
-          <span className={
-            latest.speaker === "user"
-              ? "text-primary font-semibold shrink-0"
-              : "text-muted-foreground font-medium shrink-0"
-          }>
-            {latest.speaker === "user" ? "You:" : `${personaName}:`}
+          <span
+            className={
+              visibleEntry.speaker === "user"
+                ? "text-primary font-semibold shrink-0 text-sm"
+                : "text-muted-foreground font-medium shrink-0 text-sm"
+            }
+          >
+            {visibleEntry.speaker === "user" ? "You:" : `${personaName}:`}
           </span>
-          <span className={latest.speaker === "user" ? "text-foreground" : "text-muted-foreground"}>
-            {latest.text}
+          <span
+            ref={textRef}
+            className={`text-sm truncate ${
+              visibleEntry.speaker === "user"
+                ? "text-foreground"
+                : "text-muted-foreground"
+            }`}
+          >
+            {visibleEntry.text}
           </span>
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">
-          Speak to see the transcript...
+          Waiting for conversation...
         </p>
       )}
     </div>
