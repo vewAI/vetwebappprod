@@ -108,6 +108,24 @@ const CORRECTIONS: Record<string, string> = {
   finance: "findings",
   // Common mis-hearing of 'nurse' as 'north'
   north: "nurse",
+  // Dyspnoea/dyspnea variants
+  "disp-nee-uh": "dyspnea",
+  disnia: "dyspnea",
+  dispnea: "dyspnea",
+  "this pen": "dyspnea",
+  "this pin": "dyspnea",
+  // Haematology
+  hematology: "haematology",
+  hematocrit: "haematocrit",
+  // Common clinical terms
+  hyperthermia: "hyperthermia",
+  hypothermia: "hypothermia",
+  leucocyte: "leukocyte",
+  leucocytosis: "leukocytosis",
+  leucopenia: "leukopenia",
+  // Polydipsia mis-hearings
+  "polly dips": "polydipsia",
+  "poly dips": "polydipsia",
 };
 
 // Phrase-level corrections for multi-word mis-transcriptions.
@@ -293,7 +311,7 @@ export async function startListening(callback: (text: string, isFinal: boolean) 
   if (SpeechGrammarList) {
     const speechRecognitionList = new SpeechGrammarList();
     const grammar =
-      "#JSGF V1.0; grammar veterinary; public <term> = udder | teat | mastitis | bovine | ketones | creatinine | palpate | auscultate | borborygmi | borborygmus ;";
+      "#JSGF V1.0; grammar veterinary; public <term> = udder | teat | mastitis | bovine | ketones | creatinine | palpate | auscultate | borborygmi | borborygmus | dyspnea | dyspnoea | tachycardia | bradycardia | polydipsia | polyuria | haematology | haematocrit | leukocytosis | leukopenia | hyperthermia | hypothermia | auscultation | peritoneal | thoracocentesis ;";
     speechRecognitionList.addFromString(grammar, 1);
     recognition.grammars = speechRecognitionList;
   }

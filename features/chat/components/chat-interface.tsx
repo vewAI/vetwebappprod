@@ -497,6 +497,8 @@ export function ChatInterface({
       nurseGreetingSentRef.current = false;
       ownerGreetingSentRef.current = false;
       try { clearAllSttBlocks(); } catch {}
+      // Stop any ongoing TTS playback
+      try { window.speechSynthesis?.cancel(); } catch {}
       // Restore correct persona for the target stage
       const targetStage = stages?.[currentStageIndex];
       try {
@@ -3031,6 +3033,11 @@ export function ChatInterface({
   // user sees that the message was submitted automatically.
   const [autoSendFlash, setAutoSendFlash] = useState(false);
   const triggerAutoSend = async (text: string) => {
+    // Prevent auto-send while AI is generating or speaking
+    if (isLoading || isSpeaking) {
+      console.log("[Chat] Auto-send blocked — AI is responding");
+      return;
+    }
     try {
       // flash briefly
       setAutoSendFlash(true);
@@ -4675,8 +4682,17 @@ export function ChatInterface({
             ))}
 
             {isLoading && (
-              <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-                <div className="animate-pulse">Thinking...</div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground py-2 px-1">
+                <div className="flex gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "0ms" }} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "150ms" }} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "300ms" }} />
+                </div>
+                <span className="animate-pulse">
+                  {activePersona === "owner" ? "Owner is responding..." :
+                   activePersona === "lab-technician" ? "Lab technician is responding..." :
+                   "Nurse is responding..."}
+                </span>
               </div>
             )}
             <div ref={messagesEndRef} />
@@ -4726,19 +4742,17 @@ export function ChatInterface({
                 <div className="flex flex-col items-stretch gap-2 w-full">
                   <button
                     id="mode-status-button"
-                    className={`px-3 py-1 rounded-md text-sm ${voiceMode ? "bg-amber-500 text-white" : "bg-muted"}`}
+                    className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${voiceMode ? "bg-amber-500 text-white" : "bg-muted"}`}
                     aria-pressed={voiceMode}
                     onClick={() => {
-                      // when toggling on, request microphone access explicitly to force permission prompt
-                      try {
-                        setShowModeControls(false);
-                      } catch (e) {}
-                      if (!voiceMode) {
-                        try {
-                          void requestPermission();
-                        } catch (e) {}
+                      if (voiceMode) {
+                        // Switching to text mode
+                        setVoiceModeEnabled(false);
+                      } else {
+                        // Switching to voice mode — use toggleVoiceMode
+                        // which handles mic re-engagement if stalled
+                        toggleVoiceMode();
                       }
-                      setVoiceModeEnabled(!voiceMode);
                       textareaRef.current?.focus();
                     }}
                   >
@@ -4881,7 +4895,7 @@ export function ChatInterface({
                         type="submit"
                         id="send-button"
                         size="icon"
-                        disabled={isLoading || !input.trim() || input.trim().length < 2}
+                        disabled={isLoading || isSpeaking || !input.trim() || input.trim().length < 2}
                         className={`absolute bottom-2 right-2 ${input.trim() && input.trim().length >= 2 ? "bg-gradient-to-l from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600 border-none" : ""} ${autoSendFlash ? "animate-pulse ring-2 ring-offset-1 ring-blue-300" : ""}`}
                       >
                         <SendIcon className="h-5 w-5" />
