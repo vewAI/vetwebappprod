@@ -25,7 +25,7 @@ export function useLiveProgress(
   const turnCountRef = useRef(0);
   const [turnCount, setTurnCount] = useState(0);
 
-  const canAdvance = turnCountRef.current >= MIN_TURNS_PER_STAGE;
+  const canAdvance = turnCount >= MIN_TURNS_PER_STAGE;
 
   const advanceStage = useCallback(() => {
     if (currentStageIndex < stages.length - 1) {

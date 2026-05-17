@@ -30,6 +30,7 @@ export function useAudioPlayer(): UseAudioPlayerResult {
   const queueRef = useRef<AudioBuffer[]>([]);
   const playingCbRef = useRef<((playing: boolean) => void) | null>(null);
   const stoppedRef = useRef(false);
+  const generationRef = useRef(0);
 
   const getContext = useCallback(() => {
     if (!contextRef.current || contextRef.current.state === "closed") {
@@ -48,6 +49,7 @@ export function useAudioPlayer(): UseAudioPlayerResult {
       return;
     }
 
+    const gen = generationRef.current;
     const ctx = getContext();
     const buffer = queueRef.current.shift()!;
     const source = ctx.createBufferSource();
@@ -55,7 +57,10 @@ export function useAudioPlayer(): UseAudioPlayerResult {
     source.connect(ctx.destination);
     source.onended = () => {
       sourceRef.current = null;
-      drainQueue();
+      // Only continue draining if generation hasn't changed (stop wasn't called)
+      if (gen === generationRef.current) {
+        drainQueue();
+      }
     };
 
     sourceRef.current = source;
@@ -66,6 +71,7 @@ export function useAudioPlayer(): UseAudioPlayerResult {
 
   const stop = useCallback(() => {
     stoppedRef.current = true;
+    generationRef.current++;
     if (sourceRef.current) {
       try { sourceRef.current.stop(); } catch { /* */ }
       sourceRef.current = null;

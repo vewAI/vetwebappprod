@@ -47,6 +47,7 @@ export function LiveSession({
   const mic = useMicrophone();
   const player = useAudioPlayer();
 
+  const prevUserTurnCountRef = useRef(0);
   const currentStage = progress.stages[progress.currentStageIndex];
 
   // Wire mic audio to live session
@@ -141,31 +142,67 @@ export function LiveSession({
     if (retryCountRef.current >= 3) return;
 
     const delay = Math.min(2000 * Math.pow(2, retryCountRef.current), 10000);
-    retryCountRef.current++;
-    console.log(`[Session] Reconnecting in ${delay}ms (attempt ${retryCountRef.current})`);
+    const attempt = retryCountRef.current + 1;
+    retryCountRef.current = attempt;
+    console.log(`[Session] Reconnecting in ${delay}ms (attempt ${attempt})`);
 
-    const timer = setTimeout(() => {
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      if (cancelled || !persona) return;
       hasConnectedRef.current = false;
+      try {
+        const { getAccessToken } = await import("@/lib/auth-headers");
+        const accessToken = await getAccessToken().catch(() => null);
+        const tokenRes = await fetch("/api/live/token", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          },
+          body: JSON.stringify({ caseId: caseItem.id }),
+        });
+        if (!tokenRes.ok) throw new Error(`Reconnect failed: HTTP ${tokenRes.status}`);
+        const { token } = await tokenRes.json();
+        if (cancelled) return;
+        console.log("[Session] Reconnected with persona:", persona.displayName);
+        await live.connect(token, persona);
+        await mic.start();
+        if (persona.roleKey === "owner") live.sendText("[SYS_TRIGGER]");
+      } catch (err) {
+        if (!cancelled) {
+          console.error("[Session] Reconnect attempt failed:", err);
+          // Reset so the next status change can trigger another attempt
+          hasConnectedRef.current = false;
+        }
+      }
     }, delay);
-    return () => clearTimeout(timer);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [live.status, persona]);
 
-  // Switch persona when stage changes
+  // Switch persona when stage changes + reset turn counter
   useEffect(() => {
     if (persona && live.status === "connected") {
       live.switchPersona(persona);
     }
+    prevUserTurnCountRef.current = 0;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [progress.currentStageIndex]);
 
-  // Record turns for stage progression
+  // Record turns for stage progression — only on NEW user entries
   useEffect(() => {
-    // Count user turns from transcript
     const userTurns = live.transcript.filter((e) => e.speaker === "user").length;
-    if (userTurns > 0) {
-      progress.recordTurn();
+    const newTurns = userTurns - prevUserTurnCountRef.current;
+    if (newTurns > 0) {
+      for (let i = 0; i < newTurns; i++) {
+        progress.recordTurn();
+      }
     }
-  }, [live.transcript]);
+    prevUserTurnCountRef.current = userTurns;
+  }, [live.transcript, progress]);
 
   // Auto-advance stage when enough turns completed and AI finishes speaking
   useEffect(() => {

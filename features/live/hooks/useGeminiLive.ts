@@ -25,10 +25,9 @@ export type UseGeminiLiveResult = {
   setOnAudioFlush: (cb: (() => void) | null) => void;
 };
 
-let entryIdCounter = 0;
-
 export function useGeminiLive(): UseGeminiLiveResult {
   const serviceRef = useRef<GeminiLiveService | null>(null);
+  const entryIdCounterRef = useRef(0);
   const [status, setStatus] = useState<LiveSessionStatus>("idle");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
@@ -63,7 +62,7 @@ export function useGeminiLive(): UseGeminiLiveResult {
               setTranscript((prev) => [
                 ...prev,
                 {
-                  id: `entry_${++entryIdCounter}`,
+                  id: `entry_${++entryIdCounterRef.current}`,
                   speaker: "persona",
                   text: event.data as string,
                   timestamp: Date.now(),
@@ -76,7 +75,7 @@ export function useGeminiLive(): UseGeminiLiveResult {
               setTranscript((prev) => [
                 ...prev,
                 {
-                  id: `entry_${++entryIdCounter}`,
+                  id: `entry_${++entryIdCounterRef.current}`,
                   speaker: "user",
                   text: event.data as string,
                   timestamp: Date.now(),

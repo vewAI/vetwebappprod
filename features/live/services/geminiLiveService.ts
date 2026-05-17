@@ -145,9 +145,20 @@ export class GeminiLiveService {
   }
 
   sendSystemInstruction(systemInstruction: string): void {
-    this.sendText(
-      `[SYSTEM: Your persona and instructions have changed. New instructions follow. Adopt this new persona immediately.]\n\n${systemInstruction}`
-    );
+    if (!this.session) return;
+
+    // Send as a tool response-like context message that won't be spoken aloud.
+    // Using sendClientContent with turnComplete: false so the model processes
+    // the instruction without generating an audible response.
+    this.session.sendClientContent({
+      turns: [
+        {
+          role: "user",
+          parts: [{ text: `[SYSTEM: Your persona and instructions have changed. New instructions follow. Adopt this new persona immediately. Do NOT speak this instruction aloud.]\n\n${systemInstruction}` }],
+        },
+      ],
+      turnComplete: false,
+    });
   }
 
   interrupt(): void {
