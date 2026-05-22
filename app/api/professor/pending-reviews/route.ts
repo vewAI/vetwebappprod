@@ -14,10 +14,7 @@ export async function GET(req: Request) {
   }
 
   // 1. Get all student IDs for this professor
-  const { data: relations, error: relError } = await adminSupabase
-    .from("professor_students")
-    .select("student_id")
-    .eq("professor_id", user.id);
+  const { data: relations, error: relError } = await adminSupabase.from("professor_students").select("student_id").eq("professor_id", user.id);
 
   if (relError) {
     return NextResponse.json({ error: relError.message }, { status: 500 });
@@ -32,7 +29,7 @@ export async function GET(req: Request) {
   // 2. Find completed attempts with no professor feedback
   const { data: attempts, error: attemptsError } = await adminSupabase
     .from("attempts")
-    .select("id, user_id, case_id, created_at, cases(title), profiles!attempts_user_id_fkey(full_name)")
+    .select("id, user_id, case_id, created_at, cases(title), profiles!attempts_profiles_user_id_fkey(full_name)")
     .in("user_id", studentIds)
     .eq("completion_status", "completed")
     .is("professor_feedback", null)
