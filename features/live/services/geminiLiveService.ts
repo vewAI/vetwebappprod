@@ -53,10 +53,24 @@ export class GeminiLiveService {
             });
           },
           onclose: (e: any) => {
-            console.log("[Live] Session closed:", e?.reason);
+            const reason = e?.reason ?? "Session ended";
+            console.log("[Live] Session closed:", reason);
+
+            // Detect known error patterns and provide user-friendly messages
+            let userMessage = reason;
+            if (reason && typeof reason === "string") {
+              if (reason.toLowerCase().includes("api key expired") || reason.toLowerCase().includes("api_key_expired")) {
+                userMessage = "La clave de API de voz expiró. Contactá al administrador para renovarla.";
+              } else if (reason.toLowerCase().includes("quota") || reason.toLowerCase().includes("rate limit")) {
+                userMessage = "El servicio de voz está temporalmente no disponible por alta demanda. Intentá de nuevo en unos minutos.";
+              } else if (reason.toLowerCase().includes("unavailable") || reason.toLowerCase().includes("not found")) {
+                userMessage = "El servicio de voz no está disponible. Intentá de nuevo más tarde.";
+              }
+            }
+
             this.callbacks.onEvent({
               type: "disconnected",
-              data: e?.reason ?? "Session ended",
+              data: userMessage,
             });
             this.session = null;
           },

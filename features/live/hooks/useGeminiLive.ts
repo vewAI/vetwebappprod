@@ -100,6 +100,11 @@ export function useGeminiLive(): UseGeminiLiveResult {
           case "disconnected":
             setStatus("disconnected");
             setIsSpeaking(false);
+            // Show disconnect reason as error if it indicates a real problem
+            const disconnectReason = typeof event.data === "string" ? event.data : null;
+            if (disconnectReason && !disconnectReason.includes("Session ended")) {
+              setError(disconnectReason);
+            }
             break;
           case "error":
             setError(typeof event.data === "string" ? event.data : "Unknown error");
