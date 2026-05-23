@@ -187,6 +187,18 @@ export function LiveSession({
   useEffect(() => {
     if (persona && live.status === "connected") {
       live.switchPersona(persona);
+
+      // If switching TO owner persona, send trigger so they speak first
+      // This ensures the owner initiates conversation in every owner stage,
+      // not just on initial connection (e.g., History → Physical → Diagnostic)
+      if (persona.roleKey === "owner") {
+        // Small delay to ensure persona switch is processed first
+        setTimeout(() => {
+          if (live.status === "connected") {
+            live.sendText("[SYS_TRIGGER]");
+          }
+        }, 500);
+      }
     }
     prevUserTurnCountRef.current = 0;
     // eslint-disable-next-line react-hooks/exhaustive-deps
