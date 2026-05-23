@@ -39,15 +39,25 @@ export async function POST(request: NextRequest) {
     return auth.error;
   }
   const { supabase } = auth;
-  // Create validated OpenAI client for this request
-  const openai = await createOpenAIClient();
-  try {
-    const { messages, stageIndex, caseId, attemptId } = await request.json();
 
-    // Validate that messages is an array
+  try {
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    }
+
+    const { messages, stageIndex, caseId, attemptId } = body as {
+      messages?: unknown;
+      stageIndex?: number;
+      caseId?: string;
+      attemptId?: string;
+    };
+
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: "Messages array is required" }, { status: 400 });
     }
+
+    const openai = await createOpenAIClient();
 
     const lastUserMessage = [...messages].reverse().find((msg) => msg.role === "user");
     // Sanitize incoming message array by removing any prior system messages
@@ -1524,15 +1534,51 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
       return base;
     });
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: messagesForLLM as any[],
-      temperature: tempForCall,
-      max_tokens: 1000,
-    });
+    let assistantRawContent: string;
 
-    const message = response.choices[0].message;
-    const assistantRawContent = message.content ?? "";
+    try {
+      const response = await openai.chat.completions.create({
+        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+        messages: messagesForLLM as any[],
+        temperature: tempForCall,
+        max_tokens: parseInt(process.env.OPENAI_MAX_TOKENS || "1500", 10),
+      });
+
+      assistantRawContent = response.choices[0].message.content ?? "";
+    } catch (llmError: any) {
+      const isRateLimit = llmError?.status === 429 || llmError?.code === "rate_limit_exceeded";
+      const isServerError = llmError?.status >= 500;
+
+      console.error("LLM call failed:", llmError?.message ?? llmError);
+
+      if (isRateLimit) {
+        return NextResponse.json(
+          {
+            error: "The training service is currently at capacity. Please wait a moment and try again.",
+            retryAfter: 30,
+          },
+          { status: 429 },
+        );
+      }
+
+      if (isServerError) {
+        return NextResponse.json(
+          {
+            error: "A temporary service error occurred. Your conversation is safe — please try again.",
+            retryable: true,
+          },
+          { status: 503 },
+        );
+      }
+
+      return NextResponse.json(
+        {
+          error: "An error occurred while processing your message. Please try again.",
+          retryable: true,
+        },
+        { status: 500 },
+      );
+    }
 
     const deduplicateConsecutiveBlocks = (text: string): string => {
       const blocks = text

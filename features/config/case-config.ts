@@ -18,6 +18,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       completed: false,
       role: "Veterinary Nurse",
       roleInfoKey: "getPhysicalExamPrompt",
+      feedbackPromptKey: "getPhysicalExamFeedbackPrompt",
     },
     {
       id: "stage-3",
@@ -35,6 +36,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       completed: false,
       role: "Laboratory Technician",
       roleInfoKey: "getDiagnosticPrompt",
+      feedbackPromptKey: "getDiagnosticFeedbackPrompt",
     },
     {
       id: "stage-5",
@@ -43,6 +45,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       completed: false,
       role: "Veterinary Nurse",
       roleInfoKey: "getTreatmentPlanPrompt",
+      feedbackPromptKey: "getTreatmentPlanFeedbackPrompt",
     },
     {
       id: "stage-6",
@@ -51,6 +54,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       completed: false,
       role: "Client (Horse Owner)",
       roleInfoKey: "getOwnerDiagnosisPrompt",
+      feedbackPromptKey: "getOwnerDiagnosisFeedbackPrompt",
     },
   ],
   "case-2": [
@@ -72,6 +76,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       completed: false,
       role: "Veterinary Nurse",
       roleInfoKey: "getPhysicalExamPrompt",
+      feedbackPromptKey: "getPhysicalExamFeedbackPrompt",
     },
     {
       id: "stage-3",
@@ -91,6 +96,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       completed: false,
       role: "Laboratory Technician",
       roleInfoKey: "getDiagnosticPrompt",
+      feedbackPromptKey: "getDiagnosticFeedbackPrompt",
     },
     {
       id: "stage-5",
@@ -99,6 +105,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       completed: false,
       role: "Veterinary Nurse",
       roleInfoKey: "getTreatmentPlanPrompt",
+      feedbackPromptKey: "getTreatmentPlanFeedbackPrompt",
     },
     {
       id: "stage-6",
@@ -108,6 +115,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       completed: false,
       role: "Client (Dog Owner)",
       roleInfoKey: "getOwnerDiagnosisPrompt",
+      feedbackPromptKey: "getOwnerDiagnosisFeedbackPrompt",
     },
   ],
   "case-3": [
@@ -129,6 +137,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       completed: false,
       role: "Veterinary Nurse",
       roleInfoKey: "getPhysicalExamPrompt",
+      feedbackPromptKey: "getPhysicalExamFeedbackPrompt",
     },
     {
       id: "stage-3",
@@ -148,6 +157,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       completed: false,
       role: "Laboratory Technician",
       roleInfoKey: "getDiagnosticPrompt",
+      feedbackPromptKey: "getDiagnosticFeedbackPrompt",
     },
     {
       id: "stage-5",
@@ -156,6 +166,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       completed: false,
       role: "Veterinary Nurse",
       roleInfoKey: "getTreatmentPlanPrompt",
+      feedbackPromptKey: "getTreatmentPlanFeedbackPrompt",
     },
     {
       id: "stage-6",
@@ -165,6 +176,7 @@ export const caseConfig: { [caseId: string]: Stage[] } = {
       completed: false,
       role: "Producer (Dairy Farmer)",
       roleInfoKey: "getOwnerDiagnosisPrompt",
+      feedbackPromptKey: "getOwnerDiagnosisFeedbackPrompt",
     },
   ],
   "case-4": [

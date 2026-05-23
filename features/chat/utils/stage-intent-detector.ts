@@ -41,6 +41,9 @@ const NEXT_STAGE_PATTERN = /\bnext\s+(stage|section|part|step)\b/;
 const REQUEST_VERB_PATTERN = /\b(talk|speak|hear|connect|bring|get|see)\b/;
 const CLOSING_WORD_PATTERN = /\b(done|finished|complete|wrap(?:\s+up)?|conclude|covered|enough)\b/;
 
+// Questions specifically about stage progression should NOT be blocked
+const PROGRESSION_QUESTION_PATTERN = /\b(what\s+(comes|happens|next)|how\s+(do\s+i|to|can\s+i|should\s+i)\s+(move|proceed|advance|continue|switch|go|start|begin)|when\s+(can|do|should|are)\s+(we|i|you)\s+(move|proceed|advance|continue|switch|go|start|begin)|what\s+about\s+(the\s+)?(physical|exam|diagnostic|lab|treatment|communication|next))\b/i;
+
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -110,7 +113,8 @@ export function detectStageIntentLegacy(content: string, context: StageIntentCon
   if (POSTPONE_PATTERN.test(normalized)) {
     return noMatch();
   }
-  if (QUESTION_WORD_PATTERN.test(normalized)) {
+  // Allow questions specifically about stage progression
+  if (QUESTION_WORD_PATTERN.test(normalized) && !PROGRESSION_QUESTION_PATTERN.test(normalized)) {
     return noMatch();
   }
 
@@ -214,12 +218,16 @@ export function detectStageIntentLegacy(content: string, context: StageIntentCon
     return positiveResult("medium", "User referenced stage keywords alongside a polite cue");
   }
 
-  // For legacy detection, a single strong physical-exam keyword should be
-  // sufficient to indicate intent to perform the Physical Examination stage.
+  // For legacy detection, require at least 2 physical-exam keywords OR
+  // a single keyword combined with a direction verb to indicate intent.
   const isPhysicalStageLegacy = /physical|exam|examination/i.test(context.nextStageTitle ?? "");
-  if (isPhysicalStageLegacy && keywordMatches.length >= 1) {
-    heuristics.add("physical-single");
-    return positiveResult("high", "Single strong physical-exam keyword detected for Physical Examination");
+  if (isPhysicalStageLegacy && keywordMatches.length >= 2) {
+    heuristics.add("physical-multi");
+    return positiveResult("high", "Multiple strong physical-exam keywords detected for Physical Examination");
+  }
+  if (isPhysicalStageLegacy && keywordMatches.length >= 1 && directionVerb) {
+    heuristics.add("physical-direction");
+    return positiveResult("medium", "Physical-exam keyword combined with direction verb");
   }
 
   return noMatch();
@@ -268,7 +276,7 @@ export function detectStageIntentPhase3(content: string, context: StageIntentCon
   if (handoffRequest) heuristics.add("handoff-request");
 
   const isQuestion = QUESTION_WORD_PATTERN.test(normalized) || normalized.endsWith("?");
-  if (isQuestion && !handoffRequest && !mentionsNextStagePhrase && !stagePhraseRegex?.test(normalized)) {
+  if (isQuestion && !handoffRequest && !mentionsNextStagePhrase && !stagePhraseRegex?.test(normalized) && !PROGRESSION_QUESTION_PATTERN.test(normalized)) {
     return noMatch();
   }
 
@@ -299,11 +307,11 @@ export function detectStageIntentPhase3(content: string, context: StageIntentCon
   register("handoff-request", handoffRequest, "high", "User requested to switch personas (e.g., talk to the owner)");
   register("direction-keywords", directionVerb && keywordHits >= 2, "medium", "User combined a direction verb with multiple stage keywords");
 
-  // Special case: for Physical Examination, a single strong domain keyword
-  // (e.g., 'cardiovascular', 'auscultation') is typically enough to indicate
-  // the user's intent to perform the exam. Promote these to high confidence.
+  // Special case: for Physical Examination, require at least 2 domain keywords
+  // OR a single keyword combined with a direction verb to indicate intent.
   const isPhysicalStage = /physical|exam|examination/i.test(context.nextStageTitle ?? "");
-  register("physical-single", isPhysicalStage && keywordHits >= 1, "high", "Single strong physical-exam keyword detected for Physical Examination");
+  register("physical-keywords", isPhysicalStage && keywordHits >= 2, "high", "Multiple strong physical-exam keywords detected for Physical Examination");
+  register("physical-direction", isPhysicalStage && keywordHits >= 1 && directionVerb, "medium", "Physical-exam keyword combined with direction verb");
   register(
     "closing-current-stage",
     closingCurrentStage && (directionVerb || politeCue),

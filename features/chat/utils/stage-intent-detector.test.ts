@@ -46,11 +46,19 @@ describe("stage intent detector", () => {
     assert.equal(result.confidence, "medium");
   });
 
-  it("recognizes domain-specific physical exam requests (cardiovascular)", () => {
+  it("recognizes domain-specific physical exam requests (multiple keywords)", () => {
+    const sample = "physical exam findings please";
+    const resLegacy = detectStageIntentLegacy(sample, legacyContext);
+    const resPhase3 = detectStageIntentPhase3(sample, legacyContext);
+    assert.equal(resLegacy.matched, true, "legacy should match physical exam request with multiple keywords");
+    assert.equal(resPhase3.matched, true, "phase3 should match physical exam request with multiple keywords");
+  });
+
+  it("does not advance on single physical exam keyword alone", () => {
     const sample = "cardiovascular examine tell me";
     const resLegacy = detectStageIntentLegacy(sample, legacyContext);
     const resPhase3 = detectStageIntentPhase3(sample, legacyContext);
-    assert.equal(resLegacy.matched, true, "legacy should match physical exam request");
-    assert.equal(resPhase3.matched, true, "phase3 should match physical exam request");
+    assert.equal(resLegacy.matched, false, "legacy should not match on single keyword");
+    assert.equal(resPhase3.matched, false, "phase3 should not match on single keyword");
   });
 });

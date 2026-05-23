@@ -127,15 +127,18 @@ export function getStageTip(caseId: string, stageIndex: number): string {
 }
 
 /**
- * Initialise stages with the first stage marked as completed
+ * Initialise stages — no stage is pre-completed; students must
+ * demonstrate engagement before each stage can be marked complete.
  * @param stages Array of stages to initialise
- * @returns A new array with the first stage marked as completed
+ * @returns A new array with all stages marked as not completed
  */
 export function initializeStages(stages: Stage[]): Stage[] {
   if (stages.length === 0) return [];
 
-  const initializedStages = [...stages];
-  initializedStages[0] = { ...initializedStages[0], completed: true };
+  const initializedStages = stages.map((stage, idx) => ({
+    ...stage,
+    completed: false,
+  }));
 
   return initializedStages;
 }

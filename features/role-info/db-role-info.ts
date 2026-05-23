@@ -71,6 +71,14 @@ const defaultFollowUp = (title: string) =>
 
 const defaultFollowUpFeedback = `Provide structured feedback on how the student prioritised diagnostics, explained costs/benefits, and addressed biosecurity or home-care considerations.`;
 
+const defaultPhysicalExamFeedback = `Evaluate the student's physical examination strategy. Did they request a systematic exam covering all relevant body systems? Did they ask for specific vital signs and pertinent findings rather than vague "anything abnormal?" requests? Flag any major systems they omitted and suggest what they should have asked for next time.`;
+
+const defaultDiagnosticFeedback = `Assess how the student interpreted and acted on diagnostic results. Did they request results one at a time with clear rationale? Did they connect findings to clinical decisions? Flag if they requested irrelevant tests or failed to act on abnormal results.`;
+
+const defaultTreatmentPlanFeedback = `Review the student's treatment plan for completeness and clinical reasoning. Did they specify drug names, doses, routes, and frequency? Did they address monitoring, follow-up, and client instructions? Did they consider cost and practicality for the owner? Flag any gaps in the plan.`;
+
+const defaultDiagnosisFeedback = `Evaluate how the student communicated the diagnosis and treatment plan to the owner. Did they use plain language? Did they check for understanding? Did they address the owner's concerns about prognosis, cost, and next steps? Did they provide clear follow-up instructions?`;
+
 const defaultDiagnosisPrompt = (title: string) =>
   `You are the owner receiving a diagnosis and discharge plan for ${title}. Ask practical questions about monitoring, medication, prognosis, and when to seek help.`;
 
@@ -296,6 +304,30 @@ Stay true to the owner personality, collaborate willingly, and avoid offering di
       defaultFollowUpFeedback
     );
     return `Review the student's diagnostic planning and communication with the owner. Use the context below and provide structured feedback.\n\nConversation context:\n${context}\n\nFeedback guidance:\n${followUpFeedback}`;
+  },
+  getPhysicalExamFeedbackPrompt: (
+    caseRow: Record<string, unknown> | null,
+    context: string
+  ) => {
+    return `Review the student's physical examination performance. Use the context below and provide structured feedback.\n\nConversation context:\n${context}\n\nFeedback guidance:\n${defaultPhysicalExamFeedback}`;
+  },
+  getDiagnosticFeedbackPrompt: (
+    caseRow: Record<string, unknown> | null,
+    context: string
+  ) => {
+    return `Review the student's diagnostic reasoning and interpretation of test results. Use the context below and provide structured feedback.\n\nConversation context:\n${context}\n\nFeedback guidance:\n${defaultDiagnosticFeedback}`;
+  },
+  getTreatmentPlanFeedbackPrompt: (
+    caseRow: Record<string, unknown> | null,
+    context: string
+  ) => {
+    return `Review the student's treatment plan formulation and communication. Use the context below and provide structured feedback.\n\nConversation context:\n${context}\n\nFeedback guidance:\n${defaultTreatmentPlanFeedback}`;
+  },
+  getOwnerDiagnosisFeedbackPrompt: (
+    caseRow: Record<string, unknown> | null,
+    context: string
+  ) => {
+    return `Review the student's diagnosis communication and client counseling. Use the context below and provide structured feedback.\n\nConversation context:\n${context}\n\nFeedback guidance:\n${defaultDiagnosisFeedback}`;
   },
   getOwnerDiagnosisPrompt: (
     caseRow: Record<string, unknown> | null,

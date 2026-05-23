@@ -8,23 +8,29 @@ import { Textarea } from "@/components/ui/textarea";
 type NotepadProps = {
   isOpen: boolean;
   onClose: () => void;
+  caseId?: string;
+  attemptId?: string;
 };
 
-export function Notepad({ isOpen, onClose }: NotepadProps) {
+export function Notepad({ isOpen, onClose, caseId, attemptId }: NotepadProps) {
   const [notes, setNotes] = useState("");
 
-  // Load notes from localStorage when component mounts
+  const storageKey = `osce-notes-${caseId || "nocase"}-${attemptId || "noattempt"}`;
+
   useEffect(() => {
-    const savedNotes = localStorage.getItem("osce-notes");
+    const savedNotes = localStorage.getItem(storageKey);
     if (savedNotes) {
       setNotes(savedNotes);
+    } else {
+      setNotes("");
     }
-  }, []);
+  }, [storageKey]);
 
-  // Save notes to localStorage when they change
   useEffect(() => {
-    localStorage.setItem("osce-notes", notes);
-  }, [notes]);
+    if (notes !== undefined) {
+      localStorage.setItem(storageKey, notes);
+    }
+  }, [notes, storageKey]);
 
   if (!isOpen) return null;
 
@@ -47,7 +53,7 @@ export function Notepad({ isOpen, onClose }: NotepadProps) {
           className="min-h-[200px] resize-none"
         />
         <p className="mt-2 text-xs text-muted-foreground">
-          Notes are automatically saved to your browser
+          Notes are saved per case and attempt
         </p>
       </div>
     </div>

@@ -179,16 +179,35 @@ const PHYSICAL_EXAM_KEYWORDS: string[] = [
 ];
 
 const STAGE_COMPLETION_RULES: Record<string, StageCompletionRule> = {
+  "history taking": {
+    minUserTurns: 3,
+    minAssistantTurns: 2,
+  },
   "physical examination": {
-    // Make detection more sensitive: single user/assistant turn + single keyword hit
     minUserTurns: 1,
     minAssistantTurns: 1,
     assistantKeywords: PHYSICAL_EXAM_KEYWORDS,
     minAssistantKeywordHits: 1,
   },
+  "diagnostic planning": {
+    minUserTurns: 2,
+    minAssistantTurns: 1,
+  },
+  "laboratory & tests": {
+    minUserTurns: 2,
+    minAssistantTurns: 1,
+  },
+  "treatment plan": {
+    minUserTurns: 2,
+    minAssistantTurns: 1,
+  },
+  "client communication": {
+    minUserTurns: 2,
+    minAssistantTurns: 1,
+  },
 };
 
-const ENABLE_PHASE_THREE_STAGE_INTENT = process.env.NEXT_PUBLIC_ENABLE_PHASE_THREE_STAGE_INTENT === "true";
+const ENABLE_PHASE_THREE_STAGE_INTENT = process.env.NEXT_PUBLIC_ENABLE_PHASE_THREE_STAGE_INTENT !== "false";
 const ENABLE_STAGE_READINESS_TELEMETRY = process.env.NEXT_PUBLIC_ENABLE_STAGE_READINESS_INTENT === "true";
 const STAGE_STAY_BLOCK_WINDOW_MS = 45_000;
 
@@ -1683,42 +1702,9 @@ export function ChatInterface({
             suppressAutoStart(1200);
           } catch {}
 
-          // Attempt to auto-advance stages on a UI-based nurse activation (History->Physical, Diagnostic->Lab)
-          try {
-            const stage = stages?.[currentStageIndex];
-            const stageTitle = (stage?.title ?? "").toLowerCase();
-
-            // Guard: only auto-advance if the current stage has sufficient turns
-            const stageReadiness = evaluateStageCompletion(currentStageIndex, messages);
-            const hasEnoughTurns = stageReadiness.metrics.userTurns >= 2;
-
-            if (hasEnoughTurns && stageReadiness.status !== "insufficient") {
-              const attemptAdvanceTo = async (predicate: (label: string) => boolean) => {
-                for (let i = 0; i < 6; i++) {
-                  const s = stages?.[currentStageIndex];
-                  const sTitle = (s?.title ?? "").toLowerCase();
-                  if (predicate(sTitle)) return true;
-                  try {
-                    onProceedToNextStage(messages, 0);
-                  } catch {}
-                  await new Promise((r) => setTimeout(r, 220));
-                }
-                return false;
-              };
-
-              if (/history/.test(stageTitle) || /history taking/.test(stageTitle)) {
-                void attemptAdvanceTo((l) => /physical/.test(l));
-              }
-
-              if (/diagnostic/.test(stageTitle) || /diagnostic planning/.test(stageTitle)) {
-                void attemptAdvanceTo((l) => /laboratory|lab|tests/.test(l));
-              }
-            } else {
-              console.log("[Stage] Skipping auto-advance: userTurns:", stageReadiness.metrics.userTurns, "status:", stageReadiness.status);
-            }
-          } catch (e) {
-            // ignore
-          }
+          // Auto-advance removed: students must explicitly advance stages via the
+          // stage buttons. Persona switches no longer yank the student out of the
+          // current stage, preserving the clinical interview flow.
 
           if (!nurseGreetingSentRef.current) {
             // If the user has recently sent a message as the Nurse, suppress the
@@ -2578,6 +2564,8 @@ export function ChatInterface({
 
     setIsLoading(true);
 
+    let hadError = false;
+
     try {
       // If we previously inserted a '...' placeholder waiting for continuation,
       // remove it now that we're sending the stitched message to the server.
@@ -2868,6 +2856,7 @@ export function ChatInterface({
         }
       }
     } catch (error) {
+      hadError = true;
       console.error("Error getting chat response (auto-send):", error);
       // If the error looks like network/unavailable, enqueue for background retry
       const maybeNetwork =
@@ -2893,6 +2882,10 @@ export function ChatInterface({
 
       const errorMessage = chatService.createErrorMessage(error, currentStageIndex);
       setMessages((prev) => [...prev, errorMessage]);
+
+      // Preserve the user's text on error so they can retry without re-typing
+      baseInputRef.current = userMessage?.content ?? "";
+      setInput(userMessage?.content ?? "");
     } finally {
       // Remove the message id from the in-flight set when done
       try {
@@ -2903,11 +2896,16 @@ export function ChatInterface({
 
       // Reset interim transcripts after a send
       reset();
-      // Clear base input buffer after a send so future dictation starts
-      // from an empty buffer.
-      baseInputRef.current = "";
-      // Ensure visible input is cleared after the send completes
-      setInput("");
+
+      // Only clear input on success; on error we preserved it in the catch block
+      if (!hadError) {
+        // Clear base input buffer after a send so future dictation starts
+        // from an empty buffer.
+        baseInputRef.current = "";
+        // Ensure visible input is cleared after the send completes
+        setInput("");
+      }
+
       // Suppress immediate transcript re-population for a short grace window
       try {
         clearInputSuppressionRef.current = true;
@@ -4988,10 +4986,12 @@ export function ChatInterface({
         </div>
       )}
 
-      {/* Notepad (per-persona) */}
+      {/* Notepad (per-case/attempt) */}
       <Notepad
         isOpen={Boolean(showNotepadByPersona[activePersona])}
         onClose={() => setShowNotepadByPersona((prev) => ({ ...prev, [activePersona]: false }))}
+        caseId={caseId}
+        attemptId={attemptId}
       />
     </div>
   );
