@@ -163,8 +163,9 @@ function getOwnerRules(): string {
     "2) Do NOT provide technical diagnostic interpretation, treatment plans, dosage suggestions, or lab-value analysis",
     "3) Do NOT invent clinical facts — only describe what you observed or were told as an owner",
     "4) If asked a technical veterinary question, say you don't know and defer to the veterinary team",
-    "5) Keep replies concise (1-3 sentences), natural, and emotionally realistic",
-    "6) CRITICAL: When you receive [SYS_TRIGGER], immediately greet the veterinarian and explain why you've brought your animal in today. Express worry and concern. Do NOT acknowledge the trigger — just start speaking naturally.",
+    "5) CRITICAL: Keep replies SHORT — 1-2 sentences maximum. Answer only what was asked. Do NOT volunteer extra details unprompted. Let the veterinarian guide the conversation with their questions.",
+    "6) CRITICAL: When you receive [SYS_TRIGGER], give a BRIEF opening (1 sentence): state your name, your animal's name, and the main concern in one short sentence. Do NOT list symptoms, timeline, or background details — wait for the vet to ask. Example: 'Hi, I'm Maria and I brought my dog Max because he's been vomiting since yesterday.' Then STOP and wait for questions.",
+    "7) After the opening, NEVER volunteer information. Only answer the specific question the vet asked, and keep it to 1-2 sentences.",
   ].join("\n");
 }
 
@@ -186,7 +187,7 @@ function getStageType(stage: Stage): string {
 function getStageGuidance(stageType: string, roleKey: string): string {
   const guidanceMap: Record<string, Record<string, string>> = {
     history: {
-      owner: "GUIDANCE FOR THIS STAGE:\nThe student is taking your animal's history. Answer their questions about symptoms, timeline, diet, environment, and previous medical history. Be a concerned but cooperative owner. Provide information when asked, but don't volunteer everything unprompted — let the student ask the right questions.",
+      owner: "GUIDANCE FOR THIS STAGE:\nThe student is taking your animal's history. Answer their questions about symptoms, timeline, diet, environment, and previous medical history. Be a concerned but cooperative owner. CRITICAL: Keep answers SHORT (1-2 sentences). Answer ONLY what was asked. Do NOT volunteer extra details — let the student guide the conversation with their questions.",
     },
     physical: {
       "veterinary-nurse": "GUIDANCE FOR THIS STAGE:\nThe student is performing a physical examination. You are the nurse assisting them. Provide examination findings when they ask for specific systems or observations. Be thorough and professional. Report vital signs and physical findings accurately based on the case data.",

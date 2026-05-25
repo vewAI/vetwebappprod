@@ -3,7 +3,16 @@
 import { useState, useCallback, useRef } from "react";
 import type { Stage } from "@/features/stages/types";
 
-const MIN_TURNS_PER_STAGE = 4;
+// Minimum turns vary by stage type — physical exam needs more interaction
+const MIN_TURNS_BY_STAGE_TYPE: Record<string, number> = {
+  history: 6,
+  physical: 8,
+  diagnostic: 5,
+  laboratory: 5,
+  treatment: 5,
+  communication: 5,
+};
+const DEFAULT_MIN_TURNS = 5;
 
 export type UseLiveProgressResult = {
   currentStageIndex: number;
@@ -25,7 +34,13 @@ export function useLiveProgress(
   const turnCountRef = useRef(0);
   const [turnCount, setTurnCount] = useState(0);
 
-  const canAdvance = turnCount >= MIN_TURNS_PER_STAGE;
+  // Get stage type for dynamic minimum
+  const currentStage = stages[currentStageIndex];
+  const settings = currentStage?.settings as Record<string, unknown> | undefined;
+  const stageType = typeof settings?.stage_type === "string" ? settings.stage_type : "";
+  const minTurns = stageType ? (MIN_TURNS_BY_STAGE_TYPE[stageType] ?? DEFAULT_MIN_TURNS) : DEFAULT_MIN_TURNS;
+
+  const canAdvance = turnCount >= minTurns;
 
   const advanceStage = useCallback(() => {
     if (currentStageIndex < stages.length - 1) {

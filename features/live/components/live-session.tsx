@@ -216,17 +216,9 @@ export function LiveSession({
     prevUserTurnCountRef.current = userTurns;
   }, [live.transcript, progress]);
 
-  // Auto-advance stage when enough turns completed and AI finishes speaking
-  useEffect(() => {
-    if (progress.canAdvance && !live.isSpeaking && live.status === "connected") {
-      const timer = setTimeout(() => {
-        if (progress.currentStageIndex < progress.stages.length - 1) {
-          progress.advanceStage();
-        }
-      }, 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [progress.canAdvance, live.isSpeaking, live.status, progress]);
+  // Auto-advance removed: stages must be advanced explicitly by the user
+  // via the advance button. This prevents premature stage jumps and ensures
+  // the student has completed meaningful interactions before moving on.
 
   const handleToggleMic = useCallback(async () => {
     if (mic.isRecording) {
