@@ -4662,31 +4662,38 @@ export function ChatInterface({
         </div>
       )}
 
-      {/* Chat messages area */}
-      <div id="chat-messages" className="flex-1 overflow-y-auto p-4">
-        <div className="mx-auto max-w-3xl">
-          {/* Persistent guided mode panel — re-renders on stage change */}
-          {guidedMode && (() => {
-            const g = getStudentGuidance(stages[currentStageIndex]);
-            if (!g) return null;
-            return (
-              <div key={`guidance-${currentStageIndex}`} className="mb-4 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
-                <div className="flex items-center gap-2 mb-2">
-                  <Lightbulb className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+      {/* Floating Guided Mode Panel — fixed position, always visible */}
+      {guidedMode && (() => {
+        const g = getStudentGuidance(stages[currentStageIndex]);
+        if (!g) return null;
+        return (
+          <div key={`guidance-floating-${currentStageIndex}`} className="absolute top-0 left-0 right-0 z-30 pointer-events-none">
+            <div className="mx-auto max-w-3xl px-4 pt-2 pointer-events-auto">
+              <div className="p-3 bg-amber-50/95 dark:bg-amber-950/80 border border-amber-200 dark:border-amber-800 rounded-lg shadow-lg backdrop-blur-sm animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="flex items-center gap-2 mb-1">
+                  <Lightbulb className="h-4 w-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
                   <span className="text-sm font-semibold text-amber-800 dark:text-amber-200">{g.title}</span>
                 </div>
-                <p className="text-sm text-amber-900 dark:text-amber-100 mb-2">{g.whatToDo}</p>
-                <ul className="text-xs text-amber-800 dark:text-amber-200 space-y-1">
+                <p className="text-sm text-amber-900 dark:text-amber-100 mb-1">{g.whatToDo}</p>
+                <ul className="text-xs text-amber-800 dark:text-amber-200 space-y-0.5">
                   {g.tips.map((tip, i) => (
                     <li key={i} className="flex items-start gap-1.5">
-                      <span className="text-amber-500 mt-0.5">&bull;</span>
+                      <span className="text-amber-500 mt-0.5 flex-shrink-0">&bull;</span>
                       <span>{tip}</span>
                     </li>
                   ))}
                 </ul>
               </div>
-            );
-          })()}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Chat messages area */}
+      <div id="chat-messages" className="flex-1 overflow-y-auto p-4">
+        <div className="mx-auto max-w-3xl">
+          {/* Spacer when guided mode is ON so messages don't hide behind floating panel */}
+          {guidedMode && getStudentGuidance(stages[currentStageIndex]) && <div className="h-36" />}
           {/* Persona filter is controlled by the big OWNER / VOICE MODE / NURSE controls above */}
           <div className="space-y-4">
             {/* Group consecutive messages by same role/persona/stage into a single visual entry */}
