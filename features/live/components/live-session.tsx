@@ -14,6 +14,7 @@ import { AudioWaveform } from "./audio-waveform";
 import { LiveControls } from "./live-controls";
 import { LiveStageProgress } from "./live-stage-progress";
 import { LiveTranscript } from "./live-transcript";
+import { StageAdvanceHint } from "./stage-advance-hint";
 
 type LiveSessionProps = {
   caseItem: Case;
@@ -49,6 +50,10 @@ export function LiveSession({
 
   const prevUserTurnCountRef = useRef(0);
   const currentStage = progress.stages[progress.currentStageIndex];
+
+  // Track whether the stage advance hint has been shown for the current stage
+  const hintShownForStageRef = useRef<number>(-1);
+  const [showAdvanceHint, setShowAdvanceHint] = useState(false);
 
   // Wire mic audio to live session
   useEffect(() => {
@@ -220,6 +225,15 @@ export function LiveSession({
   // via the advance button. This prevents premature stage jumps and ensures
   // the student has completed meaningful interactions before moving on.
 
+  // Show a hint pointing to the Next Stage button when the student has
+  // completed enough turns but hasn't advanced yet. Shows once per stage.
+  useEffect(() => {
+    if (progress.canAdvance && progress.currentStageIndex !== hintShownForStageRef.current) {
+      hintShownForStageRef.current = progress.currentStageIndex;
+      setShowAdvanceHint(true);
+    }
+  }, [progress.canAdvance, progress.currentStageIndex]);
+
   const handleToggleMic = useCallback(async () => {
     if (mic.isRecording) {
       mic.stop();
@@ -309,6 +323,7 @@ export function LiveSession({
         isRecording={mic.isRecording}
         canAdvance={progress.canAdvance}
         isMuted={isMuted}
+        showAdvanceHint={showAdvanceHint}
         onToggleMic={handleToggleMic}
         onInterrupt={live.interrupt}
         onAdvanceStage={handleAdvanceStage}

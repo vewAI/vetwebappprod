@@ -4,12 +4,14 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Mic, MicOff, SkipForward, PhoneOff, Volume2, VolumeX } from "lucide-react";
 import type { LiveSessionStatus } from "../types";
+import { StageAdvanceHint } from "./stage-advance-hint";
 
 type LiveControlsProps = {
   status: LiveSessionStatus;
   isRecording: boolean;
   canAdvance: boolean;
   isMuted: boolean;
+  showAdvanceHint: boolean;
   onToggleMic: () => void;
   onInterrupt: () => void;
   onAdvanceStage: () => void;
@@ -22,6 +24,7 @@ export function LiveControls({
   isRecording,
   canAdvance,
   isMuted,
+  showAdvanceHint,
   onToggleMic,
   onInterrupt,
   onAdvanceStage,
@@ -83,15 +86,18 @@ export function LiveControls({
         </Button>
 
         {canAdvance && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onAdvanceStage}
-            className="gap-2 rounded-full px-4"
-          >
-            <SkipForward className="h-4 w-4" />
-            Next Stage
-          </Button>
+          <div className="relative">
+            <StageAdvanceHint visible={showAdvanceHint} />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onAdvanceStage}
+              className="gap-2 rounded-full px-4 border-yellow-400/50 text-yellow-400 hover:bg-yellow-400/10"
+            >
+              <SkipForward className="h-4 w-4" />
+              Next Stage
+            </Button>
+          </div>
         )}
 
         <Button
