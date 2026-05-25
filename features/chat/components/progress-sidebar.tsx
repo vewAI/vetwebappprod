@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import type { Case } from "@/features/case-selection/models/case";
 import type { Stage } from "@/features/stages/types";
-import { getStudentGuidance } from "@/features/stages/services/studentGuidance";
 
 type ProgressSidebarProps = {
   caseItem: Case;
@@ -18,7 +17,6 @@ type ProgressSidebarProps = {
 
 export function ProgressSidebar({ caseItem, stages, currentStageIndex, onStageSelect, guidedMode }: ProgressSidebarProps) {
   const currentStage = stages[currentStageIndex];
-  const guidance = guidedMode ? getStudentGuidance(currentStage) : null;
 
   return (
     <div className="flex h-full flex-col border-r bg-muted/20">
@@ -78,24 +76,6 @@ export function ProgressSidebar({ caseItem, stages, currentStageIndex, onStageSe
             <Lightbulb className={cn("h-4 w-4", guidedMode && "text-amber-600 dark:text-amber-400")} />
             <span>{guidedMode ? "Guided mode ON" : "Enable guided mode"}</span>
           </button>
-        )}
-
-        {guidance && (
-          <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
-            <div className="flex items-center gap-2 mb-2">
-              <Lightbulb className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-              <span className="text-sm font-semibold text-amber-800 dark:text-amber-200">What to do here</span>
-            </div>
-            <p className="text-sm text-amber-900 dark:text-amber-100 mb-2">{guidance.whatToDo}</p>
-            <ul className="text-xs text-amber-800 dark:text-amber-200 space-y-1">
-              {guidance.tips.map((tip, i) => (
-                <li key={i} className="flex items-start gap-1.5">
-                  <span className="text-amber-500 mt-0.5">•</span>
-                  <span>{tip}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
         )}
       </div>
 

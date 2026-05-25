@@ -4634,8 +4634,8 @@ export function ChatInterface({
         }}
       />
 
-      {/* Stage Tip Toast (central, non-blocking) */}
-      {stageIndicator && (
+      {/* Stage Tip Toast — hidden when guided mode is ON (guidance shown in amber panel instead) */}
+      {stageIndicator && !guidedMode && (
         <div className="fixed top-24 left-0 right-0 flex justify-center pointer-events-none z-40">
           <div className="bg-muted/90 backdrop-blur-sm border border-border text-foreground px-5 py-3 rounded-lg shadow-lg max-w-lg pointer-events-auto animate-in fade-in slide-in-from-top-4 duration-300">
             <div className="font-semibold text-sm mb-1">{stageIndicator.title}</div>
