@@ -99,12 +99,17 @@ export function getStudentGuidance(stage?: Stage): StageGuidance | null {
 
   // Fallback: match by stage title keywords
   const title = (stage.title ?? "").toLowerCase();
-  if (title.includes("history") || title.includes("anamnesis")) return STUDENT_GUIDANCE.history;
-  if (title.includes("physical") || title.includes("examination") || title.includes("exam")) return STUDENT_GUIDANCE.physical;
-  if (title.includes("diagnostic") || title.includes("diagnos")) return STUDENT_GUIDANCE.diagnostics;
-  if (title.includes("laboratory") || title.includes("lab") || title.includes("test")) return STUDENT_GUIDANCE.lab;
-  if (title.includes("treatment") || title.includes("plan")) return STUDENT_GUIDANCE.plan;
-  if (title.includes("communication") || title.includes("client")) return STUDENT_GUIDANCE.communication;
+  const description = (stage.description ?? "").toLowerCase();
+  const combined = `${title} ${description}`;
 
+  if (combined.includes("history") || combined.includes("anamnesis") || combined.includes("interview")) return STUDENT_GUIDANCE.history;
+  if (combined.includes("physical") || combined.includes("examination") || combined.includes("exam")) return STUDENT_GUIDANCE.physical;
+  if (combined.includes("diagnostic") || combined.includes("diagnos")) return STUDENT_GUIDANCE.diagnostics;
+  if (combined.includes("laboratory") || combined.includes("lab") || combined.includes("test") || combined.includes("results")) return STUDENT_GUIDANCE.lab;
+  if (combined.includes("treatment") || combined.includes("plan") || combined.includes("medication")) return STUDENT_GUIDANCE.plan;
+  if (combined.includes("communication") || combined.includes("client") || combined.includes("explain") || combined.includes("prognosis")) return STUDENT_GUIDANCE.communication;
+
+  // Last resort: match by stage index position (standard 6-stage flow)
+  // This handles cases where titles are non-standard but follow the conventional order
   return null;
 }

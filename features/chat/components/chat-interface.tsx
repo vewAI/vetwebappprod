@@ -378,6 +378,17 @@ export function ChatInterface({
       return next;
     });
   }, []);
+
+  // Sync guidedMode state with sidebar toggles (progress-sidebar dispatches this event)
+  useEffect(() => {
+    const handler = () => {
+      try {
+        setGuidedMode(window.localStorage.getItem("guided-mode") === "true");
+      } catch {}
+    };
+    window.addEventListener("guided-mode-change", handler);
+    return () => window.removeEventListener("guided-mode-change", handler);
+  }, []);
   // Per-persona draft persistence (in-memory + localStorage per attempt)
   const [personaDrafts, setPersonaDrafts] = useState<Record<AllowedChatPersonaKey, string>>({
     owner: "",
@@ -4166,6 +4177,10 @@ export function ChatInterface({
 
     isAdvancingRef.current = true;
 
+    // Defer heavy work to next frame to avoid blocking UI (INP fix)
+    // This yields to the browser so the button click visual feedback renders immediately
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
     // Check if we are completing the examination (last stage)
     if (currentStageIndex >= stages.length - 1) {
       try {
@@ -4650,12 +4665,12 @@ export function ChatInterface({
       {/* Chat messages area */}
       <div id="chat-messages" className="flex-1 overflow-y-auto p-4">
         <div className="mx-auto max-w-3xl">
-          {/* Persistent guided mode panel */}
+          {/* Persistent guided mode panel — re-renders on stage change */}
           {guidedMode && (() => {
             const g = getStudentGuidance(stages[currentStageIndex]);
             if (!g) return null;
             return (
-              <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
+              <div key={`guidance-${currentStageIndex}`} className="mb-4 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
                 <div className="flex items-center gap-2 mb-2">
                   <Lightbulb className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                   <span className="text-sm font-semibold text-amber-800 dark:text-amber-200">{g.title}</span>
