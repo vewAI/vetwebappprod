@@ -90,10 +90,21 @@ const STUDENT_GUIDANCE: Record<string, StageGuidance> = {
 
 export function getStudentGuidance(stage?: Stage): StageGuidance | null {
   if (!stage) return null;
+
+  // Try stage_type from settings first
   const stageType = (stage.settings as Record<string, unknown>)?.stage_type;
-  const key = stageType && typeof stageType === "string" && STAGE_TYPE_TO_GUIDANCE_KEY[stageType]
-    ? STAGE_TYPE_TO_GUIDANCE_KEY[stageType]
-    : null;
-  if (!key) return null;
-  return STUDENT_GUIDANCE[key] ?? null;
+  if (stageType && typeof stageType === "string" && STAGE_TYPE_TO_GUIDANCE_KEY[stageType]) {
+    return STUDENT_GUIDANCE[STAGE_TYPE_TO_GUIDANCE_KEY[stageType]] ?? null;
+  }
+
+  // Fallback: match by stage title keywords
+  const title = (stage.title ?? "").toLowerCase();
+  if (title.includes("history") || title.includes("anamnesis")) return STUDENT_GUIDANCE.history;
+  if (title.includes("physical") || title.includes("examination") || title.includes("exam")) return STUDENT_GUIDANCE.physical;
+  if (title.includes("diagnostic") || title.includes("diagnos")) return STUDENT_GUIDANCE.diagnostics;
+  if (title.includes("laboratory") || title.includes("lab") || title.includes("test")) return STUDENT_GUIDANCE.lab;
+  if (title.includes("treatment") || title.includes("plan")) return STUDENT_GUIDANCE.plan;
+  if (title.includes("communication") || title.includes("client")) return STUDENT_GUIDANCE.communication;
+
+  return null;
 }
