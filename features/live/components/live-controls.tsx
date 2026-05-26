@@ -91,8 +91,12 @@ export function LiveControls({
             variant="outline"
             size="sm"
             onClick={onAdvanceStage}
-            disabled={!canAdvance}
-            className="gap-2 rounded-full px-4 border-yellow-400/50 text-yellow-400 hover:bg-yellow-400/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:border-muted disabled:text-muted-foreground"
+            className={cn(
+              "gap-2 rounded-full px-4",
+              canAdvance
+                ? "border-yellow-400/50 text-yellow-400 hover:bg-yellow-400/10"
+                : "border-muted text-muted-foreground hover:bg-muted/50"
+            )}
           >
             <SkipForward className="h-4 w-4" />
             Next Stage
