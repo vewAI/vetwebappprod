@@ -42,7 +42,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  let rows = (data ?? []) as CaseSessionDbRow[];
+  let rows = (data ?? []) as unknown as CaseSessionDbRow[];
 
   if (statusParam !== "all" && ["scheduled", "active", "completed"].includes(statusParam)) {
     rows = rows.filter((r) =>
@@ -163,6 +163,6 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({
-    session: mapRowToCaseSession(data as CaseSessionDbRow),
+    session: mapRowToCaseSession(data as unknown as CaseSessionDbRow),
   });
 }

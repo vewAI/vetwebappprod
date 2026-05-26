@@ -125,7 +125,7 @@ export async function GET(request: Request, context: RouteContext) {
     profiles?: { full_name?: string | null; email?: string | null } | null;
   };
 
-  const mapped: SessionAttemptRow[] = (attempts ?? []).map((a: AttemptJoinRow) => {
+  const mapped: SessionAttemptRow[] = ((attempts ?? []) as unknown as AttemptJoinRow[]).map((a) => {
     const prof = a.profiles;
     const cs = String(a.completion_status ?? "in_progress");
     const completionStatus = cs === "completed" ? ("completed" as const) : cs === "abandoned" ? ("abandoned" as const) : ("in_progress" as const);
