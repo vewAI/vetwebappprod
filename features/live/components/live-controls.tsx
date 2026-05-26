@@ -85,20 +85,19 @@ export function LiveControls({
           )}
         </Button>
 
-        {canAdvance && (
-          <div className="relative">
-            <StageAdvanceHint visible={showAdvanceHint} />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onAdvanceStage}
-              className="gap-2 rounded-full px-4 border-yellow-400/50 text-yellow-400 hover:bg-yellow-400/10"
-            >
-              <SkipForward className="h-4 w-4" />
-              Next Stage
-            </Button>
-          </div>
-        )}
+        <div className="relative">
+          <StageAdvanceHint visible={showAdvanceHint && canAdvance} />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onAdvanceStage}
+            disabled={!canAdvance}
+            className="gap-2 rounded-full px-4 border-yellow-400/50 text-yellow-400 hover:bg-yellow-400/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:border-muted disabled:text-muted-foreground"
+          >
+            <SkipForward className="h-4 w-4" />
+            Next Stage
+          </Button>
+        </div>
 
         <Button
           variant="ghost"
