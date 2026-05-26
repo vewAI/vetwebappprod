@@ -4683,6 +4683,9 @@ export function ChatInterface({
                     </li>
                   ))}
                 </ul>
+                <p className="mt-2 pt-2 border-t border-amber-200/60 dark:border-amber-800/60 text-xs text-amber-700 dark:text-amber-300 italic">
+                  When you&apos;re done, click the <strong>NEXT STAGE</strong> button.
+                </p>
               </div>
             </div>
           </div>
@@ -4693,7 +4696,7 @@ export function ChatInterface({
       <div id="chat-messages" className="flex-1 overflow-y-auto p-4">
         <div className="mx-auto max-w-3xl">
           {/* Spacer when guided mode is ON so messages don't hide behind floating panel */}
-          {guidedMode && getStudentGuidance(stages[currentStageIndex]) && <div className="h-36" />}
+          {guidedMode && getStudentGuidance(stages[currentStageIndex]) && <div className="h-52" />}
           {/* Persona filter is controlled by the big OWNER / VOICE MODE / NURSE controls above */}
           <div className="space-y-4">
             {/* Group consecutive messages by same role/persona/stage into a single visual entry */}

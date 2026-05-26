@@ -299,6 +299,20 @@ export default function HomePage() {
                   ? "Review your students' progress and assign new cases."
                   : "Continue your training journey or start a new simulated case."}
               </p>
+              {role === "student" && (
+                <p className="mt-3 text-sm leading-relaxed text-muted-foreground/80">
+                  To practice <strong>knowledge and clinical skills</strong>, choose from the cases below or click on the{" "}
+                  <Link href="/cases" className="font-medium text-primary underline underline-offset-2 hover:text-primary/80">
+                    Cases
+                  </Link>{" "}
+                  menu link. If you&apos;d like to practice your{" "}
+                  <strong>communication skills</strong>, click on the{" "}
+                  <Link href="/live" className="font-medium text-primary underline underline-offset-2 hover:text-primary/80">
+                    Live
+                  </Link>{" "}
+                  menu link at the top.
+                </p>
+              )}
             </div>
           </div>
           <NotificationsBar notifications={notifications} />

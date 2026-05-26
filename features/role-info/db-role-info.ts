@@ -353,3 +353,46 @@ Stay true to the owner personality, collaborate willingly, and avoid offering di
     return `${baseOverallFeedbackInstructions}\n\nCase-specific priorities:\n${overview}\n\nConversation context:\n${context}`;
   },
 };
+
+// --- Live (voice-to-voice) feedback prompt ---
+
+const liveVoiceCommunicationPreface = `VOICE-TO-VOICE COMMUNICATION ASSESSMENT
+
+This was a real-time voice conversation between the student and simulated personas (patient owner, veterinary nurse, etc.). Evaluate COMMUNICATION SKILLS in a spoken clinical interview context:
+
+- SPOKEN CLARITY: Did the student speak clearly, at an appropriate pace, and avoid excessive jargon?
+- ACTIVE LISTENING: Did the student respond directly to what the persona said, or did they ignore verbal cues?
+- EMPATHY & RAPPORT: Did the student's verbal responses convey empathy and build trust?
+- CONVERSATIONAL FLOW: Was the dialogue natural and responsive, or stilted and one-sided?
+- REAL-TIME ADAPTABILITY: Did the student adapt their questions based on the persona's responses?
+- PAUSE & REFLECT: Did the student allow the persona to finish speaking before responding?
+- INTERPROFESSIONAL COMMUNICATION: When interacting with the veterinary nurse or other team members, did the student communicate clearly, delegate appropriately, and show respect for team roles?
+
+NOTE: Since this is a voice interaction, you cannot observe body language or written communication.
+Focus your evaluation entirely on what was SAID and how it was structured verbally.
+The transcript labels are "Student" (the learner) and "Persona" (the simulated role — which may be the owner, nurse, or other team member depending on the stage).`;
+
+const defaultLiveFeedbackCaseFocus = `LIVE SESSION EVALUATION FOCUS
+
+Judge the student on:
+- INTERVIEW OPENING: Did they greet the owner/persona appropriately and establish the reason for the consultation?
+- QUESTIONING TECHNIQUE: Did they use open questions first, then focused/closed questions? Was the sequence logical?
+- INFORMATION GATHERING: Did they explore the owner's concerns, expectations, and perspective thoroughly?
+- VERBAL EMPATHY: Did they acknowledge emotions, worries, or constraints the persona expressed?
+- EXPLANATION & PLANNING: When presenting findings or recommendations, did they explain reasoning clearly and check understanding?
+- TEAM COMMUNICATION: When interacting with the nurse or other team members, was communication clear, respectful, and professional?
+- CLOSURE: Did they summarize, confirm the plan, and provide clear follow-up instructions?
+
+FLAG EXPLICITLY: When the transcript omits one of these areas or shows weak communication — this is evidence of a communication gap that should be addressed in feedback.`;
+
+export function getLiveFeedbackPrompt(
+  caseRow: Record<string, unknown> | null,
+  context: string
+): string {
+  const overview = getText(
+    caseRow,
+    "get_live_feedback_prompt",
+    defaultLiveFeedbackCaseFocus
+  );
+  return `${liveVoiceCommunicationPreface}\n\n${baseOverallFeedbackInstructions}\n\nCase-specific priorities:\n${overview}\n\nConversation transcript:\n${context}`;
+}

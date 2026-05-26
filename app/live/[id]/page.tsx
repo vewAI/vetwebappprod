@@ -12,6 +12,9 @@ import { caseStageRowToStage, type CaseStageRow } from "@/features/stages/types"
 import type { Case } from "@/features/case-selection/models/case";
 import type { Stage } from "@/features/stages/types";
 import { LiveSession } from "@/features/live/components/live-session";
+import type { TranscriptEntry } from "@/features/live/types";
+import { CompletionDialog } from "@/features/feedback/components/completion-dialog";
+import { completeAttempt } from "@/features/attempts/services/attemptMutationService";
 import { getAccessToken } from "@/lib/auth-headers";
 
 type SessionData = {
@@ -30,6 +33,11 @@ export default function LiveSessionPage() {
   const [session, setSession] = useState<SessionData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Feedback dialog state
+  const [showCompletionDialog, setShowCompletionDialog] = useState(false);
+  const [feedbackContent, setFeedbackContent] = useState("");
+  const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false);
 
   const personaDir = usePersonaDirectory(caseId);
 
@@ -116,6 +124,50 @@ export default function LiveSessionPage() {
     initSession();
   }, [caseId, user]);
 
+  // Handle session end — generate communication feedback and show dialog
+  const handleSessionEnd = async (transcript?: TranscriptEntry[]) => {
+    setShowCompletionDialog(true);
+    setIsGeneratingFeedback(true);
+
+    try {
+      if (transcript && transcript.length > 0 && session?.attemptId) {
+        const token = await getAccessToken().catch(() => null);
+
+        // Generate feedback
+        const feedbackRes = await fetch("/api/live/feedback", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ caseId, transcript }),
+        });
+
+        if (feedbackRes.ok) {
+          const data = await feedbackRes.json();
+          setFeedbackContent(data.feedback || "");
+          // Persist feedback to attempt
+          await completeAttempt(session.attemptId, data.feedback || "");
+        } else {
+          setFeedbackContent(
+            "<p>Unable to generate feedback at this time. Your session has been recorded.</p>"
+          );
+        }
+      } else {
+        setFeedbackContent(
+          "<p>Session ended with no recorded interaction. Try speaking with the persona next time to receive communication skills feedback.</p>"
+        );
+      }
+    } catch (err) {
+      console.error("Feedback generation failed:", err);
+      setFeedbackContent(
+        "<p>Unable to generate feedback at this time. Your session has been recorded.</p>"
+      );
+    } finally {
+      setIsGeneratingFeedback(false);
+    }
+  };
+
   // Loading state — wait for personas too so LiveSession always gets a populated directory
   if (isLoading || !caseData || stages.length === 0 || !session || !personaDir.isReady) {
     return (
@@ -160,13 +212,26 @@ export default function LiveSessionPage() {
   }
 
   return (
-    <LiveSession
-      caseItem={caseData}
-      stages={stages}
-      initialStageIndex={session.currentStageIndex}
-      personaDirectory={personaDir.personaDirectory}
-      attemptId={session.attemptId}
-      onSessionEnd={() => router.push("/")}
-    />
+    <>
+      <LiveSession
+        caseItem={caseData}
+        stages={stages}
+        initialStageIndex={session.currentStageIndex}
+        personaDirectory={personaDir.personaDirectory}
+        attemptId={session.attemptId}
+        onSessionEnd={handleSessionEnd}
+      />
+
+      <CompletionDialog
+        isOpen={showCompletionDialog}
+        onClose={() => {
+          setShowCompletionDialog(false);
+          router.push("/");
+        }}
+        feedback={feedbackContent}
+        isLoading={isGeneratingFeedback}
+        caseId={caseId}
+      />
+    </>
   );
 }

@@ -69,8 +69,9 @@ export default function LiveCaseSelectionPage() {
           </h1>
         </div>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-          Voice-first clinical simulation. Choose a case and speak directly with
-          the patient owner, veterinary nurse, and lab technician in real time.
+          Practice your communication skills with the voice-to-voice clinical
+          simulation. Choose a case and speak directly with the patient owner and
+          veterinary nurse in real time.
         </p>
       </header>
 

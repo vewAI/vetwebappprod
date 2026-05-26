@@ -15,6 +15,7 @@ import { LiveControls } from "./live-controls";
 import { LiveStageProgress } from "./live-stage-progress";
 import { LiveTranscript } from "./live-transcript";
 import { StageAdvanceHint } from "./stage-advance-hint";
+import type { TranscriptEntry } from "../types";
 
 type LiveSessionProps = {
   caseItem: Case;
@@ -22,7 +23,7 @@ type LiveSessionProps = {
   initialStageIndex?: number;
   personaDirectory: Record<string, PersonaEntry>;
   attemptId: string;
-  onSessionEnd?: () => void;
+  onSessionEnd?: (transcript?: TranscriptEntry[]) => void;
 };
 
 export function LiveSession({
@@ -247,6 +248,10 @@ export function LiveSession({
   }, [progress]);
 
   const handleEndSession = useCallback(async () => {
+    // Capture transcript before disconnect (disconnect does NOT clear it,
+    // but capture early for safety)
+    const finalTranscript = [...live.transcript];
+
     mic.stop();
     live.disconnect();
 
@@ -270,7 +275,7 @@ export function LiveSession({
       // non-critical
     }
 
-    onSessionEnd?.();
+    onSessionEnd?.(finalTranscript);
   }, [mic, live, attemptId, progress.currentStageIndex, onSessionEnd]);
 
   const handleToggleMute = useCallback(() => {
