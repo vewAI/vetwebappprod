@@ -2,6 +2,8 @@ export interface Attempt {
   id: string;
   userId: string;
   caseId: string;
+  /** Set when attempt was created inside a case session */
+  sessionId?: string | null;
   title: string;
   createdAt: string;
   completedAt?: string;

@@ -1,41 +1,47 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { useAuth } from "@/features/auth/services/authService";
-import { getAttemptsByCase, deleteAttempt } from "@/features/attempts/services/attemptService";
+import { getAttemptsByCase } from "@/features/attempts/services/attemptService";
 import { professorService } from "@/features/professor/services/professorService";
 import { Button } from "@/components/ui/button";
-import { Loader2, ArrowLeft, Clock, Play } from "lucide-react";
+import { ArrowLeft, Clock, Loader2 } from "lucide-react";
 import { fetchCaseById } from "@/features/case-selection/services/caseService";
 import type { Case } from "@/features/case-selection/models/case";
 import type { AttemptSummary } from "@/features/attempts/models/attempt";
 import { GuidedTour } from "@/components/ui/guided-tour";
 import { HelpTip } from "@/components/ui/help-tip";
 import { AttemptCard } from "@/features/attempts/components/attempt-card";
+import { SessionsForCaseList } from "@/features/case-sessions/components/SessionsForCaseList";
+
+interface ProfessorFeedbackItem {
+  id: string;
+  sender_role: string;
+  created_at: string;
+  message: string;
+}
 
 export default function CaseInstructionsPage() {
   const { id } = useParams() as { id: string };
-  const router = useRouter();
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
-  const [isStarting, setIsStarting] = useState(false);
   const [attempts, setAttempts] = useState<AttemptSummary[]>([]);
   const [assignedProfessorId, setAssignedProfessorId] = useState<string | null>(null);
-  const [professorFeedback, setProfessorFeedback] = useState<any[]>([]);
+  const [professorFeedback, setProfessorFeedback] = useState<ProfessorFeedbackItem[]>([]);
   const [replyText, setReplyText] = useState("");
   const [sendingReply, setSendingReply] = useState(false);
-  const [isStartingOver, setIsStartingOver] = useState(false);
   const [caseData, setCaseData] = useState<Case | null>(null);
+  const sessionsVariant = role === "professor" || role === "admin" ? "professor" : "student";
 
   const tourSteps = [
     {
       element: "#case-title",
       popover: { title: "Case Details", description: "Review the case title, estimated time, and overview before starting." },
     },
-    { element: "#start-button", popover: { title: "Start Case", description: "Click here to begin the simulation. A new attempt will be created." } },
+    { element: "#sessions-for-case", popover: { title: "Sessions", description: "Join an active session from your instructor to start the case." } },
     { element: "#past-attempts", popover: { title: "Past Attempts", description: "View your previous attempts and their status here." } },
   ];
 
@@ -72,11 +78,19 @@ export default function CaseInstructionsPage() {
       if (!user) return;
       try {
         const assigned = await professorService.getAssignedCasesForStudent(user.id);
-        const match = Array.isArray(assigned) ? assigned.find((a: any) => a.case_id === id || a.case?.id === id) : null;
+        type AssignedCaseRow = {
+          case_id?: string;
+          case?: { id?: string };
+          professor_id?: string;
+          professorId?: string;
+        };
+        const match = Array.isArray(assigned) ? assigned.find((a: AssignedCaseRow) => a.case_id === id || a.case?.id === id) : null;
         const profId = match ? match.professor_id || match.professorId || null : null;
         if (!cancelled) setAssignedProfessorId(profId);
         if (profId) {
-          const resp = await fetch(`/api/professor-feedback?studentId=${encodeURIComponent(user.id)}&caseId=${encodeURIComponent(id)}`, { headers: { Accept: "application/json" } });
+          const resp = await fetch(`/api/professor-feedback?studentId=${encodeURIComponent(user.id)}&caseId=${encodeURIComponent(id)}`, {
+            headers: { Accept: "application/json" },
+          });
           if (resp.ok) {
             const json = await resp.json();
             if (!cancelled) setProfessorFeedback(Array.isArray(json.feedback) ? json.feedback : []);
@@ -95,46 +109,6 @@ export default function CaseInstructionsPage() {
     };
   }, [user, id]);
 
-  const handleStartCase = () => {
-    setIsStarting(true);
-    // Navigate directly to the case page
-    // The case page will create a new attempt if needed
-    router.push(`/case/${id}/attempt`);
-  };
-
-  const handleStartOver = async () => {
-    // find in-progress attempts for this case
-    const inProgress = attempts.filter((a) => a.completionStatus === "in_progress");
-    if (inProgress.length === 0) {
-      // nothing to clear; just navigate to start
-      router.push(`/case/${id}/attempt`);
-      return;
-    }
-
-    const ok = window.confirm(`Found ${inProgress.length} in-progress attempt(s). Start over will erase them and begin a fresh attempt. Continue?`);
-    if (!ok) return;
-
-    setIsStartingOver(true);
-    try {
-      for (const att of inProgress) {
-        try {
-          await deleteAttempt(att.id);
-        } catch (err) {
-          console.warn("Failed to delete attempt", att.id, err);
-        }
-        try {
-          localStorage.removeItem(`advanceGuard-${att.id}`);
-        } catch (e) {
-          // ignore
-        }
-      }
-      // Navigate to case page to initialize a fresh attempt
-      router.push(`/case/${id}/attempt`);
-    } finally {
-      setIsStartingOver(false);
-    }
-  };
-
   if (!caseData) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -151,7 +125,7 @@ export default function CaseInstructionsPage() {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-6">
-        <Link href="/" className="inline-flex items-center text-sm text-muted-foreground hover:text-primary">
+        <Link href="/cases" className="inline-flex items-center text-sm text-muted-foreground hover:text-primary">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Case Selection
         </Link>
@@ -219,29 +193,10 @@ export default function CaseInstructionsPage() {
               </ul>
             </div>
 
-            <div id="start-button" className="mt-8 flex items-center gap-2">
-              <Button onClick={handleStartCase} disabled={isStarting} className="w-full sm:w-auto text-lg py-6 px-8">
-                {isStarting ? (
-                  <>
-                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    Starting...
-                  </>
-                ) : (
-                  <>
-                    <Play className="mr-2 h-5 w-5" />
-                    Start Case
-                  </>
-                )}
-              </Button>
-              <HelpTip content="Clicking this will launch the simulation environment." />
-              {attempts.some((a) => a.completionStatus === "in_progress") && (
-                <Button variant="ghost" onClick={handleStartOver} disabled={isStartingOver} size="sm" className="ml-3">
-                  {isStartingOver ? "Starting over..." : "Start Over"}
-                </Button>
-              )}
-              {attempts.some((a) => a.completionStatus === "in_progress") && (
-                <HelpTip content="Deletes in-progress attempt(s) for this case — removes messages, saved progress, and follow-up records. This cannot be undone." />
-              )}
+            <div id="sessions-for-case" className="mt-8 space-y-3">
+              <h2 className="text-xl font-semibold text-sessions">Sessions</h2>
+
+              <SessionsForCaseList caseId={id} variant={sessionsVariant} />
             </div>
           </div>
         </div>
@@ -289,16 +244,10 @@ export default function CaseInstructionsPage() {
                   {professorFeedback.map((f) => (
                     <div
                       key={f.id}
-                      className={`p-3 rounded-md border ${
-                        f.sender_role === 'student'
-                          ? 'bg-blue-50 border-blue-200 ml-8'
-                          : 'bg-background'
-                      }`}
+                      className={`p-3 rounded-md border ${f.sender_role === "student" ? "bg-blue-50 border-blue-200 ml-8" : "bg-background"}`}
                     >
                       <div className="text-xs text-muted-foreground mb-1 flex items-center gap-2">
-                        <span className="font-medium">
-                          {f.sender_role === 'student' ? 'You' : 'Professor'}
-                        </span>
+                        <span className="font-medium">{f.sender_role === "student" ? "You" : "Professor"}</span>
                         <span>{new Date(f.created_at).toLocaleString()}</span>
                       </div>
                       <div className="text-sm whitespace-pre-wrap">{f.message}</div>
@@ -337,7 +286,7 @@ export default function CaseInstructionsPage() {
                             studentId,
                             message: replyText,
                             caseId: id,
-                            senderRole: 'student',
+                            senderRole: "student",
                           }),
                         });
                         if (resp.ok) {

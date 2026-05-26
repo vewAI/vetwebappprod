@@ -9,6 +9,7 @@ type DbAttempt = {
   id?: string;
   user_id?: string;
   case_id?: string;
+  session_id?: string | null;
   title?: string;
   created_at?: string;
   completed_at?: string | null;
@@ -43,6 +44,7 @@ export function transformAttempt(data: DbAttempt): Attempt {
     id: data.id ?? "",
     userId: data.user_id ?? "",
     caseId: data.case_id ?? "",
+    sessionId: data.session_id ?? undefined,
     title: data.title ?? "",
     createdAt: data.created_at ?? "",
     completedAt: data.completed_at ?? undefined,

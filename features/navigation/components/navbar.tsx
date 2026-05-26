@@ -15,6 +15,7 @@ import {
   GraduationCap,
   FileText,
   User,
+  CalendarDays,
 } from "lucide-react";
 import { ThemeToggle } from "@/features/navigation/components/theme-toggle";
 import { FontSizeToggle } from "@/features/navigation/components/font-size-toggle";
@@ -83,6 +84,13 @@ export function Navbar() {
             >
               <FileText className="size-4" />
               <span>Cases</span>
+            </Link>
+            <Link
+              href="/case-sessions"
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground hover:text-sessions transition-colors"
+            >
+              <CalendarDays className="size-4" />
+              <span>Sessions</span>
             </Link>
             <Link
               href="/attempts"
@@ -210,6 +218,14 @@ export function Navbar() {
             >
               <FileText className="size-5" />
               <span>Cases</span>
+            </Link>
+            <Link
+              href="/case-sessions"
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-base font-medium text-foreground hover:bg-sessions/10 hover:text-sessions"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              <CalendarDays className="size-5" />
+              <span>Sessions</span>
             </Link>
             <Link
               href="/attempts"

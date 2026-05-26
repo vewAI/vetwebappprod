@@ -14,10 +14,7 @@ export async function GET(req: Request) {
   }
 
   // 1. Get professor's student IDs
-  const { data: relations } = await adminSupabase
-    .from("professor_students")
-    .select("student_id")
-    .eq("professor_id", user.id);
+  const { data: relations } = await adminSupabase.from("professor_students").select("student_id").eq("professor_id", user.id);
 
   const studentIds = (relations ?? []).map((r: { student_id: string }) => r.student_id);
 
@@ -26,7 +23,7 @@ export async function GET(req: Request) {
   if (studentIds.length > 0) {
     const { data } = await adminSupabase
       .from("attempts")
-      .select("id, user_id, case_id, created_at, cases(title), profiles!attempts_user_id_fkey(full_name)")
+      .select("id, user_id, case_id, created_at, cases(title), profiles!attempts_profiles_user_id_fkey(full_name)")
       .in("user_id", studentIds)
       .eq("completion_status", "completed")
       .order("created_at", { ascending: false })

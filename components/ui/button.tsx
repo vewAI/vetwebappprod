@@ -17,6 +17,11 @@ const buttonVariants = cva(
         secondary: "bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
         link: "text-primary underline-offset-4 hover:underline",
+        sessions:
+          "bg-sessions text-sessions-foreground shadow-xs hover:bg-sessions/90",
+        "sessions-outline":
+          "border border-sessions text-sessions bg-background shadow-xs hover:bg-sessions/10 dark:bg-input/30 dark:hover:bg-sessions/15",
+        "sessions-link": "text-sessions underline-offset-4 hover:underline",
         orange: "bg-orange-600 text-white hover:bg-orange-700 focus-visible:ring-orange-500",
       },
       size: {
