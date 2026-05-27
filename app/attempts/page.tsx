@@ -91,23 +91,17 @@ export default function AttemptsPage() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <header className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <header className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-primary md:text-4xl">My Attempts</h1>
           <p className="mt-2 text-muted-foreground">View and manage your past case attempts</p>
         </div>
-        <Link href="/">
-          <Button variant="outline" className="flex items-center gap-2 whitespace-nowrap">
-            <Home className="h-4 w-4" />
-            Browse Cases
-          </Button>
-        </Link>
       </header>
       {/* Filters */}
       <div className="mb-6 flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search attempts..." className="pl-9" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          <Input placeholder="Search attempts..." className="pl-9 h-full" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
         </div>
 
         <div className="w-full sm:w-48">

@@ -5,6 +5,7 @@ import React, { useEffect, useState, useRef } from "react";
 import type { Case } from "@/features/case-selection/models/case";
 import { fetchCaseById } from "@/features/case-selection/services/caseService";
 // Removed unused imports (Link, Button, ChevronLeft) to satisfy lint rules.
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -13,13 +14,16 @@ import { ChatInterface } from "@/features/chat/components/chat-interface";
 import { ProgressSidebar } from "@/features/chat/components/progress-sidebar";
 import { CompletionDialog } from "@/features/feedback/components/completion-dialog";
 import { createAttempt, completeAttempt, getAttemptById, deleteAttempt } from "@/features/attempts/services/attemptService";
+import {
+  getSession,
+  joinSessionCreateAttempt,
+} from "@/features/case-sessions/services/caseSessionService";
 import { useSaveAttempt } from "@/features/attempts/hooks/useSaveAttempt";
 import { useAuth } from "@/features/auth/services/authService";
 import type { Message } from "@/features/chat/models/chat";
 import type { Stage } from "@/features/stages/types";
 import { getStagesForCase, initializeStages, markStageCompleted } from "@/features/stages/services/stageService";
 
-import { GuidedTour } from "@/components/ui/guided-tour";
 import CasePapersUploader from "@/features/cases/components/case-papers-uploader";
 import { CaseRagManager } from "@/features/cases/components/case-rag-manager";
 
@@ -45,26 +49,7 @@ export default function CaseChatPage() {
     return () => clearInterval(interval);
   }, []);
 
-  const tourSteps = [
-    {
-      element: "#progress-sidebar",
-      popover: {
-        title: "Progress Tracker",
-        description: "Track your progress through the different stages of the consultation (History, Exam, etc.).",
-      },
-    },
-    {
-      element: "#chat-interface",
-      popover: { title: "Chat Interface", description: "Interact with the virtual client and patient here. Type your questions or actions." },
-    },
-    {
-      element: "#stage-controls",
-      popover: { title: "Stage Controls", description: "Use the buttons here to advance to the next stage when you are ready." },
-    },
-  ];
-
   // Attempt & stages
-  const [isCreatingAttempt, setIsCreatingAttempt] = useState(false);
   const [attemptId, setAttemptId] = useState<string | null>(null);
   const hasInitializedAttempt = useRef(false);
   const [stages, setStages] = useState<Stage[]>([]);
@@ -74,7 +59,15 @@ export default function CaseChatPage() {
   const [resetCounter, setResetCounter] = useState(0);
 
   const { saveProgress } = useSaveAttempt(attemptId);
-  const { user, session, role } = useAuth();
+  const {
+    user,
+    session,
+    role,
+    loading: authLoading,
+    profileLoading,
+  } = useAuth();
+  const [accessBlocked, setAccessBlocked] = useState(false);
+  const [joinSessionError, setJoinSessionError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadCase() {
@@ -128,24 +121,25 @@ export default function CaseChatPage() {
     };
   }, [id]);
 
-  // Initialize attempt (create or resume) once user is available
+  // Initialize attempt (resume, join session, or admin create) once auth is ready
   useEffect(() => {
-    if (hasInitializedAttempt.current || !user) return;
-    hasInitializedAttempt.current = true;
+    if (authLoading || profileLoading || !user || hasInitializedAttempt.current)
+      return;
 
-    const existingAttemptId = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("attempt") : null;
+    const params = new URLSearchParams(window.location.search);
+    const existingAttemptId = params.get("attempt");
+    const sessionIdParam = params.get("session");
+    const isAdmin = role === "admin";
 
     if (existingAttemptId) {
+      hasInitializedAttempt.current = true;
       setAttemptId(existingAttemptId);
 
-      // Restore attempt state
       getAttemptById(existingAttemptId)
         .then(({ attempt, messages }) => {
           if (attempt) {
             const lastIndex = attempt.lastStageIndex || 0;
             setCurrentStageIndex(lastIndex);
-            // Stage completion synchronization is now handled by a dedicated useEffect
-            // to avoid stale closure issues that were causing stages to disappear.
           }
 
           if (messages) {
@@ -171,10 +165,41 @@ export default function CaseChatPage() {
       return;
     }
 
-    const initializeAttempt = async () => {
-      if (attemptId || isCreatingAttempt) return;
+    if (!sessionIdParam && !isAdmin) {
+      hasInitializedAttempt.current = true;
+      setAccessBlocked(true);
+      setIsRestoring(false);
+      return;
+    }
+
+    if (sessionIdParam) {
+      hasInitializedAttempt.current = true;
+      (async () => {
+        try {
+          setJoinSessionError(null);
+          const attempt = await joinSessionCreateAttempt(sessionIdParam);
+          if (attempt) {
+            setAttemptId(attempt.id);
+            const url = new URL(window.location.href);
+            url.searchParams.set("attempt", attempt.id);
+            url.searchParams.set("session", sessionIdParam);
+            window.history.replaceState({}, "", url);
+          }
+        } catch (error) {
+          console.error("Error joining session / creating attempt:", error);
+          setJoinSessionError(
+            error instanceof Error ? error.message : "Could not join session"
+          );
+        } finally {
+          setIsRestoring(false);
+        }
+      })();
+      return;
+    }
+
+    hasInitializedAttempt.current = true;
+    (async () => {
       try {
-        setIsCreatingAttempt(true);
         const attempt = await createAttempt(id);
         if (attempt) {
           setAttemptId(attempt.id);
@@ -185,13 +210,10 @@ export default function CaseChatPage() {
       } catch (error) {
         console.error("Error creating attempt:", error);
       } finally {
-        setIsCreatingAttempt(false);
         setIsRestoring(false);
       }
-    };
-
-    initializeAttempt();
-  }, [user, id, isCreatingAttempt, attemptId]);
+    })();
+  }, [authLoading, profileLoading, user, role, id]);
 
   // Start Over: delete current attempt and create a fresh one
   const handleStartOver = async () => {
@@ -201,11 +223,11 @@ export default function CaseChatPage() {
 
     try {
       // delete on server
-      const deleted = await deleteAttempt(attemptId);
+      await deleteAttempt(attemptId);
       // remove client-side caches related to the attempt
       try {
         localStorage.removeItem(`advanceGuard-${attemptId}`);
-      } catch (e) {
+      } catch {
         // ignore
       }
 
@@ -223,14 +245,39 @@ export default function CaseChatPage() {
       // bump resetCounter to force ChatInterface remount and stop any active STT/TTS
       setResetCounter((c) => c + 1);
 
-      // create a fresh attempt
-      const newAttempt = await createAttempt(id);
+      const urlParams = new URLSearchParams(window.location.search);
+      const sessionIdParam = urlParams.get("session");
+
+      let newAttempt = null;
+      if (sessionIdParam) {
+        try {
+          const sess = await getSession(sessionIdParam);
+          let code: string | undefined;
+          if (sess.accessCode?.trim()) {
+            const entered = window.prompt(
+              "This session requires an access code. Enter it to start again:"
+            );
+            code = entered ?? undefined;
+          }
+          newAttempt = await joinSessionCreateAttempt(sessionIdParam, code);
+        } catch (e) {
+          console.error("Start over via session failed:", e);
+          alert(
+            e instanceof Error ? e.message : "Could not start a new attempt for this session."
+          );
+        }
+      } else if (role === "admin") {
+        newAttempt = await createAttempt(id);
+      } else {
+        alert("Cannot start over without a session. Return to the case page and join a session.");
+      }
+
       if (newAttempt) {
         setAttemptId(newAttempt.id);
         const url = new URL(window.location.href);
         url.searchParams.set("attempt", newAttempt.id);
+        if (sessionIdParam) url.searchParams.set("session", sessionIdParam);
         window.history.replaceState({}, "", url);
-        // ensure remount for the new id
         setResetCounter((c) => c + 1);
       }
     } catch (err) {
@@ -329,7 +376,36 @@ export default function CaseChatPage() {
 
 
   const SHOW_RAG = process.env.NEXT_PUBLIC_SHOW_RAG === "true";
-  if (loading || isRestoring) return <div className="p-8 text-center">Loading case...</div>;
+  if (accessBlocked) {
+    return (
+      <div className="p-8 text-center max-w-lg mx-auto space-y-4">
+        <p className="text-lg">
+          Open this case from the instructions page and start an attempt from an{" "}
+          <strong>active session</strong>.
+        </p>
+        <Button asChild>
+          <Link href={`/case/${id}/instructions`}>Back to case instructions</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  if (joinSessionError) {
+    return (
+      <div className="p-8 text-center max-w-lg mx-auto space-y-4">
+        <p className="text-destructive font-medium">{joinSessionError}</p>
+        <p className="text-sm text-muted-foreground">
+          If this session requires a code, start from the case instructions page and use{" "}
+          <strong>Start case</strong> on the session.
+        </p>
+        <Button asChild>
+          <Link href={`/case/${id}/instructions`}>Back to case instructions</Link>
+        </Button>
+      </div>
+    );
+  }
+  if (loading || authLoading || profileLoading || isRestoring)
+    return <div className="p-8 text-center">Loading case...</div>;
   if (!caseItem) return notFound();
 
   return (

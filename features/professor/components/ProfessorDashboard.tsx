@@ -9,6 +9,7 @@ import Link from "next/link";
 import { CreateStudentDialog } from "./CreateStudentDialog";
 import { CreateCourseDialog } from "./CreateCourseDialog";
 import { CourseList } from "./CourseList";
+import { ProfessorSessionsSection } from "./ProfessorSessionsSection";
 import { ProfessorAnalytics } from "./ProfessorAnalytics";
 import { PendingReviewsCard } from "./PendingReviewsCard";
 import { RecentActivityFeed } from "./RecentActivityFeed";
@@ -66,14 +67,14 @@ export function ProfessorDashboard() {
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">Professor Dashboard</h1>
         <NotificationBadge />
-        <div className="space-x-2">
+        <div className="flex flex-wrap gap-2 justify-end">
           <CreateStudentDialog />
           <CreateCourseDialog onCreated={() => setCourseRefreshKey((k) => k + 1)} />
           <Button asChild variant="outline">
             <Link href="/case-entry">Create New Case</Link>
           </Button>
           <Button asChild>
-            <Link href="/case-selection">Browse Cases to Assign</Link>
+            <Link href="/cases">Browse Cases to Assign</Link>
           </Button>
         </div>
       </div>
@@ -85,9 +86,7 @@ export function ProfessorDashboard() {
 
             <Card className="min-h-36 p-2 h-full transition-all duration-300 ease-out hover:bg-muted/100 dark:hover:bg-muted/80 shadow-lg bg-muted/50 border border-transparent border-teal-500/30">
               <CardHeader className="pb-1 grow text-center px-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground text-teal-600">
-                  Total Assigned Cases
-                </CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground text-teal-600">Total Assigned Cases</CardTitle>
               </CardHeader>
               <CardContent className="py-2 px-3">
                 <div className="text-lg font-semibold">{cases.length}</div>
@@ -95,9 +94,7 @@ export function ProfessorDashboard() {
             </Card>
             <Card className=" min-h-36 p-2 h-full transition-all duration-300 ease-out hover:bg-muted/100 dark:hover:bg-muted/80 shadow-lg bg-muted/50 border border-transparent border-teal-500/30">
               <CardHeader className="pb-1 grow text-center px-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground text-teal-600">
-                  Total Students
-                </CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground text-teal-600">Total Students</CardTitle>
               </CardHeader>
               <CardContent className="py-2 px-3">
                 <div className="text-lg font-semibold">{students.length}</div>
@@ -117,6 +114,8 @@ export function ProfessorDashboard() {
         <CourseList refreshKey={courseRefreshKey} />
       </div>
 
+      <ProfessorSessionsSection />
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* My Cases Section */}
         <Card>
@@ -129,14 +128,9 @@ export function ProfessorDashboard() {
             ) : (
               <ul className="space-y-4">
                 {cases.map((item) => (
-                  <li
-                    key={item.id}
-                    className="border p-4 rounded-lg flex justify-between items-center"
-                  >
+                  <li key={item.id} className="border p-4 rounded-lg flex justify-between items-center">
                     <div>
-                      <h3 className="font-semibold">
-                        {item.case?.title || "Unknown Case"}
-                      </h3>
+                      <h3 className="font-semibold">{item.case?.title || "Unknown Case"}</h3>
                       <p className="text-sm text-gray-500">
                         {item.case?.species} - {item.case?.difficulty}
                       </p>
@@ -162,34 +156,14 @@ export function ProfessorDashboard() {
             ) : (
               <ul className="space-y-4">
                 {students.map((item) => (
-                  <li
-                    key={item.id}
-                    className="border p-4 rounded-lg flex items-center gap-4"
-                  >
-                    {item.student?.avatar_url && (
-                      <img
-                        src={item.student.avatar_url}
-                        alt="Avatar"
-                        className="w-10 h-10 rounded-full"
-                      />
-                    )}
+                  <li key={item.id} className="border p-4 rounded-lg flex items-center gap-4">
+                    {item.student?.avatar_url && <img src={item.student.avatar_url} alt="Avatar" className="w-10 h-10 rounded-full" />}
                     <div>
-                      <h3 className="font-semibold">
-                        {item.student?.full_name || "Unknown Student"}
-                      </h3>
-                      <p className="text-sm text-gray-500">
-                        {item.student?.email}
-                      </p>
+                      <h3 className="font-semibold">{item.student?.full_name || "Unknown Student"}</h3>
+                      <p className="text-sm text-gray-500">{item.student?.email}</p>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      asChild
-                      className="ml-auto"
-                    >
-                      <Link href={`/professor/students/${item.student_id}`}>
-                        View Progress
-                      </Link>
+                    <Button variant="outline" size="sm" asChild className="ml-auto">
+                      <Link href={`/professor/students/${item.student_id}`}>View Progress</Link>
                     </Button>
                   </li>
                 ))}

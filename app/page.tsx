@@ -10,27 +10,40 @@ import { getUserAttempts } from "@/features/attempts/services/attemptQueryServic
 import { CaseCard } from "@/features/case-selection/components/case-card";
 import type { Case } from "@/features/case-selection/models/case";
 import { fetchCases } from "@/features/case-selection/services/caseService";
+import { CaseSessionCard } from "@/features/case-sessions/components/case-session-card";
+import type { CaseSession } from "@/features/case-sessions/models/caseSession";
+import { listSessions } from "@/features/case-sessions/services/caseSessionService";
 import { supabase } from "@/lib/supabase";
 import { transformAttemptSummary } from "@/features/attempts/mappers/attempt-mappers";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { professorService } from "@/features/professor/services/professorService";
+import { cn } from "@/lib/utils";
 
 type Role = "student" | "professor" | "admin" | null;
 
-function SectionHeader({ label, title, description, action }: { label: string; title: string; description?: string; action?: React.ReactNode }) {
+function PageSection({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className="mb-4 flex items-end justify-between gap-4 ">
-      <div className="space-y-2">
-        <div className="inline-flex items-center gap-2 rounded-full bg-primary/5 px-3 py-1 text-xs font-medium text-primary ring-1 ring-primary/10">
-          <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-          <span>{label}</span>
-        </div>
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight md:text-2xl">{title}</h2>
-          {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
-        </div>
+    <section
+      className={cn(
+        "w-full border-t border-border/60 bg-muted/30 py-8 md:py-10",
+        "dark:bg-muted/15",
+        "motion-safe:animate-in motion-safe:fade-in-50 motion-safe:slide-in-from-bottom-4",
+        className,
+      )}
+    >
+      <div className="container mx-auto px-4">{children}</div>
+    </section>
+  );
+}
+
+function SectionHeader({ title, description, action }: { title: string; description?: string; action?: React.ReactNode }) {
+  return (
+    <div className="mb-4 flex items-end justify-between gap-4">
+      <div>
+        <h2 className="text-xl font-semibold tracking-tight md:text-2xl">{title}</h2>
+        {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
       </div>
       {action && <div className="shrink-0">{action}</div>}
     </div>
@@ -113,10 +126,12 @@ export default function HomePage() {
   const [studentAttempts, setStudentAttempts] = useState<AttemptSummary[]>([]);
   const [professorAttempts, setProfessorAttempts] = useState<AttemptSummary[]>([]);
   const [latestCases, setLatestCases] = useState<Case[]>([]);
+  const [activeSessions, setActiveSessions] = useState<CaseSession[]>([]);
   const [assignedCases, setAssignedCases] = useState<any[]>([]);
   const [loadingStudentAttempts, setLoadingStudentAttempts] = useState(false);
   const [loadingProfessorAttempts, setLoadingProfessorAttempts] = useState(false);
   const [loadingCases, setLoadingCases] = useState(false);
+  const [loadingActiveSessions, setLoadingActiveSessions] = useState(false);
   const [loadingAssignedCases, setLoadingAssignedCases] = useState(false);
 
   useEffect(() => {
@@ -158,6 +173,18 @@ export default function HomePage() {
       .then((cases) => setLatestCases(cases))
       .finally(() => setLoadingCases(false));
   }, []);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setActiveSessions([]);
+      return;
+    }
+    setLoadingActiveSessions(true);
+    listSessions({ status: "active" })
+      .then((sessions) => setActiveSessions(sessions.slice(0, 3)))
+      .catch(() => setActiveSessions([]))
+      .finally(() => setLoadingActiveSessions(false));
+  }, [user?.id]);
 
   const displayName = useMemo(() => {
     const email = user?.email as string | undefined;
@@ -231,69 +258,49 @@ export default function HomePage() {
       {/* Hero */}
       <section className="border-b border-border/60 bg-gradient-to-r from-primary/90 via-primary to-primary/80 text-primary-foreground dark:text-white">
         <div className="container mx-auto px-4 py-10 md:py-14">
-          <div className="flex flex-col items-start gap-8 md:flex-row md:items-center md:justify-between">
-            <div className="max-w-xl space-y-5 motion-safe:animate-in motion-safe:fade-in-50 motion-safe:slide-in-from-left-6">
-              <div className="inline-flex items-center gap-2 rounded-full bg-black/10 px-3 py-1 text-xs font-medium ring-1 ring-black/10">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-                <span>Veterinary Clinical Skills</span>
-              </div>
-              <div className="space-y-3">
-                <h1 className="text-3xl font-semibold tracking-tight md:text-4xl lg:text-5xl">Veterinary OSCE Simulator</h1>
-                <p className="text-sm text-primary-foreground/90 md:text-base dark:text-white">
-                  AI-powered educational simulator for veterinary students
-                </p>
-              </div>
-              <p className="max-w-lg text-sm text-primary-foreground/80 md:text-base dark:text-white/60">
-                Practice real-world clinical scenarios, receive instant AI feedback, and build confidence before stepping into your next OSCE or
-                rotation.
-              </p>
-              <div className="flex flex-wrap gap-3">
-                <Link href="/cases" className="rounded-full">
-                  <Button asChild size="sm" className="rounded-full bg-primary-foreground text-primary hover:bg-white dark:text-white/90">
-                    Browse all cases
-                  </Button>
-                </Link>
-                <Link href="/case-selection" className="rounded-full">
-                  <Button
-                    asChild
-                    size="sm"
-                    variant="outline"
-                    className="rounded-full border-primary-foreground/40 bg-primary/10 text-primary-foreground hover:bg-primary/20 hover:text-primary-foreground dark:text-white/50"
-                  >
-                    Jump into training
-                  </Button>
-                </Link>
-              </div>
-            </div>
-            <div className="relative h-28 w-32 self-end motion-safe:animate-in motion-safe:fade-in-50 motion-safe:slide-in-from-right-6 md:h-32 md:w-40 lg:h-40 lg:w-48">
+          <div className="mx-auto flex max-w-3xl flex-col items-center gap-6 text-center motion-safe:animate-in motion-safe:fade-in-50 motion-safe:slide-in-from-bottom-6">
+            <div className="relative h-28 w-32 md:h-32 md:w-40">
               <div className="absolute inset-0 rounded-3xl bg-black/10 blur-2xl" />
               <div className="relative flex h-full w-full items-center justify-center rounded-3xl border border-white/10 bg-white/10 shadow-2xl backdrop-blur-md">
-                <Image
-                  src={logoSrc}
-                  alt="Veterinary OSCE Simulator logo"
-                  width={120}
-                  height={120}
-                  className="h-16 w-auto md:h-20"
-                  priority
-                  unoptimized
-                />
+                <Image src={logoSrc} alt="VewAI logo" width={120} height={120} className="h-16 w-auto md:h-20" priority unoptimized />
               </div>
+            </div>
+            <h2 className="text-2xl tracking-tight sm:text-3xl md:text-4xl">
+              Vew<span className="font-bold text-white">AI</span>
+            </h2>
+            <div className="space-y-3">
+              <h1 className="text-3xl font-semibold tracking-tight md:text-4xl lg:text-5xl">Veterinary OSCE Simulator</h1>
+              <p className="text-sm text-primary-foreground/90 md:text-base dark:text-white">
+                AI-powered educational simulator for veterinary students
+              </p>
+            </div>
+            <p className="max-w-2xl text-sm text-primary-foreground/80 md:text-base dark:text-white/60">
+              Practice real-world clinical scenarios, receive instant AI feedback, and build confidence before stepping into your next OSCE or
+              rotation.
+            </p>
+            <div className="flex flex-wrap justify-center gap-3">
+              <Button asChild size="sm" className="rounded-full bg-primary-foreground text-primary hover:bg-white dark:text-white/90">
+                <Link href="/cases">Browse all cases</Link>
+              </Button>
+              <Button
+                asChild
+                size="sm"
+                variant="sessions-outline"
+                className="rounded-full border-sessions/50 bg-sessions/10 text-sessions-foreground hover:bg-sessions/20 hover:text-sessions-foreground dark:border-sessions/40 dark:text-white"
+              >
+                <Link href="/case-sessions">Jump into training</Link>
+              </Button>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Main content */}
-      <section className="container mx-auto space-y-10 px-4 py-8 md:py-10">
-        {/* Welcome + notifications */}
-        <div className="space-y-4 motion-safe:animate-in motion-safe:fade-in-50 motion-safe:slide-in-from-bottom-4">
+      {/* Welcome + notifications */}
+      <section className="container mx-auto px-4 py-8 md:py-10">
+        <div className="space-y-4 border-b border-border/60 pb-10 motion-safe:animate-in motion-safe:fade-in-50 motion-safe:slide-in-from-bottom-4">
           <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground ring-1 ring-border/60">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                <span>Welcome back</span>
-              </div>
-              <h2 className="mt-2 text-2xl font-semibold tracking-tight md:text-3xl">Good to see you, {displayName}.</h2>
+              <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">Good to see you, {displayName}.</h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 {role === "professor"
                   ? "Review your students' progress and assign new cases."
@@ -317,149 +324,161 @@ export default function HomePage() {
           </div>
           <NotificationsBar notifications={notifications} />
         </div>
+      </section>
 
-        {/* Student assigned cases */}
-        {role === "student" && assignedCases.length > 0 && (
-          <div className="motion-safe:animate-in motion-safe:fade-in-50 motion-safe:slide-in-from-bottom-4">
-            <SectionHeader
-              label="Assigned Cases"
-              title="Cases assigned by your professor"
-              description="Your professor has assigned these cases for you to complete."
-              action={
-                <Link href="/case-selection" className="rounded-full">
-                  <Button asChild variant="ghost" size="sm">
-                    View all
-                  </Button>
-                </Link>
-              }
-            />
-            {loadingAssignedCases ? (
-              <div className="p-4 text-sm text-muted-foreground">Loading assigned cases...</div>
-            ) : (
-              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                {assignedCases.map((ac) => {
-                  if (!ac.case) return null;
-                  return (
-                    <CaseCard
-                      key={ac.id}
-                      caseItem={{
-                        id: ac.case_id,
-                        title: ac.case.title || "",
-                        description: "",
-                        species: ac.case.species || "",
-                        condition: "",
-                        category: "",
-                        difficulty: ac.case.difficulty || "Easy",
-                        estimatedTime: 0,
-                        imageUrl: ac.case.image_url || "",
-                      }}
-                    />
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Role-specific attempts */}
-        {role === "student" && (
-          <div className="motion-safe:animate-in motion-safe:fade-in-50 motion-safe:slide-in-from-bottom-4">
-            <SectionHeader
-              label="Student view"
-              title="Recent attempts"
-              description="Pick up where you left off or review your most recent simulated cases."
-              action={
-                <Link href="/attempts" className="rounded-full">
-                  <Button asChild variant="ghost" size="sm">
-                    View all attempts
-                  </Button>
-                </Link>
-              }
-            />
-            {loadingStudentAttempts ? (
-              <div className="p-4 text-sm text-muted-foreground">Loading your recent attempts...</div>
-            ) : studentAttempts.length === 0 ? (
-              <Card className="border-dashed bg-muted/40 text-sm text-muted-foreground">
-                <CardContent className="py-6">You don&apos;t have any attempts yet. Start your first case from the cases library below.</CardContent>
-              </Card>
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {studentAttempts.slice(0, 3).map((attempt) => (
-                  <AttemptCard key={attempt.id} attempt={attempt} />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {role === "professor" && (
-          <div className="motion-safe:animate-in motion-safe:fade-in-50 motion-safe:slide-in-from-bottom-4">
-            <SectionHeader
-              label="Professor view"
-              title="Attempts awaiting feedback"
-              description="Support your students with timely feedback on their completed attempts."
-              action={
-                <div className="flex gap-2">
-                  <Link href="/case-entry" className="rounded-full">
-                    <Button asChild variant="outline" size="sm">
-                      Add New Case
-                    </Button>
-                  </Link>
-                  <Link href="/professor" className="rounded-full">
-                    <Button asChild variant="ghost" size="sm">
-                      Open professor dashboard
-                    </Button>
-                  </Link>
-                </div>
-              }
-            />
-            {loadingProfessorAttempts ? (
-              <div className="p-4 text-sm text-muted-foreground">Loading student attempts...</div>
-            ) : professorAttempts.length === 0 ? (
-              <Card className="border-dashed bg-muted/40 text-sm text-muted-foreground">
-                <CardContent className="py-6">There are no completed attempts from your students waiting for feedback right now.</CardContent>
-              </Card>
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {professorAttempts.map((attempt) => (
-                  <AttemptCard key={attempt.id} attempt={attempt} />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Latest cases */}
-        <div className="motion-safe:animate-in motion-safe:fade-in-50 motion-safe:slide-in-from-bottom-4">
+      {/* Student assigned cases */}
+      {role === "student" && assignedCases.length > 0 && (
+        <PageSection>
           <SectionHeader
-            label="Cases"
-            title="Latest cases"
-            description="Explore newly added or recently updated cases to keep your skills sharp."
+            title="Cases assigned by your professor"
+            description="Your professor has assigned these cases for you to complete."
             action={
-              <div className="flex gap-2">
-                <Link href="/cases" className="rounded-full">
-                  <Button asChild variant="outline" size="sm">
-                    Browse all cases
-                  </Button>
-                </Link>
-              </div>
+              <Button asChild variant="ghost" size="sm">
+                <Link href="/cases">View all</Link>
+              </Button>
             }
           />
-          {loadingCases ? (
-            <div className="p-4 text-sm text-muted-foreground">Loading latest cases...</div>
-          ) : latestCases.length === 0 ? (
-            <Card className="border-dashed bg-muted/40 text-sm text-muted-foreground">
-              <CardContent className="py-6">No cases are available yet. Check back soon or contact your instructor.</CardContent>
-            </Card>
+          {loadingAssignedCases ? (
+            <div className="p-4 text-sm text-muted-foreground">Loading assigned cases...</div>
           ) : (
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {latestCases.map((caseItem) => (
-                <CaseCard key={caseItem.id} caseItem={caseItem} />
+              {assignedCases.map((ac) => {
+                if (!ac.case) return null;
+                return (
+                  <CaseCard
+                    key={ac.id}
+                    caseItem={{
+                      id: ac.case_id,
+                      title: ac.case.title || "",
+                      description: "",
+                      species: ac.case.species || "",
+                      condition: "",
+                      category: "",
+                      difficulty: ac.case.difficulty || "Easy",
+                      estimatedTime: 0,
+                      imageUrl: ac.case.image_url || "",
+                    }}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </PageSection>
+      )}
+
+      {/* Role-specific attempts */}
+      {role === "student" && (
+        <PageSection>
+          <SectionHeader
+            title="Recent attempts"
+            description="Pick up where you left off or review your most recent simulated cases."
+            action={
+              <Button asChild variant="ghost" size="sm">
+                <Link href="/attempts">View all attempts</Link>
+              </Button>
+            }
+          />
+          {loadingStudentAttempts ? (
+            <div className="p-4 text-sm text-muted-foreground">Loading your recent attempts...</div>
+          ) : studentAttempts.length === 0 ? (
+            <Card className="border-dashed bg-muted/40 text-sm text-muted-foreground">
+              <CardContent className="py-6">You don&apos;t have any attempts yet. Start your first case from the cases library below.</CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {studentAttempts.slice(0, 3).map((attempt) => (
+                <AttemptCard key={attempt.id} attempt={attempt} />
               ))}
             </div>
           )}
-        </div>
-      </section>
+        </PageSection>
+      )}
+
+      {role === "professor" && (
+        <PageSection>
+          <SectionHeader
+            title="Attempts awaiting feedback"
+            description="Support your students with timely feedback on their completed attempts."
+            action={
+              <div className="flex gap-2">
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/case-entry">Add New Case</Link>
+                </Button>
+                <Button asChild variant="ghost" size="sm">
+                  <Link href="/professor">Open professor dashboard</Link>
+                </Button>
+              </div>
+            }
+          />
+          {loadingProfessorAttempts ? (
+            <div className="p-4 text-sm text-muted-foreground">Loading student attempts...</div>
+          ) : professorAttempts.length === 0 ? (
+            <Card className="border-dashed bg-muted/40 text-sm text-muted-foreground">
+              <CardContent className="py-6">There are no completed attempts from your students waiting for feedback right now.</CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {professorAttempts.map((attempt) => (
+                <AttemptCard key={attempt.id} attempt={attempt} />
+              ))}
+            </div>
+          )}
+        </PageSection>
+      )}
+
+      {/* Active case sessions */}
+      {user?.id && (
+        <PageSection>
+          <SectionHeader
+            title="Active case sessions"
+            description="Join a live session from your instructor while it is open."
+            action={
+              <Button asChild variant="sessions-link" size="sm">
+                <Link href="/case-sessions">View all</Link>
+              </Button>
+            }
+          />
+          {loadingActiveSessions ? (
+            <div className="p-4 text-sm text-muted-foreground">Loading active sessions...</div>
+          ) : activeSessions.length === 0 ? (
+            <Card className="border-dashed bg-muted/40 text-sm text-muted-foreground">
+              <CardContent className="py-6">No active sessions right now. When your instructor opens a session, it will appear here.</CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {activeSessions.map((session) => (
+                <CaseSessionCard key={session.id} session={session} />
+              ))}
+            </div>
+          )}
+        </PageSection>
+      )}
+
+      {/* Latest cases */}
+      <PageSection>
+        <SectionHeader
+          title="Latest cases"
+          description="Explore newly added or recently updated cases to keep your skills sharp."
+          action={
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/cases">View all</Link>
+            </Button>
+          }
+        />
+        {loadingCases ? (
+          <div className="p-4 text-sm text-muted-foreground">Loading latest cases...</div>
+        ) : latestCases.length === 0 ? (
+          <Card className="border-dashed bg-muted/40 text-sm text-muted-foreground">
+            <CardContent className="py-6">No cases are available yet. Check back soon or contact your instructor.</CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {latestCases.map((caseItem) => (
+              <CaseCard key={caseItem.id} caseItem={caseItem} />
+            ))}
+          </div>
+        )}
+      </PageSection>
     </div>
   );
 }
