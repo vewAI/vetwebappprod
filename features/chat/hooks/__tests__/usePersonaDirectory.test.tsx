@@ -4,7 +4,7 @@ import { createRoot, Root } from "react-dom/client";
 import { PERSONA_DIRECTORY_READY_EVENT, usePersonaDirectory } from "../usePersonaDirectory";
 
 function TestHarness({ caseId, onReady }: { caseId?: string; onReady?: (api: any) => void }) {
-  const api = usePersonaDirectory(caseId);
+  const api = usePersonaDirectory(caseId!);
   React.useEffect(() => {
     if (onReady) onReady(api);
   }, [api, onReady]);

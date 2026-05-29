@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const spies = vi.hoisted(() => {
   const signOut = vi.fn(async () => ({ error: null }));
   const refreshSession = vi.fn(async () => ({ data: { session: null }, error: null }));
-  const getSession = vi.fn(async () => ({ data: { session: null }, error: null }));
+  const getSession = vi.fn<() => Promise<{data: {session: any}, error: any}>>(async () => ({ data: { session: null }, error: null }));
   return { signOut, refreshSession, getSession };
 });
 

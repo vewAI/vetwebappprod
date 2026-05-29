@@ -17,7 +17,7 @@ test("VoiceModeControl renders and toggles and exposes status", () => {
   assert.equal(toggled, true);
 
   // When rendering with listening state, status text should reflect it
-  const el2 = VoiceModeControl({ voiceMode: true, isListening: true, isSpeaking: false, onToggle: () => {}, disabled: false } as any);
+  const el2 = VoiceModeControl({ voiceMode: true, isListening: true, isSpeaking: false, onToggle: () => {}, disabled: false } as any) as any;
   const statusSr = el2.props.children[1]; // sr-only status
   assert.ok(String(statusSr.props.children).includes("Listening"));
 });

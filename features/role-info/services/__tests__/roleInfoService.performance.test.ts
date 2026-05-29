@@ -48,14 +48,14 @@ describe("getRoleInfoPrompt performance guard", () => {
 
     await getRoleInfoPrompt("case-1", 0, "How is the horse?", undefined, caseRowOverride);
 
-    const casesFromCalls = fromSpy.mock.calls.filter((call) => call[0] === "cases");
+    const casesFromCalls = (fromSpy as any).mock.calls.filter((call: string[]) => call[0] === "cases");
     expect(casesFromCalls.length).toBe(0);
   });
 
   it("queries cases table when caseRowOverride is not provided", async () => {
     await getRoleInfoPrompt("case-1", 0, "How is the horse?");
 
-    const casesFromCalls = fromSpy.mock.calls.filter((call) => call[0] === "cases");
+    const casesFromCalls = (fromSpy as any).mock.calls.filter((call: string[]) => call[0] === "cases");
     expect(casesFromCalls.length).toBeGreaterThan(0);
   });
 });
