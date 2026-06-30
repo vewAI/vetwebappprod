@@ -23,7 +23,7 @@ export default function LoginPage() {
 
       {/* Header */}
       <div className="mb-6 text-center motion-safe:animate-in motion-safe:fade-in-50 motion-safe:slide-in-from-top-4">
-        <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-3 tracking-tight">Veterinary OSCE Simulator</h1>
+        <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-3 tracking-tight">Communication Skills Training Platform</h1>
         <p className="text-sm sm:text-base md:text-lg text-white typewriter-text">AI-powered educational simulator for veterinary students</p>
       </div>
 

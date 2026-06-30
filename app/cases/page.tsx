@@ -3,10 +3,7 @@
 import { useEffect, useState } from "react";
 import { CaseCard } from "@/features/case-selection/components/case-card";
 import { useAuth } from "@/features/auth/services/authService";
-import {
-  fetchCases,
-  fetchDisciplines,
-} from "@/features/case-selection/services/caseService";
+import { fetchCases, fetchDisciplines } from "@/features/case-selection/services/caseService";
 import type { Case } from "@/features/case-selection/models/case";
 import { GuidedTour } from "@/components/ui/guided-tour";
 import { HelpTip } from "@/components/ui/help-tip";
@@ -26,24 +23,21 @@ export default function CasesPage() {
       element: "#main-title",
       popover: {
         title: "Welcome",
-        description:
-          "Welcome to the Veterinary OSCE Simulator. Here you can practice your clinical skills.",
+        description: "Welcome to VewAi - Communication Skills Training Platform. Here you can practice your clinical skills.",
       },
     },
     {
       element: "#discipline-filter",
       popover: {
         title: "Filter Cases",
-        description:
-          "Use this dropdown to filter cases by discipline (e.g., Internal Medicine, Surgery).",
+        description: "Use this dropdown to filter cases by discipline (e.g., Internal Medicine, Surgery).",
       },
     },
     {
       element: "#case-grid",
       popover: {
         title: "Select a Case",
-        description:
-          'Browse the available cases and click "View Case" to start.',
+        description: 'Browse the available cases and click "View Case" to start.',
       },
     },
   ];
@@ -62,16 +56,9 @@ export default function CasesPage() {
     async function checkAssigned() {
       if (!user?.id || role !== "student") return;
       try {
-        const { professorService } = await import(
-          "@/features/professor/services/professorService"
-        );
-        const assigned = await professorService.getAssignedCasesForStudent(
-          user.id,
-        );
-        if (!cancelled)
-          setHasAssignedCases(
-            Array.isArray(assigned) && assigned.length > 0,
-          );
+        const { professorService } = await import("@/features/professor/services/professorService");
+        const assigned = await professorService.getAssignedCasesForStudent(user.id);
+        if (!cancelled) setHasAssignedCases(Array.isArray(assigned) && assigned.length > 0);
       } catch (err) {
         console.warn("Failed to check assigned cases", err);
         if (!cancelled) setHasAssignedCases(false);
@@ -88,15 +75,9 @@ export default function CasesPage() {
       setLoading(true);
       try {
         if (selectedDiscipline === "assigned" && user?.id && role === "student") {
-          const { professorService } = await import(
-            "@/features/professor/services/professorService"
-          );
-          const assigned = await professorService.getAssignedCasesForStudent(
-            user.id,
-          );
-          const mapped = Array.isArray(assigned)
-            ? assigned.map((a: any) => a.case).filter(Boolean)
-            : [];
+          const { professorService } = await import("@/features/professor/services/professorService");
+          const assigned = await professorService.getAssignedCasesForStudent(user.id);
+          const mapped = Array.isArray(assigned) ? assigned.map((a: any) => a.case).filter(Boolean) : [];
           setCases(mapped as unknown as Case[]);
         } else {
           const result = await fetchCases({
@@ -122,17 +103,12 @@ export default function CasesPage() {
       </div>
       <header className="mb-8 text-center">
         <div className="flex items-center justify-center gap-2">
-          <h1
-            id="main-title"
-            className="text-3xl font-bold tracking-tight text-primary md:text-4xl lg:text-5xl"
-          >
+          <h1 id="main-title" className="text-3xl font-bold tracking-tight text-primary md:text-4xl lg:text-5xl">
             Clinical Cases
           </h1>
           <HelpTip content="Browse the library of clinical cases available to you." />
         </div>
-        <p className="mt-4 text-xl text-muted-foreground">
-          Explore the full library of OSCE-style veterinary cases.
-        </p>
+        <p className="mt-4 text-xl text-muted-foreground">Explore the full library of OSCE-style veterinary cases.</p>
 
         <div className="mt-6 flex justify-center items-center gap-2 flex-wrap">
           <div id="discipline-filter" className="w-full max-w-xs">
@@ -171,10 +147,7 @@ export default function CasesPage() {
       {loading ? (
         <div className="p-8 text-center">Loading cases...</div>
       ) : (
-        <div
-          id="case-grid"
-          className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 motion-safe:animate-in motion-safe:fade-in-50"
-        >
+        <div id="case-grid" className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 motion-safe:animate-in motion-safe:fade-in-50">
           {cases.map((caseItem) => (
             <CaseCard key={caseItem.id} caseItem={caseItem} />
           ))}
@@ -183,5 +156,3 @@ export default function CasesPage() {
     </div>
   );
 }
-
-
