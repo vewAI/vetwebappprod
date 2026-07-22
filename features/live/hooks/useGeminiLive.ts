@@ -175,17 +175,25 @@ export function useGeminiLive(
     const prev = personaRef.current;
     personaRef.current = persona;
 
-    // If voice changed, need to reconnect; otherwise just update instruction
+    // P4.3: If voice changed, need to reconnect; otherwise just update instruction
     if (prev?.voiceName !== persona.voiceName && tokenRef.current) {
+      // P4.3: Keep audio flowing during reconnect — don't interrupt playback.
+      // The service reconnects in the background; onAudioStream continues.
       serviceRef.current?.disconnect();
       setStatus("connecting");
       serviceRef.current?.connect(tokenRef.current, persona.systemInstruction, persona.voiceName)
+        .then(() => {
+          setStatus("connected");
+          setError(null);
+        })
         .catch((err: unknown) => {
           setError(err instanceof Error ? err.message : "Reconnection failed");
           setStatus("error");
         });
-    } else {
-      serviceRef.current?.sendSystemInstruction(persona.systemInstruction);
+    } else if (serviceRef.current?.isConnected) {
+      // P4.3: Same voice — just send updated system instruction inline.
+      // No disconnect needed; audio playback continues uninterrupted.
+      serviceRef.current.sendSystemInstruction(persona.systemInstruction);
     }
   }, []);
 
