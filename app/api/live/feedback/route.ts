@@ -1,20 +1,16 @@
 import { NextResponse } from "next/server";
+import { marked } from "marked";
+import DOMPurify from "isomorphic-dompurify";
 import { createOpenAIClient } from "@/lib/llm/openaiClient";
 import { getLiveFeedbackPrompt } from "@/features/role-info/db-role-info";
 import { requireUser } from "@/app/api/_lib/auth";
+import type { Message } from "@/features/chat/models/chat";
 
-type TranscriptEntry = {
-  id: string;
-  speaker: "user" | "persona";
-  text: string;
-  timestamp: number;
-};
-
-function formatTranscript(entries: TranscriptEntry[]): string {
-  return entries
+function formatTranscript(messages: Message[]): string {
+  return messages
     .map((entry, i) => {
-      const speaker = entry.speaker === "user" ? "Student" : "Persona";
-      return `Turn ${i + 1} | ${speaker}: ${entry.text}`;
+      const speaker = entry.role === "user" ? "Student" : "Persona";
+      return `Turn ${i + 1} | ${speaker}: ${entry.content}`;
     })
     .join("\n\n");
 }
@@ -26,19 +22,19 @@ export async function POST(request: Request) {
       return auth.error;
     }
     const { supabase } = auth;
-    const { caseId, transcript } = (await request.json()) as {
+    const { caseId, messages } = (await request.json()) as {
       caseId: string;
-      transcript: TranscriptEntry[];
+      messages: Message[];
     };
 
-    if (!caseId || !Array.isArray(transcript) || transcript.length === 0) {
+    if (!caseId || !Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json({
         feedback:
           "<p>Session ended with no recorded interaction. Feedback requires at least one exchange.</p>",
       });
     }
 
-    const context = formatTranscript(transcript);
+    const context = formatTranscript(messages);
 
     // Fetch case row for per-case prompt overrides
     let caseRow: Record<string, unknown> | null = null;
@@ -91,24 +87,33 @@ export async function POST(request: Request) {
       }
     }
 
-    // Format markdown-ish text to HTML
-    const formattedFeedback = feedbackContent
-      .replace(/\n\n/g, "</p><p>")
-      .replace(/\n/g, "<br>")
-      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-      .replace(/\*(.*?)\*/g, "<em>$1</em>")
-      .replace(/^#\s+(.*?)$/gm, "<h1>$1</h1>")
-      .replace(/^##\s+(.*?)$/gm, "<h2>$1</h2>")
-      .replace(/^###\s+(.*?)$/gm, "<h3>$1</h3>")
-      .replace(/^(\d+\.\s+.*?)$/gm, "<li>$1</li>")
-      .replace(/^-\s+(.*?)$/gm, "<li>$1</li>");
-
-    const wrappedFeedback = `<p>${formattedFeedback}</p>`
-      .replace(/<p><h([1-3])>/g, "<h$1>")
-      .replace(/<\/h([1-3])><\/p>/g, "</h$1>")
-      .replace(/<p><li>/g, "<li>")
-      .replace(/<\/li><\/p>/g, "</li>")
-      .replace(/<p><\/p>/g, "");
+    // Render markdown via `marked` and sanitize with DOMPurify so OpenAI
+    // generated HTML/scripts cannot reach the client. The previous regex
+    // chain had no sanitization — a prompt-injection in the LLM response
+    // could land <script> tags in the DOM.
+    const renderedHtml = marked.parse(feedbackContent, {
+      gfm: true,
+      breaks: true,
+    }) as string;
+    const wrappedFeedback = DOMPurify.sanitize(renderedHtml, {
+      ALLOWED_TAGS: [
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "p",
+        "br",
+        "strong",
+        "em",
+        "ul",
+        "ol",
+        "li",
+        "code",
+        "pre",
+        "blockquote",
+      ],
+      ALLOWED_ATTR: [],
+    });
 
     return NextResponse.json({ feedback: wrappedFeedback });
   } catch (error) {

@@ -41,15 +41,8 @@ export interface LiveSessionState {
   isListening: boolean;
   currentPersona: PersonaInstruction | null;
   currentStageIndex: number;
-  transcript: TranscriptEntry[];
+  messages: import("@/features/chat/models/chat").Message[];
   error: string | null;
-}
-
-export interface TranscriptEntry {
-  id: string;
-  speaker: "user" | "persona";
-  text: string;
-  timestamp: number;
 }
 
 export const LIVE_AUDIO_CONFIG: AudioConfig = {

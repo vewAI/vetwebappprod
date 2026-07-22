@@ -6,7 +6,25 @@
       "Bash(gh search:*)",
       "Bash(git -C \"C:\\\\Users\\\\Usuario\\\\Developer\\\\vetwebappprod\" status --short)",
       "Bash(npm run:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(npx next *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git status *)",
+      "Bash(grep -E \"^./app$|^./features$|^./lib$\")",
+      "WebSearch",
+      "Bash(git fetch *)",
+      "Bash(npx vercel *)",
+      "Bash(npm list *)",
+      "Bash(git log *)",
+      "Bash(node *)",
+      "Bash(grep -v \"^$\\\\|^\\\\-\\\\-\")",
+      "Bash(grep -v '\\\\\\\\[')",
+      "Bash(npm ls *)",
+      "Bash(git checkout *)",
+      "Bash(git pull *)",
+      "Bash(vercel inspect *)",
+      "Bash(git ls-tree *)"
     ]
   }
 }

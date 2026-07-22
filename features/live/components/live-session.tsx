@@ -1,21 +1,23 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { getAccessToken } from "@/lib/auth-headers";
 import type { Case } from "@/features/case-selection/models/case";
 import type { Stage } from "@/features/stages/types";
 import type { PersonaEntry } from "@/features/chat/hooks/usePersonaDirectory";
+import type { Message } from "@/features/chat/models/chat";
 import { usePersonaSwitcher } from "../hooks/usePersonaSwitcher";
 import { useGeminiLive } from "../hooks/useGeminiLive";
 import { useMicrophone } from "../hooks/useMicrophone";
 import { useAudioPlayer } from "../hooks/useAudioPlayer";
 import { useLiveProgress } from "../hooks/useLiveProgress";
+import { useSaveAttempt } from "@/features/attempts/hooks/useSaveAttempt";
 import { PersonaHeader } from "./persona-header";
 import { AudioWaveform } from "./audio-waveform";
 import { LiveControls } from "./live-controls";
 import { LiveStageProgress } from "./live-stage-progress";
 import { LiveTranscript } from "./live-transcript";
 import { StageAdvanceHint } from "./stage-advance-hint";
-import type { TranscriptEntry } from "../types";
 
 type LiveSessionProps = {
   caseItem: Case;
@@ -23,7 +25,8 @@ type LiveSessionProps = {
   initialStageIndex?: number;
   personaDirectory: Record<string, PersonaEntry>;
   attemptId: string;
-  onSessionEnd?: (transcript?: TranscriptEntry[]) => void;
+  initialMessages?: Message[];
+  onSessionEnd?: (messages?: Message[]) => void;
 };
 
 export function LiveSession({
@@ -32,6 +35,7 @@ export function LiveSession({
   initialStageIndex = 0,
   personaDirectory,
   attemptId,
+  initialMessages = [],
   onSessionEnd,
 }: LiveSessionProps) {
   const [isMuted, setIsMuted] = useState(false);
@@ -45,16 +49,50 @@ export function LiveSession({
     personaDirectory
   );
 
-  const live = useGeminiLive();
+  const live = useGeminiLive(progress.currentStageIndex, initialMessages);
   const mic = useMicrophone();
   const player = useAudioPlayer();
+  const { saveProgress } = useSaveAttempt(attemptId);
 
-  const prevUserTurnCountRef = useRef(0);
+  // Tracks whether the most recent disconnect was user-initiated (page
+  // navigation, end-session button, persona change) so the auto-reconnect
+  // effect can ignore true disconnects. Reset to false at the start of every
+  // new connection attempt so genuine network drops still retry.
+  // Note: stays at the cleanup-set value while persona is null (init()'s
+  // `if (!persona) return;` short-circuits). This is intentional — we only
+  // reset once we actually begin a new connection.
+  const userInitiatedDisconnectRef = useRef(false);
+  const countedMessageIdsRef = useRef<Set<string>>(new Set());
   const currentStage = progress.stages[progress.currentStageIndex];
 
   // Track whether the stage advance hint has been shown for the current stage
   const hintShownForStageRef = useRef<number>(-1);
   const [showAdvanceHint, setShowAdvanceHint] = useState(false);
+
+  // P1.3: Debounced auto-save on every message change
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const timeSpentRef = useRef(0);
+
+  // Increment elapsed time every second
+  useEffect(() => {
+    const timer = setInterval(() => {
+      timeSpentRef.current += 1;
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Auto-save messages debounced 2s after last change
+  useEffect(() => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      if (live.messages.length > 0) {
+        saveProgress(progress.currentStageIndex, live.messages, timeSpentRef.current);
+      }
+    }, 2000);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [live.messages, progress.currentStageIndex, saveProgress]);
 
   // Wire mic audio to live session
   useEffect(() => {
@@ -91,7 +129,7 @@ export function LiveSession({
     async function init() {
       try {
         if (!persona) return;
-        const { getAccessToken } = await import("@/lib/auth-headers");
+        userInitiatedDisconnectRef.current = false;
         const accessToken = await getAccessToken().catch(() => null);
 
         console.log("[Session] Fetching token for case:", caseItem.id);
@@ -133,6 +171,7 @@ export function LiveSession({
 
     return () => {
       cancelled = true;
+      userInitiatedDisconnectRef.current = true;
       live.disconnect();
       hasConnectedRef.current = false;
     };
@@ -140,6 +179,7 @@ export function LiveSession({
 
   // Auto-reconnect on unexpected disconnect
   useEffect(() => {
+    if (userInitiatedDisconnectRef.current) return;
     if (live.status === "connected") {
       retryCountRef.current = 0;
       return;
@@ -157,7 +197,6 @@ export function LiveSession({
       if (cancelled || !persona) return;
       hasConnectedRef.current = false;
       try {
-        const { getAccessToken } = await import("@/lib/auth-headers");
         const accessToken = await getAccessToken().catch(() => null);
         const tokenRes = await fetch("/api/live/token", {
           method: "POST",
@@ -189,16 +228,13 @@ export function LiveSession({
     };
   }, [live.status, persona]);
 
-  // Switch persona when stage changes + reset turn counter
+  // Switch persona when stage changes
   useEffect(() => {
     if (persona && live.status === "connected") {
       live.switchPersona(persona);
 
       // If switching TO owner persona, send trigger so they speak first
-      // This ensures the owner initiates conversation in every owner stage,
-      // not just on initial connection (e.g., History → Physical → Diagnostic)
       if (persona.roleKey === "owner") {
-        // Small delay to ensure persona switch is processed first
         setTimeout(() => {
           if (live.status === "connected") {
             live.sendText("[SYS_TRIGGER]");
@@ -206,21 +242,21 @@ export function LiveSession({
         }, 500);
       }
     }
-    prevUserTurnCountRef.current = 0;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [progress.currentStageIndex]);
 
-  // Record turns for stage progression — only on NEW user entries
+  // P1.5: Record turns using Set<string> of already-counted entry IDs.
+  // Only newly seen user messages increment the turn counter, regardless of
+  // stage changes (which no longer reset the count).
   useEffect(() => {
-    const userTurns = live.transcript.filter((e) => e.speaker === "user").length;
-    const newTurns = userTurns - prevUserTurnCountRef.current;
-    if (newTurns > 0) {
-      for (let i = 0; i < newTurns; i++) {
+    const userMessages = live.messages.filter((m) => m.role === "user");
+    for (const msg of userMessages) {
+      if (!countedMessageIdsRef.current.has(msg.id)) {
+        countedMessageIdsRef.current.add(msg.id);
         progress.recordTurn();
       }
     }
-    prevUserTurnCountRef.current = userTurns;
-  }, [live.transcript, progress]);
+  }, [live.messages, progress]);
 
   // Auto-advance removed: stages must be advanced explicitly by the user
   // via the advance button. This prevents premature stage jumps and ensures
@@ -244,19 +280,27 @@ export function LiveSession({
   }, [mic]);
 
   const handleAdvanceStage = useCallback(() => {
+    // P1.3: Save progress on stage advance before switching stage
+    saveProgress(progress.currentStageIndex, live.messages, timeSpentRef.current);
     progress.advanceStage();
-  }, [progress]);
+  }, [progress, saveProgress, live.messages]);
 
   const handleEndSession = useCallback(async () => {
-    // Capture transcript before disconnect (disconnect does NOT clear it,
-    // but capture early for safety)
-    const finalTranscript = [...live.transcript];
+    // Mark the upcoming disconnect as user-initiated so the auto-reconnect
+    // effect bails and we don't burn API quota retrying after End Session.
+    userInitiatedDisconnectRef.current = true;
+    // Capture messages before disconnect
+    const finalMessages = [...live.messages];
+
+    // P1.3+P1.4: Save final progress before disconnecting
+    if (finalMessages.length > 0) {
+      await saveProgress(progress.currentStageIndex, finalMessages, timeSpentRef.current);
+    }
 
     mic.stop();
     live.disconnect();
 
     try {
-      const { getAccessToken } = await import("@/lib/auth-headers");
       const accessToken = await getAccessToken().catch(() => null);
 
       await fetch("/api/live/session", {
@@ -269,14 +313,15 @@ export function LiveSession({
           attemptId,
           currentStageIndex: progress.currentStageIndex,
           status: "completed",
+          messages: finalMessages,
         }),
       });
     } catch {
       // non-critical
     }
 
-    onSessionEnd?.(finalTranscript);
-  }, [mic, live, attemptId, progress.currentStageIndex, onSessionEnd]);
+    onSessionEnd?.(finalMessages);
+  }, [mic, live, attemptId, progress.currentStageIndex, saveProgress, onSessionEnd]);
 
   const handleToggleMute = useCallback(() => {
     setIsMuted((prev) => !prev);
@@ -317,7 +362,7 @@ export function LiveSession({
 
       {/* Transcript */}
       <LiveTranscript
-        entries={live.transcript}
+        messages={live.messages}
         personaName={persona?.displayName ?? "AI"}
         isOpen={true}
       />

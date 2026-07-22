@@ -2,16 +2,16 @@
 
 import { useRef, useState, useCallback, useEffect } from "react";
 import { GeminiLiveService } from "../services/geminiLiveService";
+import type { Message } from "@/features/chat/models/chat";
 import type {
   LiveSessionStatus,
-  TranscriptEntry,
   PersonaInstruction,
 } from "../types";
 
 export type UseGeminiLiveResult = {
   status: LiveSessionStatus;
   isSpeaking: boolean;
-  transcript: TranscriptEntry[];
+  messages: Message[];
   currentPersona: PersonaInstruction | null;
   error: string | null;
   connect: (token: string, persona: PersonaInstruction) => Promise<void>;
@@ -25,12 +25,15 @@ export type UseGeminiLiveResult = {
   setOnAudioFlush: (cb: (() => void) | null) => void;
 };
 
-export function useGeminiLive(): UseGeminiLiveResult {
+export function useGeminiLive(
+  currentStageIndex: number = 0,
+  initialMessages: Message[] = []
+): UseGeminiLiveResult {
   const serviceRef = useRef<GeminiLiveService | null>(null);
   const entryIdCounterRef = useRef(0);
   const [status, setStatus] = useState<LiveSessionStatus>("idle");
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
+  const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [currentPersona, setCurrentPersona] = useState<PersonaInstruction | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,6 +43,12 @@ export function useGeminiLive(): UseGeminiLiveResult {
   const onAudioFlushRef = useRef<(() => void) | null>(null);
   const personaRef = useRef<PersonaInstruction | null>(null);
   const tokenRef = useRef<string | null>(null);
+  const stageIndexRef = useRef(currentStageIndex);
+
+  // Keep stageIndexRef in sync with the prop so new messages get the right stage
+  useEffect(() => {
+    stageIndexRef.current = currentStageIndex;
+  }, [currentStageIndex]);
 
   // Initialize service once
   useEffect(() => {
@@ -59,26 +68,37 @@ export function useGeminiLive(): UseGeminiLiveResult {
             break;
           case "textReceived":
             if (typeof event.data === "string" && personaRef.current) {
-              setTranscript((prev) => [
+              const p = personaRef.current;
+              setMessages((prev) => [
                 ...prev,
                 {
                   id: `entry_${++entryIdCounterRef.current}`,
-                  speaker: "persona",
-                  text: event.data as string,
-                  timestamp: Date.now(),
+                  role: "assistant",
+                  content: event.data as string,
+                  timestamp: new Date().toISOString(),
+                  stageIndex: stageIndexRef.current,
+                  displayRole: p.displayName,
+                  personaRoleKey: p.roleKey,
+                  portraitUrl: p.portraitUrl,
+                  voiceId: p.voiceName,
+                  status: "sent" as const,
                 },
               ]);
             }
             break;
           case "inputTranscription":
             if (typeof event.data === "string") {
-              setTranscript((prev) => [
+              setMessages((prev) => [
                 ...prev,
                 {
                   id: `entry_${++entryIdCounterRef.current}`,
-                  speaker: "user",
-                  text: event.data as string,
-                  timestamp: Date.now(),
+                  role: "user",
+                  content: event.data as string,
+                  timestamp: new Date().toISOString(),
+                  stageIndex: stageIndexRef.current,
+                  displayRole: "You",
+                  personaRoleKey: personaRef.current?.roleKey,
+                  status: "sent" as const,
                 },
               ]);
             }
@@ -127,7 +147,6 @@ export function useGeminiLive(): UseGeminiLiveResult {
     personaRef.current = persona;
     tokenRef.current = token;
     setError(null);
-    setTranscript([]);
 
     try {
       await serviceRef.current.connect(token, persona.systemInstruction, persona.voiceName);
@@ -191,7 +210,7 @@ export function useGeminiLive(): UseGeminiLiveResult {
   return {
     status,
     isSpeaking,
-    transcript,
+    messages,
     currentPersona,
     error,
     connect,

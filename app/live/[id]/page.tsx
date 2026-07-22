@@ -12,7 +12,7 @@ import { caseStageRowToStage, type CaseStageRow } from "@/features/stages/types"
 import type { Case } from "@/features/case-selection/models/case";
 import type { Stage } from "@/features/stages/types";
 import { LiveSession } from "@/features/live/components/live-session";
-import type { TranscriptEntry } from "@/features/live/types";
+import type { Message } from "@/features/chat/models/chat";
 import { CompletionDialog } from "@/features/feedback/components/completion-dialog";
 import { completeAttempt } from "@/features/attempts/services/attemptMutationService";
 import { getAccessToken } from "@/lib/auth-headers";
@@ -21,6 +21,7 @@ type SessionData = {
   attemptId: string;
   currentStageIndex: number;
   resumed: boolean;
+  messages: Message[];
 };
 
 export default function LiveSessionPage() {
@@ -112,6 +113,7 @@ export default function LiveSessionPage() {
           attemptId: data.attemptId,
           currentStageIndex: data.currentStageIndex ?? 0,
           resumed: data.resumed ?? false,
+          messages: data.messages ?? [],
         });
       } catch (err) {
         console.error("Session init failed:", err);
@@ -125,12 +127,12 @@ export default function LiveSessionPage() {
   }, [caseId, user]);
 
   // Handle session end — generate communication feedback and show dialog
-  const handleSessionEnd = async (transcript?: TranscriptEntry[]) => {
+  const handleSessionEnd = async (messages?: Message[]) => {
     setShowCompletionDialog(true);
     setIsGeneratingFeedback(true);
 
     try {
-      if (transcript && transcript.length > 0 && session?.attemptId) {
+      if (messages && messages.length > 0 && session?.attemptId) {
         const token = await getAccessToken().catch(() => null);
 
         // Generate feedback
@@ -140,7 +142,7 @@ export default function LiveSessionPage() {
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
-          body: JSON.stringify({ caseId, transcript }),
+          body: JSON.stringify({ caseId, messages }),
         });
 
         if (feedbackRes.ok) {
@@ -219,6 +221,7 @@ export default function LiveSessionPage() {
         initialStageIndex={session.currentStageIndex}
         personaDirectory={personaDir.personaDirectory}
         attemptId={session.attemptId}
+        initialMessages={session.messages}
         onSessionEnd={handleSessionEnd}
       />
 

@@ -16,13 +16,35 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "caseId is required" }, { status: 400 });
     }
 
-    // Close any previous in-progress attempts for this case+user
+    // P1.6: Check for an existing in-progress attempt to resume
+    const { data: existing } = await supabase
+      .from("attempts")
+      .select("id, last_stage_index, messages, time_spent_seconds")
+      .eq("case_id", caseId)
+      .eq("user_id", user.id)
+      .eq("completion_status", "in_progress")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existing) {
+      // Resume the existing attempt with its stored messages and progress
+      return NextResponse.json({
+        attemptId: existing.id,
+        currentStageIndex: existing.last_stage_index ?? 0,
+        resumed: true,
+        messages: existing.messages ?? [],
+        timeSpentSeconds: existing.time_spent_seconds ?? 0,
+      });
+    }
+
+    // Close any previous abandoned attempts for this case+user (not in_progress)
     await supabase
       .from("attempts")
       .update({ completion_status: "abandoned" })
       .eq("case_id", caseId)
       .eq("user_id", user.id)
-      .eq("completion_status", "in_progress");
+      .neq("completion_status", "in_progress");
 
     // Create new attempt
     const title = `Live — ${new Date().toISOString()}`;
@@ -50,6 +72,7 @@ export async function POST(req: Request) {
       attemptId: attempt.id,
       currentStageIndex: 0,
       resumed: false,
+      messages: [],
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -69,6 +92,7 @@ export async function PATCH(req: Request) {
     const attemptId = body?.attemptId;
     const currentStageIndex = body?.currentStageIndex;
     const status = body?.status;
+    const messages = body?.messages;
 
     if (!attemptId) {
       return NextResponse.json({ error: "attemptId is required" }, { status: 400 });
@@ -80,6 +104,10 @@ export async function PATCH(req: Request) {
     }
     if (status) {
       updates.completion_status = status;
+    }
+    // P1.4+P1.6: Persist messages to attempts.messages jsonb
+    if (Array.isArray(messages) && messages.length > 0) {
+      updates.messages = messages;
     }
 
     if (Object.keys(updates).length === 0) {
