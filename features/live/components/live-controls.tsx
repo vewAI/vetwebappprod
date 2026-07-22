@@ -12,6 +12,7 @@ type LiveControlsProps = {
   canAdvance: boolean;
   isMuted: boolean;
   showAdvanceHint: boolean;
+  elapsedTime?: string;
   onToggleMic: () => void;
   onInterrupt: () => void;
   onAdvanceStage: () => void;
@@ -25,6 +26,7 @@ export function LiveControls({
   canAdvance,
   isMuted,
   showAdvanceHint,
+  elapsedTime,
   onToggleMic,
   onInterrupt,
   onAdvanceStage,
@@ -67,6 +69,9 @@ export function LiveControls({
             : isRecording
               ? "Tap to stop"
               : "Tap to speak"}
+        {elapsedTime && isConnected && (
+          <span className="ml-2 opacity-60">{elapsedTime}</span>
+        )}
       </p>
 
       {/* Secondary controls */}
