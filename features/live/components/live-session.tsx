@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { getAccessToken } from "@/lib/auth-headers";
 import type { Case } from "@/features/case-selection/models/case";
 import type { Stage } from "@/features/stages/types";
@@ -13,11 +13,17 @@ import { useAudioPlayer } from "../hooks/useAudioPlayer";
 import { useLiveProgress } from "../hooks/useLiveProgress";
 import { useSaveAttempt } from "@/features/attempts/hooks/useSaveAttempt";
 import { PersonaHeader } from "./persona-header";
+import { PersonaTabs } from "@/features/chat/components/PersonaTabs";
+import type { PersonaTabDef, LivePersonaKey } from "@/features/chat/components/PersonaTabs";
 import { AudioWaveform } from "./audio-waveform";
 import { LiveControls } from "./live-controls";
-import { LiveStageProgress } from "./live-stage-progress";
+import { ProgressSidebar } from "@/features/chat/components/progress-sidebar";
 import { LiveTranscript } from "./live-transcript";
-import { StageAdvanceHint } from "./stage-advance-hint";
+import { Notepad } from "@/features/chat/components/notepad";
+import { emitStageEvaluation } from "@/features/chat/utils/stage-eval";
+import type { AllowedChatPersonaKey } from "@/features/chat/utils/persona-guardrails";
+import { Button } from "@/components/ui/button";
+import { FileText } from "lucide-react";
 
 type LiveSessionProps = {
   caseItem: Case;
@@ -29,6 +35,19 @@ type LiveSessionProps = {
   onSessionEnd?: (messages?: Message[]) => void;
 };
 
+const ALL_LIVE_PERSONA_KEYS: LivePersonaKey[] = [
+  "owner",
+  "veterinary-nurse",
+  "lab-technician",
+];
+
+function getPersonaLabel(key: string): string {
+  if (key === "owner") return "OWNER";
+  if (key === "veterinary-nurse") return "NURSE";
+  if (key === "lab-technician") return "LAB";
+  return key.toUpperCase();
+}
+
 export function LiveSession({
   caseItem,
   stages: initialStages,
@@ -39,7 +58,8 @@ export function LiveSession({
   onSessionEnd,
 }: LiveSessionProps) {
   const [isMuted, setIsMuted] = useState(false);
-  const [showTranscript, setShowTranscript] = useState(false);
+  const [showNotepad, setShowNotepad] = useState(false);
+  const [filterPersona, setFilterPersona] = useState<string | null>(null);
 
   const progress = useLiveProgress(initialStages, initialStageIndex);
   const persona = usePersonaSwitcher(
@@ -54,18 +74,10 @@ export function LiveSession({
   const player = useAudioPlayer();
   const { saveProgress } = useSaveAttempt(attemptId);
 
-  // Tracks whether the most recent disconnect was user-initiated (page
-  // navigation, end-session button, persona change) so the auto-reconnect
-  // effect can ignore true disconnects. Reset to false at the start of every
-  // new connection attempt so genuine network drops still retry.
-  // Note: stays at the cleanup-set value while persona is null (init()'s
-  // `if (!persona) return;` short-circuits). This is intentional — we only
-  // reset once we actually begin a new connection.
   const userInitiatedDisconnectRef = useRef(false);
   const countedMessageIdsRef = useRef<Set<string>>(new Set());
   const currentStage = progress.stages[progress.currentStageIndex];
 
-  // Track whether the stage advance hint has been shown for the current stage
   const hintShownForStageRef = useRef<number>(-1);
   const [showAdvanceHint, setShowAdvanceHint] = useState(false);
 
@@ -93,6 +105,13 @@ export function LiveSession({
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
   }, [live.messages, progress.currentStageIndex, saveProgress]);
+
+  // P2.6: Stage completion evaluation using shared STAGE_COMPLETION_RULES
+  const stageEval = useMemo(() => {
+    return emitStageEvaluation(caseItem.id, progress.currentStageIndex, live.messages);
+  }, [caseItem.id, progress.currentStageIndex, live.messages]);
+
+  const canAdvanceEval = stageEval?.status === "ready" || progress.canAdvance;
 
   // Wire mic audio to live session
   useEffect(() => {
@@ -216,7 +235,6 @@ export function LiveSession({
       } catch (err) {
         if (!cancelled) {
           console.error("[Session] Reconnect attempt failed:", err);
-          // Reset so the next status change can trigger another attempt
           hasConnectedRef.current = false;
         }
       }
@@ -233,7 +251,6 @@ export function LiveSession({
     if (persona && live.status === "connected") {
       live.switchPersona(persona);
 
-      // If switching TO owner persona, send trigger so they speak first
       if (persona.roleKey === "owner") {
         setTimeout(() => {
           if (live.status === "connected") {
@@ -246,8 +263,6 @@ export function LiveSession({
   }, [progress.currentStageIndex]);
 
   // P1.5: Record turns using Set<string> of already-counted entry IDs.
-  // Only newly seen user messages increment the turn counter, regardless of
-  // stage changes (which no longer reset the count).
   useEffect(() => {
     const userMessages = live.messages.filter((m) => m.role === "user");
     for (const msg of userMessages) {
@@ -258,18 +273,13 @@ export function LiveSession({
     }
   }, [live.messages, progress]);
 
-  // Auto-advance removed: stages must be advanced explicitly by the user
-  // via the advance button. This prevents premature stage jumps and ensures
-  // the student has completed meaningful interactions before moving on.
-
-  // Show a hint pointing to the Next Stage button when the student has
-  // completed enough turns but hasn't advanced yet. Shows once per stage.
+  // Show advance hint once per stage
   useEffect(() => {
-    if (progress.canAdvance && progress.currentStageIndex !== hintShownForStageRef.current) {
+    if (canAdvanceEval && progress.currentStageIndex !== hintShownForStageRef.current) {
       hintShownForStageRef.current = progress.currentStageIndex;
       setShowAdvanceHint(true);
     }
-  }, [progress.canAdvance, progress.currentStageIndex]);
+  }, [canAdvanceEval, progress.currentStageIndex]);
 
   const handleToggleMic = useCallback(async () => {
     if (mic.isRecording) {
@@ -280,19 +290,14 @@ export function LiveSession({
   }, [mic]);
 
   const handleAdvanceStage = useCallback(() => {
-    // P1.3: Save progress on stage advance before switching stage
     saveProgress(progress.currentStageIndex, live.messages, timeSpentRef.current);
     progress.advanceStage();
   }, [progress, saveProgress, live.messages]);
 
   const handleEndSession = useCallback(async () => {
-    // Mark the upcoming disconnect as user-initiated so the auto-reconnect
-    // effect bails and we don't burn API quota retrying after End Session.
     userInitiatedDisconnectRef.current = true;
-    // Capture messages before disconnect
     const finalMessages = [...live.messages];
 
-    // P1.3+P1.4: Save final progress before disconnecting
     if (finalMessages.length > 0) {
       await saveProgress(progress.currentStageIndex, finalMessages, timeSpentRef.current);
     }
@@ -330,68 +335,141 @@ export function LiveSession({
     }
   }, [isMuted, player]);
 
+  // P2.1: Build persona tabs for all three roles
+  const activePersonaRole = persona?.roleKey ?? "owner";
+  const personaTabs: PersonaTabDef[] = useMemo(() => {
+    const currentStagePersonaRole = persona?.roleKey;
+    return ALL_LIVE_PERSONA_KEYS.map((key) => ({
+      key,
+      label: getPersonaLabel(key),
+      disabled: key !== currentStagePersonaRole,
+      disabledReason:
+        key !== currentStagePersonaRole
+          ? `Switch to ${getPersonaLabel(key)} stage to address`
+          : undefined,
+      isSpeaking:
+        live.isSpeaking &&
+        live.currentPersona?.roleKey === key &&
+        key !== currentStagePersonaRole,
+    }));
+  }, [persona?.roleKey, live.isSpeaking, live.currentPersona]);
+
+  // P2.3: Handle persona tab change — update filterPersona for transcript filtering
+  const handlePersonaTabChange = useCallback(
+    (key: string) => {
+      setFilterPersona((prev) => (prev === key ? null : key));
+    },
+    []
+  );
+
   const waveformMode = live.isSpeaking
-    ? "speaking" as const
+    ? ("speaking" as const)
     : mic.isRecording
-      ? "listening" as const
-      : "idle" as const;
+      ? ("listening" as const)
+      : ("idle" as const);
 
   return (
-    <div className="flex h-full flex-col bg-background">
-      {/* Top: Persona header */}
-      <PersonaHeader
-        persona={persona}
-        stageTitle={currentStage?.title ?? ""}
-        isSpeaking={live.isSpeaking}
-      />
-
-      {/* Stage progress pills */}
-      <LiveStageProgress
+    <div className="flex h-full bg-background">
+      {/* P2.5: Progress Sidebar (replaces LiveStageProgress pills) */}
+      <ProgressSidebar
+        caseItem={caseItem}
         stages={progress.stages}
-        currentIndex={progress.currentStageIndex}
+        currentStageIndex={progress.currentStageIndex}
+        onStageSelect={(index) => {
+          // Only allow going back to completed stages
+          if (index <= progress.currentStageIndex) {
+            progress.setStageIndex(index);
+          }
+        }}
       />
 
-      {/* Center: Waveform visualization */}
-      <div className="flex-1 flex items-center justify-center px-4">
-        <AudioWaveform
-          isActive={live.status === "connected"}
-          mode={waveformMode}
-          className="h-48 w-full max-w-sm"
+      {/* Main content area */}
+      <div className="flex flex-1 flex-col min-w-0">
+        {/* Top: Persona header */}
+        <PersonaHeader
+          persona={persona}
+          stageTitle={currentStage?.title ?? ""}
+          isSpeaking={live.isSpeaking}
         />
+
+        {/* P2.1: Persona Tabs */}
+        <div className="px-4">
+          <PersonaTabs
+            activePersona={activePersonaRole as AllowedChatPersonaKey}
+            onChange={handlePersonaTabChange}
+            extendedTabs={personaTabs}
+          />
+        </div>
+
+        {/* Center: Flexible area with waveform OR transcript */}
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Waveform visualization (compact when transcript expanded) */}
+          <div className="flex-shrink-0 flex items-center justify-center px-4 py-2">
+            <AudioWaveform
+              isActive={live.status === "connected"}
+              mode={waveformMode}
+              className="h-24 w-full max-w-xs"
+            />
+          </div>
+
+          {/* P2.2: Scrollable chat history with ChatMessage */}
+          <LiveTranscript
+            messages={live.messages}
+            isOpen={true}
+            stages={progress.stages}
+            filterPersona={filterPersona}
+          />
+        </div>
+
+        {/* Bottom: Controls */}
+        <div className="relative">
+          {/* P2.4: Notepad toggle button */}
+          <div className="absolute right-4 top-2 z-10">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowNotepad((prev) => !prev)}
+              className="h-9 w-9 rounded-full"
+              title="Clinical Notes"
+            >
+              <FileText className="h-4 w-4" />
+            </Button>
+          </div>
+
+          <LiveControls
+            status={live.status}
+            isRecording={mic.isRecording}
+            canAdvance={canAdvanceEval}
+            isMuted={isMuted}
+            showAdvanceHint={showAdvanceHint}
+            onToggleMic={handleToggleMic}
+            onInterrupt={live.interrupt}
+            onAdvanceStage={handleAdvanceStage}
+            onEndSession={handleEndSession}
+            onToggleMute={handleToggleMute}
+          />
+        </div>
+
+        {/* Error / status display */}
+        {live.error && (
+          <div className="mx-4 mb-4 rounded-lg bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-600 dark:text-red-400">
+            {live.error}
+          </div>
+        )}
+        {!live.error && live.status === "disconnected" && retryCountRef.current >= 3 && (
+          <div className="mx-4 mb-4 rounded-lg bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-600 dark:text-amber-400">
+            Connection lost. Tap the mic to retry or end the session.
+          </div>
+        )}
       </div>
 
-      {/* Transcript */}
-      <LiveTranscript
-        messages={live.messages}
-        personaName={persona?.displayName ?? "AI"}
-        isOpen={true}
+      {/* P2.4: Notepad overlay */}
+      <Notepad
+        isOpen={showNotepad}
+        onClose={() => setShowNotepad(false)}
+        caseId={caseItem.id}
+        attemptId={attemptId}
       />
-
-      {/* Bottom: Controls */}
-      <LiveControls
-        status={live.status}
-        isRecording={mic.isRecording}
-        canAdvance={progress.canAdvance}
-        isMuted={isMuted}
-        showAdvanceHint={showAdvanceHint}
-        onToggleMic={handleToggleMic}
-        onInterrupt={live.interrupt}
-        onAdvanceStage={handleAdvanceStage}
-        onEndSession={handleEndSession}
-        onToggleMute={handleToggleMute}
-      />
-
-      {/* Error / status display */}
-      {live.error && (
-        <div className="mx-4 mb-4 rounded-lg bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-600 dark:text-red-400">
-          {live.error}
-        </div>
-      )}
-      {!live.error && live.status === "disconnected" && retryCountRef.current >= 3 && (
-        <div className="mx-4 mb-4 rounded-lg bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-600 dark:text-amber-400">
-          Connection lost. Tap the mic to retry or end the session.
-        </div>
-      )}
     </div>
   );
 }
