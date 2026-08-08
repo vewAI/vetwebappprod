@@ -25,8 +25,6 @@ type LiveControlsProps = {
   isMuted: boolean;
   showAdvanceHint: boolean;
   elapsedTime?: string;
-  /** Live (interim) transcription of what the user is currently saying. */
-  liveCaption: string | null;
   /** Persona defs for owner, nurse and lab (all three; active one highlighted). */
   personas: LivePersonaDef[];
   onToggleMic: () => void;
@@ -44,7 +42,6 @@ export function LiveControls({
   isMuted,
   showAdvanceHint,
   elapsedTime,
-  liveCaption,
   personas,
   onToggleMic,
   onSelectPersona,
@@ -164,36 +161,13 @@ export function LiveControls({
         </div>
       </div>
 
-      {/* Live spoken-text area */}
-      <div
-        className={cn(
-          "w-full max-w-2xl rounded-xl border px-4 py-3 text-left transition-colors duration-300",
-          isRecording || liveCaption
-            ? "border-red-400/40 bg-red-50/50 dark:bg-red-950/20"
-            : "border-border bg-muted/40"
-        )}
-      >
-        <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
-          <span
-            className={cn(
-              "h-1.5 w-1.5 rounded-full",
-              isRecording ? "bg-red-500 animate-pulse" : "bg-muted-foreground/50"
-            )}
-          />
-          {isRecording ? "Listening — your words appear here live" : "Live speech"}
-        </div>
-        <p className="mt-1 text-sm min-h-[1.25rem]">
-          {liveCaption ? (
-            liveCaption
-          ) : isRecording ? (
-            <span className="text-muted-foreground animate-pulse">…</span>
-          ) : (
-            <span className="text-muted-foreground">
-              Start speaking to see your words here in real time.
-            </span>
-          )}
+      {/* Who you are talking to + switch hint */}
+      {isConnected && (
+        <p className="text-[11px] text-muted-foreground/80 text-center">
+          You are talking to {personas.find((p) => p.isActive)?.label ?? "the current persona"} —
+          click an avatar to switch who you speak with.
         </p>
-      </div>
+      )}
 
       {/* Secondary controls */}
       <div className="flex items-center gap-3">

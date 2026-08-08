@@ -2,6 +2,7 @@
 
 import { useRef, useState, useCallback, useEffect } from "react";
 import { GeminiLiveService } from "../services/geminiLiveService";
+import { mergeAssistantFragment } from "../utils/mergeAssistantFragment";
 import type { Message } from "@/features/chat/models/chat";
 import type {
   LiveSessionStatus,
@@ -12,8 +13,6 @@ export type UseGeminiLiveResult = {
   status: LiveSessionStatus;
   isSpeaking: boolean;
   messages: Message[];
-  /** Live (interim) transcription of what the user is currently saying. */
-  inputTranscript: string | null;
   currentPersona: PersonaInstruction | null;
   error: string | null;
   connect: (token: string, persona: PersonaInstruction) => Promise<void>;
@@ -36,12 +35,19 @@ export function useGeminiLive(
   const [status, setStatus] = useState<LiveSessionStatus>("idle");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
-  const [inputTranscript, setInputTranscript] = useState<string | null>(null);
   const [currentPersona, setCurrentPersona] = useState<PersonaInstruction | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Latest interim transcription not yet committed to `messages`.
+  // Synchronous mirror of `messages` so event handlers (which run outside
+  // React's render cycle) can build on the latest transcript.
+  const messagesRef = useRef<Message[]>(initialMessages);
+
+  // Latest interim input transcription not yet committed to `messages`.
   const pendingInputRef = useRef<string | null>(null);
+
+  // Partial assistant text of the current turn (see mergeAssistantFragment).
+  const pendingAssistantRef = useRef<string | null>(null);
+  const pendingAssistantIdRef = useRef<string | null>(null);
 
   const audioChunksRef = useRef<ArrayBuffer[]>([]);
   const onAudioRef = useRef<((chunks: ArrayBuffer[]) => void) | null>(null);
@@ -56,16 +62,22 @@ export function useGeminiLive(
     stageIndexRef.current = currentStageIndex;
   }, [currentStageIndex]);
 
-  const appendUserMessage = useCallback((text: string, dedupeLast = false) => {
-    setMessages((prev) => {
+  const commitMessages = useCallback((next: Message[]) => {
+    messagesRef.current = next;
+    setMessages(next);
+  }, []);
+
+  const appendUserMessage = useCallback(
+    (text: string, dedupeLast = false) => {
       // Dedupe only on demand (flush path): guards against a finished event
       // adding the same utterance right before the turnComplete flush.
       if (dedupeLast) {
+        const prev = messagesRef.current;
         const last = prev[prev.length - 1];
-        if (last && last.role === "user" && last.content === text) return prev;
+        if (last && last.role === "user" && last.content === text) return;
       }
-      return [
-        ...prev,
+      commitMessages([
+        ...messagesRef.current,
         {
           id: `entry_${++entryIdCounterRef.current}`,
           role: "user" as const,
@@ -76,8 +88,14 @@ export function useGeminiLive(
           personaRoleKey: personaRef.current?.roleKey,
           status: "sent" as const,
         },
-      ];
-    });
+      ]);
+    },
+    [commitMessages]
+  );
+
+  const resetPendingAssistant = useCallback(() => {
+    pendingAssistantRef.current = null;
+    pendingAssistantIdRef.current = null;
   }, []);
 
   // Initialize service once
@@ -96,26 +114,30 @@ export function useGeminiLive(
               onAudioStreamRef.current?.(event.data);
             }
             break;
-          case "textReceived":
-            if (typeof event.data === "string" && personaRef.current) {
-              const p = personaRef.current;
-              setMessages((prev) => [
-                ...prev,
-                {
-                  id: `entry_${++entryIdCounterRef.current}`,
-                  role: "assistant",
-                  content: event.data as string,
-                  timestamp: new Date().toISOString(),
-                  stageIndex: stageIndexRef.current,
-                  displayRole: p.displayName,
-                  personaRoleKey: p.roleKey,
-                  portraitUrl: p.portraitUrl,
-                  voiceId: p.voiceName,
-                  status: "sent" as const,
-                },
-              ]);
-            }
+          case "textReceived": {
+            if (typeof event.data !== "string" || !personaRef.current) break;
+            const p = personaRef.current;
+            // Accumulate streaming fragments into ONE entry per intervention.
+            const result = mergeAssistantFragment(
+              messagesRef.current,
+              event.data,
+              pendingAssistantIdRef.current,
+              pendingAssistantRef.current,
+              {
+                displayName: p.displayName,
+                roleKey: p.roleKey,
+                portraitUrl: p.portraitUrl,
+                voiceName: p.voiceName,
+              },
+              stageIndexRef.current,
+              entryIdCounterRef.current
+            );
+            pendingAssistantIdRef.current = result.pendingId;
+            pendingAssistantRef.current = result.pendingText;
+            entryIdCounterRef.current = result.nextId;
+            commitMessages(result.messages);
             break;
+          }
           case "inputTranscription": {
             const payload = event.data;
             const text =
@@ -128,14 +150,11 @@ export function useGeminiLive(
               (payload as { finished?: boolean }).finished === true;
             if (!text || !text.trim()) break;
             if (finished) {
-              // Final transcription → commit to the chat log + clear the caption.
+              // Final transcription → commit to the chat log.
               pendingInputRef.current = null;
-              setInputTranscript(null);
               appendUserMessage(text);
             } else {
-              // Interim → show it live in the caption.
               pendingInputRef.current = text;
-              setInputTranscript(text);
             }
             break;
           }
@@ -146,7 +165,6 @@ export function useGeminiLive(
             if (pendingInputRef.current) {
               appendUserMessage(pendingInputRef.current, true);
               pendingInputRef.current = null;
-              setInputTranscript(null);
             }
             const chunks = audioChunksRef.current;
             if (chunks.length > 0) {
@@ -155,19 +173,21 @@ export function useGeminiLive(
             }
             onAudioFlushRef.current?.();
             setIsSpeaking(false);
+            resetPendingAssistant();
             break;
           }
           case "interrupted":
             pendingInputRef.current = null;
-            setInputTranscript(null);
             setIsSpeaking(false);
             audioChunksRef.current = [];
+            // Keep the partial text already shown; a new turn starts next event.
+            resetPendingAssistant();
             break;
           case "disconnected":
             setStatus("disconnected");
             setIsSpeaking(false);
             pendingInputRef.current = null;
-            setInputTranscript(null);
+            resetPendingAssistant();
             // Show disconnect reason as error if it indicates a real problem
             const disconnectReason = typeof event.data === "string" ? event.data : null;
             if (disconnectReason && !disconnectReason.includes("Session ended")) {
@@ -179,7 +199,7 @@ export function useGeminiLive(
             setStatus("error");
             setIsSpeaking(false);
             pendingInputRef.current = null;
-            setInputTranscript(null);
+            resetPendingAssistant();
             break;
         }
       },
@@ -188,31 +208,35 @@ export function useGeminiLive(
     return () => {
       serviceRef.current?.disconnect();
     };
-  }, [appendUserMessage]);
+  }, [appendUserMessage, commitMessages, resetPendingAssistant]);
 
-  const connect = useCallback(async (token: string, persona: PersonaInstruction) => {
-    if (!serviceRef.current) return;
-    setStatus("connecting");
-    setCurrentPersona(persona);
-    personaRef.current = persona;
-    tokenRef.current = token;
-    setError(null);
+  const connect = useCallback(
+    async (token: string, persona: PersonaInstruction) => {
+      if (!serviceRef.current) return;
+      setStatus("connecting");
+      setCurrentPersona(persona);
+      personaRef.current = persona;
+      tokenRef.current = token;
+      setError(null);
+      resetPendingAssistant();
 
-    try {
-      await serviceRef.current.connect(token, persona.systemInstruction, persona.voiceName);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Connection failed");
-      setStatus("error");
-    }
-  }, []);
+      try {
+        await serviceRef.current.connect(token, persona.systemInstruction, persona.voiceName);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Connection failed");
+        setStatus("error");
+      }
+    },
+    [resetPendingAssistant]
+  );
 
   const disconnect = useCallback(() => {
     serviceRef.current?.disconnect();
     setStatus("disconnected");
     setIsSpeaking(false);
     pendingInputRef.current = null;
-    setInputTranscript(null);
-  }, []);
+    resetPendingAssistant();
+  }, [resetPendingAssistant]);
 
   const sendAudio = useCallback((chunk: ArrayBuffer) => {
     serviceRef.current?.sendAudio(chunk);
@@ -271,7 +295,6 @@ export function useGeminiLive(
     status,
     isSpeaking,
     messages,
-    inputTranscript,
     currentPersona,
     error,
     connect,

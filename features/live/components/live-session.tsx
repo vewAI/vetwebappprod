@@ -648,7 +648,6 @@ export function LiveSession({
             isMuted={isMuted}
             showAdvanceHint={showAdvanceHint}
             elapsedTime={elapsedDisplay}
-            liveCaption={live.inputTranscript}
             personas={personaDefs}
             onToggleMic={handleToggleMic}
             onSelectPersona={handleSelectPersona}
