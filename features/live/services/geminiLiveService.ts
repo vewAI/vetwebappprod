@@ -35,6 +35,10 @@ export class GeminiLiveService {
           },
           systemInstruction: systemInstruction,
           outputAudioTranscription: {},
+          // Note: this SDK version serializes inputAudioTranscription to an
+          // empty object, so the server returns final-per-utterance events
+          // (interimResults is not yet plumbed through). The hook treats the
+          // `finished` flag on each event defensively.
           inputAudioTranscription: {},
         },
         callbacks: {
@@ -111,11 +115,16 @@ export class GeminiLiveService {
       }
     }
 
-    // Input transcription (what the user said)
+    // Input transcription (what the user said). With interimResults enabled
+    // the same utterance arrives repeatedly with growing text until the final
+    // event carries `finished: true` — used for the live caption + chat log.
     if (content?.inputTranscription?.text) {
       this.callbacks.onEvent({
         type: "inputTranscription",
-        data: content.inputTranscription.text,
+        data: {
+          text: content.inputTranscription.text,
+          finished: content.inputTranscription.finished === true,
+        },
       });
     }
 

@@ -4,15 +4,24 @@ import { useMemo } from "react";
 import type { Case } from "@/features/case-selection/models/case";
 import type { Stage } from "@/features/stages/types";
 import type { PersonaEntry } from "@/features/chat/hooks/usePersonaDirectory";
-import { STAGE_TYPE_TO_PERSONA, GEMINI_VOICE_MAP, type PersonaInstruction } from "../types";
+import { GEMINI_VOICE_MAP, type PersonaInstruction } from "../types";
+import { resolveLivePersonaRoleKey } from "../utils/resolveLivePersonaRoleKey";
 import { buildPersonaSystemInstruction } from "../services/systemInstructionBuilder";
 import { formatSpeciesKnowledgePrompt, extractSpecializationFromMetadata } from "@/features/personas/services/speciesKnowledgeFormatter";
 
+/**
+ * Build the active PersonaInstruction for the live session.
+ *
+ * @param overrideRoleKey When set (user clicked a persona avatar), that role
+ *   is used instead of the stage-derived one, enabling free OWNER↔NURSE↔LAB
+ *   switching mid-stage. Pass null to follow the stage persona.
+ */
 export function usePersonaSwitcher(
   caseItem: Case | null,
   stages: Stage[],
   currentStageIndex: number,
-  personaDirectory: Record<string, PersonaEntry>
+  personaDirectory: Record<string, PersonaEntry>,
+  overrideRoleKey: string | null = null
 ): PersonaInstruction | null {
   return useMemo(() => {
     if (!caseItem || stages.length === 0) return null;
@@ -20,14 +29,7 @@ export function usePersonaSwitcher(
     const stage = stages[currentStageIndex];
     if (!stage) return null;
 
-    // Get stage_type from settings
-    const settings = stage.settings as Record<string, unknown> | undefined;
-    const stageType = typeof settings?.stage_type === "string" ? settings.stage_type : "";
-
-    // Map stage type to persona role key
-    const personaRoleKey = stageType
-      ? STAGE_TYPE_TO_PERSONA[stageType] ?? "veterinary-nurse"
-      : stage.personaRoleKey ?? "veterinary-nurse";
+    const personaRoleKey = overrideRoleKey ?? resolveLivePersonaRoleKey(stage);
 
     // Get persona data from directory
     const personaEntry = personaDirectory[personaRoleKey];
@@ -60,5 +62,5 @@ export function usePersonaSwitcher(
           }
         : undefined,
     });
-  }, [caseItem, stages, currentStageIndex, personaDirectory]);
+  }, [caseItem, stages, currentStageIndex, personaDirectory, overrideRoleKey]);
 }

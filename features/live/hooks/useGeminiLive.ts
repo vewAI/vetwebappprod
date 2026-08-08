@@ -12,6 +12,8 @@ export type UseGeminiLiveResult = {
   status: LiveSessionStatus;
   isSpeaking: boolean;
   messages: Message[];
+  /** Live (interim) transcription of what the user is currently saying. */
+  inputTranscript: string | null;
   currentPersona: PersonaInstruction | null;
   error: string | null;
   connect: (token: string, persona: PersonaInstruction) => Promise<void>;
@@ -34,8 +36,12 @@ export function useGeminiLive(
   const [status, setStatus] = useState<LiveSessionStatus>("idle");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const [inputTranscript, setInputTranscript] = useState<string | null>(null);
   const [currentPersona, setCurrentPersona] = useState<PersonaInstruction | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Latest interim transcription not yet committed to `messages`.
+  const pendingInputRef = useRef<string | null>(null);
 
   const audioChunksRef = useRef<ArrayBuffer[]>([]);
   const onAudioRef = useRef<((chunks: ArrayBuffer[]) => void) | null>(null);
@@ -49,6 +55,30 @@ export function useGeminiLive(
   useEffect(() => {
     stageIndexRef.current = currentStageIndex;
   }, [currentStageIndex]);
+
+  const appendUserMessage = useCallback((text: string, dedupeLast = false) => {
+    setMessages((prev) => {
+      // Dedupe only on demand (flush path): guards against a finished event
+      // adding the same utterance right before the turnComplete flush.
+      if (dedupeLast) {
+        const last = prev[prev.length - 1];
+        if (last && last.role === "user" && last.content === text) return prev;
+      }
+      return [
+        ...prev,
+        {
+          id: `entry_${++entryIdCounterRef.current}`,
+          role: "user" as const,
+          content: text,
+          timestamp: new Date().toISOString(),
+          stageIndex: stageIndexRef.current,
+          displayRole: "You",
+          personaRoleKey: personaRef.current?.roleKey,
+          status: "sent" as const,
+        },
+      ];
+    });
+  }, []);
 
   // Initialize service once
   useEffect(() => {
@@ -86,24 +116,38 @@ export function useGeminiLive(
               ]);
             }
             break;
-          case "inputTranscription":
-            if (typeof event.data === "string") {
-              setMessages((prev) => [
-                ...prev,
-                {
-                  id: `entry_${++entryIdCounterRef.current}`,
-                  role: "user",
-                  content: event.data as string,
-                  timestamp: new Date().toISOString(),
-                  stageIndex: stageIndexRef.current,
-                  displayRole: "You",
-                  personaRoleKey: personaRef.current?.roleKey,
-                  status: "sent" as const,
-                },
-              ]);
+          case "inputTranscription": {
+            const payload = event.data;
+            const text =
+              typeof payload === "string"
+                ? payload
+                : (payload as { text?: string } | null)?.text ?? "";
+            const finished =
+              typeof payload === "object" &&
+              payload !== null &&
+              (payload as { finished?: boolean }).finished === true;
+            if (!text || !text.trim()) break;
+            if (finished) {
+              // Final transcription → commit to the chat log + clear the caption.
+              pendingInputRef.current = null;
+              setInputTranscript(null);
+              appendUserMessage(text);
+            } else {
+              // Interim → show it live in the caption.
+              pendingInputRef.current = text;
+              setInputTranscript(text);
             }
             break;
+          }
           case "turnComplete": {
+            // Defensive flush: if the final event never carried `finished: true`,
+            // commit the last interim text so the user's words still land in the
+            // chat log (deduped in appendUserMessage).
+            if (pendingInputRef.current) {
+              appendUserMessage(pendingInputRef.current, true);
+              pendingInputRef.current = null;
+              setInputTranscript(null);
+            }
             const chunks = audioChunksRef.current;
             if (chunks.length > 0) {
               onAudioRef.current?.([...chunks]);
@@ -114,12 +158,16 @@ export function useGeminiLive(
             break;
           }
           case "interrupted":
+            pendingInputRef.current = null;
+            setInputTranscript(null);
             setIsSpeaking(false);
             audioChunksRef.current = [];
             break;
           case "disconnected":
             setStatus("disconnected");
             setIsSpeaking(false);
+            pendingInputRef.current = null;
+            setInputTranscript(null);
             // Show disconnect reason as error if it indicates a real problem
             const disconnectReason = typeof event.data === "string" ? event.data : null;
             if (disconnectReason && !disconnectReason.includes("Session ended")) {
@@ -130,6 +178,8 @@ export function useGeminiLive(
             setError(typeof event.data === "string" ? event.data : "Unknown error");
             setStatus("error");
             setIsSpeaking(false);
+            pendingInputRef.current = null;
+            setInputTranscript(null);
             break;
         }
       },
@@ -138,7 +188,7 @@ export function useGeminiLive(
     return () => {
       serviceRef.current?.disconnect();
     };
-  }, []);
+  }, [appendUserMessage]);
 
   const connect = useCallback(async (token: string, persona: PersonaInstruction) => {
     if (!serviceRef.current) return;
@@ -160,6 +210,8 @@ export function useGeminiLive(
     serviceRef.current?.disconnect();
     setStatus("disconnected");
     setIsSpeaking(false);
+    pendingInputRef.current = null;
+    setInputTranscript(null);
   }, []);
 
   const sendAudio = useCallback((chunk: ArrayBuffer) => {
@@ -219,6 +271,7 @@ export function useGeminiLive(
     status,
     isSpeaking,
     messages,
+    inputTranscript,
     currentPersona,
     error,
     connect,

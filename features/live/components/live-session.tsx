@@ -13,15 +13,13 @@ import { useAudioPlayer } from "../hooks/useAudioPlayer";
 import { useLiveProgress } from "../hooks/useLiveProgress";
 import { useSaveAttempt } from "@/features/attempts/hooks/useSaveAttempt";
 import { PersonaHeader } from "./persona-header";
-import { PersonaTabs } from "@/features/chat/components/PersonaTabs";
-import type { PersonaTabDef, LivePersonaKey } from "@/features/chat/components/PersonaTabs";
 import { AudioWaveform } from "./audio-waveform";
+import type { LivePersonaDef, LivePersonaRoleKey } from "./live-controls";
 import { LiveControls } from "./live-controls";
 import { ProgressSidebar } from "@/features/chat/components/progress-sidebar";
 import { LiveTranscript } from "./live-transcript";
 import { Notepad } from "@/features/chat/components/notepad";
 import { emitStageEvaluation } from "@/features/chat/utils/stage-eval";
-import type { AllowedChatPersonaKey } from "@/features/chat/utils/persona-guardrails";
 import {
   exportTranscriptToMarkdown,
   exportTranscriptToText,
@@ -40,19 +38,6 @@ type LiveSessionProps = {
   onSessionEnd?: (messages?: Message[]) => void;
 };
 
-const ALL_LIVE_PERSONA_KEYS: LivePersonaKey[] = [
-  "owner",
-  "veterinary-nurse",
-  "lab-technician",
-];
-
-function getPersonaLabel(key: string): string {
-  if (key === "owner") return "OWNER";
-  if (key === "veterinary-nurse") return "NURSE";
-  if (key === "lab-technician") return "LAB";
-  return key.toUpperCase();
-}
-
 function formatElapsed(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
@@ -70,7 +55,8 @@ export function LiveSession({
 }: LiveSessionProps) {
   const [isMuted, setIsMuted] = useState(false);
   const [showNotepad, setShowNotepad] = useState(false);
-  const [filterPersona, setFilterPersona] = useState<string | null>(null);
+  // Manual persona override (null = follow the current stage's persona).
+  const [activePersonaRole, setActivePersonaRole] = useState<string | null>(null);
 
   // P3.4: Stage-advance confirmation
   const [showAdvanceConfirm, setShowAdvanceConfirm] = useState(false);
@@ -98,7 +84,8 @@ export function LiveSession({
     caseItem,
     progress.stages,
     progress.currentStageIndex,
-    personaDirectory
+    personaDirectory,
+    activePersonaRole
   );
 
   const live = useGeminiLive(progress.currentStageIndex, initialMessages);
@@ -194,6 +181,11 @@ export function LiveSession({
   const retryCountRef = useRef(0);
   useEffect(() => {
     if (!persona) return;
+    // If a previous attempt was aborted (e.g. persona changed while the token
+    // fetch was in flight) and the session never connected, allow a fresh one.
+    if (hasConnectedRef.current && live.status === "idle") {
+      hasConnectedRef.current = false;
+    }
     if (hasConnectedRef.current) return;
 
     let cancelled = false;
@@ -242,11 +234,17 @@ export function LiveSession({
 
     return () => {
       cancelled = true;
-      userInitiatedDisconnectRef.current = true;
-      live.disconnect();
-      hasConnectedRef.current = false;
+      // No teardown here: persona changes (stage advance or manual switch) are
+      // handled by switchPersona below, and the hooks tear down on unmount.
     };
-  }, [persona]);
+  }, [persona, live.status]);
+
+  // Stop auto-reconnect after unmount (end session / navigate away)
+  useEffect(() => {
+    return () => {
+      userInitiatedDisconnectRef.current = true;
+    };
+  }, []);
 
   // Auto-reconnect on unexpected disconnect
   useEffect(() => {
@@ -319,9 +317,17 @@ export function LiveSession({
     }
   }, [persona]);
 
-  // Switch persona when stage changes
+  // Switch persona whenever the effective persona changes: on stage advance AND
+  // on manual OWNER↔NURSE↔LAB switches (override is reset on stage change).
+  const switchedPersonaRoleRef = useRef<string | null>(null);
   useEffect(() => {
-    if (persona && live.status === "connected") {
+    if (!persona) return;
+    if (persona.roleKey === switchedPersonaRoleRef.current) return;
+
+    if (live.status === "connected") {
+      // Commit the switch only when it actually runs, so a switch requested
+      // while reconnecting is retried once the status flips to connected.
+      switchedPersonaRoleRef.current = persona.roleKey;
       live.switchPersona(persona);
 
       if (persona.roleKey === "owner") {
@@ -333,6 +339,11 @@ export function LiveSession({
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [persona, live.status]);
+
+  // Reset the manual persona override when advancing to a new stage.
+  useEffect(() => {
+    setActivePersonaRole(null);
   }, [progress.currentStageIndex]);
 
   // P1.5: Record turns
@@ -449,30 +460,29 @@ export function LiveSession({
     setTimeout(() => setCopied(false), 2000);
   }, [live.messages]);
 
-  // P2.1: Build persona tabs
-  const activePersonaRole = persona?.roleKey ?? "owner";
-  const personaTabs: PersonaTabDef[] = useMemo(() => {
-    const currentStagePersonaRole = persona?.roleKey;
-    return ALL_LIVE_PERSONA_KEYS.map((key) => ({
-      key,
-      label: getPersonaLabel(key),
-      disabled: key !== currentStagePersonaRole,
-      disabledReason:
-        key !== currentStagePersonaRole
-          ? `Switch to ${getPersonaLabel(key)} stage to address`
-          : undefined,
-      isSpeaking:
-        live.isSpeaking &&
-        live.currentPersona?.roleKey === key &&
-        key !== currentStagePersonaRole,
-    }));
-  }, [persona?.roleKey, live.isSpeaking, live.currentPersona]);
+  // Persona defs for the bottom switch area (old TTS/STT interface look)
+  const personaDefs: LivePersonaDef[] = useMemo(() => {
+    const active = persona?.roleKey;
+    const def = (roleKey: LivePersonaRoleKey, label: string, fallbackText: string): LivePersonaDef => ({
+      roleKey,
+      label,
+      portraitUrl: personaDirectory[roleKey]?.portraitUrl,
+      fallbackText,
+      isActive: active === roleKey,
+    });
+    return [
+      def("owner", "OWNER", "OWN"),
+      def("veterinary-nurse", "NURSE", "NUR"),
+      def("lab-technician", "LAB", "LAB"),
+    ];
+  }, [persona?.roleKey, personaDirectory]);
 
-  const handlePersonaTabChange = useCallback(
-    (key: string) => {
-      setFilterPersona((prev) => (prev === key ? null : key));
+  const handleSelectPersona = useCallback(
+    (roleKey: LivePersonaRoleKey) => {
+      if (roleKey === persona?.roleKey) return; // already active
+      setActivePersonaRole(roleKey);
     },
-    []
+    [persona?.roleKey]
   );
 
   const waveformMode = live.isSpeaking
@@ -520,15 +530,6 @@ export function LiveSession({
           isSpeaking={live.isSpeaking}
         />
 
-        {/* P2.1: Persona Tabs */}
-        <div className="px-4">
-          <PersonaTabs
-            activePersona={activePersonaRole as AllowedChatPersonaKey}
-            onChange={handlePersonaTabChange}
-            extendedTabs={personaTabs}
-          />
-        </div>
-
         {/* P3.8: Idle indicator */}
         {isIdle && (
           <div className="mx-4 mb-1 rounded-md bg-amber-50 dark:bg-amber-950/20 px-3 py-1.5 text-xs text-amber-600 dark:text-amber-400 text-center animate-in fade-in duration-500">
@@ -552,7 +553,6 @@ export function LiveSession({
             messages={live.messages}
             isOpen={true}
             stages={progress.stages}
-            filterPersona={filterPersona}
           />
         </div>
 
@@ -643,12 +643,15 @@ export function LiveSession({
           <LiveControls
             status={live.status}
             isRecording={mic.isRecording}
+            isSpeaking={live.isSpeaking}
             canAdvance={canAdvanceEval}
             isMuted={isMuted}
             showAdvanceHint={showAdvanceHint}
             elapsedTime={elapsedDisplay}
+            liveCaption={live.inputTranscript}
+            personas={personaDefs}
             onToggleMic={handleToggleMic}
-            onInterrupt={live.interrupt}
+            onSelectPersona={handleSelectPersona}
             onAdvanceStage={handleAdvanceClick}
             onEndSession={handleEndSession}
             onToggleMute={handleToggleMute}
