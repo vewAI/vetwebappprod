@@ -5,22 +5,24 @@
  *
  * Placed in public/ so Next.js serves it as a static file.
  * Loaded via: audioWorklet.addModule("/mic-processor.js")
+ *
+ * IMPORTANT: This file is served to the browser as-is and parsed as
+ * plain JavaScript. Do NOT use TypeScript syntax (e.g. `private` class
+ * fields or type annotations) — it will throw a SyntaxError in the
+ * AudioWorklet module and the mic will silently fail.
  */
 class MicProcessor extends AudioWorkletProcessor {
-  private targetRate = 16000;
-  private resampleRatio: number;
-  private buffer: Float32Array;
-  private bufferPos = 0;
-
   constructor() {
     super();
     // sampleRate is the AudioContext sample rate (device native)
+    this.targetRate = 16000;
     this.resampleRatio = sampleRate / this.targetRate;
     // Buffer enough samples for one output frame at target rate
     this.buffer = new Float32Array(Math.ceil(128 * this.resampleRatio) + 1);
+    this.bufferPos = 0;
   }
 
-  process(inputs: Float32Array[][]): boolean {
+  process(inputs) {
     const input = inputs[0];
     if (!input || !input[0] || input[0].length === 0) {
       return true;
@@ -42,7 +44,7 @@ class MicProcessor extends AudioWorkletProcessor {
     return true;
   }
 
-  private flushAndDownsample(): void {
+  flushAndDownsample() {
     const outputLen = Math.floor((this.bufferPos - 1) / this.resampleRatio) + 1;
     const int16 = new Int16Array(outputLen);
 

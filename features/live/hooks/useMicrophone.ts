@@ -15,6 +15,10 @@ export type UseMicrophoneResult = {
 /**
  * P4.1 + P4.2: Uses AudioWorklet (not deprecated ScriptProcessor) with
  * built-in resampling from any device sample rate to 16 kHz PCM Int16.
+ *
+ * Robustness: if the AudioWorklet path fails for ANY reason (asset missing,
+ * module parse error, unsupported browser, ...), we fall back to a
+ * ScriptProcessor-based implementation instead of matching error messages.
  */
 export function useMicrophone(targetSampleRate = 16000): UseMicrophoneResult {
   const [isRecording, setIsRecording] = useState(false);
@@ -43,6 +47,12 @@ export function useMicrophone(targetSampleRate = 16000): UseMicrophoneResult {
     setIsRecording(false);
   }, []);
 
+  /**
+   * Fallback capture path used when AudioWorklet is unavailable.
+   * Uses the proven ScriptProcessor approach from before the FASE 4
+   * refactor: a 16 kHz AudioContext (or native rate + JS resampling if
+   * the browser rejects 16 kHz), converting Float32 to Int16 PCM.
+   */
   const startWithScriptProcessor = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -52,14 +62,29 @@ export function useMicrophone(targetSampleRate = 16000): UseMicrophoneResult {
       setHasPermission(true);
       setError(null);
 
-      const ctx = new AudioContext();
+      // Prefer a 16 kHz context so chunks can be sent to Gemini as-is.
+      let ctx: AudioContext;
+      try {
+        ctx = new AudioContext({ sampleRate: targetSampleRate });
+      } catch {
+        ctx = new AudioContext();
+      }
       contextRef.current = ctx;
+      // Safari starts contexts suspended; make sure the graph actually renders.
+      if (ctx.state === "suspended") {
+        void ctx.resume().catch(() => {});
+      }
+
       const source = ctx.createMediaStreamSource(stream);
       const processor = ctx.createScriptProcessor(4096, 1, 1);
+      const resampler =
+        Math.abs(ctx.sampleRate - targetSampleRate) > 1
+          ? new LinearResampler(ctx.sampleRate, targetSampleRate)
+          : null;
 
       processor.onaudioprocess = (e) => {
         const float32 = e.inputBuffer.getChannelData(0);
-        const int16 = float32ToS16(float32);
+        const int16 = resampler ? resampler.process(float32) : float32ToS16(float32);
         if (handlerRef.current) {
           handlerRef.current(int16.buffer as ArrayBuffer);
         }
@@ -68,7 +93,7 @@ export function useMicrophone(targetSampleRate = 16000): UseMicrophoneResult {
       source.connect(processor);
       processor.connect(ctx.destination);
 
-      (workletNodeRef as any).current = {
+      (workletNodeRef as unknown as { current: { disconnect: () => void } | null }).current = {
         disconnect: () => {
           processor.disconnect();
         },
@@ -80,7 +105,7 @@ export function useMicrophone(targetSampleRate = 16000): UseMicrophoneResult {
       setError(msg);
       setHasPermission(false);
     }
-  }, [stop]);
+  }, [targetSampleRate]);
 
   const start = useCallback(async () => {
     try {
@@ -98,6 +123,10 @@ export function useMicrophone(targetSampleRate = 16000): UseMicrophoneResult {
 
       const ctx = new AudioContext();
       contextRef.current = ctx;
+      // Safari starts contexts suspended; make sure the graph actually renders.
+      if (ctx.state === "suspended") {
+        void ctx.resume().catch(() => {});
+      }
 
       if (!workletLoadedRef.current) {
         await ctx.audioWorklet.addModule("/mic-processor.js");
@@ -118,15 +147,22 @@ export function useMicrophone(targetSampleRate = 16000): UseMicrophoneResult {
 
       setIsRecording(true);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Microphone access denied";
-      if (msg.includes("addModule") || msg.includes("AudioWorklet")) {
-        console.warn("[Mic] AudioWorklet unavailable, falling back to ScriptProcessor");
-        return startWithScriptProcessor();
+      // getUserMedia failed (permission denied / no device) — surface the error.
+      if (!streamRef.current) {
+        const msg = err instanceof Error ? err.message : "Microphone access denied";
+        setError(msg);
+        setHasPermission(false);
+        return;
       }
-      setError(msg);
-      setHasPermission(false);
+
+      // Worklet setup failed for any reason (asset missing, module parse
+      // error, unsupported browser, ...). Tear down the failed attempt so
+      // the mic is released, then retry with ScriptProcessor.
+      console.warn("[Mic] AudioWorklet unavailable, falling back to ScriptProcessor:", err);
+      stop();
+      await startWithScriptProcessor();
     }
-  }, [startWithScriptProcessor]);
+  }, [startWithScriptProcessor, stop]);
 
   const toggle = useCallback(async () => {
     if (isRecording) {
@@ -165,4 +201,43 @@ function float32ToS16(float32: Float32Array): Int16Array {
     int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
   }
   return int16;
+}
+
+/**
+ * Minimal stateful linear-interpolation resampler, used by the
+ * ScriptProcessor fallback when a 16 kHz AudioContext is not supported
+ * (i.e. capture runs at the device's native rate).
+ */
+class LinearResampler {
+  private readonly ratio: number;
+  private prevSample = 0;
+  // Fractional read position in input-sample units, relative to the start of
+  // the current block. Always in [0, ratio) between blocks so interpolation
+  // at block boundaries stays correct (no negative indexing, no sample drift).
+  private pos = 0;
+
+  constructor(inputRate: number, outputRate: number) {
+    this.ratio = inputRate / outputRate;
+  }
+
+  process(input: Float32Array): Int16Array {
+    const outLen = Math.max(1, Math.ceil((input.length - this.pos) / this.ratio));
+    const out = new Int16Array(outLen);
+    let written = 0;
+    let pos = this.pos;
+
+    while (pos < input.length && written < outLen) {
+      const idx = Math.floor(pos);
+      const frac = pos - idx;
+      const a = idx > 0 ? input[idx - 1] : this.prevSample;
+      const b = input[Math.min(idx, input.length - 1)];
+      const s = Math.max(-1, Math.min(1, a * (1 - frac) + b * frac));
+      out[written++] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      pos += this.ratio;
+    }
+
+    this.pos = pos - input.length;
+    this.prevSample = input[input.length - 1];
+    return out.slice(0, written);
+  }
 }

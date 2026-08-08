@@ -661,6 +661,11 @@ export function LiveSession({
             {live.error}
           </div>
         )}
+        {mic.error && !live.error && (
+          <div className="mx-4 mb-4 rounded-lg bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-600 dark:text-red-400">
+            Microphone error: {mic.error}
+          </div>
+        )}
         {!live.error && live.status === "disconnected" && retryCountRef.current >= 3 && (
           <div className="mx-4 mb-4 rounded-lg bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-600 dark:text-amber-400">
             Connection lost. Tap the mic to retry or end the session.
