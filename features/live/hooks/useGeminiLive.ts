@@ -3,7 +3,6 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { GeminiLiveService } from "../services/geminiLiveService";
 import { mergeAssistantFragment } from "../utils/mergeAssistantFragment";
-import { insertUserMessage } from "../utils/insertUserMessage";
 import type { Message } from "@/features/chat/models/chat";
 import type {
   LiveSessionStatus,
@@ -72,29 +71,24 @@ export function useGeminiLive(
     (text: string, dedupeLast = false) => {
       // Dedupe only on demand (flush path): guards against a finished event
       // adding the same utterance right before the turnComplete flush.
-      // Compare against the most recent USER entry — the current assistant
-      // entry may sit below it, so the plain "last message" check is not enough.
       if (dedupeLast) {
         const prev = messagesRef.current;
-        let i = prev.length - 1;
-        while (i >= 0 && prev[i].role !== "user") i--;
-        if (i >= 0 && prev[i].content === text) return;
+        const last = prev[prev.length - 1];
+        if (last && last.role === "user" && last.content === text) return;
       }
-      const userMessage: Message = {
-        id: `entry_${++entryIdCounterRef.current}`,
-        role: "user" as const,
-        content: text,
-        timestamp: new Date().toISOString(),
-        stageIndex: stageIndexRef.current,
-        displayRole: "You",
-        personaRoleKey: personaRef.current?.roleKey,
-        status: "sent" as const,
-      };
-      // If the assistant is already streaming its reply, place the user's
-      // intervention ABOVE it so the log reads user-then-avatar.
-      commitMessages(
-        insertUserMessage(messagesRef.current, userMessage, pendingAssistantIdRef.current)
-      );
+      commitMessages([
+        ...messagesRef.current,
+        {
+          id: `entry_${++entryIdCounterRef.current}`,
+          role: "user" as const,
+          content: text,
+          timestamp: new Date().toISOString(),
+          stageIndex: stageIndexRef.current,
+          displayRole: "You",
+          personaRoleKey: personaRef.current?.roleKey,
+          status: "sent" as const,
+        },
+      ]);
     },
     [commitMessages]
   );
