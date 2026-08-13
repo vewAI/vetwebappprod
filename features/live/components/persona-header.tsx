@@ -3,14 +3,16 @@
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 import type { PersonaInstruction } from "../types";
+import { AudioWaveform } from "./audio-waveform";
 
 type PersonaHeaderProps = {
   persona: PersonaInstruction | null;
   stageTitle: string;
   isSpeaking: boolean;
+  waveformMode?: "speaking" | "listening" | "idle";
 };
 
-export function PersonaHeader({ persona, stageTitle, isSpeaking }: PersonaHeaderProps) {
+export function PersonaHeader({ persona, stageTitle, isSpeaking, waveformMode = "idle" }: PersonaHeaderProps) {
   return (
     <div className="flex flex-col items-center gap-3 px-4 pt-6 pb-2">
       {/* Portrait */}
@@ -58,12 +60,14 @@ export function PersonaHeader({ persona, stageTitle, isSpeaking }: PersonaHeader
         {stageTitle}
       </div>
 
-      {/* Speaking indicator */}
-      {isSpeaking && (
-        <div className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-          <span className="h-2 w-2 rounded-full bg-primary animate-pulse delay-100" />
-          <span className="h-2 w-2 rounded-full bg-primary animate-pulse delay-200" />
+      {/* Compact speaking/listening animation; keep the center workspace available for the transcript. */}
+      {waveformMode !== "idle" && (
+        <div className="h-7 w-24">
+          <AudioWaveform
+            isActive={true}
+            mode={waveformMode}
+            className="h-7 w-24"
+          />
         </div>
       )}
     </div>

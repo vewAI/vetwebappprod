@@ -13,6 +13,7 @@ import type { Case } from "@/features/case-selection/models/case";
 import type { Stage } from "@/features/stages/types";
 import { LiveSession } from "@/features/live/components/live-session";
 import type { TranscriptEntry } from "@/features/live/types";
+import type { Message } from "@/features/chat/models/chat";
 import { CompletionDialog } from "@/features/feedback/components/completion-dialog";
 import { completeAttempt } from "@/features/attempts/services/attemptMutationService";
 import { getAccessToken } from "@/lib/auth-headers";
@@ -21,7 +22,19 @@ type SessionData = {
   attemptId: string;
   currentStageIndex: number;
   resumed: boolean;
+  messages: Message[];
 };
+
+function messagesToTranscript(messages: Message[]): TranscriptEntry[] {
+  return messages
+    .filter((message) => message.role === "user" || message.role === "assistant")
+    .map((message) => ({
+      id: message.id,
+      speaker: message.role === "user" ? "user" : "persona",
+      text: message.content,
+      timestamp: Date.parse(message.timestamp) || Date.now(),
+    }));
+}
 
 export default function LiveSessionPage() {
   const { id: caseId } = useParams() as { id: string };
@@ -108,10 +121,12 @@ export default function LiveSessionPage() {
         }
 
         const data = await res.json();
+        const messages = Array.isArray(data.messages) ? (data.messages as Message[]) : [];
         setSession({
           attemptId: data.attemptId,
           currentStageIndex: data.currentStageIndex ?? 0,
           resumed: data.resumed ?? false,
+          messages,
         });
       } catch (err) {
         console.error("Session init failed:", err);
@@ -219,6 +234,7 @@ export default function LiveSessionPage() {
         initialStageIndex={session.currentStageIndex}
         personaDirectory={personaDir.personaDirectory}
         attemptId={session.attemptId}
+        initialTranscript={messagesToTranscript(session.messages)}
         onSessionEnd={handleSessionEnd}
       />
 

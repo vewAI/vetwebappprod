@@ -10,12 +10,16 @@ type LiveProgressSidebarProps = {
   caseItem: Case;
   stages: Stage[];
   currentStageIndex: number;
+  onStageSelect?: (index: number) => void;
+  guidedMode?: boolean;
 };
 
 export function LiveProgressSidebar({
   caseItem,
   stages,
   currentStageIndex,
+  onStageSelect,
+  guidedMode,
 }: LiveProgressSidebarProps) {
   const completedCount = stages.filter((stage, index) => stage.completed || index < currentStageIndex).length;
 
@@ -50,12 +54,17 @@ export function LiveProgressSidebar({
             const label = isCurrent || isCompleted ? stage.title : "Upcoming Stage";
 
             return (
-              <div
+              <button
+                type="button"
                 key={stage.id}
+                disabled={!onStageSelect || index > currentStageIndex}
+                onClick={() => onStageSelect?.(index)}
                 className={cn(
-                  "flex min-w-0 items-start gap-2 rounded-md px-2 py-2 text-xs leading-snug",
+                  "flex w-full min-w-0 items-start gap-2 rounded-md px-2 py-2 text-left text-xs leading-snug transition-colors",
                   isCurrent && "bg-primary/20 text-foreground",
                   !isCurrent && "text-muted-foreground",
+                  index <= currentStageIndex && !isCurrent && "hover:bg-muted",
+                  index > currentStageIndex && "cursor-default",
                 )}
               >
                 {isCompleted ? (
@@ -64,15 +73,30 @@ export function LiveProgressSidebar({
                   <Circle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 )}
                 <span className="min-w-0 break-words">{label}</span>
-              </div>
+              </button>
             );
           })}
         </div>
 
-        <div className="mt-4 flex items-start gap-2 rounded-md bg-muted px-2 py-2 text-xs text-muted-foreground">
-          <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>Complete the required conversation turns before advancing.</span>
-        </div>
+        {guidedMode !== undefined && (
+          <button
+            type="button"
+            onClick={() => {
+              const next = !guidedMode;
+              window.localStorage.setItem("guided-mode", String(next));
+              window.dispatchEvent(new Event("guided-mode-change"));
+            }}
+            className={cn(
+              "mt-4 flex w-full items-start gap-2 rounded-md px-2 py-2 text-xs transition-colors",
+              guidedMode
+                ? "bg-amber-100 text-amber-800 hover:bg-amber-200 dark:bg-amber-950/40 dark:text-amber-200"
+                : "bg-muted text-muted-foreground hover:bg-muted/80",
+            )}
+          >
+            <Lightbulb className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", guidedMode && "text-amber-600 dark:text-amber-400")} />
+            <span>{guidedMode ? "Guided mode ON" : "Enable guided mode"}</span>
+          </button>
+        )}
       </div>
 
       <div className="shrink-0 border-t border-border p-3 text-xs text-muted-foreground">

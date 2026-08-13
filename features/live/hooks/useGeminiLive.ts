@@ -18,7 +18,11 @@ export type UseGeminiLiveResult = {
   transcript: TranscriptEntry[];
   currentPersona: PersonaInstruction | null;
   error: string | null;
-  connect: (token: string, persona: PersonaInstruction) => Promise<void>;
+  connect: (
+    token: string,
+    persona: PersonaInstruction,
+    options?: { preserveTranscript?: boolean },
+  ) => Promise<void>;
   disconnect: () => void;
   sendAudio: (chunk: ArrayBuffer) => void;
   sendText: (text: string) => void;
@@ -27,12 +31,12 @@ export type UseGeminiLiveResult = {
   setOnAudio: (cb: ((chunks: ArrayBuffer[]) => void) | null) => void;
 };
 
-export function useGeminiLive(): UseGeminiLiveResult {
+export function useGeminiLive(initialTranscript: TranscriptEntry[] = []): UseGeminiLiveResult {
   const serviceRef = useRef<GeminiLiveService | null>(null);
   const entryIdCounterRef = useRef(0);
   const [status, setStatus] = useState<LiveSessionStatus>("idle");
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
+  const [transcript, setTranscript] = useState<TranscriptEntry[]>(initialTranscript);
   const [currentPersona, setCurrentPersona] = useState<PersonaInstruction | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,6 +45,7 @@ export function useGeminiLive(): UseGeminiLiveResult {
   const onAudioRef = useRef<((chunks: ArrayBuffer[]) => void) | null>(null);
   const personaRef = useRef<PersonaInstruction | null>(null);
   const tokenRef = useRef<string | null>(null);
+  const initialTranscriptRef = useRef(initialTranscript);
 
   // Initialize service once
   useEffect(() => {
@@ -138,14 +143,18 @@ export function useGeminiLive(): UseGeminiLiveResult {
     };
   }, []);
 
-  const connect = useCallback(async (token: string, persona: PersonaInstruction) => {
+  const connect = useCallback(async (
+    token: string,
+    persona: PersonaInstruction,
+    options?: { preserveTranscript?: boolean },
+  ) => {
     if (!serviceRef.current) return;
     setStatus("connecting");
     setCurrentPersona(persona);
     personaRef.current = persona;
     tokenRef.current = token;
     setError(null);
-    setTranscript([]);
+    if (!options?.preserveTranscript) setTranscript(initialTranscriptRef.current);
     audioChunksRef.current = [];
     pendingResponseTextRef.current = "";
 
@@ -196,9 +205,7 @@ export function useGeminiLive(): UseGeminiLiveResult {
 
     // If voice changed, need to reconnect; otherwise just update instruction
     if (prev?.voiceName !== persona.voiceName && tokenRef.current) {
-      serviceRef.current?.disconnect();
-      setStatus("connecting");
-      serviceRef.current?.connect(tokenRef.current, persona.systemInstruction, persona.voiceName)
+      connect(tokenRef.current, persona, { preserveTranscript: true })
         .catch((err: unknown) => {
           setError(err instanceof Error ? err.message : "Reconnection failed");
           setStatus("error");
@@ -206,7 +213,7 @@ export function useGeminiLive(): UseGeminiLiveResult {
     } else {
       serviceRef.current?.sendSystemInstruction(persona.systemInstruction);
     }
-  }, []);
+  }, [connect]);
 
   const interrupt = useCallback(() => {
     serviceRef.current?.interrupt();

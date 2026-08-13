@@ -5,16 +5,31 @@ import { Button } from "@/components/ui/button";
 import { Mic, MicOff, Send, SkipForward, PhoneOff, Volume2, VolumeX } from "lucide-react";
 import type { LiveSessionStatus } from "../types";
 import { StageAdvanceHint } from "./stage-advance-hint";
+import { PersonaButton } from "@/features/chat/components/PersonaButton";
+
+export type LivePersonaRoleKey = "owner" | "veterinary-nurse" | "lab-technician";
+
+export type LivePersonaDef = {
+  roleKey: LivePersonaRoleKey;
+  label: string;
+  portraitUrl?: string;
+  fallbackText: string;
+  isActive: boolean;
+};
 
 type LiveControlsProps = {
   status: LiveSessionStatus;
   isRecording: boolean;
+  isSpeaking: boolean;
   isTextMode: boolean;
   textInput: string;
   canAdvance: boolean;
   isMuted: boolean;
   showAdvanceHint: boolean;
+  elapsedTime?: string;
+  personas: LivePersonaDef[];
   onToggleMic: () => void;
+  onSelectPersona: (roleKey: LivePersonaRoleKey) => void;
   onTextInputChange: (value: string) => void;
   onSendText: () => void;
   onAdvanceStage: () => void;
@@ -25,12 +40,16 @@ type LiveControlsProps = {
 export function LiveControls({
   status,
   isRecording,
+  isSpeaking,
   isTextMode,
   textInput,
   canAdvance,
   isMuted,
   showAdvanceHint,
+  elapsedTime,
+  personas,
   onToggleMic,
+  onSelectPersona,
   onTextInputChange,
   onSendText,
   onAdvanceStage,
@@ -40,6 +59,10 @@ export function LiveControls({
   const isConnected = status === "connected";
   const isConnecting = status === "connecting";
   const canSendText = isConnected && isTextMode && textInput.trim().length > 0;
+  const owner = personas.find((persona) => persona.roleKey === "owner");
+  const nurse = personas.find((persona) => persona.roleKey === "veterinary-nurse");
+  const lab = personas.find((persona) => persona.roleKey === "lab-technician");
+  const rightPersonas = lab?.isActive ? [nurse, lab] : [nurse];
 
   return (
     <div className="flex flex-col items-center gap-3 px-4 pb-5 pt-2">
@@ -82,42 +105,78 @@ export function LiveControls({
         </div>
       )}
 
-      {/* Main mic button. When recording, clicking it switches to writing mode. */}
-      <button
-        type="button"
-        onClick={onToggleMic}
-        disabled={!isConnected}
-        aria-label={isRecording ? "Stop speaking and write instead" : "Use microphone to speak"}
-        className={cn(
-          "relative flex h-20 w-20 items-center justify-center rounded-full transition-all duration-300",
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-          "disabled:cursor-not-allowed disabled:opacity-40",
-          isRecording
-            ? "scale-110 bg-red-500 shadow-[0_0_24px_rgba(239,68,68,0.4)] hover:bg-red-600"
-            : "bg-primary shadow-lg hover:bg-primary/90 hover:shadow-xl",
+      {/* Legacy-style persona switcher around the central microphone. */}
+      <div className="flex w-full max-w-3xl items-center justify-center gap-3 sm:gap-6">
+        {owner && (
+          <PersonaButton
+            roleKey="owner"
+            label={owner.label}
+            portraitUrl={owner.portraitUrl}
+            fallbackText={owner.fallbackText}
+            isActive={owner.isActive}
+            onClick={() => onSelectPersona("owner")}
+            testId="live-persona-owner"
+            align="end"
+          />
         )}
-      >
-        {isRecording ? (
-          <MicOff className="h-8 w-8 text-white" />
-        ) : (
-          <Mic className="h-8 w-8 text-primary-foreground" />
-        )}
-        {isRecording && (
-          <span className="absolute inset-0 animate-ping rounded-full bg-red-400 opacity-30" />
-        )}
-      </button>
 
-      <p className="text-xs text-muted-foreground">
-        {isConnecting
-          ? "Connecting..."
-          : !isConnected
-            ? "Disconnected"
-            : isRecording
-              ? "Tap the mic to write instead"
-              : isTextMode
-                ? "Tap the mic to speak"
-                : "Tap to speak"}
-      </p>
+        <div className="flex shrink-0 flex-col items-center gap-2">
+          <button
+            type="button"
+            onClick={onToggleMic}
+            disabled={!isConnected}
+            aria-label={isRecording ? "Stop speaking and write instead" : "Use microphone to speak"}
+            className={cn(
+              "relative flex h-16 w-16 items-center justify-center rounded-full transition-all duration-300 sm:h-20 sm:w-20",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              "disabled:cursor-not-allowed disabled:opacity-40",
+              isRecording
+                ? "scale-105 bg-red-500 shadow-[0_0_24px_rgba(239,68,68,0.4)] hover:bg-red-600"
+                : "bg-primary shadow-lg hover:bg-primary/90 hover:shadow-xl",
+            )}
+          >
+            {isRecording ? <MicOff className="h-7 w-7 text-white sm:h-8 sm:w-8" /> : <Mic className="h-7 w-7 text-primary-foreground sm:h-8 sm:w-8" />}
+            {isRecording && <span className="absolute inset-0 animate-ping rounded-full bg-red-400 opacity-30" />}
+          </button>
+          <p className="text-center text-[11px] text-muted-foreground">
+            {isConnecting
+              ? "Connecting..."
+              : !isConnected
+                ? "Disconnected"
+                : isRecording
+                  ? "Tap mic to write"
+                  : isTextMode
+                    ? "Tap mic to speak"
+                    : isSpeaking
+                      ? "Speaking..."
+                      : "Tap to speak"}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 sm:gap-3">
+          {rightPersonas.map((persona) =>
+            persona ? (
+              <PersonaButton
+                key={persona.roleKey}
+                roleKey={persona.roleKey}
+                label={persona.label}
+                portraitUrl={persona.portraitUrl}
+                fallbackText={persona.fallbackText}
+                isActive={persona.isActive}
+                onClick={() => onSelectPersona(persona.roleKey)}
+                testId={`live-persona-${persona.roleKey}`}
+                align="start"
+              />
+            ) : null,
+          )}
+        </div>
+      </div>
+
+      {isConnected && (
+        <p className="text-center text-[11px] text-muted-foreground/80">
+          You are talking to {personas.find((persona) => persona.isActive)?.label ?? "the current persona"} — click an avatar to switch.
+        </p>
+      )}
 
       {/* Secondary controls */}
       <div className="flex items-center gap-3">
@@ -135,6 +194,10 @@ export function LiveControls({
             <Volume2 className="h-5 w-5" />
           )}
         </Button>
+
+        {elapsedTime && isConnected && (
+          <span className="text-xs tabular-nums text-muted-foreground">{elapsedTime}</span>
+        )}
 
         <div className="relative">
           <StageAdvanceHint visible={showAdvanceHint && canAdvance} />
