@@ -13,6 +13,7 @@ export function AudioWaveform({ isActive, mode, className }: AudioWaveformProps)
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>(0);
   const phaseRef = useRef(0);
+  const drawRef = useRef<() => void>(() => {});
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -34,6 +35,11 @@ export function AudioWaveform({ isActive, mode, className }: AudioWaveformProps)
 
     ctx.clearRect(0, 0, w, h);
     phaseRef.current += 0.03;
+
+    if (!isActive) {
+      animationRef.current = requestAnimationFrame(() => drawRef.current());
+      return;
+    }
 
     if (mode === "idle") {
       // Gentle breathing ring
@@ -98,11 +104,12 @@ export function AudioWaveform({ isActive, mode, className }: AudioWaveformProps)
       }
     }
 
-    animationRef.current = requestAnimationFrame(draw);
-  }, [mode]);
+    animationRef.current = requestAnimationFrame(() => drawRef.current());
+  }, [isActive, mode]);
 
   useEffect(() => {
-    animationRef.current = requestAnimationFrame(draw);
+    drawRef.current = draw;
+    animationRef.current = requestAnimationFrame(() => drawRef.current());
     return () => cancelAnimationFrame(animationRef.current);
   }, [draw]);
 

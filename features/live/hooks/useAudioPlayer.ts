@@ -31,6 +31,7 @@ export function useAudioPlayer(): UseAudioPlayerResult {
   const playingCbRef = useRef<((playing: boolean) => void) | null>(null);
   const stoppedRef = useRef(false);
   const generationRef = useRef(0);
+  const drainQueueRef = useRef<() => void>(() => {});
 
   const getContext = useCallback(() => {
     if (!contextRef.current || contextRef.current.state === "closed") {
@@ -59,7 +60,7 @@ export function useAudioPlayer(): UseAudioPlayerResult {
       sourceRef.current = null;
       // Only continue draining if generation hasn't changed (stop wasn't called)
       if (gen === generationRef.current) {
-        drainQueue();
+        drainQueueRef.current();
       }
     };
 
@@ -68,6 +69,10 @@ export function useAudioPlayer(): UseAudioPlayerResult {
     playingCbRef.current?.(true);
     source.start();
   }, [getContext]);
+
+  useEffect(() => {
+    drainQueueRef.current = drainQueue;
+  }, [drainQueue]);
 
   const stop = useCallback(() => {
     stoppedRef.current = true;

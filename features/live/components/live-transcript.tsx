@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useState, useMemo } from "react";
+import { useEffect, useRef } from "react";
 import type { TranscriptEntry } from "../types";
 
 const HIDDEN_PATTERNS = ["[SYS_TRIGGER]", "[The veterinarian has just arrived"];
@@ -12,77 +12,75 @@ type LiveTranscriptProps = {
 };
 
 function isHiddenEntry(text: string): boolean {
-  return HIDDEN_PATTERNS.some((p) => text.includes(p));
+  return HIDDEN_PATTERNS.some((pattern) => text.includes(pattern));
 }
 
 export function LiveTranscript({ entries, personaName, isOpen }: LiveTranscriptProps) {
-  const [isFading, setIsFading] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const textRef = useRef<HTMLSpanElement>(null);
-  const lastShownIdRef = useRef<string | null>(null);
+  const transcriptRef = useRef<HTMLDivElement>(null);
+  const visibleEntries = entries.filter((entry) => !isHiddenEntry(entry.text));
 
-  // Filter hidden entries and show the latest visible one
-  const visibleEntries = entries.filter((e) => !isHiddenEntry(e.text));
-  const latestVisible = visibleEntries.length > 0 ? visibleEntries[visibleEntries.length - 1] : null;
-  const isNewEntry = latestVisible && latestVisible.id !== lastShownIdRef.current;
-
-  // When a new entry arrives, reset fade and update tracking
   useEffect(() => {
-    if (!latestVisible) return;
+    const element = transcriptRef.current;
+    if (!element) return;
 
-    if (isNewEntry) {
-      lastShownIdRef.current = latestVisible.id;
-      setIsFading(false);
-
-      if (timerRef.current) clearTimeout(timerRef.current);
-
-      // Reading time: ~60ms per character, min 4s, max 15s
-      const readTime = Math.max(4000, Math.min(15000, latestVisible.text.length * 60));
-      timerRef.current = setTimeout(() => {
-        setIsFading(true);
-      }, readTime);
-    }
-
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, [latestVisible, isNewEntry]);
+    element.scrollTo({
+      top: element.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [visibleEntries.length]);
 
   if (!isOpen) return null;
 
   return (
-    <div className="h-10 flex items-center px-4 bg-muted/30 border-t border-border">
-      {latestVisible ? (
-        <div
-          className={`flex items-center gap-2 w-full transition-opacity duration-700 ${
-            isFading ? "opacity-30" : "opacity-100"
-          }`}
-        >
-          <span
-            className={
-              latestVisible.speaker === "user"
-                ? "text-primary font-semibold shrink-0 text-sm"
-                : "text-muted-foreground font-medium shrink-0 text-sm"
-            }
-          >
-            {latestVisible.speaker === "user" ? "You:" : `${personaName}:`}
-          </span>
-          <span
-            ref={textRef}
-            className={`text-sm truncate ${
-              latestVisible.speaker === "user"
-                ? "text-foreground"
-                : "text-muted-foreground"
-            }`}
-          >
-            {latestVisible.text}
-          </span>
-        </div>
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          Waiting for conversation...
-        </p>
-      )}
-    </div>
+    <section
+      aria-label="Conversation transcript"
+      className="mx-3 mb-2 flex min-h-32 max-h-[30vh] shrink-0 flex-col overflow-hidden rounded-lg border border-border bg-muted/20 sm:mx-4"
+    >
+      <div className="flex items-center justify-between border-b border-border bg-muted/30 px-3 py-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Conversation
+        </h2>
+        <span className="text-[11px] text-muted-foreground">
+          {visibleEntries.length} {visibleEntries.length === 1 ? "message" : "messages"}
+        </span>
+      </div>
+
+      <div ref={transcriptRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+        {visibleEntries.length === 0 ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            Waiting for conversation...
+          </p>
+        ) : (
+          visibleEntries.map((entry) => {
+            const isUser = entry.speaker === "user";
+            return (
+              <article
+                key={entry.id}
+                className={`rounded-md border px-3 py-2 ${
+                  isUser
+                    ? "border-primary/20 bg-primary/10"
+                    : "border-border bg-background/60"
+                }`}
+              >
+                <div className="mb-1 flex items-center gap-2 text-xs">
+                  <span className={isUser ? "font-semibold text-primary" : "font-semibold text-foreground"}>
+                    {isUser ? "You" : personaName}
+                  </span>
+                  <time className="text-[10px] text-muted-foreground">
+                    {new Date(entry.timestamp).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </time>
+                </div>
+                <p className="break-words whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                  {entry.text}
+                </p>
+              </article>
+            );
+          })
+        )}
+      </div>
+    </section>
   );
 }

@@ -12,9 +12,8 @@ import { useLiveProgress } from "../hooks/useLiveProgress";
 import { PersonaHeader } from "./persona-header";
 import { AudioWaveform } from "./audio-waveform";
 import { LiveControls } from "./live-controls";
-import { LiveStageProgress } from "./live-stage-progress";
 import { LiveTranscript } from "./live-transcript";
-import { StageAdvanceHint } from "./stage-advance-hint";
+import { LiveProgressSidebar } from "./live-progress-sidebar";
 import type { TranscriptEntry } from "../types";
 
 type LiveSessionProps = {
@@ -35,7 +34,8 @@ export function LiveSession({
   onSessionEnd,
 }: LiveSessionProps) {
   const [isMuted, setIsMuted] = useState(false);
-  const [showTranscript, setShowTranscript] = useState(false);
+  const [isTextMode, setIsTextMode] = useState(false);
+  const [textInput, setTextInput] = useState("");
 
   const progress = useLiveProgress(initialStages, initialStageIndex);
   const persona = usePersonaSwitcher(
@@ -68,13 +68,11 @@ export function LiveSession({
     });
   }, [mic, live]);
 
-  // Wire live audio output to player (streaming for low latency)
+  // Audio is released only after the completed model turn passes the Live
+  // response filter. This prevents unsafe disclaimer audio from being spoken.
   useEffect(() => {
-    live.setOnAudioStream((chunk) => {
-      player.enqueue(chunk);
-    });
-    live.setOnAudioFlush(() => {
-      player.flush();
+    live.setOnAudio((chunks) => {
+      player.play(chunks);
     });
   }, [live, player]);
 
@@ -236,12 +234,28 @@ export function LiveSession({
   }, [progress.canAdvance, progress.currentStageIndex]);
 
   const handleToggleMic = useCallback(async () => {
+    if (isTextMode) {
+      setIsTextMode(false);
+      await mic.start();
+      return;
+    }
+
     if (mic.isRecording) {
       mic.stop();
-    } else {
-      await mic.start();
+      setIsTextMode(true);
+      return;
     }
-  }, [mic]);
+
+    await mic.start();
+  }, [isTextMode, mic]);
+
+  const handleSendText = useCallback(() => {
+    const message = textInput.trim();
+    if (!message || !isTextMode) return;
+
+    live.sendText(message);
+    setTextInput("");
+  }, [isTextMode, live, textInput]);
 
   const handleAdvanceStage = useCallback(() => {
     progress.advanceStage();
@@ -292,18 +306,21 @@ export function LiveSession({
       : "idle" as const;
 
   return (
-    <div className="flex h-full flex-col bg-background">
-      {/* Top: Persona header */}
+    <div className="flex h-full min-h-0 w-full overflow-hidden bg-background">
+      <div className="hidden h-full w-[240px] shrink-0 md:block lg:w-[250px]">
+        <LiveProgressSidebar
+          caseItem={caseItem}
+          stages={progress.stages}
+          currentStageIndex={progress.currentStageIndex}
+        />
+      </div>
+
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
+        {/* Top: Persona header */}
       <PersonaHeader
         persona={persona}
         stageTitle={currentStage?.title ?? ""}
         isSpeaking={live.isSpeaking}
-      />
-
-      {/* Stage progress pills */}
-      <LiveStageProgress
-        stages={progress.stages}
-        currentIndex={progress.currentStageIndex}
       />
 
       {/* Center: Waveform visualization */}
@@ -326,11 +343,14 @@ export function LiveSession({
       <LiveControls
         status={live.status}
         isRecording={mic.isRecording}
+        isTextMode={isTextMode}
+        textInput={textInput}
         canAdvance={progress.canAdvance}
         isMuted={isMuted}
         showAdvanceHint={showAdvanceHint}
         onToggleMic={handleToggleMic}
-        onInterrupt={live.interrupt}
+        onTextInputChange={setTextInput}
+        onSendText={handleSendText}
         onAdvanceStage={handleAdvanceStage}
         onEndSession={handleEndSession}
         onToggleMute={handleToggleMute}
@@ -347,6 +367,7 @@ export function LiveSession({
           Connection lost. Tap the mic to retry or end the session.
         </div>
       )}
+      </div>
     </div>
   );
 }

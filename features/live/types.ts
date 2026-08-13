@@ -67,6 +67,11 @@ export const GEMINI_VOICE_MAP: Record<string, string> = {
   male: "Orus",
 };
 
+// Gemini Live does not expose an accent parameter. Keep the British-English
+// instruction enabled for every persona so the voice configuration cannot
+// silently fall back to the default neutral-American delivery.
+export const LIVE_BRITISH_ACCENT = true;
+
 export const STAGE_TYPE_TO_PERSONA: Record<string, string> = {
   history: "owner",
   physical: "veterinary-nurse",
