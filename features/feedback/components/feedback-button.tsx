@@ -7,6 +7,7 @@ import { Stage } from "@/features/stages/types";
 import { Loader2, X } from "lucide-react";
 import axios from "axios";
 import { feedbackPromptRegistry } from "@/features/feedback/feedback-prompts";
+import { buildAuthHeaders } from "@/lib/auth-headers";
 
 type FeedbackButtonProps = {
   messages: Message[];
@@ -85,14 +86,19 @@ export function FeedbackButton({
       const feedbackPrompt = promptFn(context);
 
       // Call the feedback API
-      const response = await axios.post("/api/feedback", {
-        messages: stageMessages,
-        stageIndex,
-        caseId,
-        stageName: stage.title,
-        feedbackPrompt,
-        attemptId,
-      });
+      const response = await axios.post(
+        "/api/feedback",
+        {
+          messages: stageMessages,
+          stageIndex,
+          caseId,
+          stageName: stage.title,
+          feedbackPrompt,
+          feedbackPromptKey: stage.feedbackPromptKey,
+          attemptId,
+        },
+        { headers: await buildAuthHeaders({ "Content-Type": "application/json" }) },
+      );
 
       setFeedback((response.data as { feedback: string }).feedback);
     } catch (error) {

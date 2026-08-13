@@ -1,6 +1,8 @@
 import OpenAi from "openai";
 import { NextRequest, NextResponse } from "next/server";
 import { PHYS_SYNONYMS } from "@/features/chat/services/physFinder";
+import { requireUser } from "@/app/api/_lib/auth";
+import { consumeRateLimit } from "@/app/api/_lib/rateLimit";
 
 const openai = new OpenAi({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -36,12 +38,22 @@ function findSynonymKey(text: string, groups: Record<string, string[]>): string 
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireUser(req);
+  if ("error" in auth) return auth.error;
+  if (!consumeRateLimit(`check-complete:${auth.user.id}`, 60, 60_000)) {
+    return NextResponse.json({ error: "Too many completion checks" }, { status: 429 });
+  }
+
   try {
     const body = await req.json();
     const fragmentRaw = String(body.fragment ?? "").trim();
     const stageIndex = body.stageIndex;
 
     if (!fragmentRaw) return NextResponse.json({ complete: true });
+
+    if (fragmentRaw.length > 8_000) {
+      return NextResponse.json({ error: "Fragment is too large" }, { status: 413 });
+    }
 
     const trimmed = fragmentRaw;
     const lower = trimmed.toLowerCase();

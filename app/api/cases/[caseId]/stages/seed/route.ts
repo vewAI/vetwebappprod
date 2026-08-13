@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { caseConfig } from "@/features/config/case-config";
 import { resolveChatPersonaRoleKey } from "@/features/chat/utils/persona-guardrails";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { requireAdmin } from "@/app/api/_lib/auth";
 
 type RouteContext = { params: Promise<{ caseId: string }> };
 
-export async function POST(_request: NextRequest, context: RouteContext) {
+export async function POST(request: NextRequest, context: RouteContext) {
+  const auth = await requireAdmin(request);
+  if ("error" in auth) return auth.error;
+
   const { caseId } = await context.params;
   if (!caseId) {
     return NextResponse.json({ error: "Missing caseId" }, { status: 400 });

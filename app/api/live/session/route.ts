@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/app/api/_lib/auth";
+import { authorizeAttemptAccess } from "@/app/api/_lib/authorization";
 
 export async function POST(req: Request) {
   const auth = await requireUser(req);
@@ -101,6 +102,22 @@ export async function PATCH(req: Request) {
 
     if (!attemptId) {
       return NextResponse.json({ error: "attemptId is required" }, { status: 400 });
+    }
+
+    const access = await authorizeAttemptAccess(
+      auth.adminSupabase ?? supabase,
+      attemptId,
+      auth.user.id,
+      auth.role,
+    );
+    if (access.error) {
+      return NextResponse.json({ error: "Failed to verify permissions" }, { status: 500 });
+    }
+    if (access.notFound) {
+      return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
+    }
+    if (!access.allowed) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const updates: Record<string, unknown> = {};

@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { fetchCases } from "@/features/case-selection/services/caseService";
+import { buildAuthHeaders } from "@/lib/auth-headers";
 import type { Case } from "@/features/case-selection/models/case";
 
 type EditableStage = {
@@ -277,7 +278,10 @@ export default function CaseStageManagerPage() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/stages`, { cache: "no-store" });
+      const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/stages`, {
+        cache: "no-store",
+        headers: await buildAuthHeaders(),
+      });
       const payload = (await response.json().catch(() => null)) as {
         stages?: Array<Record<string, unknown>>;
         source?: "db" | "hardcoded";
@@ -394,7 +398,7 @@ export default function CaseStageManagerPage() {
 
       const response = await fetch(`/api/cases/${encodeURIComponent(selectedCaseId)}/stages`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: await buildAuthHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(payload),
       });
       const result = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -417,6 +421,7 @@ export default function CaseStageManagerPage() {
     try {
       const response = await fetch(`/api/cases/${encodeURIComponent(selectedCaseId)}/stages/seed`, {
         method: "POST",
+        headers: await buildAuthHeaders(),
       });
       const payload = (await response.json().catch(() => null)) as { error?: string; reason?: string } | null;
       if (!response.ok) {

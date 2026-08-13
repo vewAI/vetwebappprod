@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Loader2, Award, X, Home, RefreshCw, Download, FileText } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { buildAuthHeaders } from "@/lib/auth-headers"
 
 interface CompletionDialogProps {
   isOpen: boolean
@@ -90,7 +91,7 @@ export function CompletionDialog({
                     setIsDownloading(true)
                     const resp = await fetch('/api/feedback/export', {
                       method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
+                      headers: await buildAuthHeaders({ 'Content-Type': 'application/json' }),
                       body: JSON.stringify({ caseId, feedbackHtml: feedback, messages }),
                     })
                     if (!resp.ok) {

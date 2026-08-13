@@ -169,16 +169,15 @@ export async function requireUser(
     role = profile?.role ?? null;
   }
 
+  // Authorization must come only from the server-controlled profile table or
+  // trusted app_metadata. user_metadata is writable by the account owner and
+  // must never grant privileges.
   if (!role) {
     const appMetaRole =
       typeof user.app_metadata?.role === "string"
         ? (user.app_metadata.role as string)
         : null;
-    const userMetaRole =
-      typeof user.user_metadata?.role === "string"
-        ? (user.user_metadata.role as string)
-        : null;
-    role = appMetaRole ?? userMetaRole ?? null;
+    role = appMetaRole;
   }
 
   if (options.requireAdmin && role !== "admin") {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createOpenAIClient } from "@/lib/llm/openaiClient";
 import { getLiveFeedbackPrompt } from "@/features/role-info/db-role-info";
 import { requireUser } from "@/app/api/_lib/auth";
+import { consumeRateLimit } from "@/app/api/_lib/rateLimit";
 
 type TranscriptEntry = {
   id: string;
@@ -24,6 +25,9 @@ export async function POST(request: Request) {
     const auth = await requireUser(request);
     if ("error" in auth) {
       return auth.error;
+    }
+    if (!consumeRateLimit(`live-feedback:${auth.user.id}`, 3, 60_000)) {
+      return NextResponse.json({ error: "Too many feedback requests" }, { status: 429 });
     }
     const { supabase } = auth;
     const { caseId, transcript } = (await request.json()) as {

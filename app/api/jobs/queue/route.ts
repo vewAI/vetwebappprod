@@ -5,6 +5,9 @@ export async function POST(req: Request) {
   const auth = await requireUser(req);
   if ("error" in auth) return auth.error;
 
+  if (auth.role !== "admin" && auth.role !== "professor") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { adminSupabase } = auth;
   const { getSupabaseAdminClient } = await import("@/lib/supabase-admin");
   const admin = adminSupabase ?? getSupabaseAdminClient();
@@ -13,8 +16,8 @@ export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
     const { queueName, payload } = body as { queueName?: string; payload?: unknown };
-    if (!queueName || !payload) {
-      return NextResponse.json({ error: "queueName and payload required" }, { status: 400 });
+    if (queueName !== "paper-ingest" || payload == null || JSON.stringify(payload).length > 20_000) {
+      return NextResponse.json({ error: "Invalid queue request" }, { status: 400 });
     }
 
     const { error } = await admin.from("job_queue").insert([{ queue_name: queueName, payload }]);

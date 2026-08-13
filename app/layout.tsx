@@ -27,7 +27,7 @@ export default function RootLayout({
         <AuthProvider>
           <FontSizeProvider>
             <SpeechDeviceProvider>
-              {process.env.NEXT_PUBLIC_ENABLE_AUTH_PROTECTION === "true" ? (
+              {process.env.NODE_ENV === "production" || process.env.NEXT_PUBLIC_ENABLE_AUTH_PROTECTION === "true" ? (
                 <ProtectedRoute>
                   <MainLayout>{children}</MainLayout>
                   <MobileSpeechControls />

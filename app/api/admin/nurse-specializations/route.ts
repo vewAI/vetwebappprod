@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { requireAdmin } from "@/app/api/_lib/auth";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireAdmin(request);
+  if ("error" in auth) return auth.error;
+
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
     return NextResponse.json({ error: "Admin client not available" }, { status: 500 });
@@ -20,6 +24,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireAdmin(request);
+  if ("error" in auth) return auth.error;
+
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
     return NextResponse.json({ error: "Admin client not available" }, { status: 500 });
@@ -61,6 +68,9 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const auth = await requireAdmin(request);
+  if ("error" in auth) return auth.error;
+
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
     return NextResponse.json({ error: "Admin client not available" }, { status: 500 });

@@ -166,7 +166,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // If the profile endpoint is temporarily unreachable (network error),
         // fall back to any role present in the session JWT metadata so that
         // users (e.g. professors) don't lose access unnecessarily.
-        const fallbackRole = session?.user?.app_metadata?.role ?? session?.user?.user_metadata?.role ?? null;
+        // Do not fall back to user_metadata: the account owner can edit it.
+        const fallbackRole = session?.user?.app_metadata?.role ?? null;
         setRole(fallbackRole ?? null);
         setForcePasswordChange(false);
         setProfileLoading(false);

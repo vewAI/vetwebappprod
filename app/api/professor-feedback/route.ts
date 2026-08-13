@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/app/api/_lib/auth";
+import { authorizeProfessorStudent } from "@/app/api/_lib/authorization";
 
 export async function GET(req: Request) {
   const auth = await requireUser(req);
@@ -30,6 +31,9 @@ export async function GET(req: Request) {
 
     if (role === "professor") {
       if (!studentId) return NextResponse.json({ error: "studentId query param required" }, { status: 400 });
+      const assignment = await authorizeProfessorStudent(adminSupabase, user.id, studentId);
+      if (assignment.error) return NextResponse.json({ error: "Failed to verify permissions" }, { status: 500 });
+      if (!assignment.allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       targetStudentId = studentId;
     } else if (role === "student") {
       targetStudentId = user.id;
@@ -92,14 +96,31 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "professorId, studentId and message are required" }, { status: 400 });
     }
 
-    // Determine sender_role automatically
-    const senderRole = explicitSenderRole || (role === "professor" ? "professor" : "student");
+    // Never let a professor or student impersonate the other sender role.
+    const senderRole = role === "professor"
+      ? "professor"
+      : role === "student"
+        ? "student"
+        : explicitSenderRole;
+    if (senderRole !== "professor" && senderRole !== "student") {
+      return NextResponse.json({ error: "Invalid sender role" }, { status: 400 });
+    }
+
+    if (role === "professor") {
+      const assignment = await authorizeProfessorStudent(adminSupabase, user.id, studentId);
+      if (assignment.error) return NextResponse.json({ error: "Failed to verify permissions" }, { status: 500 });
+      if (!assignment.allowed) return NextResponse.json({ error: "Student is not assigned to you" }, { status: 403 });
+    }
+
+    if (role === "student") {
+      const assignment = await authorizeProfessorStudent(adminSupabase, professorId, user.id);
+      if (assignment.error) return NextResponse.json({ error: "Failed to verify permissions" }, { status: 500 });
+      if (!assignment.allowed) return NextResponse.json({ error: "Professor is not assigned to you" }, { status: 403 });
+    }
 
     // Validate ownership
-    if (role === "professor") {
-      if (professorId !== user.id) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-      }
+    if (role === "professor" && professorId !== user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     if (role === "student") {

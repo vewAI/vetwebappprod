@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { requireUser } from "@/app/api/_lib/auth";
 import { takeAsync, peekAsync } from "../store";
@@ -8,6 +9,15 @@ import llm from "@/lib/llm";
 // Accepts GET?text=...&voice=... and forwards the streaming audio response
 // from the upstream provider directly to the client so the browser can begin
 // playback as soon as chunks arrive.
+function isValidStreamSignature(id: string, signature: string | null): boolean {
+  const secret = process.env.TTS_STREAM_SIGNING_SECRET ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secret || !signature) return false;
+  const expected = createHmac("sha256", secret).update(id).digest("hex");
+  const provided = Buffer.from(signature, "hex");
+  const expectedBuffer = Buffer.from(expected, "hex");
+  return provided.length === expectedBuffer.length && timingSafeEqual(provided, expectedBuffer);
+}
+
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
@@ -16,6 +26,9 @@ export async function GET(req: Request) {
     // 1) short-id mode: /api/tts/stream?id=<shortId> (POST-init flow)
     // 2) legacy mode: /api/tts/stream?text=...&voice=...
     const id = String(url.searchParams.get("id") ?? "").trim();
+    if (id && !isValidStreamSignature(id, url.searchParams.get("sig"))) {
+      return NextResponse.json({ error: "invalid or expired stream URL" }, { status: 401 });
+    }
     let text = String(url.searchParams.get("text") ?? "");
     let voice = String(url.searchParams.get("voice") ?? "alloy");
 
@@ -41,6 +54,9 @@ export async function GET(req: Request) {
 
     if (!text || text.trim().length === 0) {
       return NextResponse.json({ error: "text is required" }, { status: 400 });
+    }
+    if (text.length > 10_000) {
+      return NextResponse.json({ error: "text exceeds the 10000 character limit" }, { status: 413 });
     }
 
     const OPENAI_KEY = process.env.OPENAI_API_KEY;

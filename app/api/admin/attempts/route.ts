@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/app/api/_lib/auth";
+import { authorizeAttemptAccess } from "@/app/api/_lib/authorization";
 
 export async function GET(req: Request) {
   const auth = await requireUser(req);
   if ("error" in auth) return auth.error;
 
   const { adminSupabase, user, role } = auth;
+  if (role !== "admin" && role !== "professor") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   if (!adminSupabase) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
   }
@@ -17,7 +21,21 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "attemptId query param is required" }, { status: 400 });
     }
 
-    // Fetch attempt using the admin client so we can read any user's attempt
+    const access = await authorizeAttemptAccess(adminSupabase, attemptId, user.id, role, {
+      allowProfessorRead: true,
+    });
+    if (access.error) {
+      return NextResponse.json({ error: "Failed to verify permissions" }, { status: 500 });
+    }
+    if (access.notFound) {
+      return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
+    }
+    if (!access.allowed) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    // Fetch the already-authorized attempt using the admin client so we can
+    // include professor feedback and related records.
     const { data: attemptData, error: attemptError } = await adminSupabase
       .from("attempts")
       .select("*")
@@ -26,27 +44,6 @@ export async function GET(req: Request) {
 
     if (attemptError || !attemptData) {
       return NextResponse.json({ error: attemptError?.message || "Attempt not found" }, { status: 404 });
-    }
-
-    // If the requester is a professor, ensure they are assigned to this student
-    if (role === "professor") {
-      const studentId = attemptData.user_id;
-      const { data: rel, error: relErr } = await adminSupabase
-        .from("professor_students")
-        .select("*")
-        .eq("professor_id", user.id)
-        .eq("student_id", studentId)
-        .limit(1)
-        .maybeSingle();
-
-      if (relErr) {
-        console.warn("Failed to verify professor->student assignment", relErr);
-        return NextResponse.json({ error: "Failed to verify permissions" }, { status: 500 });
-      }
-
-      if (!rel) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-      }
     }
 
     // Fetch messages and feedback

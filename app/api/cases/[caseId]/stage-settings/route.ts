@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { requireAdmin, requireUser } from "@/app/api/_lib/auth";
 
 // DEPRECATED: Stage activation now lives in public.case_stages.is_active.
 // This endpoint remains for backward compatibility with existing admin flows.
@@ -19,6 +20,9 @@ function resolveCaseIdFromCtx(ctx: any): Promise<string | undefined> | string | 
 }
 
 export async function GET(req: any, ctx: any) {
+  const auth = await requireUser(req);
+  if ("error" in auth) return auth.error;
+
   const maybe = resolveCaseIdFromCtx(ctx);
   const caseId = typeof maybe === "string" ? maybe : await maybe;
   const supabase = getSupabaseAdminClient();
@@ -55,6 +59,9 @@ export async function GET(req: any, ctx: any) {
 }
 
 export async function POST(req: any, ctx: any) {
+  const auth = await requireAdmin(req);
+  if ("error" in auth) return auth.error;
+
   const maybe = resolveCaseIdFromCtx(ctx);
   const caseId = typeof maybe === "string" ? maybe : await maybe;
   const body = await req.json().catch(() => ({}));

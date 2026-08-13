@@ -20,6 +20,9 @@ export async function POST(req: Request) {
         if (!file || !caseId) {
             return NextResponse.json({ error: "Missing file or case_id" }, { status: 400 });
         }
+        if (file.size > 10 * 1024 * 1024) {
+            return NextResponse.json({ error: "File exceeds the 10 MB limit" }, { status: 413 });
+        }
 
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);

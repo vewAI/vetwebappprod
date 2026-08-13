@@ -74,6 +74,7 @@ import { dispatchStageIntentEvent } from "@/features/chat/models/stage-intent-ev
 import { dispatchStageReadinessEvent } from "@/features/chat/models/stage-readiness-events";
 import { useAuth } from "@/features/auth/services/authService";
 import { HelpTip } from "@/components/ui/help-tip";
+import { buildAuthHeaders } from "@/lib/auth-headers";
 import { GuidedTour } from "@/components/ui/guided-tour";
 
 import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
@@ -342,7 +343,9 @@ export function ChatInterface({
     if (!caseId) return;
     (async () => {
       try {
-        const resp = await fetch(`/api/cases/${encodeURIComponent(caseId)}/stage-settings`);
+        const resp = await fetch(`/api/cases/${encodeURIComponent(caseId)}/stage-settings`, {
+          headers: await buildAuthHeaders(),
+        });
         const payload = await resp.json().catch(() => ({}));
         const savedOverrides = payload?.stageOverrides || {};
         const coercedOverrides: Record<string, any> = {};

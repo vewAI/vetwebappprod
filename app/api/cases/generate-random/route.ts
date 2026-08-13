@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAi from "openai";
 import { searchMerckManual } from "@/features/external-resources/services/merckService";
 import { requireUser } from "@/app/api/_lib/auth";
+import { fetchPublicResource } from "@/app/api/_lib/safeFetch";
+import { consumeRateLimit } from "@/app/api/_lib/rateLimit";
 import pdf from "pdf-parse";
 import mammoth from "mammoth";
 
@@ -27,6 +29,9 @@ export async function POST(request: NextRequest) {
   if ("error" in auth) {
     return auth.error;
   }
+  if (!consumeRateLimit(`case-generation:${auth.user.id}`, 3, 60 * 60_000)) {
+    return NextResponse.json({ error: "Case generation quota exceeded" }, { status: 429 });
+  }
 
   try {
     // Parse optional references from body
@@ -34,7 +39,10 @@ export async function POST(request: NextRequest) {
     try {
       const body = await request.json().catch(() => null);
       if (body && Array.isArray(body.references)) {
-        references = body.references.map((r: any) => ({ url: String(r.url ?? ""), caption: r.caption ?? null }));
+        if (body.references.length > 5) {
+          return NextResponse.json({ error: "At most 5 references are allowed" }, { status: 400 });
+        }
+        references = body.references.map((r: any) => ({ url: String(r.url ?? "").slice(0, 2_000), caption: String(r.caption ?? "").slice(0, 500) }));
       }
     } catch (e) {
       references = undefined;
@@ -56,7 +64,7 @@ export async function POST(request: NextRequest) {
       for (const ref of references!) {
         if (!ref.url) continue;
         try {
-          const r = await fetch(ref.url);
+          const r = await fetchPublicResource(ref.url ?? "");
           if (!r.ok) throw new Error(`Fetch failed: ${r.status} ${r.statusText}`);
           const arrayBuffer = await r.arrayBuffer();
           const buffer = Buffer.from(arrayBuffer);

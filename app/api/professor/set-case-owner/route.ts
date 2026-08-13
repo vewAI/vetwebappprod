@@ -5,7 +5,7 @@ export async function POST(req: Request) {
   const auth = await requireUser(req);
   if ("error" in auth) return auth.error;
 
-  const { role, adminSupabase } = auth;
+  const { role, adminSupabase, user } = auth;
   if (!role || (role !== "professor" && role !== "admin")) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
@@ -19,6 +19,9 @@ export async function POST(req: Request) {
     const { caseId, ownerId } = body as { caseId?: string; ownerId?: string };
     if (!caseId || !ownerId) {
       return NextResponse.json({ error: "invalid_payload" }, { status: 400 });
+    }
+    if (role === "professor" && ownerId !== user.id) {
+      return NextResponse.json({ error: "Professors may only assign themselves as case owner" }, { status: 403 });
     }
 
     // Only set owner when currently null to avoid clobbering an existing owner

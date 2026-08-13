@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { requireAdmin, requireUser } from "@/app/api/_lib/auth";
 import { caseConfig } from "@/features/config/case-config";
 import { resolveChatPersonaRoleKey } from "@/features/chat/utils/persona-guardrails";
 
 type RouteContext = { params: Promise<{ caseId: string }> };
 
-export async function GET(_request: NextRequest, context: RouteContext) {
+export async function GET(request: NextRequest, context: RouteContext) {
+  const auth = await requireUser(request);
+  if ("error" in auth) return auth.error;
+
   const { caseId } = await context.params;
   if (!caseId) {
     return NextResponse.json({ error: "Missing caseId" }, { status: 400 });
@@ -20,7 +24,12 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       .order("sort_order", { ascending: true });
 
     if (!error && data && data.length > 0) {
-      return NextResponse.json({ stages: data, source: "db" });
+      // Internal stage prompts are only needed by trusted server/admin flows.
+      // Keep runtime clients on a deliberately small DTO.
+      const stages = auth.role === "admin"
+        ? data
+        : data.map(({ stage_prompt: _stagePrompt, ...stage }) => stage);
+      return NextResponse.json({ stages, source: "db" });
     }
   }
 
@@ -54,6 +63,9 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 }
 
 export async function PUT(request: NextRequest, context: RouteContext) {
+  const auth = await requireAdmin(request);
+  if ("error" in auth) return auth.error;
+
   const { caseId } = await context.params;
   if (!caseId) {
     return NextResponse.json({ error: "Missing caseId" }, { status: 400 });

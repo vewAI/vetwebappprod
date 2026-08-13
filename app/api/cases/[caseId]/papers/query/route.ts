@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/app/api/_lib/auth";
 // Use global fetch available in the runtime rather than node-fetch
 import { normalizeCaseMedia } from "@/features/cases/models/caseMedia";
+import { fetchPublicResource } from "@/app/api/_lib/safeFetch";
 
 const OPENAI_KEY = process.env.OPENAI_API_KEY ?? null;
 
@@ -43,11 +44,14 @@ export async function POST(req: Request, context: any) {
 
   const body = await req.json();
   const { query } = body as { query?: string };
-  if (!query || !query.trim()) {
-    return NextResponse.json({ error: "missing_query" }, { status: 400 });
+  if (!query || !query.trim() || query.length > 2_000) {
+    return NextResponse.json({ error: "missing_or_invalid_query" }, { status: 400 });
   }
 
   const caseId = context?.params?.caseId ?? (context?.params instanceof Promise ? (await context.params).caseId : undefined);
+  if (auth.role !== "admin" && auth.role !== "professor") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { supabase, adminSupabase } = auth;
   const db = adminSupabase ?? supabase;
 
@@ -66,7 +70,7 @@ export async function POST(req: Request, context: any) {
     for (const doc of docs) {
       try {
         const url = doc.url;
-        const resp = await fetch(url);
+        const resp = await fetchPublicResource(url, 10 * 1024 * 1024);
         if (!resp.ok) {
           results.push({ id: doc.id, url, caption: doc.caption, error: "fetch_failed" });
           continue;

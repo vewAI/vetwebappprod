@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { ROLE_PROMPT_DEFINITIONS } from "@/features/role-info/services/roleInfoService";
+import { requireAdmin } from "@/app/api/_lib/auth";
 
 /**
  * GET /api/admin/app-specs
  * Returns core application specifications for admin reference.
  */
-export async function GET() {
+export async function GET(request: Request) {
+  const auth = await requireAdmin(request);
+  if ("error" in auth) return auth.error;
+
   // Extract role prompt definitions (templates and docs only, not functions)
   const rolePrompts = Object.entries(ROLE_PROMPT_DEFINITIONS).map(([key, def]) => ({
     key,

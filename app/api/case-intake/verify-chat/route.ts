@@ -13,8 +13,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { messages, currentItem, caseContext } = body;
 
-    if (!currentItem || !caseContext) {
-      return NextResponse.json({ error: "currentItem and caseContext are required" }, { status: 400 });
+    if (!currentItem || !caseContext || JSON.stringify(currentItem).length > 20_000 || JSON.stringify(caseContext).length > 20_000) {
+      return NextResponse.json({ error: "Invalid or oversized verification context" }, { status: 400 });
+    }
+    if (!Array.isArray(messages) || messages.length > 50 || messages.some((message) => !message || typeof message.content !== "string" || message.content.length > 8_000)) {
+      return NextResponse.json({ error: "Invalid or oversized verification messages" }, { status: 400 });
     }
 
     const systemPrompt = `You are a fierce, expert veterinary clinical case reviewer. Your mission is to ensure this teaching case is BULLETPROOF — thorough enough that no student question or action could catch it unprepared. You are the professor's relentless guide toward a perfect case.

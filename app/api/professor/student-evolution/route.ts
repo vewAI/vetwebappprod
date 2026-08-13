@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { OpenAI } from "openai";
 import { requireUser } from "@/app/api/_lib/auth";
+import { authorizeProfessorStudent } from "@/app/api/_lib/authorization";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -27,6 +28,12 @@ export async function POST(request: Request) {
       { error: "Admin access required" },
       { status: 500 }
     );
+  }
+
+  if (auth.role === "professor") {
+    const assignment = await authorizeProfessorStudent(adminSupabase, auth.user.id, studentId);
+    if (assignment.error) return NextResponse.json({ error: "Failed to verify permissions" }, { status: 500 });
+    if (!assignment.allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // Fetch student profile

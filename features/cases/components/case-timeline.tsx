@@ -16,10 +16,10 @@ type CaseTimelineProps = {
 };
 
 export function CaseTimeline({ caseId, elapsedSeconds, className, onFastForward }: CaseTimelineProps) {
-  const { session } = useAuth();
+  const { role, session } = useAuth();
   const [timepoints, setTimepoints] = useState<CaseTimepoint[]>([]);
   const [loading, setLoading] = useState(false);
-  const isAdmin = session?.user?.user_metadata?.role === "admin" || session?.user?.user_metadata?.role === "professor";
+  const isAdmin = role === "admin" || role === "professor";
 
   // Contextual help for Time Progression
   const timeProgressionHelp = (

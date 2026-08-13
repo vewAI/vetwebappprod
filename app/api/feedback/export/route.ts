@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import PDFDocument from "pdfkit";
+import { requireUser } from "@/app/api/_lib/auth";
 
 function resolveTranscriptSpeaker(message: any): string {
   const role = typeof message?.role === "string" ? message.role : "";
@@ -27,7 +28,16 @@ function resolveTranscriptSpeaker(message: any): string {
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
+    const auth = await requireUser(req);
+    if ("error" in auth) return auth.error;
+
     const { caseId, feedbackHtml, messages } = await req.json();
+    if (typeof caseId !== "string" || caseId.length > 200 || typeof feedbackHtml !== "string" || feedbackHtml.length > 100_000) {
+      return NextResponse.json({ error: "Invalid export request" }, { status: 400 });
+    }
+    if (messages !== undefined && (!Array.isArray(messages) || messages.length > 100 || messages.some((message) => typeof message?.content !== "string" || message.content.length > 8_000))) {
+      return NextResponse.json({ error: "Transcript exceeds the allowed limit" }, { status: 400 });
+    }
 
     // Create a PDF document
     const doc = new PDFDocument({ margin: 50 });
@@ -106,7 +116,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   } catch (error) {
     console.error("PDF Export error:", error);
     return NextResponse.json(
-      { error: "pdf_generation_failed", details: String(error) },
+      { error: "pdf_generation_failed" },
       { status: 500 }
     );
   }

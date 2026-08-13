@@ -22,12 +22,20 @@ const CHUNK_SIZE = 100;
 export const runtime = "nodejs";
 
 async function handlePurge(req: NextRequest): Promise<NextResponse> {
-  if (CRON_TOKEN) {
-    const authHeader = req.headers.get("authorization");
-    const expected = `Bearer ${CRON_TOKEN}`;
-    if (authHeader !== expected) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  // This route is destructive and must never fail open when its secret is
+  // missing. It also requires the service-role client to avoid partial/RLS
+  // dependent deletes.
+  if (!CRON_TOKEN || !supabaseServiceKey) {
+    return NextResponse.json(
+      { error: "Purge service is not configured" },
+      { status: 503 }
+    );
+  }
+
+  const authHeader = req.headers.get("authorization");
+  const expected = `Bearer ${CRON_TOKEN}`;
+  if (authHeader !== expected) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const now = new Date();

@@ -2,6 +2,7 @@ import { caseConfig } from "@/features/config/case-config";
 import { caseStageRowToStage, type CaseStageRow, type Stage } from "../types";
 import type { Message } from "@/features/chat/models/chat";
 import { getTransitionMessage as getCase1TransitionMessage } from "../case1";
+import { buildAuthHeaders } from "@/lib/auth-headers";
 
 /**
  * Get the stages for a specific case
@@ -25,6 +26,7 @@ export async function getStagesForCaseAsync(caseId: string): Promise<Stage[]> {
   try {
     const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/stages`, {
       cache: "no-store",
+      headers: await buildAuthHeaders(),
     });
     if (!response.ok) {
       return getStagesForCase(caseId);

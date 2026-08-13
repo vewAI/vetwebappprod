@@ -189,6 +189,9 @@ export async function POST(request: NextRequest) {
 
     let sourceFileText = "";
     let sourceFileName = "";
+    if (rawTextInput.length > 100_000 || (file && file instanceof File && file.size > 10 * 1024 * 1024)) {
+      return NextResponse.json({ error: "Input exceeds the allowed size" }, { status: 413 });
+    }
     if (file && file instanceof File && file.size > 0) {
       sourceFileText = await extractTextFromFile(file);
       sourceFileName = file.name;

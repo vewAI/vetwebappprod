@@ -3,6 +3,7 @@ import { createOpenAIClient } from "@/lib/llm/openaiClient";
 import { case1RoleInfo } from "@/features/role-info/case1";
 import type { Message } from "@/features/chat/models/chat";
 import { requireUser } from "@/app/api/_lib/auth";
+import { consumeRateLimit } from "@/app/api/_lib/rateLimit";
 
 function resolveSpeakerLabel(msg: Message): string {
   if (msg.role === "user") {
@@ -37,8 +38,17 @@ export async function POST(request: Request) {
     if ("error" in auth) {
       return auth.error;
     }
+    if (!consumeRateLimit(`overall-feedback:${auth.user.id}`, 3, 60_000)) {
+      return NextResponse.json({ error: "Too many feedback requests" }, { status: 429 });
+    }
     const { supabase } = auth;
     const { caseId, messages } = await request.json();
+    if (typeof caseId !== "string" || caseId.length > 200 || !Array.isArray(messages) || messages.length === 0 || messages.length > 100) {
+      return NextResponse.json({ error: "Invalid feedback request" }, { status: 400 });
+    }
+    if (messages.some((message: Message) => !message || typeof message.content !== "string" || message.content.length > 8_000)) {
+      return NextResponse.json({ error: "Message content exceeds the allowed limit" }, { status: 400 });
+    }
 
     console.log("Generating overall feedback for case:", caseId);
 

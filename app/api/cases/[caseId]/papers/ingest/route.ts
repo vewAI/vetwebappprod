@@ -6,6 +6,9 @@ import { isCaseFieldAutomatable } from "@/features/prompts/services/casePromptAu
 export async function POST(request: NextRequest, context: { params: Promise<{ caseId: string }> }) {
   const auth = await requireUser(request as Request);
   if ("error" in auth) return auth.error;
+  if (auth.role !== "admin" && auth.role !== "professor") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { supabase } = auth;
 
   const { caseId } = await context.params;

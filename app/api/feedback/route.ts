@@ -1,24 +1,69 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createOpenAIClient } from "@/lib/llm/openaiClient";
-import { saveFeedback } from "@/features/attempts/services/attemptService";
+import { feedbackPromptRegistry } from "@/features/feedback/feedback-prompts";
+import DOMPurify from "isomorphic-dompurify";
+import { marked } from "marked";
+import { requireUser } from "@/app/api/_lib/auth";
+import { authorizeAttemptAccess } from "@/app/api/_lib/authorization";
+import { consumeRateLimit } from "@/app/api/_lib/rateLimit";
 
 export async function POST(request: NextRequest) {
   try {
-    const { messages, stageIndex, feedbackPrompt: feedbackPromptFromClient, attemptId } = await request.json();
-
-    if (!messages || !Array.isArray(messages)) {
-      return NextResponse.json({ error: "Messages array is required" }, { status: 400 });
+    const auth = await requireUser(request);
+    if ("error" in auth) return auth.error;
+    if (!consumeRateLimit(`feedback:${auth.user.id}`, 5, 60_000)) {
+      return NextResponse.json({ error: "Too many feedback requests" }, { status: 429 });
     }
 
-    if (!attemptId) {
+    const body = await request.json();
+    const { messages, stageIndex, caseId, feedbackPromptKey, attemptId } = body ?? {};
+
+    if (!Array.isArray(messages) || messages.length === 0 || messages.length > 100) {
+      return NextResponse.json({ error: "Messages must contain between 1 and 100 items" }, { status: 400 });
+    }
+    if (messages.some((message) => !message || typeof message.content !== "string" || message.content.length > 8_000)) {
+      return NextResponse.json({ error: "Each message must contain at most 8000 characters" }, { status: 400 });
+    }
+    if (typeof attemptId !== "string" || attemptId.length > 200) {
       return NextResponse.json({ error: "attemptId is required" }, { status: 400 });
     }
-
-    // Require the prompt to be provided by the client
-    const feedbackPrompt = feedbackPromptFromClient;
-    if (!feedbackPrompt) {
-      return NextResponse.json({ error: "feedbackPrompt is required in the request body." }, { status: 400 });
+    if (typeof caseId !== "string" || caseId.length > 200 || typeof feedbackPromptKey !== "string" || feedbackPromptKey.length > 100) {
+      return NextResponse.json({ error: "caseId and feedbackPromptKey are required" }, { status: 400 });
     }
+
+    const access = await authorizeAttemptAccess(
+      auth.adminSupabase ?? auth.supabase,
+      attemptId,
+      auth.user.id,
+      auth.role,
+    );
+    if (access.error) return NextResponse.json({ error: "Failed to verify permissions" }, { status: 500 });
+    if (access.notFound) return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
+    if (!access.allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (access.attempt?.case_id && access.attempt.case_id !== caseId) {
+      return NextResponse.json({ error: "Attempt does not belong to this case" }, { status: 403 });
+    }
+
+    const promptFactory = feedbackPromptRegistry[caseId]?.[feedbackPromptKey];
+    if (typeof promptFactory !== "function") {
+      return NextResponse.json({ error: "Unsupported feedback prompt" }, { status: 400 });
+    }
+    const context = messages
+      .map((message: { role?: string; content: string; displayRole?: string }, index: number) =>
+        `Turn ${index + 1} | ${message.displayRole ?? message.role ?? "Assistant"}: ${message.content}`,
+      )
+      .join("\n\n");
+    const { data: caseRow } = await (auth.adminSupabase ?? auth.supabase)
+      .from("cases")
+      .select("*")
+      .eq("id", caseId)
+      .maybeSingle();
+    // Prompt instructions come from the server-side registry. The client can
+    // provide transcript data, but cannot replace the evaluation rubric.
+    const feedbackPrompt = (promptFactory as unknown as (
+      caseRow: Record<string, unknown> | null,
+      context: string,
+    ) => string)(caseRow as Record<string, unknown> | null, context);
 
     // Create validated OpenAI client for this request
     let openai: any;
@@ -37,31 +82,23 @@ export async function POST(request: NextRequest) {
       max_tokens: 1000,
     });
 
-    // Format the feedback with HTML
     const feedbackContent = response.choices[0].message.content || "No feedback available.";
+    const renderedFeedback = marked.parse(feedbackContent, { gfm: true, breaks: true }) as string;
+    const wrappedFeedback = DOMPurify.sanitize(renderedFeedback, {
+      ALLOWED_TAGS: ["h1", "h2", "h3", "p", "br", "strong", "em", "ul", "ol", "li", "code", "pre", "blockquote"],
+      ALLOWED_ATTR: [],
+    });
 
-    // Convert markdown-like formatting to HTML
-    const formattedFeedback = feedbackContent
-      .replace(/\n\n/g, "</p><p>") // Convert double line breaks to paragraphs
-      .replace(/\n/g, "<br>") // Convert single line breaks to <br>
-      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>") // Bold text
-      .replace(/\*(.*?)\*/g, "<em>$1</em>") // Italic text
-      .replace(/^#\s+(.*?)$/gm, "<h1>$1</h1>") // H1
-      .replace(/^##\s+(.*?)$/gm, "<h2>$1</h2>") // H2
-      .replace(/^###\s+(.*?)$/gm, "<h3>$1</h3>") // H3
-      .replace(/^(\d+\.\s+.*?)$/gm, "<li>$1</li>") // Numbered lists
-      .replace(/^-\s+(.*?)$/gm, "<li>$1</li>"); // Bullet points
-
-    // Wrap in paragraph tags if not already done
-    const wrappedFeedback = `<p>${formattedFeedback}</p>`
-      .replace(/<p><h([1-3])>/g, "<h$1>") // Fix nested paragraph tags
-      .replace(/<\/h([1-3])><\/p>/g, "</h$1>") // Fix nested paragraph tags
-      .replace(/<p><li>/g, "<li>") // Fix nested paragraph tags
-      .replace(/<\/li><\/p>/g, "</li>") // Fix nested paragraph tags
-      .replace(/<p><\/p>/g, ""); // Remove empty paragraphs
-
-    // Save the feedback to the database
-    const saveResult = await saveFeedback(attemptId, stageIndex, wrappedFeedback);
+    // Save through the already-authorized server client, not an ambient anon
+    // client that has no request token attached.
+    const writeClient = auth.adminSupabase ?? auth.supabase;
+    const { error: saveError } = await writeClient.from("attempt_feedback").insert({
+      attempt_id: attemptId,
+      stage_index: typeof stageIndex === "number" ? Math.max(0, Math.floor(stageIndex)) : 0,
+      feedback_content: wrappedFeedback,
+    });
+    const saveResult = !saveError;
+    if (saveError) console.error("Failed to save feedback to database", saveError);
 
     if (!saveResult) {
       console.error("Failed to save feedback to database");
@@ -79,7 +116,6 @@ export async function POST(request: NextRequest) {
       {
         feedback: errorMessage,
         error: "Failed to generate feedback",
-        details: error instanceof Error ? error.message : String(error),
       },
       { status: 500 },
     );

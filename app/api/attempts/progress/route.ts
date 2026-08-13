@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { Message } from "@/features/chat/models/chat";
 import { requireUser } from "@/app/api/_lib/auth";
+import { authorizeAttemptAccess } from "@/app/api/_lib/authorization";
 
 type SaveProgressPayload = {
   attemptId?: string;
@@ -84,6 +85,21 @@ export async function POST(req: Request) {
     }
 
     const attemptId = body.attemptId;
+    const access = await authorizeAttemptAccess(
+      auth.adminSupabase ?? supabase,
+      attemptId,
+      auth.user.id,
+      auth.role,
+    );
+    if (access.error) {
+      return NextResponse.json({ error: "Failed to verify permissions" }, { status: 500 });
+    }
+    if (access.notFound) {
+      return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
+    }
+    if (!access.allowed) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     
     // Build update payload dynamically to allow partial updates
     const updatePayload: Record<string, unknown> = {};

@@ -7,6 +7,9 @@ import OpenAi from "openai";
 export async function POST(request: NextRequest, context: { params: Promise<{ caseId: string }> }) {
   const auth = await requireUser(request as Request);
   if ("error" in auth) return auth.error;
+  if (auth.role !== "admin" && auth.role !== "professor") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { supabase } = auth;
 
   const { caseId } = await context.params;
@@ -22,7 +25,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ ca
   const fileName = typeof body.fileName === "string" ? body.fileName : "upload";
   const mimeType = typeof body.mimeType === "string" ? body.mimeType : "text/plain";
   const contentBase64 = typeof body.contentBase64 === "string" ? body.contentBase64 : null;
-  if (!contentBase64) return NextResponse.json({ error: "contentBase64 required" }, { status: 400 });
+  if (!contentBase64 || contentBase64.length > 14_000_000) return NextResponse.json({ error: "contentBase64 is required and must be at most 10 MB decoded" }, { status: 400 });
 
   // decode
   let buffer: Buffer;
@@ -30,6 +33,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ ca
     buffer = Buffer.from(contentBase64, "base64");
   } catch (e) {
     return NextResponse.json({ error: "Failed to decode base64" }, { status: 400 });
+  }
+  if (buffer.byteLength > 10 * 1024 * 1024) {
+    return NextResponse.json({ error: "Uploaded file exceeds the 10 MB limit" }, { status: 413 });
   }
 
   // extract text

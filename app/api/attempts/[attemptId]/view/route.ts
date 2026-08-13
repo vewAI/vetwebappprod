@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireUser } from "@/app/api/_lib/auth";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { authorizeAttemptAccess } from "@/app/api/_lib/authorization";
 import {
   transformAttempt,
   transformFeedback,
@@ -16,19 +17,33 @@ export async function GET(
   const auth = await requireUser(request as Request);
   if ("error" in auth) return auth.error;
 
-  const { adminSupabase } = auth;
+  const { adminSupabase, user, role } = auth;
 
   if (!attemptId)
     return NextResponse.json({ error: "attemptId required" }, { status: 400 });
 
   try {
-    // Load attempt using admin client so we can return professorFeedback if allowed
+    // Load attempt using admin client only after an object-level ownership or
+    // professor-assignment check. This prevents arbitrary attempt ID access.
     const adminClient = adminSupabase ?? getSupabaseAdminClient();
     if (!adminClient)
       return NextResponse.json(
         { error: "Server configuration error" },
         { status: 500 }
       );
+
+    const access = await authorizeAttemptAccess(adminClient, attemptId, user.id, role, {
+      allowProfessorRead: true,
+    });
+    if (access.error) {
+      return NextResponse.json({ error: "Failed to verify permissions" }, { status: 500 });
+    }
+    if (access.notFound) {
+      return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
+    }
+    if (!access.allowed) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const { data: attemptRow, error } = await adminClient
       .from("attempts")

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/app/api/_lib/auth";
+import { consumeRateLimit } from "@/app/api/_lib/rateLimit";
 
 // Server-side TTS proxy to a third-party TTS service (OpenAI/E2E)
 // Expects JSON: { text: string, voice?: string }
@@ -8,6 +9,9 @@ export async function POST(req: Request) {
   if ("error" in auth) {
     return auth.error;
   }
+  if (!consumeRateLimit(`tts:${auth.user.id}`, 30, 60_000)) {
+    return NextResponse.json({ error: "Too many TTS requests" }, { status: 429 });
+  }
   try {
     const body = await req.json();
     const text = String(body?.text ?? "");
@@ -15,6 +19,9 @@ export async function POST(req: Request) {
 
     if (!text || text.trim().length === 0) {
       return NextResponse.json({ error: "text is required" }, { status: 400 });
+    }
+    if (text.length > 10_000) {
+      return NextResponse.json({ error: "text exceeds the 10000 character limit" }, { status: 413 });
     }
 
     const OPENAI_KEY = process.env.OPENAI_API_KEY;

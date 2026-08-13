@@ -3,16 +3,15 @@ import { createClient } from "@supabase/supabase-js";
 import OpenAI from "openai";
 import { getOrGeneratePersonaPortrait } from "@/features/personas/services/personaImageService";
 import { SHARED_CASE_ID } from "@/features/personas/services/personaSeedService";
+import { requireAdmin } from "@/app/api/_lib/auth";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
 export async function POST(request: Request) {
-  const authHeader = request.headers.get("Authorization");
-  if (!authHeader) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAdmin(request);
+  if ("error" in auth) return auth.error;
 
   try {
     const body = await request.json();
@@ -22,19 +21,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing roleKey" }, { status: 400 });
     }
 
-    const token = authHeader.replace("Bearer ", "");
-    const supabase = createClient(
+    const supabase = auth.adminSupabase ?? createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        global: {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      }
     );
-    
+
     // If caseId is provided, it's a case persona. Otherwise, global.
     const targetCaseId = caseId || SHARED_CASE_ID;
 

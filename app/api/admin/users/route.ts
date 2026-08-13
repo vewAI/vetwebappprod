@@ -11,6 +11,15 @@ const createUserSchema = z.object({
   institution_id: z.string().optional(),
 });
 
+const updateUserSchema = z.object({
+  userId: z.string().min(1),
+  role: z.enum(["student", "professor", "admin"]).optional(),
+  email: z.string().email().optional(),
+  password: z.string().min(8, "Password must be at least 8 characters").optional(),
+  fullName: z.string().min(2).optional(),
+  institution_id: z.string().nullable().optional(),
+});
+
 export async function GET(request: NextRequest) {
   const auth = await requireUser(request);
   if ("error" in auth) return auth.error;
@@ -25,25 +34,42 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
   }
 
-  // Fetch profiles
+  let professorInstitutionId: string | null = null;
+  if (auth.role === "professor") {
+    const { data: professorProfile, error: professorError } = await adminClient
+      .from("profiles")
+      .select("institution_id")
+      .eq("user_id", auth.user.id)
+      .maybeSingle();
+    if (professorError || !professorProfile?.institution_id) {
+      return NextResponse.json({ error: "Professor institution could not be verified" }, { status: 403 });
+    }
+    professorInstitutionId = professorProfile.institution_id;
+  }
+
+  // Fetch profiles, scoped to the professor's institution when applicable.
   // Try to fetch with institutions first
   let profiles;
   try {
     // Use explicit foreign key to avoid ambiguity
-    const { data, error } = await adminClient
+    let profilesQuery = adminClient
       .from("profiles")
       .select("*, institutions!institution_id(name)")
       .order("created_at", { ascending: false });
+    if (professorInstitutionId) profilesQuery = profilesQuery.eq("institution_id", professorInstitutionId);
+    const { data, error } = await profilesQuery;
     
     if (error) throw error;
     profiles = data;
   } catch (err) {
     console.error("Failed to fetch profiles with institutions:", err);
     // Fallback: fetch without institutions
-    const { data, error } = await adminClient
+    let profilesQuery = adminClient
       .from("profiles")
       .select("*")
       .order("created_at", { ascending: false });
+    if (professorInstitutionId) profilesQuery = profilesQuery.eq("institution_id", professorInstitutionId);
+    const { data, error } = await profilesQuery;
       
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -178,19 +204,51 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { userId, role, email, password, fullName, institution_id } = await request.json();
-  if (!userId) {
-    return NextResponse.json({ error: "User ID required" }, { status: 400 });
+  const parsedUpdate = updateUserSchema.safeParse(await request.json().catch(() => null));
+  if (!parsedUpdate.success) {
+    return NextResponse.json({ error: parsedUpdate.error.issues[0]?.message ?? "Invalid update payload" }, { status: 400 });
   }
-  
-  // Professors can only update students?
-  // We'll need to check the target user's role if the requester is a professor.
-  // For simplicity, let's assume the UI handles this, but backend should verify.
-  // I'll skip complex verification for now to keep it simple, but ideally we check.
 
+  const { userId, role, email, password, fullName, institution_id } = parsedUpdate.data;
   const adminClient = getSupabaseAdminClient();
   if (!adminClient) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+  }
+
+  if (auth.role === "professor") {
+    // Professors may edit an assigned student name only. They cannot change
+    // credentials, role, or institution, even if the client sends those keys.
+    if (role !== undefined || email !== undefined || password !== undefined || institution_id !== undefined) {
+      return NextResponse.json({ error: "Professors may only update an assigned student's name" }, { status: 403 });
+    }
+
+    const { data: target, error: targetError } = await adminClient
+      .from("profiles")
+      .select("user_id, role, institution_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (targetError) return NextResponse.json({ error: "Failed to verify target user" }, { status: 500 });
+    if (!target || target.role !== "student") {
+      return NextResponse.json({ error: "Professors may only update students" }, { status: 403 });
+    }
+
+    const { data: professorProfile, error: professorError } = await adminClient
+      .from("profiles")
+      .select("institution_id")
+      .eq("user_id", auth.user.id)
+      .maybeSingle();
+    if (professorError || !professorProfile?.institution_id || professorProfile.institution_id !== target.institution_id) {
+      return NextResponse.json({ error: "Target user is outside your institution" }, { status: 403 });
+    }
+
+    const { data: assignment, error: assignmentError } = await adminClient
+      .from("professor_students")
+      .select("student_id")
+      .eq("professor_id", auth.user.id)
+      .eq("student_id", userId)
+      .maybeSingle();
+    if (assignmentError) return NextResponse.json({ error: "Failed to verify student assignment" }, { status: 500 });
+    if (!assignment) return NextResponse.json({ error: "Student is not assigned to you" }, { status: 403 });
   }
 
   // 1. Update Auth User (email, password, metadata)
