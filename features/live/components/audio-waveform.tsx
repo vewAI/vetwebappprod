@@ -13,7 +13,7 @@ export function AudioWaveform({ isActive, mode, className }: AudioWaveformProps)
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>(0);
   const phaseRef = useRef(0);
-  const drawRef = useRef<() => void>(() => {});
+  const drawRef = useRef<(() => void) | null>(null);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -37,7 +37,7 @@ export function AudioWaveform({ isActive, mode, className }: AudioWaveformProps)
     phaseRef.current += 0.03;
 
     if (!isActive) {
-      animationRef.current = requestAnimationFrame(() => drawRef.current());
+      animationRef.current = requestAnimationFrame(() => drawRef.current?.());
       return;
     }
 
@@ -104,12 +104,12 @@ export function AudioWaveform({ isActive, mode, className }: AudioWaveformProps)
       }
     }
 
-    animationRef.current = requestAnimationFrame(() => drawRef.current());
+    animationRef.current = requestAnimationFrame(() => drawRef.current?.());
   }, [isActive, mode]);
 
   useEffect(() => {
     drawRef.current = draw;
-    animationRef.current = requestAnimationFrame(() => drawRef.current());
+    animationRef.current = requestAnimationFrame(() => drawRef.current?.());
     return () => cancelAnimationFrame(animationRef.current);
   }, [draw]);
 

@@ -651,7 +651,7 @@ export function VerificationChatbot({ open, onClose, verificationResult, caseCon
                 {/* AI Suggestion Display */}
                 {showingSuggestion && suggestedValue && activeItem.status === "pending" && (
                   <div className="px-4 py-2 border-t bg-teal-950/40 dark:bg-teal-900/60 border-teal-600 space-y-2 text-sm">
-                    <div className="font-medium text-teal-600 dark:text-teal-300">Here's the result:</div>
+                    <div className="font-medium text-teal-600 dark:text-teal-300">Here&apos;s the result:</div>
                     <pre className="whitespace-pre-wrap text-xs bg-gray-900 dark:bg-gray-950 border border-teal-500 text-teal-50 dark:text-teal-100 rounded p-2 max-h-40 overflow-y-auto">
                       {suggestedValue}
                     </pre>

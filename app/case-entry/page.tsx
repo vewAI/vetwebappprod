@@ -1085,7 +1085,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
           <DialogHeader>
             <DialogTitle>AI-Generated Field Suggestions</DialogTitle>
             <DialogDescription>
-              Review the AI suggestions for empty fields and select which ones to apply to your case. NO WORRIES! You'll be able to edit each field
+              Review the AI suggestions for empty fields and select which ones to apply to your case. NO WORRIES! You&apos;ll be able to edit each field
               afterwards so if in doubt leave them all checked and click on the button below.
             </DialogDescription>
           </DialogHeader>
