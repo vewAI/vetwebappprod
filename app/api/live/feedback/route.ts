@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { marked } from "marked";
+import DOMPurify from "isomorphic-dompurify";
 import { createOpenAIClient } from "@/lib/llm/openaiClient";
 import { getLiveFeedbackPrompt } from "@/features/role-info/db-role-info";
 import { requireUser } from "@/app/api/_lib/auth";
@@ -95,24 +97,33 @@ export async function POST(request: Request) {
       }
     }
 
-    // Format markdown-ish text to HTML
-    const formattedFeedback = feedbackContent
-      .replace(/\n\n/g, "</p><p>")
-      .replace(/\n/g, "<br>")
-      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-      .replace(/\*(.*?)\*/g, "<em>$1</em>")
-      .replace(/^#\s+(.*?)$/gm, "<h1>$1</h1>")
-      .replace(/^##\s+(.*?)$/gm, "<h2>$1</h2>")
-      .replace(/^###\s+(.*?)$/gm, "<h3>$1</h3>")
-      .replace(/^(\d+\.\s+.*?)$/gm, "<li>$1</li>")
-      .replace(/^-\s+(.*?)$/gm, "<li>$1</li>");
-
-    const wrappedFeedback = `<p>${formattedFeedback}</p>`
-      .replace(/<p><h([1-3])>/g, "<h$1>")
-      .replace(/<\/h([1-3])><\/p>/g, "</h$1>")
-      .replace(/<p><li>/g, "<li>")
-      .replace(/<\/li><\/p>/g, "</li>")
-      .replace(/<p><\/p>/g, "");
+    // Render markdown via `marked` and sanitize with DOMPurify so OpenAI
+    // generated HTML/scripts cannot reach the client. The previous regex
+    // chain had no sanitization — a prompt-injection in the LLM response
+    // could land <script> tags in the DOM.
+    const renderedHtml = marked.parse(feedbackContent, {
+      gfm: true,
+      breaks: true,
+    }) as string;
+    const wrappedFeedback = DOMPurify.sanitize(renderedHtml, {
+      ALLOWED_TAGS: [
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "p",
+        "br",
+        "strong",
+        "em",
+        "ul",
+        "ol",
+        "li",
+        "code",
+        "pre",
+        "blockquote",
+      ],
+      ALLOWED_ATTR: [],
+    });
 
     return NextResponse.json({ feedback: wrappedFeedback });
   } catch (error) {
