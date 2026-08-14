@@ -516,7 +516,7 @@ export function LiveSession({
         />
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
         {personaJoining && (
           <div className="flex items-center justify-center bg-primary/10 px-4 py-1.5 text-xs font-medium text-primary">
             {personaJoining} is joining...
@@ -530,15 +530,17 @@ export function LiveSession({
         )}
 
         {/* Top: Persona header */}
-        <PersonaHeader
-          persona={persona}
-          stageTitle={currentStage?.title ?? ""}
-          isSpeaking={live.isSpeaking}
-          waveformMode={waveformMode}
-        />
+        <div className="shrink-0">
+          <PersonaHeader
+            persona={persona}
+            stageTitle={currentStage?.title ?? ""}
+            isSpeaking={live.isSpeaking}
+            waveformMode={waveformMode}
+          />
+        </div>
 
         {/* Session tools */}
-        <div className="flex items-center justify-end gap-1 px-3 pb-1 sm:px-4">
+        <div className="flex shrink-0 items-center justify-end gap-1 px-3 pb-1 sm:px-4">
           <div ref={exportMenuRef} className="relative">
             <Button
               type="button"
@@ -604,6 +606,7 @@ export function LiveSession({
         )}
 
         {/* Bottom: Controls */}
+      <div className="min-h-0 max-h-[42vh] shrink-0 overflow-y-auto">
       <LiveControls
         status={live.status}
         isRecording={mic.isRecording}
@@ -623,15 +626,16 @@ export function LiveSession({
         onEndSession={handleEndSession}
         onToggleMute={handleToggleMute}
       />
+      </div>
 
       {/* Error / status display */}
       {live.error && (
-        <div className="mx-4 mb-4 rounded-lg bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-600 dark:text-red-400">
+        <div className="mx-4 mb-2 shrink-0 rounded-lg bg-red-50 p-2 text-sm text-red-600 dark:bg-red-950/30 dark:text-red-400">
           {live.error}
         </div>
       )}
       {!live.error && live.status === "disconnected" && retryCountRef.current >= 3 && (
-        <div className="mx-4 mb-4 rounded-lg bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-600 dark:text-amber-400">
+        <div className="mx-4 mb-2 shrink-0 rounded-lg bg-amber-50 p-2 text-sm text-amber-600 dark:bg-amber-950/30 dark:text-amber-400">
           Connection lost. Tap the mic to retry or end the session.
         </div>
       )}

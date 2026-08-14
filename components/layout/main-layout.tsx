@@ -9,6 +9,7 @@ const NO_LAYOUT_PATHS = ["/login", "/auth/callback", "/setup-passkey"];
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const caseInProgress = /^\/case\/[^\/]+\/attempt(\/|$)/.test(pathname);
+  const liveSessionInProgress = /^\/live\/[^\/]+(\/|$)/.test(pathname);
   const hideLayout = NO_LAYOUT_PATHS.includes(pathname ?? "");
 
   if (hideLayout) {
@@ -18,8 +19,8 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   return (
     <>
       {!caseInProgress ? <Navbar /> : null}
-      <main className="flex-1">{children}</main>
-      {!caseInProgress ? <Footer /> : null}
+      <main className={liveSessionInProgress ? "min-h-0 flex-1 overflow-hidden" : "flex-1"}>{children}</main>
+      {!caseInProgress && !liveSessionInProgress ? <Footer /> : null}
     </>
   );
 }

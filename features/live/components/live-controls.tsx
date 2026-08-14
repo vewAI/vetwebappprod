@@ -65,9 +65,9 @@ export function LiveControls({
   const rightPersonas = lab?.isActive ? [nurse, lab] : [nurse];
 
   return (
-    <div className="flex flex-col items-center gap-3 px-4 pb-5 pt-2">
+    <div className="flex shrink-0 flex-col items-center gap-2 px-3 pb-2 pt-1 sm:px-4">
       {isTextMode && isConnected && (
-        <div className="w-full max-w-xl rounded-lg border border-primary/25 bg-primary/5 p-3">
+        <div className="w-full max-w-xl rounded-lg border border-primary/25 bg-primary/5 p-2">
           <p className="mb-2 text-center text-xs text-muted-foreground">
             Prefer to write? Type your message below. To continue speaking, click the microphone again.
           </p>
@@ -85,7 +85,7 @@ export function LiveControls({
               placeholder="Write your message..."
               rows={2}
               maxLength={2000}
-              className="min-h-12 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm leading-relaxed outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              className="min-h-10 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm leading-relaxed outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
               aria-label="Write a message"
             />
             <Button
@@ -106,7 +106,7 @@ export function LiveControls({
       )}
 
       {/* Legacy-style persona switcher around the central microphone. */}
-      <div className="flex w-full max-w-3xl items-center justify-center gap-3 sm:gap-6">
+      <div className="flex w-full max-w-3xl items-center justify-center gap-1.5 sm:gap-4">
         {owner && (
           <PersonaButton
             roleKey="owner"
@@ -117,6 +117,7 @@ export function LiveControls({
             onClick={() => onSelectPersona("owner")}
             testId="live-persona-owner"
             align="end"
+            compact
           />
         )}
 
@@ -127,7 +128,7 @@ export function LiveControls({
             disabled={!isConnected}
             aria-label={isRecording ? "Stop speaking and write instead" : "Use microphone to speak"}
             className={cn(
-              "relative flex h-16 w-16 items-center justify-center rounded-full transition-all duration-300 sm:h-20 sm:w-20",
+              "relative flex h-14 w-14 items-center justify-center rounded-full transition-all duration-300 sm:h-16 sm:w-16",
               "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
               "disabled:cursor-not-allowed disabled:opacity-40",
               isRecording
@@ -135,10 +136,10 @@ export function LiveControls({
                 : "bg-primary shadow-lg hover:bg-primary/90 hover:shadow-xl",
             )}
           >
-            {isRecording ? <MicOff className="h-7 w-7 text-white sm:h-8 sm:w-8" /> : <Mic className="h-7 w-7 text-primary-foreground sm:h-8 sm:w-8" />}
+            {isRecording ? <MicOff className="h-6 w-6 text-white sm:h-7 sm:w-7" /> : <Mic className="h-6 w-6 text-primary-foreground sm:h-7 sm:w-7" />}
             {isRecording && <span className="absolute inset-0 animate-ping rounded-full bg-red-400 opacity-30" />}
           </button>
-          <p className="text-center text-[11px] text-muted-foreground">
+          <p className="text-center text-[10px] text-muted-foreground">
             {isConnecting
               ? "Connecting..."
               : !isConnected
@@ -166,6 +167,7 @@ export function LiveControls({
                 onClick={() => onSelectPersona(persona.roleKey)}
                 testId={`live-persona-${persona.roleKey}`}
                 align="start"
+                compact
               />
             ) : null,
           )}
@@ -173,19 +175,19 @@ export function LiveControls({
       </div>
 
       {isConnected && (
-        <p className="text-center text-[11px] text-muted-foreground/80">
+        <p className="text-center text-[10px] text-muted-foreground/80">
           You are talking to {personas.find((persona) => persona.isActive)?.label ?? "the current persona"} — click an avatar to switch.
         </p>
       )}
 
       {/* Secondary controls */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
         <Button
           variant="ghost"
           size="icon"
           onClick={onToggleMute}
           disabled={!isConnected}
-          className="h-11 w-11 rounded-full"
+          className="h-9 w-9 rounded-full"
           aria-label={isMuted ? "Unmute avatar" : "Mute avatar"}
         >
           {isMuted ? (
@@ -221,7 +223,7 @@ export function LiveControls({
           variant="ghost"
           size="icon"
           onClick={onEndSession}
-          className="h-11 w-11 rounded-full text-red-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/20"
+          className="h-9 w-9 rounded-full text-red-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/20"
           aria-label="End session"
         >
           <PhoneOff className="h-5 w-5" />

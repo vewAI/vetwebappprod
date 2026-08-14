@@ -34,7 +34,7 @@ export function LiveTranscript({ entries, personaName, isOpen }: LiveTranscriptP
   return (
     <section
       aria-label="Conversation transcript"
-      className="mx-3 mb-2 flex min-h-32 max-h-[30vh] shrink-0 flex-col overflow-hidden rounded-lg border border-border bg-muted/20 sm:mx-4"
+      className="mx-3 mb-2 flex min-h-[7rem] min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-muted/20 sm:mx-4"
     >
       <div className="flex items-center justify-between border-b border-border bg-muted/30 px-3 py-2">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">

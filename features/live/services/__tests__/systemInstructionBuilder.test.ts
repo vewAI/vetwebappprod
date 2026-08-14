@@ -38,4 +38,36 @@ describe("buildPersonaSystemInstruction", () => {
       expect(result.systemInstruction).toContain("Received Pronunciation");
     },
   );
+
+  it("includes the classic shared guideline and role-info stage contract", () => {
+    const result = buildPersonaSystemInstruction({
+      caseItem,
+      stage: {
+        ...stage,
+        roleInfoKey: "getOwnerPrompt",
+      },
+      personaRoleKey: "owner",
+      persona: {
+        displayName: "Maria Smith",
+        behaviorPrompt: "You are worried but cooperative and answer in plain language.",
+      },
+    });
+
+    expect(result.systemInstruction).toContain("SHARED CLASSIC CHAT GUIDELINES");
+    expect(result.systemInstruction).toContain("CLASSIC ROLE-INFO LAYER (getOwnerPrompt)");
+    expect(result.systemInstruction).toContain("You are worried but cooperative");
+
+    const stagePromptResult = buildPersonaSystemInstruction({
+      caseItem,
+      stage: {
+        ...stage,
+        roleInfoKey: "getOwnerPrompt",
+        stagePrompt: "Open with the presenting complaint, then wait for the student's questions.",
+      },
+      personaRoleKey: "owner",
+    });
+    expect(stagePromptResult.systemInstruction).toContain("Open with the presenting complaint");
+    expect(stagePromptResult.systemInstruction).not.toContain("CLASSIC ROLE-INFO LAYER (getOwnerPrompt)");
+    expect(result.systemInstruction).toContain("PERSONA IDENTITY (STRICT)");
+  });
 });

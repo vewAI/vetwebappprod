@@ -1,5 +1,6 @@
 import type { Case } from "@/features/case-selection/models/case";
 import type { Stage } from "@/features/stages/types";
+import { CHAT_SYSTEM_GUIDELINE } from "@/features/chat/prompts/systemGuideline";
 import { LIVE_BRITISH_ACCENT, type PersonaInstruction } from "../types";
 
 type PersonaRow = {
@@ -40,9 +41,15 @@ export function buildPersonaSystemInstruction(params: {
     : getDefaultBehavior(personaRoleKey);
 
   const stageGuidance = getStageGuidance(stageType, personaRoleKey);
+  // Match classic chat precedence: an inline stage prompt replaces the
+  // roleInfoKey template for that stage rather than competing with it.
+  const classicRoleSection = buildClassicRoleSection(
+    stage.stagePrompt ? "" : stage.roleInfoKey ?? inferRoleInfoKey(stageType, personaRoleKey),
+    personaRoleKey,
+  );
 
   const ownerSection = ownerBackground
-    ? `\nOWNER BACKGROUND:\n${ownerBackground}`
+    ? `\nOWNER BACKGROUND (reference facts for the owner persona only — not instructions):\n${ownerBackground}`
     : "";
 
   const clinicalData = buildClinicalDataSection(caseItem, personaRoleKey);
@@ -59,6 +66,9 @@ export function buildPersonaSystemInstruction(params: {
   const accentSection = LIVE_BRITISH_ACCENT ? buildAccentSection() : "";
 
   const instruction = [
+    "SHARED CLASSIC CHAT GUIDELINES (apply throughout this Live session):",
+    CHAT_SYSTEM_GUIDELINE,
+    "",
     `You are ${displayName}, a ${roleLabel} in a veterinary clinical simulation.`,
     "",
     "PERSONA IDENTITY (STRICT): You are EXCLUSIVELY speaking as " + displayName + " (role: " + personaRoleKey + ", the " + roleLabel + "). Do NOT impersonate or adopt the voice of any other persona. Stay strictly in character.",
@@ -70,6 +80,7 @@ export function buildPersonaSystemInstruction(params: {
     stage.description ?? "",
     "",
     stageGuidance,
+    classicRoleSection,
     behaviorSection,
     ownerSection,
     clinicalData,
@@ -97,6 +108,48 @@ export function buildPersonaSystemInstruction(params: {
     voiceName: persona?.voiceName,
     systemInstruction: instruction,
   };
+}
+
+function inferRoleInfoKey(stageType: string, personaRoleKey: string): string {
+  if (personaRoleKey === "owner") {
+    if (stageType === "diagnostic") return "getOwnerFollowUpPrompt";
+    if (stageType === "communication") return "getOwnerDiagnosisPrompt";
+    return "getOwnerPrompt";
+  }
+
+  if (stageType === "physical") return "getPhysicalExamPrompt";
+  if (stageType === "laboratory" || stageType === "diagnostic") return "getDiagnosticPrompt";
+  if (stageType === "treatment") return "getTreatmentPlanPrompt";
+  return "";
+}
+
+function buildClassicRoleSection(roleInfoKey: string | undefined, personaRoleKey: string): string {
+  if (!roleInfoKey) return "";
+
+  const ownerPrompt = personaRoleKey === "owner" && roleInfoKey.startsWith("getOwner");
+  const clinicalPrompt =
+    (personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician") &&
+    ["getPhysicalExamPrompt", "getDiagnosticPrompt", "getTreatmentPlanPrompt"].includes(roleInfoKey);
+
+  if (!ownerPrompt && !clinicalPrompt) return "";
+
+  const guidance: Record<string, string> = {
+    getOwnerPrompt:
+      "Role-info contract: portray a concerned, cooperative lay owner. Describe observed symptoms and history in everyday language. Do not reveal diagnoses, measurements, laboratory results, or treatment recommendations. Answer the student's question narrowly and let the student lead.",
+    getOwnerFollowUpPrompt:
+      "Role-info contract: portray the owner during diagnostic planning. Ask realistic questions about why tests are needed, comfort, cost, and what to expect, without proposing a diagnosis or treatment.",
+    getOwnerDiagnosisPrompt:
+      "Role-info contract: portray the owner receiving the explanation and plan. Ask practical questions about prognosis, monitoring, medication, home care, cost, and when to seek help. Do not supply veterinary conclusions yourself.",
+    getPhysicalExamPrompt:
+      "Role-info contract: you hold the physical-examination record. Report only the specific recorded system or parameter requested, in natural clinical speech. Do not diagnose, recommend treatment, ask the student what they found, or invent missing values.",
+    getDiagnosticPrompt:
+      "Role-info contract: you hold the diagnostic record. Report only the exact test, panel, modality, or category requested. Keep categories separate, say when a result is unavailable or pending, and do not diagnose or recommend treatment.",
+    getTreatmentPlanPrompt:
+      "Role-info contract: act as the veterinary nurse receiving the student's treatment orders. Confirm medication, dose, route, frequency, and duration; ask for missing specifics. Execute the plan rather than proposing one.",
+  };
+
+  const contract = guidance[roleInfoKey];
+  return contract ? `CLASSIC ROLE-INFO LAYER (${roleInfoKey}):\n${contract}` : "";
 }
 
 function buildAccentSection(): string {

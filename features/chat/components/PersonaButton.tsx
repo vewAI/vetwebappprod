@@ -19,6 +19,8 @@ export type PersonaButtonProps = {
   testId?: string;
   /** Grid alignment: "end" for left items, "start" for right items */
   align?: "start" | "end";
+  /** Use the smaller footprint required by the Live controls. */
+  compact?: boolean;
 };
 
 /**
@@ -36,6 +38,7 @@ export const PersonaButton = memo(function PersonaButton({
   onClick,
   testId,
   align = "end",
+  compact = false,
 }: PersonaButtonProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
@@ -49,7 +52,13 @@ export const PersonaButton = memo(function PersonaButton({
   }, [portraitUrl]);
 
   const showImage = portraitUrl && !imageError;
-  const sizeClasses = isActive ? "h-20 w-20" : "h-10 w-10";
+  const sizeClasses = compact
+    ? isActive
+      ? "h-12 w-12"
+      : "h-8 w-8"
+    : isActive
+      ? "h-20 w-20"
+      : "h-10 w-10";
   const alignClass = align === "start" ? "sm:justify-self-start" : "sm:justify-self-end";
 
   return (
@@ -89,7 +98,7 @@ export const PersonaButton = memo(function PersonaButton({
       <button
         type="button"
         onClick={onClick}
-        className={`px-2 py-0.5 text-sm rounded-md ${isActive ? "bg-blue-600 text-white" : "bg-muted"}`}
+        className={`rounded-md px-2 py-0.5 ${compact ? "text-[11px]" : "text-sm"} ${isActive ? "bg-blue-600 text-white" : "bg-muted"}`}
         aria-pressed={isActive}
         data-testid={testId}
       >
