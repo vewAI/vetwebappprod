@@ -6,12 +6,26 @@ export type FilteredLiveResponse = {
 // These are model-safety disclaimers, not persona content. Keep the patterns
 // deliberately narrow so legitimate clinical dialogue is not discarded.
 const DISCLAIMER_PATTERNS: RegExp[] = [
-  /(?:^\s*|[.!?]\s*)(?:someone\s+else,?\s*)?(?:please\s+)?consult\s+(?:a|your)\s+(?:medical|veterinary)\s+professional(?:\s+for\s+advice)?[.!?]?/gi,
-  /(?:^\s*|[.!?]\s*)(?:this|that)\s+is\s+not\s+(?:medical|veterinary)\s+advice(?:\s+or\s+(?:a\s+)?diagnosis)?[.!?]?/gi,
-  /(?:^\s*|[.!?]\s*)(?:i\s*(?:am|'m|’m)|we\s+are|we're|we’re)\s+(?:unable|not able|not equipped)\s+to\s+(?:provide|give|offer)\s+(?:medical|veterinary)?\s*(?:advice|guidance|a diagnosis|diagnoses|treatment recommendations?)[^.!?]*[.!?]?/gi,
-  /(?:^\s*|[.!?]\s*)(?:i\s*(?:can't|cannot|can’t))\s+(?:provide|give|offer)\s+(?:medical|veterinary)?\s*(?:advice|guidance|a diagnosis|diagnoses|treatment recommendations?)[^.!?]*[.!?]?/gi,
-  /(?:^\s*|[.!?]\s*)(?:i\s*(?:can't|cannot|can’t))\s+diagnos(?:e|ing)[^.!?]*[.!?]?/gi,
-  /(?:^\s*|[.!?]\s*)(?:i\s*(?:am|'m|’m)\s+)?(?:so\s+)?sorry,?\s+i\s+think\s+there\s+might\s+be\s+a\s+misunderstanding\s*[.!?…]*/gi,
+  // "consult a medical/veterinary/healthcare professional"
+  /(?:^\s*|[.!?]\s*)(?:someone\s+else,?\s*)?(?:please\s+)?consult\s+(?:a|your|another)\s+(?:medical|veterinary|healthcare)\s+professional(?:\s+(?:or|for)\s+(?:advice|care|attention))?[.!?]?/gi,
+  // "see a healthcare/medical professional" / "seek care"
+  /(?:^\s*|[.!?]\s*)(?:you\s+should\s+)?(?:always\s+)?(?:see|seek|consult)\s+(?:a|your|another)\s+(?:medical|veterinary|healthcare)\s+professional(?:\s+or\s+seek\s+(?:care|attention))?[.!?]?/gi,
+  // "this/that is (not|isn't) medical/veterinary advice"
+  /(?:^\s*|[.!?]\s*)(?:this|that)\s+(?:is\s+not|isn't|isn't|ain't)\s+(?:medical|veterinary)\s+advice(?:\s+or\s+(?:a\s+)?diagnosis)?[.!?]?/gi,
+  // "I (am|'m) (unable|not able|not equipped) to provide... advice"
+  /(?:^\s*|[.!?]\s*)(?:i\s*(?:am|'m|'m)|we\s+are|we're|we're)\s+(?:unable|not able|not equipped)\s+to\s+(?:provide|give|offer)\s+(?:medical|veterinary)?\s*(?:advice|guidance|a diagnosis|diagnoses|treatment recommendations?)[^.!?]*[.!?]?/gi,
+  // "I (can't|cannot) provide... advice"
+  /(?:^\s*|[.!?]\s*)(?:i\s*(?:can't|cannot|can't))\s+(?:provide|give|offer)\s+(?:medical|veterinary)?\s*(?:advice|guidance|a diagnosis|diagnoses|treatment recommendations?)[^.!?]*[.!?]?/gi,
+  // "I (can't|cannot) diagnose"
+  /(?:^\s*|[.!?]\s*)(?:i\s*(?:can't|cannot|can't))\s+diagnos(?:e|ing)[^.!?]*[.!?]?/gi,
+  // "I'm sorry, there might be a misunderstanding"
+  /(?:^\s*|[.!?]\s*)(?:i\s*(?:am|'m|'m)\s+)?(?:so\s+)?sorry,?\s+i\s+think\s+there\s+might\s+be\s+a\s+misunderstanding\s*[.!?…]*/gi,
+  // Broad catch: sentence containing "this/that isn't/is not medical advice"
+  /(?:^\s*|[.!?]\s*)[^.!?]*(?:this\s+isn't|that\s+isn't|this\s+is\s+not|that\s+is\s+not)\s+(?:medical|veterinary)\s+advice[^.!?]*[.!?]?/gi,
+  // Broad catch: "I need to inform you that" + advice disclaimer
+  /(?:^\s*|[.!?]\s*)[^.!?]*I\s+need\s+to\s+inform\s+you\s+that[^.!?]*(?:advice|diagnosis|professional)[^.!?]*[.!?]?/gi,
+  // Broad catch: "seek care/attention" after a disclaimer phrase
+  /(?:^\s*|[.!?]\s*)[^.!?]*seek\s+(?:care|attention|medical\s+help|veterinary\s+care)[^.!?]*[.!?]?/gi,
 ];
 
 /**

@@ -22,6 +22,7 @@ import {
   exportTranscriptToMarkdown,
   exportTranscriptToText,
 } from "../services/transcriptExport";
+import { detectStageReadinessIntent, type StageReadinessContext } from "@/features/chat/utils/stage-readiness-intent";
 import type { LivePersonaDef, LivePersonaRoleKey } from "./live-controls";
 import type { TranscriptEntry } from "../types";
 import type { Message } from "@/features/chat/models/chat";
@@ -50,6 +51,26 @@ function buildConversationContext(entries: TranscriptEntry[]): string {
   return entries
     .map((entry) => `${entry.speaker === "user" ? "Student" : roleKeyLabel(entry.roleKey)}: ${entry.text}`)
     .join("\n");
+}
+
+/** Build a keyword set from the next stage title and type for intent detection. */
+function buildStageKeywords(title: string, stageType: string): string[] {
+  const keywords = new Set<string>();
+  const lower = title.toLowerCase();
+  keywords.add(lower);
+  // Individual tokens
+  lower.split(/[^a-z0-9]+/).filter((t) => t.length >= 3).forEach((t) => keywords.add(t));
+  // Stage-type synonyms
+  const typeSynonyms: Record<string, string[]> = {
+    history: ["history", "history taking", "history-taking"],
+    physical: ["physical", "exam", "examination", "physical exam", "physical examination"],
+    diagnostic: ["diagnostic", "diagnostics", "tests", "testing"],
+    laboratory: ["laboratory", "lab", "labs", "results", "lab results", "blood work"],
+    treatment: ["treatment", "treatments", "therapy", "medication", "plan"],
+    communication: ["communication", "consultation", "discussion", "explanation"],
+  };
+  (typeSynonyms[stageType] ?? []).forEach((s) => keywords.add(s));
+  return Array.from(keywords);
 }
 
 function transcriptToMessages(entries: TranscriptEntry[], stageIndex: number, personaName?: string): Message[] {
@@ -408,9 +429,46 @@ export function LiveSession({
     prevUserTurnCountRef.current = userTurns;
   }, [live.transcript, progress]);
 
-  // Auto-advance removed: stages must be advanced explicitly by the user
-  // via the advance button. This prevents premature stage jumps and ensures
-  // the student has completed meaningful interactions before moving on.
+  // Auto-advance: detect when the user clearly wants to move to the next stage.
+  // Only triggers when the user has enough turns AND the intent is high-confidence.
+  const autoAdvanceTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (!nextStage || !progress.canAdvance || autoAdvanceTriggeredRef.current) return;
+
+    // Find the latest user entry
+    const userEntries = live.transcript.filter((e) => e.speaker === "user");
+    const lastUserEntry = userEntries[userEntries.length - 1];
+    if (!lastUserEntry) return;
+
+    // Build keyword set from next stage title and role info
+    const nextStageTitle = nextStage.title ?? "";
+    const nextStageSettings = nextStage.settings as Record<string, unknown> | undefined;
+    const nextStageType = typeof nextStageSettings?.stage_type === "string" ? nextStageSettings.stage_type : "";
+    const keywordSet = buildStageKeywords(nextStageTitle, nextStageType);
+
+    const context: StageReadinessContext = {
+      currentStageTitle: currentStage?.title,
+      nextStageTitle,
+      nextStageNumber: progress.currentStageIndex + 2,
+      keywordSet,
+      stageIndex: progress.currentStageIndex,
+    };
+
+    const detection = detectStageReadinessIntent(lastUserEntry.text, context);
+    if (detection.matched && detection.intent === "advance" && detection.confidence === "high") {
+      autoAdvanceTriggeredRef.current = true;
+      console.log("[Session] Auto-advance detected:", detection.reason);
+      // Brief delay so the persona can finish speaking before we switch
+      setTimeout(() => {
+        setShowAdvanceConfirm(true);
+      }, 1500);
+    }
+  }, [live.transcript, nextStage, progress.canAdvance, progress.currentStageIndex, currentStage?.title]);
+
+  // Reset auto-advance flag when stage changes
+  useEffect(() => {
+    autoAdvanceTriggeredRef.current = false;
+  }, [progress.currentStageIndex]);
 
   // Show a hint pointing to the Next Stage button when the student has
   // completed enough turns but hasn't advanced yet. Shows once per stage.

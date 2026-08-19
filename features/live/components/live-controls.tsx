@@ -207,6 +207,7 @@ export function LiveControls({
             variant="outline"
             size="sm"
             onClick={onAdvanceStage}
+            disabled={!canAdvance}
             className={cn(
               "gap-2 rounded-full px-4",
               canAdvance
