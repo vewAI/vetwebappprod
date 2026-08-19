@@ -370,7 +370,7 @@ This was a real-time voice conversation between the student and simulated person
 
 NOTE: Since this is a voice interaction, you cannot observe body language or written communication.
 Focus your evaluation entirely on what was SAID and how it was structured verbally.
-The transcript labels are "Student" (the learner) and "Persona" (the simulated role — which may be the owner, nurse, or other team member depending on the stage).`;
+The transcript labels are "Student" (the learner), "Owner" (the simulated client), and "Veterinary Nurse" / "Lab Technician" (the simulated clinical team).`;
 
 const defaultLiveFeedbackCaseFocus = `LIVE SESSION EVALUATION FOCUS
 

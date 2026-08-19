@@ -175,6 +175,22 @@ export class GeminiLiveService {
     });
   }
 
+  sendConversationContext(context: string): void {
+    if (!this.session || !context) return;
+
+    // Replay the conversation so far so a fresh (reconnected) session can keep
+    // continuity. turnComplete: false keeps the model from responding to it.
+    this.session.sendClientContent({
+      turns: [
+        {
+          role: "user",
+          parts: [{ text: `[CONTEXT: This is the conversation so far. Use it to maintain continuity — do NOT restart the conversation, repeat your introduction, or speak this context aloud.]\n\n${context}` }],
+        },
+      ],
+      turnComplete: false,
+    });
+  }
+
   interrupt(): void {
     if (!this.session) return;
 

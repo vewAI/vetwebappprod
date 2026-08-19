@@ -11,12 +11,26 @@ type TranscriptEntry = {
   speaker: "user" | "persona";
   text: string;
   timestamp: number;
+  roleKey?: string;
 };
+
+function personaRoleLabel(roleKey?: string): string {
+  switch (roleKey) {
+    case "owner":
+      return "Owner";
+    case "veterinary-nurse":
+      return "Veterinary Nurse";
+    case "lab-technician":
+      return "Lab Technician";
+    default:
+      return "Persona";
+  }
+}
 
 function formatTranscript(entries: TranscriptEntry[]): string {
   return entries
     .map((entry, i) => {
-      const speaker = entry.speaker === "user" ? "Student" : "Persona";
+      const speaker = entry.speaker === "user" ? "Student" : personaRoleLabel(entry.roleKey);
       return `Turn ${i + 1} | ${speaker}: ${entry.text}`;
     })
     .join("\n\n");
@@ -82,7 +96,7 @@ export async function POST(request: Request) {
 
     if (openai) {
       try {
-        const promptToSend = `${feedbackPrompt}\n\nTRANSCRIPT ROLE INTERPRETATION (STRICT):\n- Treat "Student" as the learner.\n- Treat "Persona" as the simulated role (owner, veterinary nurse, or other team member depending on the stage).\n- Evaluate the student's communication with ALL persona roles they interacted with.`;
+        const promptToSend = `${feedbackPrompt}\n\nTRANSCRIPT ROLE INTERPRETATION (STRICT):\n- "Student" is the learner being assessed.\n- "Owner" is the simulated client/patient owner.\n- "Veterinary Nurse" and "Lab Technician" are the simulated clinical team.\n- Attribute every observation to the correct speaker, and evaluate the student's communication with each role they interacted with.`;
         const response = await openai.chat.completions.create({
           model: "gpt-4o-mini",
           messages: [{ role: "system", content: promptToSend }],

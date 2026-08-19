@@ -32,6 +32,26 @@ function formatElapsed(seconds: number): string {
   return `${minutes}:${remaining}`;
 }
 
+function roleKeyLabel(roleKey?: string): string {
+  switch (roleKey) {
+    case "owner":
+      return "Owner";
+    case "veterinary-nurse":
+      return "Veterinary Nurse";
+    case "lab-technician":
+      return "Lab Technician";
+    default:
+      return "Persona";
+  }
+}
+
+function buildConversationContext(entries: TranscriptEntry[]): string {
+  if (entries.length === 0) return "";
+  return entries
+    .map((entry) => `${entry.speaker === "user" ? "Student" : roleKeyLabel(entry.roleKey)}: ${entry.text}`)
+    .join("\n");
+}
+
 function transcriptToMessages(entries: TranscriptEntry[], stageIndex: number, personaName?: string): Message[] {
   return entries.map((entry) => ({
     id: entry.id,
@@ -40,6 +60,7 @@ function transcriptToMessages(entries: TranscriptEntry[], stageIndex: number, pe
     timestamp: new Date(entry.timestamp).toISOString(),
     stageIndex,
     displayRole: entry.speaker === "user" ? "You" : personaName ?? "Persona",
+    personaRoleKey: entry.roleKey,
     status: "sent" as const,
   }));
 }
@@ -81,8 +102,11 @@ export function LiveSession({
   const previousPersonaRoleRef = useRef<string | null>(null);
   const personaMountedRef = useRef(false);
   const lastUserActivityRef = useRef(Date.now());
+  const endedRef = useRef(false);
+  const ownerGreetedRef = useRef(false);
   const [activePersonaRole, setActivePersonaRole] = useState<string | null>(null);
   const [textInput, setTextInput] = useState("");
+  const [playerSpeaking, setPlayerSpeaking] = useState(false);
 
   const progress = useLiveProgress(initialStages, initialStageIndex);
   const persona = usePersonaSwitcher(
@@ -120,13 +144,20 @@ export function LiveSession({
     });
   }, [mic, live]);
 
-  // Audio is released only after the completed model turn passes the Live
-  // response filter. This prevents unsafe disclaimer audio from being spoken.
+  // Stream each arriving audio chunk straight into the player so the persona's
+  // voice starts almost immediately instead of waiting for the full turn.
   useEffect(() => {
-    live.setOnAudio((chunks) => {
-      player.play(chunks);
+    live.setOnAudio((chunk) => {
+      if (endedRef.current) return;
+      player.enqueue(chunk);
     });
   }, [live, player]);
+
+  // Track actual playback (not just generation) so the speaking indicator
+  // stays lit until the queued audio finishes draining.
+  useEffect(() => {
+    player.setOnPlayingChange(setPlayerSpeaking);
+  }, [player]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -238,6 +269,7 @@ export function LiveSession({
 
         // If owner persona, send a silent trigger to make them speak first
         if (persona.roleKey === "owner") {
+          ownerGreetedRef.current = true;
           live.sendText("[SYS_TRIGGER]");
         }
       } catch (err) {
@@ -271,6 +303,7 @@ export function LiveSession({
 
   // Auto-reconnect on unexpected disconnect
   useEffect(() => {
+    if (endedRef.current) return;
     if (live.status === "connected") {
       retryCountRef.current = 0;
       return;
@@ -285,7 +318,7 @@ export function LiveSession({
 
     let cancelled = false;
     const timer = setTimeout(async () => {
-      if (cancelled || !persona) return;
+      if (cancelled || !persona || endedRef.current) return;
       hasConnectedRef.current = false;
       try {
         const { getAccessToken } = await import("@/lib/auth-headers");
@@ -305,7 +338,16 @@ export function LiveSession({
         await live.connect(token, persona, { preserveTranscript: true });
         switchedPersonaRoleRef.current = persona.roleKey;
         await mic.start();
-        if (persona.roleKey === "owner") live.sendText("[SYS_TRIGGER]");
+
+        // A reconnected session has no memory — replay history so the persona
+        // continues the conversation instead of restarting it.
+        const context = buildConversationContext(liveRef.current.transcript);
+        if (context) liveRef.current.sendContext(context);
+
+        if (persona.roleKey === "owner" && !ownerGreetedRef.current) {
+          ownerGreetedRef.current = true;
+          liveRef.current.sendText("[SYS_TRIGGER]");
+        }
       } catch (err) {
         if (!cancelled) {
           console.error("[Session] Reconnect attempt failed:", err);
@@ -327,10 +369,20 @@ export function LiveSession({
     if (!persona || live.status !== "connected") return;
     if (persona.roleKey === switchedPersonaRoleRef.current) return;
 
+    const prevRole = switchedPersonaRoleRef.current;
     switchedPersonaRoleRef.current = persona.roleKey;
-    live.switchPersona(persona);
 
-    if (persona.roleKey === "owner") {
+    // The first persona is owned by the connect flow, which also handles the
+    // initial greeting. Only act on subsequent switches.
+    if (prevRole === null) return;
+
+    // Replay history so a reconnect (e.g. voice change) keeps the conversation
+    // going instead of the new persona re-introducing themselves.
+    live.switchPersona(persona, buildConversationContext(live.transcript));
+
+    // Greet the owner only the first time they are engaged.
+    if (persona.roleKey === "owner" && !ownerGreetedRef.current) {
+      ownerGreetedRef.current = true;
       setTimeout(() => {
         if (live.status === "connected") live.sendText("[SYS_TRIGGER]");
       }, 500);
@@ -427,6 +479,9 @@ export function LiveSession({
   }, [live.transcript, persona?.displayName, progress]);
 
   const handleEndSession = useCallback(async () => {
+    if (endedRef.current) return;
+    endedRef.current = true;
+
     // Capture transcript before disconnect (disconnect does NOT clear it,
     // but capture early for safety)
     const finalTranscript = [...live.transcript];
@@ -436,6 +491,7 @@ export function LiveSession({
     }
 
     mic.stop();
+    player.stop();
     live.disconnect();
 
     try {
@@ -459,7 +515,7 @@ export function LiveSession({
     }
 
     onSessionEnd?.(finalTranscript);
-  }, [mic, live, attemptId, progress.currentStageIndex, persona?.displayName, onSessionEnd]);
+  }, [mic, player, live, attemptId, progress.currentStageIndex, persona?.displayName, onSessionEnd]);
 
   const handleToggleMute = useCallback(() => {
     setIsMuted((prev) => !prev);
@@ -498,7 +554,9 @@ export function LiveSession({
     setTimeout(() => setCopied(false), 2000);
   }, [live.transcript]);
 
-  const waveformMode = live.isSpeaking
+  const isSpeaking = live.isSpeaking || playerSpeaking;
+
+  const waveformMode = isSpeaking
     ? "speaking" as const
     : mic.isRecording
       ? "listening" as const
@@ -534,7 +592,7 @@ export function LiveSession({
           <PersonaHeader
             persona={persona}
             stageTitle={currentStage?.title ?? ""}
-            isSpeaking={live.isSpeaking}
+            isSpeaking={isSpeaking}
             waveformMode={waveformMode}
           />
         </div>
@@ -586,6 +644,7 @@ export function LiveSession({
           entries={live.transcript}
           personaName={persona?.displayName ?? "AI"}
           isOpen={true}
+          streamingText={live.streamingText}
         />
 
         {/* Stage advance confirmation */}
@@ -610,7 +669,7 @@ export function LiveSession({
       <LiveControls
         status={live.status}
         isRecording={mic.isRecording}
-        isSpeaking={live.isSpeaking}
+        isSpeaking={isSpeaking}
         isTextMode={isTextMode}
         textInput={textInput}
         canAdvance={progress.canAdvance}

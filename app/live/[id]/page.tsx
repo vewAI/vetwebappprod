@@ -33,6 +33,7 @@ function messagesToTranscript(messages: Message[]): TranscriptEntry[] {
       speaker: message.role === "user" ? "user" : "persona",
       text: message.content,
       timestamp: Date.parse(message.timestamp) || Date.now(),
+      roleKey: message.personaRoleKey,
     }));
 }
 

@@ -50,6 +50,8 @@ export interface TranscriptEntry {
   speaker: "user" | "persona";
   text: string;
   timestamp: number;
+  /** Persona role key (owner, veterinary-nurse, lab-technician) for persona turns. */
+  roleKey?: string;
 }
 
 export const LIVE_AUDIO_CONFIG: AudioConfig = {

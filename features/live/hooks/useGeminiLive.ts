@@ -15,6 +15,7 @@ import {
 export type UseGeminiLiveResult = {
   status: LiveSessionStatus;
   isSpeaking: boolean;
+  streamingText: string;
   transcript: TranscriptEntry[];
   currentPersona: PersonaInstruction | null;
   error: string | null;
@@ -26,9 +27,10 @@ export type UseGeminiLiveResult = {
   disconnect: () => void;
   sendAudio: (chunk: ArrayBuffer) => void;
   sendText: (text: string) => void;
-  switchPersona: (persona: PersonaInstruction) => void;
+  switchPersona: (persona: PersonaInstruction, conversationContext?: string) => void;
+  sendContext: (context: string) => void;
   interrupt: () => void;
-  setOnAudio: (cb: ((chunks: ArrayBuffer[]) => void) | null) => void;
+  setOnAudio: (cb: ((chunk: ArrayBuffer) => void) | null) => void;
 };
 
 export function useGeminiLive(initialTranscript: TranscriptEntry[] = []): UseGeminiLiveResult {
@@ -36,13 +38,13 @@ export function useGeminiLive(initialTranscript: TranscriptEntry[] = []): UseGem
   const entryIdCounterRef = useRef(0);
   const [status, setStatus] = useState<LiveSessionStatus>("idle");
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [streamingText, setStreamingText] = useState("");
   const [transcript, setTranscript] = useState<TranscriptEntry[]>(initialTranscript);
   const [currentPersona, setCurrentPersona] = useState<PersonaInstruction | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const audioChunksRef = useRef<ArrayBuffer[]>([]);
   const pendingResponseTextRef = useRef("");
-  const onAudioRef = useRef<((chunks: ArrayBuffer[]) => void) | null>(null);
+  const onAudioRef = useRef<((chunk: ArrayBuffer) => void) | null>(null);
   const personaRef = useRef<PersonaInstruction | null>(null);
   const tokenRef = useRef<string | null>(null);
   const initialTranscriptRef = useRef(initialTranscript);
@@ -58,10 +60,10 @@ export function useGeminiLive(initialTranscript: TranscriptEntry[] = []): UseGem
             break;
           case "audioReceived":
             if (event.data instanceof ArrayBuffer) {
-              // Hold audio until the completed output transcription has passed
-              // the safety filter. Streaming immediately would allow a
-              // disclaimer to be spoken before we can identify it.
-              audioChunksRef.current.push(event.data);
+              // Stream audio to the player immediately for a live, low-latency
+              // conversation feel. Disclaimer blocking is handled by the
+              // persona system prompt instead of gating playback here.
+              onAudioRef.current?.(event.data);
               setIsSpeaking(true);
             }
             break;
@@ -71,6 +73,7 @@ export function useGeminiLive(initialTranscript: TranscriptEntry[] = []): UseGem
                 pendingResponseTextRef.current,
                 event.data,
               );
+              setStreamingText(pendingResponseTextRef.current);
             }
             break;
           case "inputTranscription":
@@ -87,10 +90,10 @@ export function useGeminiLive(initialTranscript: TranscriptEntry[] = []): UseGem
             }
             break;
           case "turnComplete": {
-            const chunks = audioChunksRef.current;
             const filtered = filterLivePersonaText(pendingResponseTextRef.current);
 
             if (!filtered.suppressed && personaRef.current) {
+              const roleKey = personaRef.current.roleKey;
               setTranscript((prev) => [
                 ...prev,
                 {
@@ -98,29 +101,27 @@ export function useGeminiLive(initialTranscript: TranscriptEntry[] = []): UseGem
                   speaker: "persona",
                   text: filtered.text,
                   timestamp: Date.now(),
+                  roleKey,
                 },
               ]);
-              if (chunks.length > 0) {
-                onAudioRef.current?.([...chunks]);
-              }
             }
 
-            // Always discard the pending turn, including suppressed audio.
-            audioChunksRef.current = [];
+            // Generation is complete; queued audio may still be draining.
             pendingResponseTextRef.current = "";
+            setStreamingText("");
             setIsSpeaking(false);
             break;
           }
           case "interrupted":
             setIsSpeaking(false);
-            audioChunksRef.current = [];
             pendingResponseTextRef.current = "";
+            setStreamingText("");
             break;
           case "disconnected":
             setStatus("disconnected");
             setIsSpeaking(false);
-            audioChunksRef.current = [];
             pendingResponseTextRef.current = "";
+            setStreamingText("");
             // Show disconnect reason as error if it indicates a real problem
             const disconnectReason = typeof event.data === "string" ? event.data : null;
             if (disconnectReason && !disconnectReason.includes("Session ended")) {
@@ -131,8 +132,8 @@ export function useGeminiLive(initialTranscript: TranscriptEntry[] = []): UseGem
             setError(typeof event.data === "string" ? event.data : "Unknown error");
             setStatus("error");
             setIsSpeaking(false);
-            audioChunksRef.current = [];
             pendingResponseTextRef.current = "";
+            setStreamingText("");
             break;
         }
       },
@@ -155,8 +156,8 @@ export function useGeminiLive(initialTranscript: TranscriptEntry[] = []): UseGem
     tokenRef.current = token;
     setError(null);
     if (!options?.preserveTranscript) setTranscript(initialTranscriptRef.current);
-    audioChunksRef.current = [];
     pendingResponseTextRef.current = "";
+    setStreamingText("");
 
     try {
       await serviceRef.current.connect(token, persona.systemInstruction, persona.voiceName);
@@ -170,8 +171,8 @@ export function useGeminiLive(initialTranscript: TranscriptEntry[] = []): UseGem
     serviceRef.current?.disconnect();
     setStatus("disconnected");
     setIsSpeaking(false);
-    audioChunksRef.current = [];
     pendingResponseTextRef.current = "";
+    setStreamingText("");
   }, []);
 
   const sendAudio = useCallback((chunk: ArrayBuffer) => {
@@ -198,7 +199,7 @@ export function useGeminiLive(initialTranscript: TranscriptEntry[] = []): UseGem
     ]);
   }, []);
 
-  const switchPersona = useCallback((persona: PersonaInstruction) => {
+  const switchPersona = useCallback((persona: PersonaInstruction, conversationContext?: string) => {
     setCurrentPersona(persona);
     const prev = personaRef.current;
     personaRef.current = persona;
@@ -206,6 +207,11 @@ export function useGeminiLive(initialTranscript: TranscriptEntry[] = []): UseGem
     // If voice changed, need to reconnect; otherwise just update instruction
     if (prev?.voiceName !== persona.voiceName && tokenRef.current) {
       connect(tokenRef.current, persona, { preserveTranscript: true })
+        .then(() => {
+          if (conversationContext) {
+            serviceRef.current?.sendConversationContext(conversationContext);
+          }
+        })
         .catch((err: unknown) => {
           setError(err instanceof Error ? err.message : "Reconnection failed");
           setStatus("error");
@@ -215,20 +221,25 @@ export function useGeminiLive(initialTranscript: TranscriptEntry[] = []): UseGem
     }
   }, [connect]);
 
+  const sendContext = useCallback((context: string) => {
+    serviceRef.current?.sendConversationContext(context);
+  }, []);
+
   const interrupt = useCallback(() => {
     serviceRef.current?.interrupt();
     setIsSpeaking(false);
-    audioChunksRef.current = [];
     pendingResponseTextRef.current = "";
+    setStreamingText("");
   }, []);
 
-  const setOnAudio = useCallback((cb: ((chunks: ArrayBuffer[]) => void) | null) => {
+  const setOnAudio = useCallback((cb: ((chunk: ArrayBuffer) => void) | null) => {
     onAudioRef.current = cb;
   }, []);
 
   return {
     status,
     isSpeaking,
+    streamingText,
     transcript,
     currentPersona,
     error,
@@ -237,6 +248,7 @@ export function useGeminiLive(initialTranscript: TranscriptEntry[] = []): UseGem
     sendAudio,
     sendText,
     switchPersona,
+    sendContext,
     interrupt,
     setOnAudio,
   };
