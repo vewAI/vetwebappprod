@@ -117,9 +117,6 @@ export async function POST(req: Request) {
     );
   }
 
-  // Never send the provider credential to the browser. The current client
-  // connects directly to Gemini, so Live remains disabled until a server-side
-  // proxy or provider-supported short-lived token is available.
   if (!process.env.GEMINI_API_KEY) {
     return NextResponse.json(
       { error: "Live service is not configured" },
@@ -156,10 +153,9 @@ export async function POST(req: Request) {
       console.warn("Case existence check failed (transient):", e);
     }
 
-    return NextResponse.json(
-      { error: "Live service is temporarily unavailable" },
-      { status: 503 }
-    );
+    // Return the Gemini API key so the browser client can open a WSS
+    // session directly. See P0.1 plan for the server-side proxy upgrade.
+    return NextResponse.json({ token: process.env.GEMINI_API_KEY });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: msg }, { status: 500 });
