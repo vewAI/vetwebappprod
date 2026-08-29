@@ -1,90 +1,32 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Check, Copy, Download, FileText } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { getAccessToken } from "@/lib/auth-headers";
 import type { Case } from "@/features/case-selection/models/case";
 import type { Stage } from "@/features/stages/types";
 import type { PersonaEntry } from "@/features/chat/hooks/usePersonaDirectory";
+import type { Message } from "@/features/chat/models/chat";
 import { usePersonaSwitcher } from "../hooks/usePersonaSwitcher";
 import { useGeminiLive } from "../hooks/useGeminiLive";
 import { useMicrophone } from "../hooks/useMicrophone";
 import { useAudioPlayer } from "../hooks/useAudioPlayer";
 import { useLiveProgress } from "../hooks/useLiveProgress";
-import { PersonaHeader } from "./persona-header";
-import { LiveControls } from "./live-controls";
-import { LiveTranscript } from "./live-transcript";
-import { LiveProgressSidebar } from "./live-progress-sidebar";
-import { Notepad } from "@/features/chat/components/notepad";
 import { useSaveAttempt } from "@/features/attempts/hooks/useSaveAttempt";
+import { PersonaHeader } from "./persona-header";
+import { AudioWaveform } from "./audio-waveform";
+import type { LivePersonaDef, LivePersonaRoleKey } from "./live-controls";
+import { LiveControls } from "./live-controls";
+import { ProgressSidebar } from "@/features/chat/components/progress-sidebar";
+import { LiveTranscript } from "./live-transcript";
+import { Notepad } from "@/features/chat/components/notepad";
+import { emitStageEvaluation } from "@/features/chat/utils/stage-eval";
 import {
-  copyTranscriptToClipboard,
   exportTranscriptToMarkdown,
   exportTranscriptToText,
+  copyTranscriptToClipboard,
 } from "../services/transcriptExport";
-import { detectStageReadinessIntent, type StageReadinessContext } from "@/features/chat/utils/stage-readiness-intent";
-import type { LivePersonaDef, LivePersonaRoleKey } from "./live-controls";
-import type { TranscriptEntry } from "../types";
-import type { Message } from "@/features/chat/models/chat";
-
-function formatElapsed(seconds: number): string {
-  const minutes = Math.floor(seconds / 60).toString().padStart(2, "0");
-  const remaining = (seconds % 60).toString().padStart(2, "0");
-  return `${minutes}:${remaining}`;
-}
-
-function roleKeyLabel(roleKey?: string): string {
-  switch (roleKey) {
-    case "owner":
-      return "Owner";
-    case "veterinary-nurse":
-      return "Veterinary Nurse";
-    case "lab-technician":
-      return "Lab Technician";
-    default:
-      return "Persona";
-  }
-}
-
-function buildConversationContext(entries: TranscriptEntry[]): string {
-  if (entries.length === 0) return "";
-  return entries
-    .map((entry) => `${entry.speaker === "user" ? "Student" : roleKeyLabel(entry.roleKey)}: ${entry.text}`)
-    .join("\n");
-}
-
-/** Build a keyword set from the next stage title and type for intent detection. */
-function buildStageKeywords(title: string, stageType: string): string[] {
-  const keywords = new Set<string>();
-  const lower = title.toLowerCase();
-  keywords.add(lower);
-  // Individual tokens
-  lower.split(/[^a-z0-9]+/).filter((t) => t.length >= 3).forEach((t) => keywords.add(t));
-  // Stage-type synonyms
-  const typeSynonyms: Record<string, string[]> = {
-    history: ["history", "history taking", "history-taking"],
-    physical: ["physical", "exam", "examination", "physical exam", "physical examination"],
-    diagnostic: ["diagnostic", "diagnostics", "tests", "testing"],
-    laboratory: ["laboratory", "lab", "labs", "results", "lab results", "blood work"],
-    treatment: ["treatment", "treatments", "therapy", "medication", "plan"],
-    communication: ["communication", "consultation", "discussion", "explanation"],
-  };
-  (typeSynonyms[stageType] ?? []).forEach((s) => keywords.add(s));
-  return Array.from(keywords);
-}
-
-function transcriptToMessages(entries: TranscriptEntry[], stageIndex: number, personaName?: string): Message[] {
-  return entries.map((entry) => ({
-    id: entry.id,
-    role: entry.speaker === "user" ? "user" : "assistant",
-    content: entry.text,
-    timestamp: new Date(entry.timestamp).toISOString(),
-    stageIndex,
-    displayRole: entry.speaker === "user" ? "You" : personaName ?? "Persona",
-    personaRoleKey: entry.roleKey,
-    status: "sent" as const,
-  }));
-}
+import { Button } from "@/components/ui/button";
+import { FileText, Download, Copy, Check } from "lucide-react";
 
 type LiveSessionProps = {
   caseItem: Case;
@@ -92,9 +34,15 @@ type LiveSessionProps = {
   initialStageIndex?: number;
   personaDirectory: Record<string, PersonaEntry>;
   attemptId: string;
-  initialTranscript?: TranscriptEntry[];
-  onSessionEnd?: (transcript?: TranscriptEntry[]) => void;
+  initialMessages?: Message[];
+  onSessionEnd?: (messages?: Message[]) => void;
 };
+
+function formatElapsed(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
 
 export function LiveSession({
   caseItem,
@@ -102,32 +50,38 @@ export function LiveSession({
   initialStageIndex = 0,
   personaDirectory,
   attemptId,
-  initialTranscript = [],
+  initialMessages = [],
   onSessionEnd,
 }: LiveSessionProps) {
   const [isMuted, setIsMuted] = useState(false);
+  // Text mode (ported from live): the mic button toggles between speaking and
+  // writing so students can switch input modality mid-interview.
   const [isTextMode, setIsTextMode] = useState(false);
+  const [textInput, setTextInput] = useState("");
   const [showNotepad, setShowNotepad] = useState(false);
+  // Manual persona override (null = follow the current stage's persona).
+  const [activePersonaRole, setActivePersonaRole] = useState<string | null>(null);
+
+  // P3.4: Stage-advance confirmation
   const [showAdvanceConfirm, setShowAdvanceConfirm] = useState(false);
+
+  // P3.5: Persona incoming visual
   const [personaJoining, setPersonaJoining] = useState<string | null>(null);
-  const [isIdle, setIsIdle] = useState(false);
+
+  // P3.6: Export state
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [elapsedDisplay, setElapsedDisplay] = useState("00:00");
+
+  // P3.7: Guided mode
   const [guidedMode, setGuidedMode] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem("guided-mode") === "true";
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("guided-mode") === "true";
+    }
+    return false;
   });
-  const timeSpentRef = useRef(0);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const previousPersonaRoleRef = useRef<string | null>(null);
-  const personaMountedRef = useRef(false);
-  const lastUserActivityRef = useRef(Date.now());
-  const endedRef = useRef(false);
-  const ownerGreetedRef = useRef(false);
-  const [activePersonaRole, setActivePersonaRole] = useState<string | null>(null);
-  const [textInput, setTextInput] = useState("");
-  const [playerSpeaking, setPlayerSpeaking] = useState(false);
+
+  // P3.8: Session timer
+  const [elapsedDisplay, setElapsedDisplay] = useState("00:00");
 
   const progress = useLiveProgress(initialStages, initialStageIndex);
   const persona = usePersonaSwitcher(
@@ -135,23 +89,74 @@ export function LiveSession({
     progress.stages,
     progress.currentStageIndex,
     personaDirectory,
-    activePersonaRole,
+    activePersonaRole
   );
 
-  const live = useGeminiLive(initialTranscript);
+  const live = useGeminiLive(progress.currentStageIndex, initialMessages);
   const mic = useMicrophone();
   const player = useAudioPlayer();
   const { saveProgress } = useSaveAttempt(attemptId);
-  const saveProgressRef = useRef(saveProgress);
-  saveProgressRef.current = saveProgress;
 
-  const prevUserTurnCountRef = useRef(0);
+  const userInitiatedDisconnectRef = useRef(false);
+  const countedMessageIdsRef = useRef<Set<string>>(new Set());
   const currentStage = progress.stages[progress.currentStageIndex];
-  const nextStage = progress.stages[progress.currentStageIndex + 1] ?? null;
+  const nextStage =
+    progress.currentStageIndex < progress.stages.length - 1
+      ? progress.stages[progress.currentStageIndex + 1]
+      : null;
 
-  // Track whether the stage advance hint has been shown for the current stage
   const hintShownForStageRef = useRef<number>(-1);
   const [showAdvanceHint, setShowAdvanceHint] = useState(false);
+
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const timeSpentRef = useRef(0);
+  const lastUserMessageTimeRef = useRef(Date.now());
+
+  // P3.8: Increment elapsed time every second + update display
+  useEffect(() => {
+    const timer = setInterval(() => {
+      timeSpentRef.current += 1;
+      setElapsedDisplay(formatElapsed(timeSpentRef.current));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // P3.7: Listen for guided mode changes from other tabs/components
+  useEffect(() => {
+    const handler = () => {
+      setGuidedMode(localStorage.getItem("guided-mode") === "true");
+    };
+    window.addEventListener("guided-mode-change", handler);
+    return () => window.removeEventListener("guided-mode-change", handler);
+  }, []);
+
+  // Track last user message time for idle detection
+  useEffect(() => {
+    const userMsgs = live.messages.filter((m) => m.role === "user");
+    if (userMsgs.length > 0) {
+      lastUserMessageTimeRef.current = Date.now();
+    }
+  }, [live.messages]);
+
+  // Auto-save messages debounced 2s after last change
+  useEffect(() => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      if (live.messages.length > 0) {
+        saveProgress(progress.currentStageIndex, live.messages, timeSpentRef.current);
+      }
+    }, 2000);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [live.messages, progress.currentStageIndex, saveProgress]);
+
+  // P2.6: Stage completion evaluation
+  const stageEval = useMemo(() => {
+    return emitStageEvaluation(caseItem.id, progress.currentStageIndex, live.messages);
+  }, [caseItem.id, progress.currentStageIndex, live.messages]);
+
+  const canAdvanceEval = stageEval?.status === "ready" || progress.canAdvance;
 
   // Wire mic audio to live session
   useEffect(() => {
@@ -165,94 +170,23 @@ export function LiveSession({
     });
   }, [mic, live]);
 
-  // Stream each arriving audio chunk straight into the player so the persona's
-  // voice starts almost immediately instead of waiting for the full turn.
+  // Wire live audio output to player (streaming per chunk for low latency)
   useEffect(() => {
     live.setOnAudio((chunk) => {
-      if (endedRef.current) return;
       player.enqueue(chunk);
     });
   }, [live, player]);
 
-  // Track actual playback (not just generation) so the speaking indicator
-  // stays lit until the queued audio finishes draining.
-  useEffect(() => {
-    player.setOnPlayingChange(setPlayerSpeaking);
-  }, [player]);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      timeSpentRef.current += 1;
-      setElapsedDisplay(formatElapsed(timeSpentRef.current));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
-    if (!persona) return;
-    if (!personaMountedRef.current) {
-      personaMountedRef.current = true;
-      previousPersonaRoleRef.current = persona.roleKey;
-      return;
-    }
-    if (persona.roleKey === previousPersonaRoleRef.current) return;
-
-    previousPersonaRoleRef.current = persona.roleKey;
-    setPersonaJoining(persona.displayName);
-    const timer = setTimeout(() => setPersonaJoining(null), 2500);
-    return () => clearTimeout(timer);
-  }, [persona]);
-
-  useEffect(() => {
-    if (live.transcript.some((entry) => entry.speaker === "user")) {
-      lastUserActivityRef.current = Date.now();
-    }
-  }, [live.transcript.length]);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setIsIdle(
-        live.status === "connected" &&
-          live.transcript.length > 0 &&
-          Date.now() - lastUserActivityRef.current > 30_000,
-      );
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [live.status, live.transcript.length]);
-
-  useEffect(() => {
-    const handler = () => {
-      setGuidedMode(window.localStorage.getItem("guided-mode") === "true");
-    };
-    window.addEventListener("guided-mode-change", handler);
-    return () => window.removeEventListener("guided-mode-change", handler);
-  }, []);
-
-  // Persist the current transcript through the existing attempt_messages API.
-  useEffect(() => {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    if (live.transcript.length === 0) return;
-
-    saveTimerRef.current = setTimeout(() => {
-      const messages = transcriptToMessages(
-        live.transcript,
-        progress.currentStageIndex,
-        persona?.displayName,
-      );
-      void saveProgressRef.current(progress.currentStageIndex, messages, timeSpentRef.current);
-    }, 1500);
-
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    };
-  }, [live.transcript.length, progress.currentStageIndex, persona?.displayName]);
-
   // Connect when persona becomes available
   const hasConnectedRef = useRef(false);
   const retryCountRef = useRef(0);
-  const switchedPersonaRoleRef = useRef<string | null>(null);
   useEffect(() => {
     if (!persona) return;
+    // If a previous attempt was aborted (e.g. persona changed while the token
+    // fetch was in flight) and the session never connected, allow a fresh one.
+    if (hasConnectedRef.current && live.status === "idle") {
+      hasConnectedRef.current = false;
+    }
     if (hasConnectedRef.current) return;
 
     let cancelled = false;
@@ -261,7 +195,7 @@ export function LiveSession({
     async function init() {
       try {
         if (!persona) return;
-        const { getAccessToken } = await import("@/lib/auth-headers");
+        userInitiatedDisconnectRef.current = false;
         const accessToken = await getAccessToken().catch(() => null);
 
         console.log("[Session] Fetching token for case:", caseItem.id);
@@ -283,14 +217,10 @@ export function LiveSession({
         if (cancelled) return;
         console.log("[Session] Got token, connecting with persona:", persona.displayName);
         await live.connect(token, persona);
-        switchedPersonaRoleRef.current = persona.roleKey;
 
-        // Auto-start mic so the student can speak immediately
         await mic.start();
 
-        // If owner persona, send a silent trigger to make them speak first
         if (persona.roleKey === "owner") {
-          ownerGreetedRef.current = true;
           live.sendText("[SYS_TRIGGER]");
         }
       } catch (err) {
@@ -304,27 +234,23 @@ export function LiveSession({
     init();
 
     return () => {
-      // Persona changes are handled by live.switchPersona below; do not tear
-      // down the session or erase the transcript on every manual selection.
       cancelled = true;
+      // No teardown here: persona changes (stage advance or manual switch) are
+      // handled by switchPersona below, and the hooks tear down on unmount.
     };
-  }, [persona]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [persona, live.status]);
 
-  // Disconnect only when the Live component is actually unmounted.
-  const liveRef = useRef(live);
-  const micRef = useRef(mic);
-  liveRef.current = live;
-  micRef.current = mic;
+  // Stop auto-reconnect after unmount (end session / navigate away)
   useEffect(() => {
     return () => {
-      micRef.current.stop();
-      liveRef.current.disconnect();
+      userInitiatedDisconnectRef.current = true;
     };
   }, []);
 
   // Auto-reconnect on unexpected disconnect
   useEffect(() => {
-    if (endedRef.current) return;
+    if (userInitiatedDisconnectRef.current) return;
     if (live.status === "connected") {
       retryCountRef.current = 0;
       return;
@@ -339,10 +265,9 @@ export function LiveSession({
 
     let cancelled = false;
     const timer = setTimeout(async () => {
-      if (cancelled || !persona || endedRef.current) return;
+      if (cancelled || !persona) return;
       hasConnectedRef.current = false;
       try {
-        const { getAccessToken } = await import("@/lib/auth-headers");
         const accessToken = await getAccessToken().catch(() => null);
         const tokenRes = await fetch("/api/live/token", {
           method: "POST",
@@ -356,23 +281,12 @@ export function LiveSession({
         const { token } = await tokenRes.json();
         if (cancelled) return;
         console.log("[Session] Reconnected with persona:", persona.displayName);
-        await live.connect(token, persona, { preserveTranscript: true });
-        switchedPersonaRoleRef.current = persona.roleKey;
+        await live.connect(token, persona);
         await mic.start();
-
-        // A reconnected session has no memory — replay history so the persona
-        // continues the conversation instead of restarting it.
-        const context = buildConversationContext(liveRef.current.transcript);
-        if (context) liveRef.current.sendContext(context);
-
-        if (persona.roleKey === "owner" && !ownerGreetedRef.current) {
-          ownerGreetedRef.current = true;
-          liveRef.current.sendText("[SYS_TRIGGER]");
-        }
+        if (persona.roleKey === "owner") live.sendText("[SYS_TRIGGER]");
       } catch (err) {
         if (!cancelled) {
           console.error("[Session] Reconnect attempt failed:", err);
-          // Reset so the next status change can trigger another attempt
           hasConnectedRef.current = false;
         }
       }
@@ -382,123 +296,79 @@ export function LiveSession({
       cancelled = true;
       clearTimeout(timer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live.status, persona]);
 
-  // Switch persona on stage changes and manual avatar selections without
-  // recreating the session or clearing the transcript.
+  // P3.5: Show persona joining visual on stage change (skip initial mount)
+  const prevPersonaRoleRef = useRef<string | null>(null);
+  const hasMountedPersonaRef = useRef(false);
   useEffect(() => {
-    if (!persona || live.status !== "connected") return;
+    if (persona) {
+      if (!hasMountedPersonaRef.current) {
+        // First persona assignment — don't show joining banner
+        hasMountedPersonaRef.current = true;
+        prevPersonaRoleRef.current = persona.roleKey;
+        return;
+      }
+      if (persona.roleKey !== prevPersonaRoleRef.current) {
+        const newName = persona.displayName;
+        setPersonaJoining(newName);
+        prevPersonaRoleRef.current = persona.roleKey;
+        const t = setTimeout(() => setPersonaJoining(null), 2500);
+        return () => clearTimeout(t);
+      }
+    }
+  }, [persona]);
+
+  // Switch persona whenever the effective persona changes: on stage advance AND
+  // on manual OWNER↔NURSE↔LAB switches (override is reset on stage change).
+  const switchedPersonaRoleRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!persona) return;
     if (persona.roleKey === switchedPersonaRoleRef.current) return;
 
-    const prevRole = switchedPersonaRoleRef.current;
-    switchedPersonaRoleRef.current = persona.roleKey;
+    if (live.status === "connected") {
+      // Commit the switch only when it actually runs, so a switch requested
+      // while reconnecting is retried once the status flips to connected.
+      switchedPersonaRoleRef.current = persona.roleKey;
+      live.switchPersona(persona);
 
-    // The first persona is owned by the connect flow, which also handles the
-    // initial greeting. Only act on subsequent switches.
-    if (prevRole === null) return;
-
-    // Replay history so a reconnect (e.g. voice change) keeps the conversation
-    // going instead of the new persona re-introducing themselves.
-    live.switchPersona(persona, buildConversationContext(live.transcript));
-
-    // Greet the owner only the first time they are engaged.
-    if (persona.roleKey === "owner" && !ownerGreetedRef.current) {
-      ownerGreetedRef.current = true;
-      setTimeout(() => {
-        if (live.status === "connected") live.sendText("[SYS_TRIGGER]");
-      }, 500);
+      if (persona.roleKey === "owner") {
+        setTimeout(() => {
+          if (live.status === "connected") {
+            live.sendText("[SYS_TRIGGER]");
+          }
+        }, 500);
+      }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [persona, live.status]);
 
-  // Advancing a stage returns control to that stage's default persona.
+  // Reset the manual persona override when advancing to a new stage.
   useEffect(() => {
     setActivePersonaRole(null);
-    prevUserTurnCountRef.current = 0;
   }, [progress.currentStageIndex]);
 
-  // Record turns for stage progression — only on NEW user entries
+  // P1.5: Record turns
   useEffect(() => {
-    const userTurns = live.transcript.filter((e) => e.speaker === "user").length;
-    const newTurns = userTurns - prevUserTurnCountRef.current;
-    if (newTurns > 0) {
-      for (let i = 0; i < newTurns; i++) {
+    const userMessages = live.messages.filter((m) => m.role === "user");
+    for (const msg of userMessages) {
+      if (!countedMessageIdsRef.current.has(msg.id)) {
+        countedMessageIdsRef.current.add(msg.id);
         progress.recordTurn();
       }
     }
-    prevUserTurnCountRef.current = userTurns;
-  }, [live.transcript, progress]);
+  }, [live.messages, progress]);
 
-  // Auto-advance: detect when the user clearly wants to move to the next stage.
-  // Only triggers when the user has enough turns AND the intent is high-confidence.
-  const autoAdvanceTriggeredRef = useRef(false);
+  // Show advance hint once per stage
   useEffect(() => {
-    if (!nextStage || !progress.canAdvance || autoAdvanceTriggeredRef.current) return;
-
-    // Find the latest user entry
-    const userEntries = live.transcript.filter((e) => e.speaker === "user");
-    const lastUserEntry = userEntries[userEntries.length - 1];
-    if (!lastUserEntry) return;
-
-    // Build keyword set from next stage title and role info
-    const nextStageTitle = nextStage.title ?? "";
-    const nextStageSettings = nextStage.settings as Record<string, unknown> | undefined;
-    const nextStageType = typeof nextStageSettings?.stage_type === "string" ? nextStageSettings.stage_type : "";
-    const keywordSet = buildStageKeywords(nextStageTitle, nextStageType);
-
-    const context: StageReadinessContext = {
-      currentStageTitle: currentStage?.title,
-      nextStageTitle,
-      nextStageNumber: progress.currentStageIndex + 2,
-      keywordSet,
-      stageIndex: progress.currentStageIndex,
-    };
-
-    const detection = detectStageReadinessIntent(lastUserEntry.text, context);
-    if (detection.matched && detection.intent === "advance" && detection.confidence === "high") {
-      autoAdvanceTriggeredRef.current = true;
-      console.log("[Session] Auto-advance detected:", detection.reason);
-      // Brief delay so the persona can finish speaking before we switch
-      setTimeout(() => {
-        setShowAdvanceConfirm(true);
-      }, 1500);
-    }
-  }, [live.transcript, nextStage, progress.canAdvance, progress.currentStageIndex, currentStage?.title]);
-
-  // Reset auto-advance flag when stage changes
-  useEffect(() => {
-    autoAdvanceTriggeredRef.current = false;
-  }, [progress.currentStageIndex]);
-
-  // Show a hint pointing to the Next Stage button when the student has
-  // completed enough turns but hasn't advanced yet. Shows once per stage.
-  useEffect(() => {
-    if (progress.canAdvance && progress.currentStageIndex !== hintShownForStageRef.current) {
+    if (canAdvanceEval && progress.currentStageIndex !== hintShownForStageRef.current) {
       hintShownForStageRef.current = progress.currentStageIndex;
       setShowAdvanceHint(true);
     }
-  }, [progress.canAdvance, progress.currentStageIndex]);
+  }, [canAdvanceEval, progress.currentStageIndex]);
 
-  const personaDefs: LivePersonaDef[] = useMemo(() => {
-    const createPersona = (roleKey: LivePersonaRoleKey, label: string, fallbackText: string): LivePersonaDef => ({
-      roleKey,
-      label,
-      portraitUrl: personaDirectory[roleKey]?.portraitUrl,
-      fallbackText,
-      isActive: persona?.roleKey === roleKey,
-    });
-
-    return [
-      createPersona("owner", "OWNER", "OWN"),
-      createPersona("veterinary-nurse", "NURSE", "NUR"),
-      createPersona("lab-technician", "LAB", "LAB"),
-    ];
-  }, [persona?.roleKey, personaDirectory]);
-
-  const handleSelectPersona = useCallback((roleKey: LivePersonaRoleKey) => {
-    if (roleKey !== persona?.roleKey) setActivePersonaRole(roleKey);
-  }, [persona?.roleKey]);
-
+  // Ported from live: the mic button doubles as a speak/write mode toggle.
   const handleToggleMic = useCallback(async () => {
     if (isTextMode) {
       setIsTextMode(false);
@@ -515,6 +385,7 @@ export function LiveSession({
     await mic.start();
   }, [isTextMode, mic]);
 
+  // Ported from live: send typed messages through the live session.
   const handleSendText = useCallback(() => {
     const message = textInput.trim();
     if (!message || !isTextMode) return;
@@ -523,37 +394,35 @@ export function LiveSession({
     setTextInput("");
   }, [isTextMode, live, textInput]);
 
-  const handleAdvanceStage = useCallback(() => {
-    if (nextStage && progress.canAdvance) {
+  // P3.4: Stage advance with confirmation
+  const handleAdvanceClick = useCallback(() => {
+    if (nextStage) {
       setShowAdvanceConfirm(true);
     }
-  }, [nextStage, progress.canAdvance]);
+  }, [nextStage]);
 
   const handleConfirmAdvance = useCallback(() => {
     setShowAdvanceConfirm(false);
-    const messages = transcriptToMessages(live.transcript, progress.currentStageIndex, persona?.displayName);
-    void saveProgressRef.current(progress.currentStageIndex, messages, timeSpentRef.current);
+    saveProgress(progress.currentStageIndex, live.messages, timeSpentRef.current);
     progress.advanceStage();
-  }, [live.transcript, persona?.displayName, progress]);
+  }, [progress, saveProgress, live.messages]);
+
+  const handleCancelAdvance = useCallback(() => {
+    setShowAdvanceConfirm(false);
+  }, []);
 
   const handleEndSession = useCallback(async () => {
-    if (endedRef.current) return;
-    endedRef.current = true;
+    userInitiatedDisconnectRef.current = true;
+    const finalMessages = [...live.messages];
 
-    // Capture transcript before disconnect (disconnect does NOT clear it,
-    // but capture early for safety)
-    const finalTranscript = [...live.transcript];
-    const finalMessages = transcriptToMessages(finalTranscript, progress.currentStageIndex, persona?.displayName);
     if (finalMessages.length > 0) {
-      await saveProgressRef.current(progress.currentStageIndex, finalMessages, timeSpentRef.current);
+      await saveProgress(progress.currentStageIndex, finalMessages, timeSpentRef.current);
     }
 
     mic.stop();
-    player.stop();
     live.disconnect();
 
     try {
-      const { getAccessToken } = await import("@/lib/auth-headers");
       const accessToken = await getAccessToken().catch(() => null);
 
       await fetch("/api/live/session", {
@@ -566,14 +435,15 @@ export function LiveSession({
           attemptId,
           currentStageIndex: progress.currentStageIndex,
           status: "completed",
+          messages: finalMessages,
         }),
       });
     } catch {
       // non-critical
     }
 
-    onSessionEnd?.(finalTranscript);
-  }, [mic, player, live, attemptId, progress.currentStageIndex, persona?.displayName, onSessionEnd]);
+    onSessionEnd?.(finalMessages);
+  }, [mic, live, attemptId, progress.currentStageIndex, saveProgress, onSessionEnd]);
 
   const handleToggleMute = useCallback(() => {
     setIsMuted((prev) => !prev);
@@ -582,140 +452,152 @@ export function LiveSession({
     }
   }, [isMuted, player]);
 
+  // P3.6: Export handlers + click-outside close
   const exportMenuRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     if (!showExportMenu) return;
-    const handleOutsideClick = (event: MouseEvent) => {
-      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+    const handler = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
         setShowExportMenu(false);
       }
     };
-    document.addEventListener("mousedown", handleOutsideClick);
-    return () => document.removeEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
   }, [showExportMenu]);
-
   const handleExportMarkdown = useCallback(() => {
-    exportTranscriptToMarkdown(live.transcript);
+    exportTranscriptToMarkdown(live.messages);
     setShowExportMenu(false);
-  }, [live.transcript]);
+  }, [live.messages]);
 
   const handleExportText = useCallback(() => {
-    exportTranscriptToText(live.transcript);
+    exportTranscriptToText(live.messages);
     setShowExportMenu(false);
-  }, [live.transcript]);
+  }, [live.messages]);
 
   const handleCopyTranscript = useCallback(async () => {
-    await copyTranscriptToClipboard(live.transcript);
+    await copyTranscriptToClipboard(live.messages);
     setCopied(true);
     setShowExportMenu(false);
     setTimeout(() => setCopied(false), 2000);
-  }, [live.transcript]);
+  }, [live.messages]);
 
-  const isSpeaking = live.isSpeaking || playerSpeaking;
+  // Persona defs for the bottom switch area (old TTS/STT interface look)
+  const personaDefs: LivePersonaDef[] = useMemo(() => {
+    const active = persona?.roleKey;
+    const def = (roleKey: LivePersonaRoleKey, label: string, fallbackText: string): LivePersonaDef => ({
+      roleKey,
+      label,
+      portraitUrl: personaDirectory[roleKey]?.portraitUrl,
+      fallbackText,
+      isActive: active === roleKey,
+    });
+    return [
+      def("owner", "OWNER", "OWN"),
+      def("veterinary-nurse", "NURSE", "NUR"),
+      def("lab-technician", "LAB", "LAB"),
+    ];
+  }, [persona?.roleKey, personaDirectory]);
 
-  const waveformMode = isSpeaking
-    ? "speaking" as const
+  const handleSelectPersona = useCallback(
+    (roleKey: LivePersonaRoleKey) => {
+      if (roleKey === persona?.roleKey) return; // already active
+      setActivePersonaRole(roleKey);
+    },
+    [persona?.roleKey]
+  );
+
+  const waveformMode = live.isSpeaking
+    ? ("speaking" as const)
     : mic.isRecording
-      ? "listening" as const
-      : "idle" as const;
+      ? ("listening" as const)
+      : ("idle" as const);
+
+  // P3.8: Idle detection (no user messages in 30s)
+  const isIdle =
+    live.status === "connected" &&
+    Date.now() - lastUserMessageTimeRef.current > 30_000 &&
+    live.messages.length > 0;
 
   return (
-    <div className="flex h-full min-h-0 w-full overflow-hidden bg-background">
-      <div className="hidden h-full w-[240px] shrink-0 md:block lg:w-[250px]">
-        <LiveProgressSidebar
-          caseItem={caseItem}
-          stages={progress.stages}
-          currentStageIndex={progress.currentStageIndex}
-          onStageSelect={(index) => progress.setStageIndex(index)}
-          guidedMode={guidedMode}
-        />
-      </div>
+    <div className="flex h-full bg-background">
+      {/* P2.5: Progress Sidebar */}
+      <ProgressSidebar
+        caseItem={caseItem}
+        stages={progress.stages}
+        currentStageIndex={progress.currentStageIndex}
+        onStageSelect={(index) => {
+          if (index <= progress.currentStageIndex) {
+            progress.setStageIndex(index);
+          }
+        }}
+        guidedMode={guidedMode}
+      />
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
+      {/* Main content area */}
+      <div className="flex flex-1 flex-col min-w-0">
+        {/* P3.5: Persona joining banner */}
         {personaJoining && (
-          <div className="flex items-center justify-center bg-primary/10 px-4 py-1.5 text-xs font-medium text-primary">
-            {personaJoining} is joining...
-          </div>
-        )}
-
-        {isIdle && (
-          <div className="mx-3 mt-2 rounded-md bg-amber-50 px-3 py-1.5 text-center text-xs text-amber-700 dark:bg-amber-950/20 dark:text-amber-300 sm:mx-4">
-            Still connected, waiting for you...
+          <div className="flex items-center justify-center gap-2 bg-blue-50 dark:bg-blue-950/30 px-4 py-2 animate-in fade-in slide-in-from-top-2 duration-300">
+            <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+              {personaJoining} is joining…
+            </span>
           </div>
         )}
 
         {/* Top: Persona header */}
-        <div className="shrink-0">
-          <PersonaHeader
-            persona={persona}
-            stageTitle={currentStage?.title ?? ""}
-            isSpeaking={isSpeaking}
-            waveformMode={waveformMode}
+        <PersonaHeader
+          persona={persona}
+          stageTitle={currentStage?.title ?? ""}
+          isSpeaking={live.isSpeaking}
+        />
+
+        {/* P3.8: Idle indicator */}
+        {isIdle && (
+          <div className="mx-4 mb-1 rounded-md bg-amber-50 dark:bg-amber-950/20 px-3 py-1.5 text-xs text-amber-600 dark:text-amber-400 text-center animate-in fade-in duration-500">
+            Still connected, waiting for you…
+          </div>
+        )}
+
+        {/* Center: Flexible area */}
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Waveform */}
+          <div className="flex-shrink-0 flex items-center justify-center px-4 py-2">
+            <AudioWaveform
+              isActive={live.status === "connected"}
+              mode={waveformMode}
+              className="h-24 w-full max-w-xs"
+            />
+          </div>
+
+          {/* P2.2: Scrollable chat history */}
+          <LiveTranscript
+            messages={live.messages}
+            isOpen={true}
+            stages={progress.stages}
           />
         </div>
 
-        {/* Session tools */}
-        <div className="flex shrink-0 items-center justify-end gap-1 px-3 pb-1 sm:px-4">
-          <div ref={exportMenuRef} className="relative">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowExportMenu((previous) => !previous)}
-              disabled={live.transcript.length === 0}
-              className="h-8 w-8 rounded-full"
-              title="Export transcript"
-              aria-label="Export transcript"
-            >
-              {copied ? <Check className="h-4 w-4 text-green-500" /> : <Download className="h-4 w-4" />}
-            </Button>
-            {showExportMenu && (
-              <div className="absolute right-0 top-9 z-20 w-44 rounded-md border bg-popover p-1 shadow-md">
-                <button type="button" onClick={handleExportMarkdown} className="block w-full rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent">
-                  Download Markdown
-                </button>
-                <button type="button" onClick={handleExportText} className="block w-full rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent">
-                  Download text
-                </button>
-                <button type="button" onClick={handleCopyTranscript} className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent">
-                  <Copy className="mr-2 h-3 w-3" /> Copy transcript
-                </button>
-              </div>
-            )}
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => setShowNotepad((previous) => !previous)}
-            className="h-8 w-8 rounded-full"
-            title="Clinical notes"
-            aria-label="Clinical notes"
-          >
-            <FileText className="h-4 w-4" />
-          </Button>
-        </div>
-
-        {/* Transcript */}
-        <LiveTranscript
-          entries={live.transcript}
-          personaName={persona?.displayName ?? "AI"}
-          isOpen={true}
-          streamingText={live.streamingText}
-        />
-
-        {/* Stage advance confirmation */}
+        {/* P3.4: Stage advance confirmation banner */}
         {showAdvanceConfirm && nextStage && (
-          <div className="mx-3 mb-2 rounded-lg border border-yellow-400/50 bg-yellow-50 p-3 dark:bg-yellow-950/20 sm:mx-4">
-            <p className="mb-2 text-sm text-yellow-800 dark:text-yellow-200">
-              Are you ready to finish with <strong>{persona?.displayName ?? "this persona"}</strong> and advance to <strong>{nextStage.title}</strong>?
+          <div className="mx-4 mb-2 rounded-lg border border-yellow-400/50 bg-yellow-50 dark:bg-yellow-950/20 p-3 animate-in slide-in-from-bottom-2 duration-200">
+            <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-2">
+              Did you finish with the{" "}
+              <strong>{persona?.displayName ?? "current role"}</strong>?
             </p>
             <div className="flex gap-2">
-              <Button type="button" size="sm" onClick={handleConfirmAdvance} className="bg-yellow-500 text-xs text-white hover:bg-yellow-600">
-                Yes, advance
+              <Button
+                size="sm"
+                onClick={handleConfirmAdvance}
+                className="bg-yellow-500 hover:bg-yellow-600 text-white text-xs"
+              >
+                Yes, advance to {nextStage.title}
               </Button>
-              <Button type="button" size="sm" variant="ghost" onClick={() => setShowAdvanceConfirm(false)} className="text-xs">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleCancelAdvance}
+                className="text-xs"
+              >
                 Stay
               </Button>
             </div>
@@ -723,47 +605,108 @@ export function LiveSession({
         )}
 
         {/* Bottom: Controls */}
-      <div className="min-h-0 max-h-[42vh] shrink-0 overflow-y-auto">
-      <LiveControls
-        status={live.status}
-        isRecording={mic.isRecording}
-        isSpeaking={isSpeaking}
-        isTextMode={isTextMode}
-        textInput={textInput}
-        canAdvance={progress.canAdvance}
-        isMuted={isMuted}
-        showAdvanceHint={showAdvanceHint}
-        elapsedTime={elapsedDisplay}
-        personas={personaDefs}
-        onToggleMic={handleToggleMic}
-        onSelectPersona={handleSelectPersona}
-        onTextInputChange={setTextInput}
-        onSendText={handleSendText}
-        onAdvanceStage={handleAdvanceStage}
-        onEndSession={handleEndSession}
-        onToggleMute={handleToggleMute}
-      />
+        <div className="relative">
+          {/* Top-right action buttons */}
+          <div className="absolute right-4 top-2 z-10 flex gap-1">
+            {/* P3.6: Export button */}
+            <div className="relative">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowExportMenu((prev) => !prev)}
+                className="h-9 w-9 rounded-full"
+                title="Export transcript"
+                disabled={live.messages.length === 0}
+              >
+                {copied ? (
+                  <Check className="h-4 w-4 text-green-500" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+              </Button>
+              {showExportMenu && (
+                <div ref={exportMenuRef} className="absolute right-0 top-10 w-48 rounded-md border bg-popover shadow-md z-20 p-1 animate-in fade-in zoom-in-95 duration-150">
+                  <button
+                    onClick={handleExportMarkdown}
+                    className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+                  >
+                    Download .md
+                  </button>
+                  <button
+                    onClick={handleExportText}
+                    className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+                  >
+                    Download .txt
+                  </button>
+                  <button
+                    onClick={handleCopyTranscript}
+                    className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+                  >
+                    <Copy className="mr-2 h-3 w-3" />
+                    Copy to clipboard
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* P2.4: Notepad toggle */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowNotepad((prev) => !prev)}
+              className="h-9 w-9 rounded-full"
+              title="Clinical Notes"
+            >
+              <FileText className="h-4 w-4" />
+            </Button>
+          </div>
+
+          <LiveControls
+            status={live.status}
+            isRecording={mic.isRecording}
+            isSpeaking={live.isSpeaking}
+            isTextMode={isTextMode}
+            textInput={textInput}
+            canAdvance={canAdvanceEval}
+            isMuted={isMuted}
+            showAdvanceHint={showAdvanceHint}
+            elapsedTime={elapsedDisplay}
+            personas={personaDefs}
+            onToggleMic={handleToggleMic}
+            onSelectPersona={handleSelectPersona}
+            onTextInputChange={setTextInput}
+            onSendText={handleSendText}
+            onAdvanceStage={handleAdvanceClick}
+            onEndSession={handleEndSession}
+            onToggleMute={handleToggleMute}
+          />
+        </div>
+
+        {/* Error / status display */}
+        {live.error && (
+          <div className="mx-4 mb-4 rounded-lg bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-600 dark:text-red-400">
+            {live.error}
+          </div>
+        )}
+        {mic.error && !live.error && (
+          <div className="mx-4 mb-4 rounded-lg bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-600 dark:text-red-400">
+            Microphone error: {mic.error}
+          </div>
+        )}
+        {!live.error && live.status === "disconnected" && retryCountRef.current >= 3 && (
+          <div className="mx-4 mb-4 rounded-lg bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-600 dark:text-amber-400">
+            Connection lost. Tap the mic to retry or end the session.
+          </div>
+        )}
       </div>
 
-      {/* Error / status display */}
-      {live.error && (
-        <div className="mx-4 mb-2 shrink-0 rounded-lg bg-red-50 p-2 text-sm text-red-600 dark:bg-red-950/30 dark:text-red-400">
-          {live.error}
-        </div>
-      )}
-      {!live.error && live.status === "disconnected" && retryCountRef.current >= 3 && (
-        <div className="mx-4 mb-2 shrink-0 rounded-lg bg-amber-50 p-2 text-sm text-amber-600 dark:bg-amber-950/30 dark:text-amber-400">
-          Connection lost. Tap the mic to retry or end the session.
-        </div>
-      )}
-        </div>
-
-        <Notepad
-          isOpen={showNotepad}
-          onClose={() => setShowNotepad(false)}
-          caseId={caseItem.id}
-          attemptId={attemptId}
-        />
+      {/* P2.4: Notepad overlay */}
+      <Notepad
+        isOpen={showNotepad}
+        onClose={() => setShowNotepad(false)}
+        caseId={caseItem.id}
+        attemptId={attemptId}
+      />
     </div>
   );
 }

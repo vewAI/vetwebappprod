@@ -12,7 +12,6 @@ import { caseStageRowToStage, type CaseStageRow } from "@/features/stages/types"
 import type { Case } from "@/features/case-selection/models/case";
 import type { Stage } from "@/features/stages/types";
 import { LiveSession } from "@/features/live/components/live-session";
-import type { TranscriptEntry } from "@/features/live/types";
 import type { Message } from "@/features/chat/models/chat";
 import { CompletionDialog } from "@/features/feedback/components/completion-dialog";
 import { completeAttempt } from "@/features/attempts/services/attemptMutationService";
@@ -24,18 +23,6 @@ type SessionData = {
   resumed: boolean;
   messages: Message[];
 };
-
-function messagesToTranscript(messages: Message[]): TranscriptEntry[] {
-  return messages
-    .filter((message) => message.role === "user" || message.role === "assistant")
-    .map((message) => ({
-      id: message.id,
-      speaker: message.role === "user" ? "user" : "persona",
-      text: message.content,
-      timestamp: Date.parse(message.timestamp) || Date.now(),
-      roleKey: message.personaRoleKey,
-    }));
-}
 
 export default function LiveSessionPage() {
   const { id: caseId } = useParams() as { id: string };
@@ -141,12 +128,12 @@ export default function LiveSessionPage() {
   }, [caseId, user]);
 
   // Handle session end — generate communication feedback and show dialog
-  const handleSessionEnd = async (transcript?: TranscriptEntry[]) => {
+  const handleSessionEnd = async (messages?: Message[]) => {
     setShowCompletionDialog(true);
     setIsGeneratingFeedback(true);
 
     try {
-      if (transcript && transcript.length > 0 && session?.attemptId) {
+      if (messages && messages.length > 0 && session?.attemptId) {
         const token = await getAccessToken().catch(() => null);
 
         // Generate feedback
@@ -156,7 +143,7 @@ export default function LiveSessionPage() {
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
-          body: JSON.stringify({ caseId, transcript }),
+          body: JSON.stringify({ caseId, messages }),
         });
 
         if (feedbackRes.ok) {
@@ -235,7 +222,7 @@ export default function LiveSessionPage() {
         initialStageIndex={session.currentStageIndex}
         personaDirectory={personaDir.personaDirectory}
         attemptId={session.attemptId}
-        initialTranscript={messagesToTranscript(session.messages)}
+        initialMessages={session.messages}
         onSessionEnd={handleSessionEnd}
       />
 

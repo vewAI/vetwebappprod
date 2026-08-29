@@ -9,12 +9,19 @@ import { buildPersonaSystemInstruction } from "../services/systemInstructionBuil
 import { resolveLivePersonaRoleKey } from "../utils/resolveLivePersonaRoleKey";
 import { formatSpeciesKnowledgePrompt, extractSpecializationFromMetadata } from "@/features/personas/services/speciesKnowledgeFormatter";
 
+/**
+ * Build the active PersonaInstruction for the live session.
+ *
+ * @param overrideRoleKey When set (user clicked a persona avatar), that role
+ *   is used instead of the stage-derived one, enabling free OWNER↔NURSE↔LAB
+ *   switching mid-stage. Pass null to follow the stage persona.
+ */
 export function usePersonaSwitcher(
   caseItem: Case | null,
   stages: Stage[],
   currentStageIndex: number,
   personaDirectory: Record<string, PersonaEntry>,
-  overrideRoleKey: string | null = null,
+  overrideRoleKey: string | null = null
 ): PersonaInstruction | null {
   return useMemo(() => {
     if (!caseItem || stages.length === 0) return null;

@@ -2,28 +2,21 @@
 
 import { useRef, useState, useCallback, useEffect } from "react";
 import { GeminiLiveService } from "../services/geminiLiveService";
+import { mergeAssistantFragment } from "../utils/mergeAssistantFragment";
+import type { Message } from "@/features/chat/models/chat";
 import type {
   LiveSessionStatus,
-  TranscriptEntry,
   PersonaInstruction,
 } from "../types";
-import {
-  appendLiveTextFragment,
-  filterLivePersonaText,
-} from "../utils/filterLiveResponse";
+import { filterLivePersonaText } from "../utils/filterLiveResponse";
 
 export type UseGeminiLiveResult = {
   status: LiveSessionStatus;
   isSpeaking: boolean;
-  streamingText: string;
-  transcript: TranscriptEntry[];
+  messages: Message[];
   currentPersona: PersonaInstruction | null;
   error: string | null;
-  connect: (
-    token: string,
-    persona: PersonaInstruction,
-    options?: { preserveTranscript?: boolean },
-  ) => Promise<void>;
+  connect: (token: string, persona: PersonaInstruction) => Promise<void>;
   disconnect: () => void;
   sendAudio: (chunk: ArrayBuffer) => void;
   sendText: (text: string) => void;
@@ -33,21 +26,74 @@ export type UseGeminiLiveResult = {
   setOnAudio: (cb: ((chunk: ArrayBuffer) => void) | null) => void;
 };
 
-export function useGeminiLive(initialTranscript: TranscriptEntry[] = []): UseGeminiLiveResult {
+export function useGeminiLive(
+  currentStageIndex: number = 0,
+  initialMessages: Message[] = []
+): UseGeminiLiveResult {
   const serviceRef = useRef<GeminiLiveService | null>(null);
   const entryIdCounterRef = useRef(0);
   const [status, setStatus] = useState<LiveSessionStatus>("idle");
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [streamingText, setStreamingText] = useState("");
-  const [transcript, setTranscript] = useState<TranscriptEntry[]>(initialTranscript);
+  const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [currentPersona, setCurrentPersona] = useState<PersonaInstruction | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const pendingResponseTextRef = useRef("");
+  // Synchronous mirror of `messages` so event handlers (which run outside
+  // React's render cycle) can build on the latest transcript.
+  const messagesRef = useRef<Message[]>(initialMessages);
+
+  // Latest interim input transcription not yet committed to `messages`.
+  const pendingInputRef = useRef<string | null>(null);
+
+  // Partial assistant text of the current turn (see mergeAssistantFragment).
+  const pendingAssistantRef = useRef<string | null>(null);
+  const pendingAssistantIdRef = useRef<string | null>(null);
+
   const onAudioRef = useRef<((chunk: ArrayBuffer) => void) | null>(null);
   const personaRef = useRef<PersonaInstruction | null>(null);
   const tokenRef = useRef<string | null>(null);
-  const initialTranscriptRef = useRef(initialTranscript);
+  const stageIndexRef = useRef(currentStageIndex);
+
+  // Keep stageIndexRef in sync with the prop so new messages get the right stage
+  useEffect(() => {
+    stageIndexRef.current = currentStageIndex;
+  }, [currentStageIndex]);
+
+  const commitMessages = useCallback((next: Message[]) => {
+    messagesRef.current = next;
+    setMessages(next);
+  }, []);
+
+  const appendUserMessage = useCallback(
+    (text: string, dedupeLast = false) => {
+      // Dedupe only on demand (flush path): guards against a finished event
+      // adding the same utterance right before the turnComplete flush.
+      if (dedupeLast) {
+        const prev = messagesRef.current;
+        const last = prev[prev.length - 1];
+        if (last && last.role === "user" && last.content === text) return;
+      }
+      commitMessages([
+        ...messagesRef.current,
+        {
+          id: `entry_${++entryIdCounterRef.current}`,
+          role: "user" as const,
+          content: text,
+          timestamp: new Date().toISOString(),
+          stageIndex: stageIndexRef.current,
+          displayRole: "You",
+          personaRoleKey: personaRef.current?.roleKey,
+          status: "sent" as const,
+        },
+      ]);
+    },
+    [commitMessages]
+  );
+
+  const resetPendingAssistant = useCallback(() => {
+    pendingAssistantRef.current = null;
+    pendingAssistantIdRef.current = null;
+  }, []);
 
   // Initialize service once
   useEffect(() => {
@@ -67,61 +113,93 @@ export function useGeminiLive(initialTranscript: TranscriptEntry[] = []): UseGem
               setIsSpeaking(true);
             }
             break;
-          case "textReceived":
-            if (typeof event.data === "string") {
-              pendingResponseTextRef.current = appendLiveTextFragment(
-                pendingResponseTextRef.current,
-                event.data,
-              );
-              setStreamingText(pendingResponseTextRef.current);
+          case "textReceived": {
+            if (typeof event.data !== "string" || !personaRef.current) break;
+            const p = personaRef.current;
+            // Accumulate streaming fragments into ONE entry per intervention.
+            const result = mergeAssistantFragment(
+              messagesRef.current,
+              event.data,
+              pendingAssistantIdRef.current,
+              pendingAssistantRef.current,
+              {
+                displayName: p.displayName,
+                roleKey: p.roleKey,
+                portraitUrl: p.portraitUrl,
+                voiceName: p.voiceName,
+              },
+              stageIndexRef.current,
+              entryIdCounterRef.current
+            );
+            pendingAssistantIdRef.current = result.pendingId;
+            pendingAssistantRef.current = result.pendingText;
+            entryIdCounterRef.current = result.nextId;
+            commitMessages(result.messages);
+            break;
+          }
+          case "inputTranscription": {
+            const payload = event.data;
+            const text =
+              typeof payload === "string"
+                ? payload
+                : (payload as { text?: string } | null)?.text ?? "";
+            const finished =
+              typeof payload === "object" &&
+              payload !== null &&
+              (payload as { finished?: boolean }).finished === true;
+            if (!text || !text.trim()) break;
+            if (finished) {
+              // Final transcription → commit to the chat log.
+              pendingInputRef.current = null;
+              appendUserMessage(text);
+            } else {
+              pendingInputRef.current = text;
             }
             break;
-          case "inputTranscription":
-            if (typeof event.data === "string") {
-              setTranscript((prev) => [
-                ...prev,
-                {
-                  id: `entry_${++entryIdCounterRef.current}`,
-                  speaker: "user",
-                  text: event.data as string,
-                  timestamp: Date.now(),
-                },
-              ]);
-            }
-            break;
+          }
           case "turnComplete": {
-            const filtered = filterLivePersonaText(pendingResponseTextRef.current);
+            // Defensive flush: if the final event never carried `finished: true`,
+            // commit the last interim text so the user's words still land in the
+            // chat log (deduped in appendUserMessage).
+            if (pendingInputRef.current) {
+              appendUserMessage(pendingInputRef.current, true);
+              pendingInputRef.current = null;
+            }
 
-            if (!filtered.suppressed && personaRef.current) {
-              const roleKey = personaRef.current.roleKey;
-              setTranscript((prev) => [
-                ...prev,
-                {
-                  id: `entry_${++entryIdCounterRef.current}`,
-                  speaker: "persona",
-                  text: filtered.text,
-                  timestamp: Date.now(),
-                  roleKey,
-                },
-              ]);
+            // Ported from live: filter persona disclaimers/meta commentary out
+            // of the completed assistant turn. If suppressed, drop the message;
+            // otherwise replace its content with the filtered text.
+            if (personaRef.current && pendingAssistantIdRef.current) {
+              const filtered = filterLivePersonaText(pendingAssistantRef.current ?? "");
+              const pid = pendingAssistantIdRef.current;
+              if (filtered.suppressed) {
+                commitMessages(messagesRef.current.filter((m) => m.id !== pid));
+              } else if (pendingAssistantRef.current && filtered.text !== pendingAssistantRef.current) {
+                commitMessages(
+                  messagesRef.current.map((m) =>
+                    m.id === pid ? { ...m, content: filtered.text } : m
+                  )
+                );
+              }
             }
 
             // Generation is complete; queued audio may still be draining.
-            pendingResponseTextRef.current = "";
-            setStreamingText("");
             setIsSpeaking(false);
+            resetPendingAssistant();
             break;
           }
           case "interrupted":
+            pendingInputRef.current = null;
             setIsSpeaking(false);
-            pendingResponseTextRef.current = "";
-            setStreamingText("");
+            audioChunksDiscard();
+            // Keep the partial text already shown; a new turn starts next event.
+            resetPendingAssistant();
             break;
           case "disconnected":
             setStatus("disconnected");
             setIsSpeaking(false);
-            pendingResponseTextRef.current = "";
-            setStreamingText("");
+            pendingInputRef.current = null;
+            resetPendingAssistant();
             // Show disconnect reason as error if it indicates a real problem
             const disconnectReason = typeof event.data === "string" ? event.data : null;
             if (disconnectReason && !disconnectReason.includes("Session ended")) {
@@ -132,8 +210,8 @@ export function useGeminiLive(initialTranscript: TranscriptEntry[] = []): UseGem
             setError(typeof event.data === "string" ? event.data : "Unknown error");
             setStatus("error");
             setIsSpeaking(false);
-            pendingResponseTextRef.current = "";
-            setStreamingText("");
+            pendingInputRef.current = null;
+            resetPendingAssistant();
             break;
         }
       },
@@ -142,84 +220,88 @@ export function useGeminiLive(initialTranscript: TranscriptEntry[] = []): UseGem
     return () => {
       serviceRef.current?.disconnect();
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appendUserMessage, commitMessages, resetPendingAssistant]);
 
-  const connect = useCallback(async (
-    token: string,
-    persona: PersonaInstruction,
-    options?: { preserveTranscript?: boolean },
-  ) => {
-    if (!serviceRef.current) return;
-    setStatus("connecting");
-    setCurrentPersona(persona);
-    personaRef.current = persona;
-    tokenRef.current = token;
-    setError(null);
-    if (!options?.preserveTranscript) setTranscript(initialTranscriptRef.current);
-    pendingResponseTextRef.current = "";
-    setStreamingText("");
+  // No-op retained for event-shape parity; audio streams directly to the
+  // player (no batch buffering) so there is nothing to discard here.
+  function audioChunksDiscard() {}
 
-    try {
-      await serviceRef.current.connect(token, persona.systemInstruction, persona.voiceName);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Connection failed");
-      setStatus("error");
-    }
-  }, []);
+  const connect = useCallback(
+    async (token: string, persona: PersonaInstruction) => {
+      if (!serviceRef.current) return;
+      setStatus("connecting");
+      setCurrentPersona(persona);
+      personaRef.current = persona;
+      tokenRef.current = token;
+      setError(null);
+      resetPendingAssistant();
+
+      try {
+        await serviceRef.current.connect(token, persona.systemInstruction, persona.voiceName);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Connection failed");
+        setStatus("error");
+      }
+    },
+    [resetPendingAssistant]
+  );
 
   const disconnect = useCallback(() => {
     serviceRef.current?.disconnect();
     setStatus("disconnected");
     setIsSpeaking(false);
-    pendingResponseTextRef.current = "";
-    setStreamingText("");
-  }, []);
+    pendingInputRef.current = null;
+    resetPendingAssistant();
+  }, [resetPendingAssistant]);
 
   const sendAudio = useCallback((chunk: ArrayBuffer) => {
     serviceRef.current?.sendAudio(chunk);
   }, []);
 
-  const sendText = useCallback((text: string) => {
-    serviceRef.current?.sendText(text);
+  const sendText = useCallback(
+    (text: string) => {
+      serviceRef.current?.sendText(text);
 
-    const normalized = text.trim();
-    if (!normalized || normalized.startsWith("[SYS_TRIGGER]")) return;
+      const normalized = text.trim();
+      if (!normalized || normalized.startsWith("[SYS_TRIGGER]")) return;
 
-    // Client-entered messages do not always produce inputTranscription events,
-    // so record them immediately. This keeps typed turns above the persona
-    // response in the same chronological transcript as spoken turns.
-    setTranscript((prev) => [
-      ...prev,
-      {
-        id: `entry_${++entryIdCounterRef.current}`,
-        speaker: "user",
-        text: normalized,
-        timestamp: Date.now(),
-      },
-    ]);
-  }, []);
+      // Client-entered messages do not always produce inputTranscription
+      // events, so record them immediately (ported from live). This keeps
+      // typed turns above the persona response in chronological order.
+      appendUserMessage(normalized);
+    },
+    [appendUserMessage]
+  );
 
-  const switchPersona = useCallback((persona: PersonaInstruction, conversationContext?: string) => {
-    setCurrentPersona(persona);
-    const prev = personaRef.current;
-    personaRef.current = persona;
+  const switchPersona = useCallback(
+    (persona: PersonaInstruction, conversationContext?: string) => {
+      setCurrentPersona(persona);
+      const prev = personaRef.current;
+      personaRef.current = persona;
 
-    // If voice changed, need to reconnect; otherwise just update instruction
-    if (prev?.voiceName !== persona.voiceName && tokenRef.current) {
-      connect(tokenRef.current, persona, { preserveTranscript: true })
-        .then(() => {
-          if (conversationContext) {
-            serviceRef.current?.sendConversationContext(conversationContext);
-          }
-        })
-        .catch((err: unknown) => {
-          setError(err instanceof Error ? err.message : "Reconnection failed");
-          setStatus("error");
-        });
-    } else {
-      serviceRef.current?.sendSystemInstruction(persona.systemInstruction);
-    }
-  }, [connect]);
+      // P4.3: If voice changed, need to reconnect; otherwise just update
+      // instruction inline — no disconnect, audio continues uninterrupted.
+      if (prev?.voiceName !== persona.voiceName && tokenRef.current) {
+        connect(tokenRef.current, persona)
+          .then(() => {
+            if (conversationContext) {
+              serviceRef.current?.sendConversationContext(conversationContext);
+            }
+          })
+          .catch((err: unknown) => {
+            setError(err instanceof Error ? err.message : "Reconnection failed");
+            setStatus("error");
+          });
+      } else if (serviceRef.current?.isConnected) {
+        serviceRef.current.sendSystemInstruction(persona.systemInstruction);
+        if (conversationContext) {
+          serviceRef.current.sendConversationContext(conversationContext);
+        }
+      }
+    },
+    [connect]
+  );
 
   const sendContext = useCallback((context: string) => {
     serviceRef.current?.sendConversationContext(context);
@@ -228,9 +310,9 @@ export function useGeminiLive(initialTranscript: TranscriptEntry[] = []): UseGem
   const interrupt = useCallback(() => {
     serviceRef.current?.interrupt();
     setIsSpeaking(false);
-    pendingResponseTextRef.current = "";
-    setStreamingText("");
-  }, []);
+    pendingInputRef.current = null;
+    resetPendingAssistant();
+  }, [resetPendingAssistant]);
 
   const setOnAudio = useCallback((cb: ((chunk: ArrayBuffer) => void) | null) => {
     onAudioRef.current = cb;
@@ -239,8 +321,7 @@ export function useGeminiLive(initialTranscript: TranscriptEntry[] = []): UseGem
   return {
     status,
     isSpeaking,
-    streamingText,
-    transcript,
+    messages,
     currentPersona,
     error,
     connect,

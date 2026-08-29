@@ -1,57 +1,84 @@
-import type { TranscriptEntry } from "../types";
+import type { Message } from "@/features/chat/models/chat";
 
-function formatTimestamp(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function formatTimestamp(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return iso;
+  }
 }
 
-function buildPlainText(entries: TranscriptEntry[]): string {
-  return [
-    "Live Session Transcript",
-    "=======================",
-    "",
-    ...entries.map((entry) => {
-      const speaker = entry.speaker === "user" ? "You" : "Persona";
-      return `[${formatTimestamp(entry.timestamp)}] ${speaker}: ${entry.text}`;
-    }),
-    "",
-  ].join("\n");
+function buildMarkdown(messages: Message[]): string {
+  let md = "# Live Session Transcript\n\n";
+  let currentStage = -1;
+
+  for (const msg of messages) {
+    if (msg.stageIndex !== undefined && msg.stageIndex !== currentStage) {
+      currentStage = msg.stageIndex;
+      md += `\n## Stage ${currentStage + 1}\n\n`;
+    }
+
+    const time = formatTimestamp(msg.timestamp);
+    const role =
+      msg.role === "user"
+        ? "**You**"
+        : `**${msg.displayRole || "Persona"}**`;
+    md += `[${time}] ${role}: ${msg.content}\n\n`;
+  }
+
+  return md;
 }
 
-function buildMarkdown(entries: TranscriptEntry[]): string {
-  return [
-    "# Live Session Transcript",
-    "",
-    ...entries.map((entry) => {
-      const speaker = entry.speaker === "user" ? "You" : "Persona";
-      return `- **${speaker}** _${formatTimestamp(entry.timestamp)}_: ${entry.text}`;
-    }),
-    "",
-  ].join("\n");
+function buildPlainText(messages: Message[]): string {
+  let txt = "Live Session Transcript\n";
+  txt += "=".repeat(30) + "\n\n";
+  let currentStage = -1;
+
+  for (const msg of messages) {
+    if (msg.stageIndex !== undefined && msg.stageIndex !== currentStage) {
+      currentStage = msg.stageIndex;
+      txt += `\n--- Stage ${currentStage + 1} ---\n\n`;
+    }
+
+    const time = formatTimestamp(msg.timestamp);
+    const role =
+      msg.role === "user" ? "You" : msg.displayRole || "Persona";
+    txt += `[${time}] ${role}: ${msg.content}\n\n`;
+  }
+
+  return txt;
 }
 
-export function exportTranscriptToText(entries: TranscriptEntry[], filename = "live-transcript.txt"): void {
-  downloadBlob(buildPlainText(entries), filename, "text/plain;charset=utf-8");
+export function exportTranscriptToMarkdown(
+  messages: Message[],
+  filename = "transcript.md"
+): void {
+  const md = buildMarkdown(messages);
+  downloadBlob(md, filename, "text/markdown");
 }
 
-export function exportTranscriptToMarkdown(entries: TranscriptEntry[], filename = "live-transcript.md"): void {
-  downloadBlob(buildMarkdown(entries), filename, "text/markdown;charset=utf-8");
+export function exportTranscriptToText(
+  messages: Message[],
+  filename = "transcript.txt"
+): void {
+  const txt = buildPlainText(messages);
+  downloadBlob(txt, filename, "text/plain");
 }
 
-export async function copyTranscriptToClipboard(entries: TranscriptEntry[]): Promise<void> {
-  await navigator.clipboard.writeText(buildPlainText(entries));
+export function copyTranscriptToClipboard(messages: Message[]): Promise<void> {
+  const txt = buildPlainText(messages);
+  return navigator.clipboard.writeText(txt);
 }
 
 function downloadBlob(content: string, filename: string, mimeType: string): void {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
