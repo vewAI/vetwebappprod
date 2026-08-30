@@ -159,6 +159,13 @@ export function LiveSession({
     }
   }, [live.messages]);
 
+  // Mirror of the assistant message count so delayed greeting nudges can
+  // check whether the persona already started speaking on its own.
+  const assistantCountRef = useRef(0);
+  useEffect(() => {
+    assistantCountRef.current = live.messages.filter((m) => m.role !== "user").length;
+  }, [live.messages]);
+
   // Auto-save messages debounced 2s after last change
   useEffect(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -255,7 +262,15 @@ export function LiveSession({
         if (live.messages.length > 0) {
           live.sendContext(buildConversationContext(live.messages));
         } else if (persona.roleKey === "owner") {
-          live.sendText("[SYS_TRIGGER]");
+          // The model often opens spontaneously; nudge with the trigger only
+          // if it hasn't spoken after a grace period (prevents the double
+          // greeting: spontaneous + triggered).
+          const countAtConnect = assistantCountRef.current;
+          setTimeout(() => {
+            if (live.status === "connected" && assistantCountRef.current === countAtConnect) {
+              live.sendText("[SYS_TRIGGER]");
+            }
+          }, 4500);
         }
       } catch (err) {
         if (!cancelled) {
@@ -388,11 +403,13 @@ export function LiveSession({
       const shouldOpen = persona.roleKey === "owner" || stageAdvancePendingRef.current;
       stageAdvancePendingRef.current = false;
       if (shouldOpen) {
+        // Same anti-double-greeting guard as the initial connect.
+        const countAtSwitch = assistantCountRef.current;
         setTimeout(() => {
-          if (live.status === "connected") {
+          if (live.status === "connected" && assistantCountRef.current === countAtSwitch) {
             live.sendText("[SYS_TRIGGER]");
           }
-        }, 600);
+        }, 2500);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
