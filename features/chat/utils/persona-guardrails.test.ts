@@ -9,8 +9,8 @@ describe("persona guardrails", () => {
     assert.equal(classifyChatPersonaLabel("Producer"), "owner");
   });
 
-  it("classifies nurse style labels", () => {
-    assert.equal(classifyChatPersonaLabel("Laboratory Technician"), "veterinary-nurse");
+  it("classifies nurse and lab style labels", () => {
+    assert.equal(classifyChatPersonaLabel("Laboratory Technician"), "lab-technician");
     assert.equal(classifyChatPersonaLabel("Assistant"), "veterinary-nurse");
   });
 
@@ -31,6 +31,6 @@ describe("persona guardrails", () => {
     for (const key of ALLOWED_CHAT_PERSONA_KEYS) {
       assert.ok(isAllowedChatPersonaKey(key));
     }
-    assert.ok(!isAllowedChatPersonaKey("lab-technician"));
+    assert.ok(!isAllowedChatPersonaKey("admin"));
   });
 });

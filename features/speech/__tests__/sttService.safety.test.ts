@@ -5,7 +5,7 @@ describe('sttService safety helpers', () => {
   it('canStartListening respects suppression and deaf mode', () => {
     // Ensure base state
     setSttSuppressed(false, true);
-    exitDeafMode();
+    exitDeafMode(0);
     expect(canStartListening()).toBe(true);
 
     setSttSuppressed(true);
@@ -15,7 +15,7 @@ describe('sttService safety helpers', () => {
     enterDeafMode(2000);
     expect(canStartListening()).toBe(false);
 
-    exitDeafMode();
+    exitDeafMode(0);
     expect(canStartListening()).toBe(true);
   });
 

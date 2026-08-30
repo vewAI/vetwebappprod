@@ -1,15 +1,14 @@
-import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it, expect } from "vitest";
 import { parseRequestedKeys } from "../services/physFinder";
 
 describe("parseRequestedKeys groups", () => {
   it("expands vitals to multiple canonical keys", () => {
     const r = parseRequestedKeys("vitals");
-    assert.deepEqual(r.canonical.sort(), ["blood_pressure","heart_rate","respiratory_rate","temperature"].sort());
+    expect([...r.canonical].sort()).toEqual(["blood_pressure", "heart_rate", "respiratory_rate", "temperature"]);
   });
 
   it("handles 'vital' singular", () => {
     const r = parseRequestedKeys("vital");
-    assert.deepEqual(r.canonical.sort(), ["blood_pressure","heart_rate","respiratory_rate","temperature"].sort());
+    expect([...r.canonical].sort()).toEqual(["blood_pressure", "heart_rate", "respiratory_rate", "temperature"]);
   });
 });
