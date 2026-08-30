@@ -40,7 +40,7 @@ function findSynonymKey(text: string, groups: Record<string, string[]>): string 
 export async function POST(req: NextRequest) {
   const auth = await requireUser(req);
   if ("error" in auth) return auth.error;
-  if (!consumeRateLimit(`check-complete:${auth.user.id}`, 60, 60_000)) {
+  if (!(await consumeRateLimit(`check-complete:${auth.user.id}`, 60, 60_000))) {
     return NextResponse.json({ error: "Too many completion checks" }, { status: 429 });
   }
 

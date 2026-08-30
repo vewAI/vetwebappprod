@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireUser(request);
     if ("error" in auth) return auth.error;
-    if (!consumeRateLimit(`feedback:${auth.user.id}`, 5, 60_000)) {
+    if (!(await consumeRateLimit(`feedback:${auth.user.id}`, 5, 60_000))) {
       return NextResponse.json({ error: "Too many feedback requests" }, { status: 429 });
     }
 

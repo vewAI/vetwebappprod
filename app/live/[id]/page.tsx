@@ -154,8 +154,11 @@ export default function LiveSessionPage() {
           // Persist feedback to attempt
           await completeAttempt(session.attemptId, data.feedback || "");
         } else {
+          const err = await feedbackRes.json().catch(() => ({ error: `HTTP ${feedbackRes.status}` }));
+          console.error("Live feedback request failed:", feedbackRes.status, err);
+          const detail = typeof err.error === "string" ? ` (${err.error.replace(/[<>&]/g, "")})` : "";
           setFeedbackContent(
-            "<p>Unable to generate feedback at this time. Your session has been recorded.</p>"
+            `<p>Unable to generate feedback at this time${detail}. Your session has been recorded.</p>`
           );
         }
       } else {

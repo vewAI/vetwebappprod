@@ -7,8 +7,9 @@
 | Fase | Estado |
 |------|--------|
 | Quick wins (F1) | ✅ **IMPLEMENTADO** (ver detalle abajo) |
-| Fase 2: Resume & consistencia (UX) | ⏳ Pendiente |
-| Fase 3: Seguridad estructural | ⏳ Pendiente |
+| Fase 2: Resume & consistencia (UX) | ✅ **IMPLEMENTADO** — replay de contexto, turnCount por etapa, timer, barge-in |
+| F2.5 Transcript ordering | ✅ **IMPLEMENTADO** — el mensaje del usuario aparece al instante, siempre antes de la respuesta (upsert de entrada in-flight en `useGeminiLive`) |
+| Fase 3: Seguridad estructural | 🔶 **EN PROGRESO** — F3.2 listo (rate limiting Redis + límite en `/api/chat`); P0 ephemeral tokens pendiente |
 | Fase 4: Escalabilidad | ⏳ Pendiente |
 | Fase 5: Pulido UX | ⏳ Pendiente |
 
@@ -40,7 +41,7 @@
 ## F3 — Seguridad estructural — ~3-5 días
 
 1. **P0 — Proxy WS server-side para Gemini**: eliminar la entrega de `GEMINI_API_KEY` cruda (`app/api/live/token/route.ts:158`). Opciones: token efímero de Google (Ephemeral Auth Tokens API) o relay WS por el server. Plan ya bocetado en `docs/live-chat-improvement-plan.md`.
-2. **Rate limiting a Redis**: migrar `app/api/_lib/rateLimit.ts` y el Map de `token/route.ts` a Redis (ya está en dependencias; patrón listo en `tts/store.ts`). Añadir rate limit a `app/api/chat/route.ts`.
+2. **✅ Rate limiting a Redis (HECHO)**: `consumeRateLimit` ahora es async con INCR+EXPIRE en Redis (circuit breaker + fallback en memoria); 7 rutas migradas a `await` y `/api/chat` ahora tiene límite 30/min por usuario. Requiere `REDIS_URL` en el entorno para ser autoritativo.
 3. **CSP enforcing**: quitar Report-Only y `unsafe-inline/eval` de `next.config.ts:44-47` (requiere auditoría de scripts inline).
 4. **Anti prompt-injection**: delimitar transcripts en prompts de feedback; caps ya cubiertos en F1.1.
 5. **Escrituras de feedback server-side**: mover `completeAttempt`/`updateProfessorFeedback` fuera de `attemptMutationService.ts:68-87,288-302` (hoy el cliente escribe feedback con el cliente anon).

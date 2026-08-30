@@ -27,6 +27,7 @@ import { resolvePromptValue } from "@/features/prompts/services/promptService";
 // dynamic import used for casePromptAutomation to avoid Turbopack static export checks
 // (see usage sites where we `await import()` the module)
 import { requireUser } from "@/app/api/_lib/auth";
+import { consumeRateLimit } from "@/app/api/_lib/rateLimit";
 import { parseRequestedKeys, matchPhysicalFindings, PHYS_SYNONYMS } from "@/features/chat/services/physFinder";
 import { parseLabResults } from "../../../features/chat/services/labResultsParser";
 import { normalizeCaseMedia, type CaseMediaItem } from "@/features/cases/models/caseMedia";
@@ -37,6 +38,10 @@ export async function POST(request: NextRequest) {
   const auth = await requireUser(request);
   if ("error" in auth) {
     return auth.error;
+  }
+  // Billable LLM endpoint: enforce a per-user rate limit (Redis-backed).
+  if (!(await consumeRateLimit(`chat:${auth.user.id}`, 30, 60_000))) {
+    return NextResponse.json({ error: "Too many chat requests" }, { status: 429 });
   }
   const { supabase } = auth;
 

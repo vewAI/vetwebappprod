@@ -83,7 +83,7 @@ export async function POST(request: Request) {
     if ("error" in auth) {
       return auth.error;
     }
-    if (!consumeRateLimit(`live-feedback:${auth.user.id}`, 3, 60_000)) {
+    if (!(await consumeRateLimit(`live-feedback:${auth.user.id}`, 3, 60_000))) {
       return NextResponse.json({ error: "Too many feedback requests" }, { status: 429 });
     }
     const { supabase } = auth;

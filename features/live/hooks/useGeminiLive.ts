@@ -46,6 +46,14 @@ export function useGeminiLive(
   // Latest interim input transcription not yet committed to `messages`.
   const pendingInputRef = useRef<string | null>(null);
 
+  // Live user entry tracking: the user's words are committed to the log as
+  // soon as the first transcription event arrives and updated in place, so
+  // they always appear BEFORE the persona reply regardless of the order the
+  // server delivers input/output transcription events.
+  const pendingUserIdRef = useRef<string | null>(null);
+  const pendingUserFinalRef = useRef(false);
+  const lastFlushedUserIdRef = useRef<string | null>(null);
+
   // Partial assistant text of the current turn (see mergeAssistantFragment).
   const pendingAssistantRef = useRef<string | null>(null);
   const pendingAssistantIdRef = useRef<string | null>(null);
@@ -97,6 +105,54 @@ export function useGeminiLive(
     pendingAssistantIdRef.current = null;
   }, []);
 
+  // Create or update the in-flight user entry (see pendingUserIdRef).
+  const upsertPendingUserEntry = useCallback(
+    (text: string) => {
+      const prev = messagesRef.current;
+      const id = pendingUserIdRef.current;
+
+      if (id) {
+        const existing = prev.find((m) => m.id === id);
+        if (!existing || existing.content === text) return;
+        commitMessages(prev.map((m) => (m.id === id ? { ...m, content: text } : m)));
+        return;
+      }
+
+      // No tracked entry: update the last flushed partial only when the final
+      // text extends it (prevents duplicates when `finished` arrives late,
+      // after turnComplete already flushed a partial transcription).
+      const last = prev[prev.length - 1];
+      if (
+        last &&
+        last.id === lastFlushedUserIdRef.current &&
+        last.role === "user" &&
+        text.startsWith(last.content)
+      ) {
+        commitMessages(prev.map((m) => (m.id === last.id ? { ...m, content: text } : m)));
+        lastFlushedUserIdRef.current = null;
+        pendingUserIdRef.current = last.id;
+        return;
+      }
+
+      const newId = `entry_${++entryIdCounterRef.current}`;
+      pendingUserIdRef.current = newId;
+      commitMessages([
+        ...prev,
+        {
+          id: newId,
+          role: "user" as const,
+          content: text,
+          timestamp: new Date().toISOString(),
+          stageIndex: stageIndexRef.current,
+          displayRole: "You",
+          personaRoleKey: personaRef.current?.roleKey,
+          status: "sent" as const,
+        },
+      ]);
+    },
+    [commitMessages]
+  );
+
   // Initialize service once
   useEffect(() => {
     serviceRef.current = new GeminiLiveService({
@@ -117,6 +173,14 @@ export function useGeminiLive(
             break;
           case "textReceived": {
             if (typeof event.data !== "string" || !personaRef.current) break;
+            // Ordering guarantee: if the user's transcription hasn't been
+            // committed yet, flush it FIRST so the reply never lands above
+            // the question.
+            if (pendingInputRef.current) {
+              const flushed = pendingInputRef.current;
+              pendingInputRef.current = null;
+              upsertPendingUserEntry(flushed);
+            }
             const p = personaRef.current;
             // Accumulate streaming fragments into ONE entry per intervention.
             const result = mergeAssistantFragment(
@@ -151,22 +215,35 @@ export function useGeminiLive(
               (payload as { finished?: boolean }).finished === true;
             if (!text || !text.trim()) break;
             if (finished) {
-              // Final transcription → commit to the chat log.
+              // Final transcription → commit/update the user entry with the
+              // authoritative text.
               pendingInputRef.current = null;
-              appendUserMessage(text);
+              upsertPendingUserEntry(text);
+              pendingUserIdRef.current = null;
+              pendingUserFinalRef.current = true;
             } else {
+              // Interim → show the user's words immediately and grow them in
+              // place until the final event lands.
               pendingInputRef.current = text;
+              upsertPendingUserEntry(text);
+              pendingUserFinalRef.current = false;
             }
             break;
           }
           case "turnComplete": {
             // Defensive flush: if the final event never carried `finished: true`,
             // commit the last interim text so the user's words still land in the
-            // chat log (deduped in appendUserMessage).
+            // chat log (deduped in upsertPendingUserEntry).
             if (pendingInputRef.current) {
-              appendUserMessage(pendingInputRef.current, true);
+              const flushed = pendingInputRef.current;
               pendingInputRef.current = null;
+              upsertPendingUserEntry(flushed);
             }
+            // Track the flushed entry so a late `finished` event extends it
+            // instead of duplicating it, then reset per-utterance state.
+            lastFlushedUserIdRef.current = pendingUserIdRef.current;
+            pendingUserIdRef.current = null;
+            pendingUserFinalRef.current = false;
 
             // Ported from live: filter persona disclaimers/meta commentary out
             // of the completed assistant turn. If suppressed, drop the message;
@@ -203,6 +280,8 @@ export function useGeminiLive(
             setStatus("disconnected");
             setIsSpeaking(false);
             pendingInputRef.current = null;
+            pendingUserIdRef.current = null;
+            pendingUserFinalRef.current = false;
             resetPendingAssistant();
             // Show disconnect reason as error if it indicates a real problem
             const disconnectReason = typeof event.data === "string" ? event.data : null;
@@ -215,6 +294,8 @@ export function useGeminiLive(
             setStatus("error");
             setIsSpeaking(false);
             pendingInputRef.current = null;
+            pendingUserIdRef.current = null;
+            pendingUserFinalRef.current = false;
             resetPendingAssistant();
             break;
         }
@@ -224,7 +305,7 @@ export function useGeminiLive(
     return () => {
       serviceRef.current?.disconnect();
     };
-  }, [appendUserMessage, commitMessages, resetPendingAssistant]);
+  }, [appendUserMessage, commitMessages, resetPendingAssistant, upsertPendingUserEntry]);
 
   const connect = useCallback(
     async (token: string, persona: PersonaInstruction) => {

@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
   if ("error" in auth) {
     return auth.error;
   }
-  if (!consumeRateLimit(`case-generation:${auth.user.id}`, 3, 60 * 60_000)) {
+  if (!(await consumeRateLimit(`case-generation:${auth.user.id}`, 3, 60 * 60_000))) {
     return NextResponse.json({ error: "Case generation quota exceeded" }, { status: 429 });
   }
 

@@ -18,7 +18,7 @@ export async function POST(req: Request) {
   if ("error" in auth) {
     return auth.error;
   }
-  if (!consumeRateLimit(`tts-init:${auth.user.id}`, 30, 60_000)) {
+  if (!(await consumeRateLimit(`tts-init:${auth.user.id}`, 30, 60_000))) {
     return NextResponse.json({ error: "Too many TTS requests" }, { status: 429 });
   }
   try {
