@@ -1,22 +1,37 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/app/api/_lib/auth";
+import { consumeRateLimit } from "@/app/api/_lib/rateLimit";
 
 // ----------------------------------------------------------------------------
-// Defense-in-depth around the Gemini Live token endpoint.
-// P0.1 partial fix — see docs/live-chat-improvement-plan.md for the full WS
-// proxy plan slated for FASE 4. Today this route still returns the raw api
-// key so the @google/genai SDK in the browser can open a WSS connection to
-// Google. We mitigate the surface via:
+// Gemini Live token endpoint.
+//
+// Issues a short-lived EPHEMERAL auth token (v1alpha `authTokens.create`) so
+// the raw GEMINI_API_KEY is never exposed to the browser (P0.1 in
+// docs/live-chat-improvement-plan.md / F3.1 in docs/improvement-plan-live.md).
+//
+// Token properties:
+//   - expires ~3h after issuance (sessions may outlive a class period)
+//   - new sessions can only be STARTED within ~15 min of issuance; reconnect
+//     attempts always re-request a fresh token from this route
+//   - usable for up to 10 new sessions (initial connect + reconnects +
+//     persona voice changes)
+//
+// Mitigations around issuance:
 //   1. Authentication (requireUser)
 //   2. Origin allowlist (LIVE_ALLOWED_ORIGINS / NEXT_PUBLIC_APP_URL /
 //      VERCEL_URL). Strict-deny in production when no allowlist is set.
-//   3. Per-user rate limit (3 issues / 60 s)
-//   4. Case-existence validation (404 on phantom UUIDs)
+//   3. Shared per-user rate limit (Redis-backed, 5 issues / 60 s)
+//   4. Case-existence validation — fail-closed on DB errors.
+//
+// Rollback hatch: if ephemeral token issuance fails (e.g. API change), the
+// route falls back to the legacy raw key ONLY when
+// LIVE_REQUIRE_EPHEMERAL_TOKENS is not "1". Set that env var in production to
+// hard-fail instead of leaking the permanent key.
 // ----------------------------------------------------------------------------
 
-const RATE_LIMIT_WINDOW_MS = 60_000;
-const RATE_LIMIT_MAX_ISSUES = 3;
-const tokenIssuances = new Map<string, number[]>();
+const EPHEMERAL_TOKEN_TTL_MS = 3 * 60 * 60 * 1000; // 3h
+const EPHEMERAL_NEW_SESSION_WINDOW_MS = 15 * 60 * 1000; // 15 min
+const EPHEMERAL_TOKEN_MAX_USES = 10;
 
 function getAllowedOrigins(): string[] {
   const env = process.env.LIVE_ALLOWED_ORIGINS;
@@ -40,7 +55,6 @@ if (
   process.env.NODE_ENV === "production" &&
   getAllowedOrigins().length === 0
 ) {
-  // eslint-disable-next-line no-console
   console.error(
     "[api/live/token] Misconfiguration: no LIVE_ALLOWED_ORIGINS, NEXT_PUBLIC_APP_URL or VERCEL_URL set. All Live token requests will be rejected with 403.",
   );
@@ -59,41 +73,25 @@ function isOriginAllowed(req: Request): boolean {
   return allowed.some((a) => origin === a || origin.startsWith(a + "/"));
 }
 
-function checkAndUpdateRate(userId: string): boolean {
-  const now = Date.now();
-  const window = tokenIssuances.get(userId) ?? [];
-  const fresh = window.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
-  if (fresh.length >= RATE_LIMIT_MAX_ISSUES) {
-    tokenIssuances.set(userId, fresh);
-    return false;
+async function createEphemeralToken(): Promise<string> {
+  const { GoogleGenAI } = await import("@google/genai");
+  const ai = new GoogleGenAI({
+    apiKey: process.env.GEMINI_API_KEY as string,
+    httpOptions: { apiVersion: "v1alpha" },
+  });
+  const authToken = await ai.authTokens.create({
+    config: {
+      uses: EPHEMERAL_TOKEN_MAX_USES,
+      expireTime: new Date(Date.now() + EPHEMERAL_TOKEN_TTL_MS).toISOString(),
+      newSessionExpireTime: new Date(
+        Date.now() + EPHEMERAL_NEW_SESSION_WINDOW_MS
+      ).toISOString(),
+    },
+  });
+  if (!authToken.name) {
+    throw new Error("Ephemeral token response missing name");
   }
-  fresh.push(now);
-  tokenIssuances.set(userId, fresh);
-  return true;
-}
-
-// In-memory rate limit. NOTE: this is per-process state only. On Vercel
-// serverless every cold-start resets it and concurrent instances do not
-// share state, so it is best-effort and not authoritative. For enforcement
-// across instances back this with Redis (already in package.json deps) or a
-// Supabase RPC counter — flagged for FASE 4 of the Live plan.
-
-// Periodic cleanup so the in-memory map doesn't grow unbounded in long-lived
-// server processes. unref() lets the Node process exit when this is the only
-// timer holding it open.
-let cleanupInterval: ReturnType<typeof setInterval> | null = null;
-if (typeof setInterval !== "undefined" && cleanupInterval === null) {
-  cleanupInterval = setInterval(() => {
-    const now = Date.now();
-    for (const [userId, timestamps] of tokenIssuances.entries()) {
-      const fresh = timestamps.filter(
-        (t) => now - t < RATE_LIMIT_WINDOW_MS
-      );
-      if (fresh.length === 0) tokenIssuances.delete(userId);
-      else tokenIssuances.set(userId, fresh);
-    }
-  }, 5 * 60_000);
-  cleanupInterval.unref?.();
+  return authToken.name;
 }
 
 export async function POST(req: Request) {
@@ -110,7 +108,7 @@ export async function POST(req: Request) {
     );
   }
 
-  if (!checkAndUpdateRate(user.id)) {
+  if (!(await consumeRateLimit(`live-token:${user.id}`, 5, 60_000))) {
     return NextResponse.json(
       { error: "Too many token requests. Please retry shortly." },
       { status: 429 }
@@ -135,8 +133,8 @@ export async function POST(req: Request) {
       );
     }
 
-    // Validate the requested case exists. Soft-fails on transient DB
-    // errors so a Supabase hiccup doesn't block legitimate traffic.
+    // Validate the requested case exists. Fail-closed: a transient DB error
+    // must not grant a Live session for an unknown case.
     try {
       const { data, error } = await supabase
         .from("cases")
@@ -150,12 +148,33 @@ export async function POST(req: Request) {
         );
       }
     } catch (e) {
-      console.warn("Case existence check failed (transient):", e);
+      console.error("[api/live/token] Case existence check failed:", e);
+      return NextResponse.json(
+        { error: "Could not validate case. Please retry." },
+        { status: 503 }
+      );
     }
 
-    // Return the Gemini API key so the browser client can open a WSS
-    // session directly. See P0.1 plan for the server-side proxy upgrade.
-    return NextResponse.json({ token: process.env.GEMINI_API_KEY });
+    // P0.1 / F3.1: issue an ephemeral token instead of the raw API key.
+    try {
+      const token = await createEphemeralToken();
+      return NextResponse.json({ token });
+    } catch (ephemeralErr) {
+      console.error(
+        "[api/live/token] Ephemeral token issuance failed:",
+        ephemeralErr
+      );
+      if (process.env.LIVE_REQUIRE_EPHEMERAL_TOKENS === "1") {
+        return NextResponse.json(
+          { error: "Live service is temporarily unavailable" },
+          { status: 503 }
+        );
+      }
+      console.warn(
+        "[api/live/token] FALLBACK: serving raw GEMINI_API_KEY. Set LIVE_REQUIRE_EPHEMERAL_TOKENS=1 to disable this fallback."
+      );
+      return NextResponse.json({ token: process.env.GEMINI_API_KEY });
+    }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: msg }, { status: 500 });

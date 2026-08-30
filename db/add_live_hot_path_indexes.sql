@@ -18,3 +18,12 @@ CREATE INDEX IF NOT EXISTS idx_attempt_messages_attempt_id
 -- Persist the persona that produced each assistant message so resumed
 -- sessions keep role labels and portraits (personaRoleKey in the Message model).
 ALTER TABLE attempt_messages ADD COLUMN IF NOT EXISTS persona_role_key text;
+
+-- F4.1: Stable client-side message id so autosave can UPSERT rows in place
+-- instead of DELETE + full reINSERT (O(n) churn instead of O(n²) rewrites,
+-- no lost updates between racing tabs).
+ALTER TABLE attempt_messages ADD COLUMN IF NOT EXISTS client_msg_id text;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_attempt_messages_client_msg
+  ON attempt_messages (attempt_id, client_msg_id)
+  WHERE client_msg_id IS NOT NULL;

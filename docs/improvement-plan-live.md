@@ -40,7 +40,7 @@
 
 ## F3 — Seguridad estructural — ~3-5 días
 
-1. **P0 — Proxy WS server-side para Gemini**: eliminar la entrega de `GEMINI_API_KEY` cruda (`app/api/live/token/route.ts:158`). Opciones: token efímero de Google (Ephemeral Auth Tokens API) o relay WS por el server. Plan ya bocetado en `docs/live-chat-improvement-plan.md`.
+1. **🔶 P0 — Ephemeral tokens (IMPLEMENTADO con fallback)**: `/api/live/token` ahora emite tokens efímeros v1alpha (`authTokens.create`: 10 usos, expiran en 3h, nuevas sesiones solo por 15 min) en vez de la API key cruda. Fallback a key cruda solo si la emisión falla y `LIVE_REQUIRE_EPHEMERAL_TOKENS` ≠ "1" (setear a "1" en producción). Validación de caso ahora fail-closed. Próximo paso: `liveConnectConstraints` para fijar systemInstruction server-side.
 2. **✅ Rate limiting a Redis (HECHO)**: `consumeRateLimit` ahora es async con INCR+EXPIRE en Redis (circuit breaker + fallback en memoria); 7 rutas migradas a `await` y `/api/chat` ahora tiene límite 30/min por usuario. Requiere `REDIS_URL` en el entorno para ser autoritativo.
 3. **CSP enforcing**: quitar Report-Only y `unsafe-inline/eval` de `next.config.ts:44-47` (requiere auditoría de scripts inline).
 4. **Anti prompt-injection**: delimitar transcripts en prompts de feedback; caps ya cubiertos en F1.1.
@@ -49,7 +49,7 @@
 
 ## F4 — Escalabilidad — ~2-4 días
 
-1. **Autosave incremental**: reemplazar DELETE+reINSERT completo (O(n²)) por upsert por mensaje con id estable del cliente; envolver en RPC transaccional (`progress/route.ts:132-151`).
+1. **🔶 Autosave incremental (IMPLEMENTADO — requiere migración)**: `progress` ahora hace UPSERT por mensaje con clave `(attempt_id, client_msg_id)` + DELETE dirigido de filas removidas (índice único parcial en `db/add_live_hot_path_indexes.sql`). Elimina el reescritura total O(n²) y reduce la ventana de race entre pestañas.
 2. **Atómico select-then-insert en `POST /api/live/session`** (race multi-pestaña): RPC con `INSERT ... ON CONFLICT` o `FOR UPDATE SKIP LOCKED`.
 3. **Paginación**: transcripts (`attempt_messages`), `GET /api/cases`, join anidado de `app/attempts/[id]/page.tsx:74`.
 4. **Streaming en proxies**: TTS bufferizado (`tts/route.ts:122-128`) y chat/feedback con `create` completo → `stream: true` + `maxDuration` explícito.

@@ -41,6 +41,7 @@ type AttemptMessageRow = {
   stage_index: number;
   display_role: string | null;
   persona_role_key: string | null;
+  client_msg_id: string;
 };
 
 function mapMessagesToRows(
@@ -66,6 +67,8 @@ function mapMessagesToRows(
       stage_index: stageIndex,
       display_role: msg.displayRole ?? null,
       persona_role_key: msg.personaRoleKey ?? null,
+      // Stable client id: enables idempotent upsert (no delete+reinsert).
+      client_msg_id: msg.id,
     };
   });
 }
@@ -131,31 +134,53 @@ export async function POST(req: Request) {
 
     const messageRows = mapMessagesToRows(attemptId, body.messages);
 
-    const { error: deleteError } = await supabase
-      .from("attempt_messages")
-      .delete()
-      .eq("attempt_id", attemptId);
-
-    if (deleteError) {
-      console.error(
-        "Attempt progress failed while clearing prior messages",
-        deleteError
-      );
-      return NextResponse.json(
-        { error: deleteError.message ?? "Failed to reset attempt messages" },
-        { status: 500 }
-      );
-    }
-
+    // F4.1: Upsert every message keyed by (attempt_id, client_msg_id) and then
+    // remove only the rows that are no longer part of the transcript. This
+    // replaces the previous DELETE-all + reINSERT-all which rewrote the whole
+    // transcript on every autosave (O(n²) churn + racing-tab interleaving).
     if (messageRows.length > 0) {
-      const { error: insertError } = await supabase
+      const { error: upsertError } = await supabase
         .from("attempt_messages")
-        .insert(messageRows);
+        .upsert(messageRows, { onConflict: "attempt_id,client_msg_id" });
 
-      if (insertError) {
-        console.error("Attempt progress failed while inserting messages", insertError);
+      if (upsertError) {
+        console.error("Attempt progress failed while upserting messages", upsertError);
         return NextResponse.json(
-          { error: insertError.message ?? "Failed to upsert attempt messages" },
+          { error: upsertError.message ?? "Failed to save attempt messages" },
+          { status: 500 }
+        );
+      }
+
+      const clientIds = messageRows.map((row) => row.client_msg_id).filter(Boolean);
+      const { error: cleanupError } = await supabase
+        .from("attempt_messages")
+        .delete()
+        .eq("attempt_id", attemptId)
+        .or(
+          `client_msg_id.is.null,client_msg_id.not.in.(${clientIds.join(",")})`
+        );
+
+      if (cleanupError) {
+        console.error("Attempt progress failed while pruning removed messages", cleanupError);
+        return NextResponse.json(
+          { error: cleanupError.message ?? "Failed to prune attempt messages" },
+          { status: 500 }
+        );
+      }
+    } else {
+      // Empty transcript: clear the attempt's messages entirely.
+      const { error: deleteError } = await supabase
+        .from("attempt_messages")
+        .delete()
+        .eq("attempt_id", attemptId);
+
+      if (deleteError) {
+        console.error(
+          "Attempt progress failed while clearing prior messages",
+          deleteError
+        );
+        return NextResponse.json(
+          { error: deleteError.message ?? "Failed to reset attempt messages" },
           { status: 500 }
         );
       }
