@@ -46,6 +46,24 @@ function formatElapsed(seconds: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+// First-person transition phrases matched against the NEXT stage's type.
+// Deliberately requires an explicit action phrasing so mentions like
+// "when would you do a physical exam?" do NOT trigger an advance.
+const STAGE_INTENT_PATTERNS: Record<string, RegExp> = {
+  history:
+    /\b(?:let'?s|let us|we'?ll|we should|i'?d like to|i want to|i would like to|time to|move on to|proceed to|start|begin|go back to)\b[^.?!]*\b(?:history|anamnesis|background)\b/i,
+  physical:
+    /\b(?:let'?s|let us|we'?ll|we should|i'?d like to|i want to|i would like to|time to|move on to|proceed to|start|begin|perform|do)\b[^.?!]*\b(?:physical|exam|examination|auscultat|palpat)\b/i,
+  diagnostic:
+    /\b(?:let'?s|let us|we'?ll|we should|i'?d like to|i want to|i would like to|time to|move on to|proceed to|start|begin|work on|form)\b[^.?!]*\b(?:differential|diagnos|diagnostic|plan)\b/i,
+  laboratory:
+    /\b(?:let'?s|let us|we'?ll|we should|i'?d like to|i want to|i would like to|time to|move on to|proceed to|start|begin|run|order|send|do)\b[^.?!]*\b(?:lab|laboratory|blood ?work|bloods?\b|tests?|sampling|samples?)\b/i,
+  treatment:
+    /\b(?:let'?s|let us|we'?ll|we should|i'?d like to|i want to|i would like to|time to|move on to|proceed to|start|begin|formulate|do)\b[^.?!]*\b(?:treatment|therap|medicat|prescri|plan)\b/i,
+  communication:
+    /\b(?:let'?s|let us|we'?ll|we should|i'?d like to|i want to|i would like to|time to|move on to|proceed to|start|begin)\b[^.?!]*\b(?:client|owner|communicat|explaining|explain|discharge|conversation)\b/i,
+};
+
 export function LiveSession({
   caseItem,
   stages: initialStages,
@@ -346,6 +364,17 @@ export function LiveSession({
   // Switch persona whenever the effective persona changes: on stage advance AND
   // on manual OWNER↔NURSE↔LAB switches (override is reset on stage change).
   const switchedPersonaRoleRef = useRef<string | null>(null);
+  // Set when the stage index changes so the incoming persona (any role) opens
+  // the conversation, not just when the owner joins.
+  const stageAdvancePendingRef = useRef(false);
+  const prevStageIndexRef = useRef(initialStageIndex);
+  useEffect(() => {
+    if (progress.currentStageIndex !== prevStageIndexRef.current) {
+      prevStageIndexRef.current = progress.currentStageIndex;
+      stageAdvancePendingRef.current = true;
+    }
+  }, [progress.currentStageIndex]);
+
   useEffect(() => {
     if (!persona) return;
     if (persona.roleKey === switchedPersonaRoleRef.current) return;
@@ -356,12 +385,14 @@ export function LiveSession({
       switchedPersonaRoleRef.current = persona.roleKey;
       live.switchPersona(persona);
 
-      if (persona.roleKey === "owner") {
+      const shouldOpen = persona.roleKey === "owner" || stageAdvancePendingRef.current;
+      stageAdvancePendingRef.current = false;
+      if (shouldOpen) {
         setTimeout(() => {
           if (live.status === "connected") {
             live.sendText("[SYS_TRIGGER]");
           }
-        }, 500);
+        }, 600);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -432,6 +463,27 @@ export function LiveSession({
   const handleCancelAdvance = useCallback(() => {
     setShowAdvanceConfirm(false);
   }, []);
+
+  // Stage-intent auto-advance: when the student explicitly tells the persona
+  // they want to move to the NEXT stage (e.g. "let's do the physical
+  // examination"), advance immediately, bring the incoming persona into
+  // focus, and let them open the conversation.
+  const intentProcessedIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!nextStage) return;
+    const userMsgs = live.messages.filter((m) => m.role === "user");
+    const last = userMsgs[userMsgs.length - 1];
+    if (!last || intentProcessedIdRef.current === last.id) return;
+    intentProcessedIdRef.current = last.id;
+
+    const settings = nextStage.settings as Record<string, unknown> | undefined;
+    const stageType = typeof settings?.stage_type === "string" ? settings.stage_type : "";
+    const pattern = stageType ? STAGE_INTENT_PATTERNS[stageType] : undefined;
+    if (pattern && pattern.test(last.content)) {
+      console.log("[Session] Stage intent detected for:", stageType, "->", last.content);
+      handleConfirmAdvance();
+    }
+  }, [live.messages, nextStage, handleConfirmAdvance]);
 
   const handleEndSession = useCallback(async () => {
     userInitiatedDisconnectRef.current = true;
@@ -538,7 +590,6 @@ export function LiveSession({
     live.status === "connected" &&
     Date.now() - lastUserMessageTimeRef.current > 30_000 &&
     live.messages.length > 0;
-
   return (
     <div className="flex h-full bg-background">
       {/* P2.5: Progress Sidebar */}
@@ -555,7 +606,7 @@ export function LiveSession({
       />
 
       {/* Main content area */}
-      <div className="flex flex-1 flex-col min-w-0">
+      <div className="flex flex-1 flex-col min-w-0 min-h-0 overflow-hidden">
         {/* P3.5: Persona joining banner */}
         {personaJoining && (
           <div className="flex items-center justify-center gap-2 bg-blue-50 dark:bg-blue-950/30 px-4 py-2 animate-in fade-in slide-in-from-top-2 duration-300">
@@ -566,11 +617,13 @@ export function LiveSession({
         )}
 
         {/* Top: Persona header */}
-        <PersonaHeader
-          persona={persona}
-          stageTitle={currentStage?.title ?? ""}
-          isSpeaking={live.isSpeaking}
-        />
+        <div className="flex-shrink-0">
+          <PersonaHeader
+            persona={persona}
+            stageTitle={currentStage?.title ?? ""}
+            isSpeaking={live.isSpeaking}
+          />
+        </div>
 
         {/* P3.8: Idle indicator */}
         {isIdle && (
@@ -626,7 +679,7 @@ export function LiveSession({
         )}
 
         {/* Bottom: Controls */}
-        <div className="relative">
+        <div className="relative flex-shrink-0">
           {/* Top-right action buttons */}
           <div className="absolute right-4 top-2 z-10 flex gap-1">
             {/* P3.6: Export button */}

@@ -40,6 +40,7 @@ export default function LiveSessionPage() {
   const [showCompletionDialog, setShowCompletionDialog] = useState(false);
   const [feedbackContent, setFeedbackContent] = useState("");
   const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false);
+  const [finalMessages, setFinalMessages] = useState<Message[]>([]);
 
   const personaDir = usePersonaDirectory(caseId);
 
@@ -133,6 +134,7 @@ export default function LiveSessionPage() {
   const handleSessionEnd = async (messages?: Message[]) => {
     setShowCompletionDialog(true);
     setIsGeneratingFeedback(true);
+    setFinalMessages(messages ?? []);
 
     try {
       if (messages && messages.length > 0 && session?.attemptId) {
@@ -241,6 +243,7 @@ export default function LiveSessionPage() {
         feedback={feedbackContent}
         isLoading={isGeneratingFeedback}
         caseId={caseId}
+        messages={finalMessages}
       />
     </>
   );

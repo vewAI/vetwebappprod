@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Loader2, Award, X, Home, RefreshCw, Download, FileText } from "lucide-react"
+import { Loader2, Award, X, Home, RefreshCw, Download, FileText, MessageSquareText } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { buildAuthHeaders } from "@/lib/auth-headers"
+import { ChatMessage } from "@/features/chat/components/chat-message"
+import type { Message } from "@/features/chat/models/chat"
 
 interface CompletionDialogProps {
   isOpen: boolean
@@ -25,6 +27,7 @@ export function CompletionDialog({
 }: CompletionDialogProps) {
   const router = useRouter()
   const [isDownloading, setIsDownloading] = useState(false)
+  const [showTranscript, setShowTranscript] = useState(false)
 
   const handleReturnHome = () => {
     router.push('/')
@@ -72,6 +75,29 @@ export function CompletionDialog({
           ) : (
             <div className="prose prose-sm dark:prose-invert max-w-none">
               <div dangerouslySetInnerHTML={{ __html: feedback }} />
+            </div>
+          )}
+
+          {messages.length > 0 && (
+            <div className="mt-6 pt-4 border-t">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowTranscript((prev) => !prev)}
+                className="flex items-center gap-2 text-sm"
+              >
+                <MessageSquareText className="h-4 w-4" />
+                {showTranscript ? "Hide session transcript" : "Show session transcript"}
+              </Button>
+              {showTranscript && (
+                <div className="mt-3 max-h-[40vh] overflow-y-auto rounded-md border p-2 space-y-1">
+                  {messages
+                    .filter((m: Message) => !m.content?.startsWith("[SYS_TRIGGER]"))
+                    .map((m: Message) => (
+                      <ChatMessage key={m.id} message={m} stages={[]} />
+                    ))}
+                </div>
+              )}
             </div>
           )}
 

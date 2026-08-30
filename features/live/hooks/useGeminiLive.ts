@@ -9,6 +9,7 @@ import type {
   PersonaInstruction,
 } from "../types";
 import { filterLivePersonaText } from "../utils/filterLiveResponse";
+import { isLikelyNonEnglish, translateTranscriptToEnglish } from "../utils/transcriptLanguage";
 
 export type UseGeminiLiveResult = {
   status: LiveSessionStatus;
@@ -153,6 +154,20 @@ export function useGeminiLive(
     [commitMessages]
   );
 
+  // Repair transcriptions delivered in the wrong language: replace the entry
+  // content once the server-side translation resolves. The model heard the
+  // original audio, so this only touches what the student reads.
+  const rewriteEntryContent = useCallback(
+    (entryId: string, expected: string, next: string) => {
+      const current = messagesRef.current.find((m) => m.id === entryId);
+      if (!current || current.content !== expected) return; // superseded
+      commitMessages(
+        messagesRef.current.map((m) => (m.id === entryId ? { ...m, content: next } : m))
+      );
+    },
+    [commitMessages]
+  );
+
   // Initialize service once
   useEffect(() => {
     serviceRef.current = new GeminiLiveService({
@@ -219,8 +234,17 @@ export function useGeminiLive(
               // authoritative text.
               pendingInputRef.current = null;
               upsertPendingUserEntry(text);
+              const committedId = pendingUserIdRef.current;
               pendingUserIdRef.current = null;
               pendingUserFinalRef.current = true;
+              if (committedId && isLikelyNonEnglish(text)) {
+                const entryId = committedId;
+                void translateTranscriptToEnglish(text).then((english) => {
+                  if (english && english !== text) {
+                    rewriteEntryContent(entryId, text, english);
+                  }
+                });
+              }
             } else {
               // Interim → show the user's words immediately and grow them in
               // place until the final event lands.
@@ -305,7 +329,7 @@ export function useGeminiLive(
     return () => {
       serviceRef.current?.disconnect();
     };
-  }, [appendUserMessage, commitMessages, resetPendingAssistant, upsertPendingUserEntry]);
+  }, [appendUserMessage, commitMessages, resetPendingAssistant, upsertPendingUserEntry, rewriteEntryContent]);
 
   const connect = useCallback(
     async (token: string, persona: PersonaInstruction) => {
