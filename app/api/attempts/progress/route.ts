@@ -138,10 +138,38 @@ export async function POST(req: Request) {
     // remove only the rows that are no longer part of the transcript. This
     // replaces the previous DELETE-all + reINSERT-all which rewrote the whole
     // transcript on every autosave (O(n²) churn + racing-tab interleaving).
+    // If the schema cache is stale (new columns not visible yet), degrade to
+    // the legacy delete-all + reinsert path without the new columns so saving
+    // keeps working.
+    const isStaleSchemaError = (err: { message?: string } | null | undefined) =>
+      Boolean(err?.message && /schema cache|could not find the/i.test(err.message));
+
+    const legacyRows = messageRows.map(({ client_msg_id: _c, persona_role_key: _p, ...rest }) => rest);
+
     if (messageRows.length > 0) {
       const { error: upsertError } = await supabase
         .from("attempt_messages")
         .upsert(messageRows, { onConflict: "attempt_id,client_msg_id" });
+
+      if (upsertError && isStaleSchemaError(upsertError)) {
+        console.warn("Attempt progress: falling back to legacy save (stale schema cache)");
+        const { error: deleteAllError } = await supabase
+          .from("attempt_messages")
+          .delete()
+          .eq("attempt_id", attemptId);
+        if (deleteAllError) {
+          console.error("Attempt progress legacy fallback failed while clearing", deleteAllError);
+          return NextResponse.json({ error: deleteAllError.message }, { status: 500 });
+        }
+        const { error: insertError } = await supabase
+          .from("attempt_messages")
+          .insert(legacyRows);
+        if (insertError) {
+          console.error("Attempt progress legacy fallback failed while inserting", insertError);
+          return NextResponse.json({ error: insertError.message }, { status: 500 });
+        }
+        return NextResponse.json({ success: true });
+      }
 
       if (upsertError) {
         console.error("Attempt progress failed while upserting messages", upsertError);
@@ -160,7 +188,7 @@ export async function POST(req: Request) {
           `client_msg_id.is.null,client_msg_id.not.in.(${clientIds.join(",")})`
         );
 
-      if (cleanupError) {
+      if (cleanupError && !isStaleSchemaError(cleanupError)) {
         console.error("Attempt progress failed while pruning removed messages", cleanupError);
         return NextResponse.json(
           { error: cleanupError.message ?? "Failed to prune attempt messages" },

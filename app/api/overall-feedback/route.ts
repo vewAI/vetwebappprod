@@ -7,6 +7,10 @@ import type { Message } from "@/features/chat/models/chat";
 import { requireUser } from "@/app/api/_lib/auth";
 import { consumeRateLimit } from "@/app/api/_lib/rateLimit";
 
+// Feedback/LLM calls can take >10s on OpenAI; raise the Vercel function limit.
+export const maxDuration = 60;
+
+
 function resolveSpeakerLabel(msg: Message): string {
   if (msg.role === "user") {
     return "Student";

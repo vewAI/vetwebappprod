@@ -34,6 +34,10 @@ import { normalizeCaseMedia, type CaseMediaItem } from "@/features/cases/models/
 import { searchMerckManual } from "@/features/external-resources/services/merckService";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
+// Feedback/LLM calls can take >10s on OpenAI; raise the Vercel function limit.
+export const maxDuration = 60;
+
+
 export async function POST(request: NextRequest) {
   const auth = await requireUser(request);
   if ("error" in auth) {

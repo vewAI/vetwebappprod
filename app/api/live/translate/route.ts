@@ -3,6 +3,10 @@ import { createOpenAIClient } from "@/lib/llm/openaiClient";
 import { requireUser } from "@/app/api/_lib/auth";
 import { consumeRateLimit } from "@/app/api/_lib/rateLimit";
 
+// Feedback/LLM calls can take >10s on OpenAI; raise the Vercel function limit.
+export const maxDuration = 60;
+
+
 // Repairs voice-input transcriptions that the Live model produced in the
 // wrong language. The model itself always HEARS the original English audio —
 // this only fixes the written transcript shown to the student.

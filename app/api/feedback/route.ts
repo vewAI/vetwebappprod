@@ -7,6 +7,10 @@ import { requireUser } from "@/app/api/_lib/auth";
 import { authorizeAttemptAccess } from "@/app/api/_lib/authorization";
 import { consumeRateLimit } from "@/app/api/_lib/rateLimit";
 
+// Feedback/LLM calls can take >10s on OpenAI; raise the Vercel function limit.
+export const maxDuration = 60;
+
+
 export async function POST(request: NextRequest) {
   try {
     const auth = await requireUser(request);

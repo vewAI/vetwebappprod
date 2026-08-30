@@ -18,6 +18,7 @@ import type { LivePersonaDef, LivePersonaRoleKey } from "./live-controls";
 import { LiveControls } from "./live-controls";
 import { ProgressSidebar } from "@/features/chat/components/progress-sidebar";
 import { LiveTranscript } from "./live-transcript";
+import { TestResultsPanel, type RevealedFinding } from "./test-results-panel";
 import { Notepad } from "@/features/chat/components/notepad";
 import { emitStageEvaluation } from "@/features/chat/utils/stage-eval";
 import {
@@ -165,6 +166,51 @@ export function LiveSession({
   useEffect(() => {
     assistantCountRef.current = live.messages.filter((m) => m.role !== "user").length;
   }, [live.messages]);
+
+  // Test results panel: whenever the user asks for an exam value or lab test,
+  // the server reveals ONLY those values (on-demand) and they become available
+  // as written text in the panel.
+  const [revealedFindings, setRevealedFindings] = useState<RevealedFinding[]>([]);
+  const findingsProcessedIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const userMsgs = live.messages.filter((m) => m.role === "user");
+    const last = userMsgs[userMsgs.length - 1];
+    if (!last || findingsProcessedIdRef.current === last.id) return;
+    findingsProcessedIdRef.current = last.id;
+
+    let cancelled = false;
+    const userText = last.content;
+    void (async () => {
+      try {
+        const accessToken = await getAccessToken().catch(() => null);
+        const res = await fetch("/api/live/findings", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          },
+          body: JSON.stringify({ caseId: caseItem.id, userText }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const items = Array.isArray(data.items) ? data.items : [];
+        if (cancelled || items.length === 0) return;
+        setRevealedFindings((prev) => {
+          const known = new Set(prev.map((f) => f.key));
+          const fresh = items
+            .filter((it: RevealedFinding) => it?.key && !known.has(it.key))
+            .map((it: RevealedFinding) => ({ ...it, revealedAt: Date.now() }));
+          return fresh.length > 0 ? [...prev, ...fresh] : prev;
+        });
+      } catch {
+        // non-critical: panel stays as-is
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [live.messages, caseItem.id]);
 
   // Auto-save messages debounced 2s after last change
   useEffect(() => {
@@ -739,6 +785,9 @@ export function LiveSession({
                 </div>
               )}
             </div>
+
+            {/* Test results panel */}
+            <TestResultsPanel findings={revealedFindings} />
 
             {/* P2.4: Notepad toggle */}
             <Button
