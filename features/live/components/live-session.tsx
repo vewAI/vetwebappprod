@@ -117,6 +117,10 @@ export function LiveSession({
   const { saveProgress } = useSaveAttempt(attemptId);
 
   const userInitiatedDisconnectRef = useRef(false);
+  // Startup failure (token fetch / connect) surfaced to the UI instead of
+  // leaving the session silently stuck on "Disconnected".
+  const [initError, setInitError] = useState<string | null>(null);
+  const [initRetryNonce, setInitRetryNonce] = useState(0);
   const currentStage = progress.stages[progress.currentStageIndex];
   const nextStage =
     progress.currentStageIndex < progress.stages.length - 1
@@ -322,6 +326,7 @@ export function LiveSession({
         if (!cancelled) {
           console.error("[Session] Init failed:", err);
           hasConnectedRef.current = false;
+          setInitError(err instanceof Error ? err.message : "Failed to start the session. Please reload and try again.");
         }
       }
     }
@@ -334,7 +339,7 @@ export function LiveSession({
       // handled by switchPersona below, and the hooks tear down on unmount.
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [persona, live.status]);
+  }, [persona, live.status, initRetryNonce]);
 
   // Stop auto-reconnect after unmount (end session / navigate away)
   useEffect(() => {
@@ -840,7 +845,23 @@ export function LiveSession({
         </div>
 
         {/* Error / status display */}
-        {live.error && (
+        {initError && (
+          <div className="mx-4 mb-4 rounded-lg bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-600 dark:text-red-400">
+            {initError}
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-3 h-7"
+              onClick={() => {
+                setInitError(null);
+                setInitRetryNonce((n) => n + 1);
+              }}
+            >
+              Retry
+            </Button>
+          </div>
+        )}
+        {live.error && !initError && (
           <div className="mx-4 mb-4 rounded-lg bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-600 dark:text-red-400">
             {live.error}
           </div>
