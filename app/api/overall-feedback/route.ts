@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { marked } from "marked";
+import DOMPurify from "isomorphic-dompurify";
 import { createOpenAIClient } from "@/lib/llm/openaiClient";
 import { case1RoleInfo } from "@/features/role-info/case1";
 import type { Message } from "@/features/chat/models/chat";
@@ -141,24 +143,33 @@ export async function POST(request: Request) {
       }
     }
 
-    // Format the feedback with simple HTML using regex replacements
-    const formattedFeedback = feedbackContent
-      .replace(/\n\n/g, "</p><p>") // Convert double line breaks to paragraphs
-      .replace(/\n/g, "<br>") // Convert single line breaks to <br>
-      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>") // Bold text
-      .replace(/\*(.*?)\*/g, "<em>$1</em>") // Italic text
-      .replace(/^#\s+(.*?)$/gm, "<h1>$1</h1>") // H1
-      .replace(/^##\s+(.*?)$/gm, "<h2>$1</h2>") // H2
-      .replace(/^###\s+(.*?)$/gm, "<h3>$1</h3>") // H3
-      .replace(/^(\d+\.\s+.*?)$/gm, "<li>$1</li>") // Numbered lists
-      .replace(/^-\s+(.*?)$/gm, "<li>$1</li>"); // Bullet points
-
-    const wrappedFeedback = `<p>${formattedFeedback}</p>`
-      .replace(/<p><h([1-3])>/g, "<h$1>") // Fix nested paragraph tags
-      .replace(/<\/h([1-3])><\/p>/g, "</h$1>") // Fix nested paragraph tags
-      .replace(/<p><li>/g, "<li>") // Fix nested paragraph tags
-      .replace(/<\/li><\/p>/g, "</li>") // Fix nested paragraph tags
-      .replace(/<p><\/p>/g, ""); // Remove empty paragraphs
+    // Render markdown via `marked` and sanitize with DOMPurify so LLM-generated
+    // HTML/scripts cannot reach the client. The previous regex chain had no
+    // sanitization — prompt injection in the LLM response could land markup
+    // that is later rendered with dangerouslySetInnerHTML.
+    const renderedHtml = marked.parse(feedbackContent, {
+      gfm: true,
+      breaks: true,
+    }) as string;
+    const wrappedFeedback = DOMPurify.sanitize(renderedHtml, {
+      ALLOWED_TAGS: [
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "p",
+        "br",
+        "strong",
+        "em",
+        "ul",
+        "ol",
+        "li",
+        "code",
+        "pre",
+        "blockquote",
+      ],
+      ALLOWED_ATTR: [],
+    });
 
     return NextResponse.json({ feedback: wrappedFeedback });
   } catch (error) {

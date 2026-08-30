@@ -40,6 +40,7 @@ type AttemptMessageRow = {
   timestamp: string;
   stage_index: number;
   display_role: string | null;
+  persona_role_key: string | null;
 };
 
 function mapMessagesToRows(
@@ -64,6 +65,7 @@ function mapMessagesToRows(
       timestamp,
       stage_index: stageIndex,
       display_role: msg.displayRole ?? null,
+      persona_role_key: msg.personaRoleKey ?? null,
     };
   });
 }

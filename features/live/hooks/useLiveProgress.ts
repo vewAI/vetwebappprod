@@ -21,6 +21,7 @@ export type UseLiveProgressResult = {
   canAdvance: boolean;
   advanceStage: () => void;
   recordTurn: () => void;
+  syncTurnCount: (count: number) => void;
   setStages: (stages: Stage[]) => void;
   setStageIndex: (index: number) => void;
 };
@@ -62,6 +63,16 @@ export function useLiveProgress(
     setTurnCount(turnCountRef.current);
   }, []);
 
+  // Derive the turn count from the transcript instead of incrementing past an
+  // unknown baseline: on resume, historical messages must not inflate the
+  // count and instantly unlock "Next Stage".
+  const syncTurnCount = useCallback((count: number) => {
+    const next = Math.max(0, Math.floor(count));
+    if (turnCountRef.current === next) return;
+    turnCountRef.current = next;
+    setTurnCount(next);
+  }, []);
+
   const setStageIndex = useCallback((index: number) => {
     setCurrentStageIndex(index);
     turnCountRef.current = 0;
@@ -75,6 +86,7 @@ export function useLiveProgress(
     canAdvance,
     advanceStage,
     recordTurn,
+    syncTurnCount,
     setStages,
     setStageIndex,
   };

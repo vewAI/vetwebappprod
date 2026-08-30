@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     if (existingAttempt) {
       const { data: storedMessages } = await supabase
         .from("attempt_messages")
-        .select("id, role, content, timestamp, stage_index, display_role")
+        .select("id, role, content, timestamp, stage_index, display_role, persona_role_key")
         .eq("attempt_id", existingAttempt.id)
         .order("timestamp", { ascending: true });
 
@@ -48,6 +48,10 @@ export async function POST(req: Request) {
           timestamp: message.timestamp,
           stageIndex: message.stage_index,
           displayRole: message.display_role ?? undefined,
+          personaRoleKey:
+            typeof (message as { persona_role_key?: string | null }).persona_role_key === "string"
+              ? (message as { persona_role_key?: string | null }).persona_role_key!
+              : undefined,
           status: "sent",
         })),
       });

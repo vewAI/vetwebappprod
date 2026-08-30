@@ -22,6 +22,7 @@ type SessionData = {
   currentStageIndex: number;
   resumed: boolean;
   messages: Message[];
+  timeSpentSeconds?: number;
 };
 
 export default function LiveSessionPage() {
@@ -115,6 +116,7 @@ export default function LiveSessionPage() {
           currentStageIndex: data.currentStageIndex ?? 0,
           resumed: data.resumed ?? false,
           messages,
+          timeSpentSeconds: typeof data.timeSpentSeconds === "number" ? data.timeSpentSeconds : 0,
         });
       } catch (err) {
         console.error("Session init failed:", err);
@@ -143,7 +145,7 @@ export default function LiveSessionPage() {
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
-          body: JSON.stringify({ caseId, messages }),
+          body: JSON.stringify({ caseId, attemptId: session.attemptId, messages }),
         });
 
         if (feedbackRes.ok) {
@@ -223,6 +225,7 @@ export default function LiveSessionPage() {
         personaDirectory={personaDir.personaDirectory}
         attemptId={session.attemptId}
         initialMessages={session.messages}
+        initialTimeSpentSeconds={session.timeSpentSeconds}
         onSessionEnd={handleSessionEnd}
       />
 

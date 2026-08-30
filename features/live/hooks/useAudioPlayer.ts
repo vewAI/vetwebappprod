@@ -9,6 +9,7 @@ export type UseAudioPlayerResult = {
   enqueue: (chunk: ArrayBuffer) => void;
   flush: () => void;
   stop: () => void;
+  setMuted: (muted: boolean) => void;
   setOnPlayingChange: (cb: ((playing: boolean) => void) | null) => void;
 };
 
@@ -30,6 +31,7 @@ export function useAudioPlayer(): UseAudioPlayerResult {
   const queueRef = useRef<AudioBuffer[]>([]);
   const playingCbRef = useRef<((playing: boolean) => void) | null>(null);
   const stoppedRef = useRef(false);
+  const mutedRef = useRef(false);
   const generationRef = useRef(0);
   const drainQueueRef = useRef<(() => void) | null>(null);
 
@@ -87,6 +89,10 @@ export function useAudioPlayer(): UseAudioPlayerResult {
   }, []);
 
   const enqueue = useCallback((chunk: ArrayBuffer) => {
+    // While muted, discard incoming chunks entirely so future model turns
+    // stay silent until the user unmutes (stop() alone would be undone by
+    // the next enqueue resetting stoppedRef).
+    if (mutedRef.current) return;
     stoppedRef.current = false;
     const ctx = getContext();
     const buffer = pcmToAudioBuffer(ctx, chunk);
@@ -95,6 +101,16 @@ export function useAudioPlayer(): UseAudioPlayerResult {
       drainQueue();
     }
   }, [getContext, drainQueue]);
+
+  const setMuted = useCallback(
+    (muted: boolean) => {
+      mutedRef.current = muted;
+      if (muted) {
+        stop();
+      }
+    },
+    [stop]
+  );
 
   const flush = useCallback(() => {
     stoppedRef.current = false;
@@ -128,5 +144,5 @@ export function useAudioPlayer(): UseAudioPlayerResult {
     };
   }, [stop]);
 
-  return { isPlaying, play, enqueue, flush, stop, setOnPlayingChange };
+  return { isPlaying, play, enqueue, flush, stop, setMuted, setOnPlayingChange };
 }

@@ -25,6 +25,7 @@ import {
   exportTranscriptToText,
   copyTranscriptToClipboard,
 } from "../services/transcriptExport";
+import { buildConversationContext } from "../utils/conversationContext";
 import { Button } from "@/components/ui/button";
 import { FileText, Download, Copy, Check } from "lucide-react";
 
@@ -35,6 +36,7 @@ type LiveSessionProps = {
   personaDirectory: Record<string, PersonaEntry>;
   attemptId: string;
   initialMessages?: Message[];
+  initialTimeSpentSeconds?: number;
   onSessionEnd?: (messages?: Message[]) => void;
 };
 
@@ -51,6 +53,7 @@ export function LiveSession({
   personaDirectory,
   attemptId,
   initialMessages = [],
+  initialTimeSpentSeconds = 0,
   onSessionEnd,
 }: LiveSessionProps) {
   const [isMuted, setIsMuted] = useState(false);
@@ -80,9 +83,6 @@ export function LiveSession({
     return false;
   });
 
-  // P3.8: Session timer
-  const [elapsedDisplay, setElapsedDisplay] = useState("00:00");
-
   const progress = useLiveProgress(initialStages, initialStageIndex);
   const persona = usePersonaSwitcher(
     caseItem,
@@ -98,7 +98,6 @@ export function LiveSession({
   const { saveProgress } = useSaveAttempt(attemptId);
 
   const userInitiatedDisconnectRef = useRef(false);
-  const countedMessageIdsRef = useRef<Set<string>>(new Set());
   const currentStage = progress.stages[progress.currentStageIndex];
   const nextStage =
     progress.currentStageIndex < progress.stages.length - 1
@@ -109,10 +108,14 @@ export function LiveSession({
   const [showAdvanceHint, setShowAdvanceHint] = useState(false);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const timeSpentRef = useRef(0);
+  const timeSpentRef = useRef(initialTimeSpentSeconds);
   const lastUserMessageTimeRef = useRef(Date.now());
 
-  // P3.8: Increment elapsed time every second + update display
+  // P3.8: Increment elapsed time every second + update display.
+  // Restores the accumulated time when resuming a session.
+  const [elapsedDisplay, setElapsedDisplay] = useState(() =>
+    formatElapsed(initialTimeSpentSeconds)
+  );
   useEffect(() => {
     const timer = setInterval(() => {
       timeSpentRef.current += 1;
@@ -177,6 +180,14 @@ export function LiveSession({
     });
   }, [live, player]);
 
+  // Barge-in: when the model is interrupted, drop any audio still queued
+  // locally so the cut-off turn stops sounding immediately.
+  useEffect(() => {
+    live.setOnInterrupted(() => {
+      player.stop();
+    });
+  }, [live, player]);
+
   // Connect when persona becomes available
   const hasConnectedRef = useRef(false);
   const retryCountRef = useRef(0);
@@ -220,7 +231,12 @@ export function LiveSession({
 
         await mic.start();
 
-        if (persona.roleKey === "owner") {
+        // F2.1: If this is a resumed session, replay the persisted transcript
+        // so the model keeps continuity instead of starting from zero; only
+        // greet with the owner trigger on a truly fresh session.
+        if (live.messages.length > 0) {
+          live.sendContext(buildConversationContext(live.messages));
+        } else if (persona.roleKey === "owner") {
           live.sendText("[SYS_TRIGGER]");
         }
       } catch (err) {
@@ -283,7 +299,14 @@ export function LiveSession({
         console.log("[Session] Reconnected with persona:", persona.displayName);
         await live.connect(token, persona);
         await mic.start();
-        if (persona.roleKey === "owner") live.sendText("[SYS_TRIGGER]");
+        // F2.1: Restore continuity after an unexpected disconnect by replaying
+        // the conversation so far; skip the greeting trigger (the session is
+        // not starting over).
+        if (live.messages.length > 0) {
+          live.sendContext(buildConversationContext(live.messages));
+        } else if (persona.roleKey === "owner") {
+          live.sendText("[SYS_TRIGGER]");
+        }
       } catch (err) {
         if (!cancelled) {
           console.error("[Session] Reconnect attempt failed:", err);
@@ -349,16 +372,15 @@ export function LiveSession({
     setActivePersonaRole(null);
   }, [progress.currentStageIndex]);
 
-  // P1.5: Record turns
+  // P1.5 + F2.2: Turn count derived from the transcript. Only user messages
+  // belonging to the CURRENT stage count, so resumed sessions don't unlock
+  // "Next Stage" with historical turns from earlier stages.
   useEffect(() => {
-    const userMessages = live.messages.filter((m) => m.role === "user");
-    for (const msg of userMessages) {
-      if (!countedMessageIdsRef.current.has(msg.id)) {
-        countedMessageIdsRef.current.add(msg.id);
-        progress.recordTurn();
-      }
-    }
-  }, [live.messages, progress]);
+    const stageTurns = live.messages.filter(
+      (m) => m.role === "user" && m.stageIndex === progress.currentStageIndex
+    ).length;
+    progress.syncTurnCount(stageTurns);
+  }, [live.messages, progress.currentStageIndex, progress]);
 
   // Show advance hint once per stage
   useEffect(() => {
@@ -446,10 +468,9 @@ export function LiveSession({
   }, [mic, live, attemptId, progress.currentStageIndex, saveProgress, onSessionEnd]);
 
   const handleToggleMute = useCallback(() => {
-    setIsMuted((prev) => !prev);
-    if (!isMuted) {
-      player.stop();
-    }
+    const next = !isMuted;
+    setIsMuted(next);
+    player.setMuted(next);
   }, [isMuted, player]);
 
   // P3.6: Export handlers + click-outside close

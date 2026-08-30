@@ -24,6 +24,7 @@ export type UseGeminiLiveResult = {
   sendContext: (context: string) => void;
   interrupt: () => void;
   setOnAudio: (cb: ((chunk: ArrayBuffer) => void) | null) => void;
+  setOnInterrupted: (cb: (() => void) | null) => void;
 };
 
 export function useGeminiLive(
@@ -50,6 +51,7 @@ export function useGeminiLive(
   const pendingAssistantIdRef = useRef<string | null>(null);
 
   const onAudioRef = useRef<((chunk: ArrayBuffer) => void) | null>(null);
+  const onInterruptedRef = useRef<(() => void) | null>(null);
   const personaRef = useRef<PersonaInstruction | null>(null);
   const tokenRef = useRef<string | null>(null);
   const stageIndexRef = useRef(currentStageIndex);
@@ -191,7 +193,9 @@ export function useGeminiLive(
           case "interrupted":
             pendingInputRef.current = null;
             setIsSpeaking(false);
-            audioChunksDiscard();
+            // Barge-in: the model was cut off mid-turn, so drop any audio the
+            // local player still has queued (wired from live-session).
+            onInterruptedRef.current?.();
             // Keep the partial text already shown; a new turn starts next event.
             resetPendingAssistant();
             break;
@@ -220,12 +224,7 @@ export function useGeminiLive(
     return () => {
       serviceRef.current?.disconnect();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appendUserMessage, commitMessages, resetPendingAssistant]);
-
-  // No-op retained for event-shape parity; audio streams directly to the
-  // player (no batch buffering) so there is nothing to discard here.
-  function audioChunksDiscard() {}
 
   const connect = useCallback(
     async (token: string, persona: PersonaInstruction) => {
@@ -318,6 +317,10 @@ export function useGeminiLive(
     onAudioRef.current = cb;
   }, []);
 
+  const setOnInterrupted = useCallback((cb: (() => void) | null) => {
+    onInterruptedRef.current = cb;
+  }, []);
+
   return {
     status,
     isSpeaking,
@@ -332,5 +335,6 @@ export function useGeminiLive(
     sendContext,
     interrupt,
     setOnAudio,
+    setOnInterrupted,
   };
 }
