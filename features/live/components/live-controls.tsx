@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Mic, MicOff, Send, SkipForward, PhoneOff, Volume2, VolumeX } from "lucide-react";
+import { Mic, MicOff, Send, SkipForward, PhoneOff, Volume2, VolumeX, Hand } from "lucide-react";
 import type { LiveSessionStatus } from "../types";
 import { StageAdvanceHint } from "./stage-advance-hint";
 import { PersonaButton } from "@/features/chat/components/PersonaButton";
@@ -34,6 +34,7 @@ type LiveControlsProps = {
   onSendText: () => void;
   onAdvanceStage: () => void;
   onEndSession: () => void;
+  onInterrupt?: () => void;
   onToggleMute: () => void;
 };
 
@@ -55,6 +56,7 @@ export function LiveControls({
   onAdvanceStage,
   onEndSession,
   onToggleMute,
+  onInterrupt,
 }: LiveControlsProps) {
   const isConnected = status === "connected";
   const isConnecting = status === "connecting";
@@ -182,6 +184,20 @@ export function LiveControls({
 
       {/* Secondary controls */}
       <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+        {/* Barge-in: cut the persona off mid-sentence */}
+        {isSpeaking && onInterrupt && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onInterrupt}
+            className="h-9 w-9 rounded-full text-amber-500 hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-950/20"
+            aria-label="Interrupt the speaker"
+            title="Interrupt"
+          >
+            <Hand className="h-5 w-5" />
+          </Button>
+        )}
+
         <Button
           variant="ghost"
           size="icon"

@@ -14,6 +14,7 @@ import { useLiveProgress } from "../hooks/useLiveProgress";
 import { useSaveAttempt } from "@/features/attempts/hooks/useSaveAttempt";
 import { PersonaHeader } from "./persona-header";
 import { AudioWaveform } from "./audio-waveform";
+import { LiveIntroOverlay } from "./live-intro-overlay";
 import type { LivePersonaDef, LivePersonaRoleKey } from "./live-controls";
 import { LiveControls } from "./live-controls";
 import { ProgressSidebar } from "@/features/chat/components/progress-sidebar";
@@ -126,22 +127,24 @@ export function LiveSession({
   const hintShownForStageRef = useRef<number>(-1);
   const [showAdvanceHint, setShowAdvanceHint] = useState(false);
 
+  // P3.8: Session timer — starts only once the student starts/resumes.
+  const [sessionStarted, setSessionStarted] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const timeSpentRef = useRef(initialTimeSpentSeconds);
   const lastUserMessageTimeRef = useRef(Date.now());
 
-  // P3.8: Increment elapsed time every second + update display.
   // Restores the accumulated time when resuming a session.
   const [elapsedDisplay, setElapsedDisplay] = useState(() =>
     formatElapsed(initialTimeSpentSeconds)
   );
   useEffect(() => {
+    if (!sessionStarted) return;
     const timer = setInterval(() => {
       timeSpentRef.current += 1;
       setElapsedDisplay(formatElapsed(timeSpentRef.current));
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [sessionStarted]);
 
   // P3.7: Listen for guided mode changes from other tabs/components
   useEffect(() => {
@@ -259,10 +262,13 @@ export function LiveSession({
     });
   }, [live, player]);
 
-  // Connect when persona becomes available
+  // Connect when persona becomes available AND the student started the
+  // session from the intro overlay (also provides the user gesture required
+  // by getUserMedia/AudioContext on iOS/Safari).
   const hasConnectedRef = useRef(false);
   const retryCountRef = useRef(0);
   useEffect(() => {
+    if (!sessionStarted) return;
     if (!persona) return;
     // If a previous attempt was aborted (e.g. persona changed while the token
     // fetch was in flight) and the session never connected, allow a fresh one.
@@ -588,6 +594,12 @@ export function LiveSession({
     player.setMuted(next);
   }, [isMuted, player]);
 
+  // F5.2: Manual barge-in — cut the persona off and drop queued audio.
+  const handleInterrupt = useCallback(() => {
+    live.interrupt();
+    player.stop();
+  }, [live, player]);
+
   // P3.6: Export handlers + click-outside close
   const exportMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -654,7 +666,16 @@ export function LiveSession({
     Date.now() - lastUserMessageTimeRef.current > 30_000 &&
     live.messages.length > 0;
   return (
-    <div className="flex h-full bg-background">
+    <div className="relative flex h-full bg-background">
+      {/* F5.1: Pre-session briefing — gates connection behind a user gesture */}
+      {!sessionStarted && (
+        <LiveIntroOverlay
+          caseItem={caseItem}
+          stages={progress.stages}
+          isResume={initialMessages.length > 0}
+          onStart={() => setSessionStarted(true)}
+        />
+      )}
       {/* P2.5: Progress Sidebar */}
       <ProgressSidebar
         caseItem={caseItem}
@@ -741,6 +762,16 @@ export function LiveSession({
           </div>
         )}
 
+        {/* F5.2: Live caption of the student's in-flight words */}
+        {live.pendingInput && (
+          <div
+            className="mx-4 mb-1 rounded-md bg-primary/5 px-3 py-1.5 text-center text-xs text-muted-foreground animate-in fade-in duration-200"
+            aria-live="polite"
+          >
+            You: {live.pendingInput}
+          </div>
+        )}
+
         {/* Bottom: Controls */}
         <div className="relative flex-shrink-0">
           {/* Top-right action buttons */}
@@ -819,6 +850,7 @@ export function LiveSession({
             onAdvanceStage={handleAdvanceClick}
             onEndSession={handleEndSession}
             onToggleMute={handleToggleMute}
+            onInterrupt={handleInterrupt}
           />
         </div>
 

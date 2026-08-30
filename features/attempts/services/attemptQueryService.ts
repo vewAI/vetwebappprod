@@ -13,10 +13,11 @@ export async function getUserAttempts(): Promise<AttemptSummary[]> {
     const { data, error } = await supabase
       .from("attempts")
       .select(
-        "id, case_id, title, created_at, completed_at, completion_status, last_stage_index, time_spent_seconds, cases (title, category, difficulty, image_url)`",
+        "id, case_id, title, created_at, completed_at, completion_status, last_stage_index, time_spent_seconds, cases (title, category, difficulty, image_url)"
       )
       .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(200);
 
     if (error) {
       console.error("Error fetching attempts:", error);
@@ -41,11 +42,12 @@ export async function getAttemptsByCase(caseId: string): Promise<AttemptSummary[
     const { data, error } = await supabase
       .from("attempts")
       .select(
-        "id, case_id, title, created_at, completed_at, completion_status, last_stage_index, time_spent_seconds, cases (title, category, difficulty, image_url)`",
+        "id, case_id, title, created_at, completed_at, completion_status, last_stage_index, time_spent_seconds, cases (title, category, difficulty, image_url)"
       )
       .eq("user_id", user.id)
       .eq("case_id", caseId)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(200);
 
     if (error) {
       console.error("Error fetching attempts for case:", error);
@@ -78,7 +80,8 @@ export async function getAttemptById(attemptId: string): Promise<{
     .from("attempt_messages")
     .select("*")
     .eq("attempt_id", attemptId)
-    .order("timestamp", { ascending: true });
+    .order("timestamp", { ascending: true })
+    .limit(1000);
 
   if (messagesError) {
     console.error("Error fetching messages:", messagesError);

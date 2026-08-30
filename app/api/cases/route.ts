@@ -118,7 +118,7 @@ export async function GET(req: Request) {
   const { supabase } = auth;
   const url = new URL(req.url);
   const includeArchived = url.searchParams.get("includeArchived") === "true";
-  const { data, error } = await supabase.from("cases").select("*");
+  const { data, error } = await supabase.from("cases").select("*").order("created_at", { ascending: false }).limit(200);
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

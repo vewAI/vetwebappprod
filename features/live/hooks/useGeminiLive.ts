@@ -15,6 +15,8 @@ export type UseGeminiLiveResult = {
   status: LiveSessionStatus;
   isSpeaking: boolean;
   messages: Message[];
+  /** Live interim transcription of what the user is saying (not yet final). */
+  pendingInput: string | null;
   currentPersona: PersonaInstruction | null;
   error: string | null;
   connect: (token: string, persona: PersonaInstruction) => Promise<void>;
@@ -37,6 +39,7 @@ export function useGeminiLive(
   const [status, setStatus] = useState<LiveSessionStatus>("idle");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const [pendingInput, setPendingInput] = useState<string | null>(null);
   const [currentPersona, setCurrentPersona] = useState<PersonaInstruction | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -194,6 +197,7 @@ export function useGeminiLive(
             if (pendingInputRef.current) {
               const flushed = pendingInputRef.current;
               pendingInputRef.current = null;
+              setPendingInput(null);
               upsertPendingUserEntry(flushed);
             }
             const p = personaRef.current;
@@ -233,6 +237,7 @@ export function useGeminiLive(
               // Final transcription → commit/update the user entry with the
               // authoritative text.
               pendingInputRef.current = null;
+              setPendingInput(null);
               upsertPendingUserEntry(text);
               const committedId = pendingUserIdRef.current;
               pendingUserIdRef.current = null;
@@ -249,6 +254,7 @@ export function useGeminiLive(
               // Interim → show the user's words immediately and grow them in
               // place until the final event lands.
               pendingInputRef.current = text;
+              setPendingInput(text);
               upsertPendingUserEntry(text);
               pendingUserFinalRef.current = false;
             }
@@ -261,6 +267,7 @@ export function useGeminiLive(
             if (pendingInputRef.current) {
               const flushed = pendingInputRef.current;
               pendingInputRef.current = null;
+              setPendingInput(null);
               upsertPendingUserEntry(flushed);
             }
             // Track the flushed entry so a late `finished` event extends it
@@ -304,6 +311,7 @@ export function useGeminiLive(
             setStatus("disconnected");
             setIsSpeaking(false);
             pendingInputRef.current = null;
+            setPendingInput(null);
             pendingUserIdRef.current = null;
             pendingUserFinalRef.current = false;
             resetPendingAssistant();
@@ -318,6 +326,7 @@ export function useGeminiLive(
             setStatus("error");
             setIsSpeaking(false);
             pendingInputRef.current = null;
+            setPendingInput(null);
             pendingUserIdRef.current = null;
             pendingUserFinalRef.current = false;
             resetPendingAssistant();
@@ -356,6 +365,7 @@ export function useGeminiLive(
     setStatus("disconnected");
     setIsSpeaking(false);
     pendingInputRef.current = null;
+    setPendingInput(null);
     resetPendingAssistant();
   }, [resetPendingAssistant]);
 
@@ -415,6 +425,7 @@ export function useGeminiLive(
     serviceRef.current?.interrupt();
     setIsSpeaking(false);
     pendingInputRef.current = null;
+    setPendingInput(null);
     resetPendingAssistant();
   }, [resetPendingAssistant]);
 
@@ -430,6 +441,7 @@ export function useGeminiLive(
     status,
     isSpeaking,
     messages,
+    pendingInput,
     currentPersona,
     error,
     connect,
