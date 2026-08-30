@@ -14,7 +14,6 @@ import { useLiveProgress } from "../hooks/useLiveProgress";
 import { useSaveAttempt } from "@/features/attempts/hooks/useSaveAttempt";
 import { PersonaHeader } from "./persona-header";
 import { AudioWaveform } from "./audio-waveform";
-import { LiveIntroOverlay } from "./live-intro-overlay";
 import type { LivePersonaDef, LivePersonaRoleKey } from "./live-controls";
 import { LiveControls } from "./live-controls";
 import { ProgressSidebar } from "@/features/chat/components/progress-sidebar";
@@ -127,8 +126,7 @@ export function LiveSession({
   const hintShownForStageRef = useRef<number>(-1);
   const [showAdvanceHint, setShowAdvanceHint] = useState(false);
 
-  // P3.8: Session timer — starts only once the student starts/resumes.
-  const [sessionStarted, setSessionStarted] = useState(false);
+  // P3.8: Session timer
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const timeSpentRef = useRef(initialTimeSpentSeconds);
   const lastUserMessageTimeRef = useRef(Date.now());
@@ -138,13 +136,12 @@ export function LiveSession({
     formatElapsed(initialTimeSpentSeconds)
   );
   useEffect(() => {
-    if (!sessionStarted) return;
     const timer = setInterval(() => {
       timeSpentRef.current += 1;
       setElapsedDisplay(formatElapsed(timeSpentRef.current));
     }, 1000);
     return () => clearInterval(timer);
-  }, [sessionStarted]);
+  }, []);
 
   // P3.7: Listen for guided mode changes from other tabs/components
   useEffect(() => {
@@ -262,13 +259,10 @@ export function LiveSession({
     });
   }, [live, player]);
 
-  // Connect when persona becomes available AND the student started the
-  // session from the intro overlay (also provides the user gesture required
-  // by getUserMedia/AudioContext on iOS/Safari).
+  // Connect when persona becomes available
   const hasConnectedRef = useRef(false);
   const retryCountRef = useRef(0);
   useEffect(() => {
-    if (!sessionStarted) return;
     if (!persona) return;
     // If a previous attempt was aborted (e.g. persona changed while the token
     // fetch was in flight) and the session never connected, allow a fresh one.
@@ -666,16 +660,7 @@ export function LiveSession({
     Date.now() - lastUserMessageTimeRef.current > 30_000 &&
     live.messages.length > 0;
   return (
-    <div className="relative flex h-full bg-background">
-      {/* F5.1: Pre-session briefing — gates connection behind a user gesture */}
-      {!sessionStarted && (
-        <LiveIntroOverlay
-          caseItem={caseItem}
-          stages={progress.stages}
-          isResume={initialMessages.length > 0}
-          onStart={() => setSessionStarted(true)}
-        />
-      )}
+    <div className="flex h-full bg-background">
       {/* P2.5: Progress Sidebar */}
       <ProgressSidebar
         caseItem={caseItem}
