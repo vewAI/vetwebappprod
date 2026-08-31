@@ -269,7 +269,7 @@ export default function HomePage() {
               Vew<span className="font-bold text-white">AI</span>
             </h2>
             <div className="space-y-3">
-              <h1 className="text-3xl font-semibold tracking-tight md:text-4xl lg:text-5xl">Veterinary OSCE Simulator</h1>
+              <h1 className="text-3xl font-semibold tracking-tight md:text-4xl lg:text-5xl">Communication Skills Training Platform</h1>
               <p className="text-sm text-primary-foreground/90 md:text-base dark:text-white">
                 AI-powered educational simulator for veterinary students
               </p>
@@ -306,18 +306,19 @@ export default function HomePage() {
                   ? "Review your students' progress and assign new cases."
                   : "Continue your training journey or start a new simulated case."}
               </p>
-              <p className="mt-3 text-sm leading-relaxed text-muted-foreground/80">
-                To practice <strong>knowledge and clinical skills</strong>, choose from the cases below or click on the{" "}
-                <Link href="/cases" className="font-medium text-primary underline underline-offset-2 hover:text-primary/80">
-                  Cases
-                </Link>{" "}
-                menu link. If you&apos;d like to practice your{" "}
-                <strong>communication skills</strong>, click on the{" "}
-                <Link href="/live" className="font-medium text-primary underline underline-offset-2 hover:text-primary/80">
-                  Live
-                </Link>{" "}
-                menu link at the top.
-              </p>
+              {role === "student" && (
+                <p className="mt-3 text-sm leading-relaxed text-muted-foreground/80">
+                  To practice <strong>knowledge and clinical skills</strong>, choose from the cases below or click on the{" "}
+                  <Link href="/cases" className="font-medium text-primary underline underline-offset-2 hover:text-primary/80">
+                    Cases
+                  </Link>{" "}
+                  menu link. If you&apos;d like to practice your <strong>communication skills</strong>, click on the{" "}
+                  <Link href="/live" className="font-medium text-primary underline underline-offset-2 hover:text-primary/80">
+                    Live
+                  </Link>{" "}
+                  menu link at the top.
+                </p>
+              )}
             </div>
           </div>
           <NotificationsBar notifications={notifications} />
