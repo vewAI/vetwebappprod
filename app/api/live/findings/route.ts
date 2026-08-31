@@ -35,11 +35,45 @@ function normalizeForMatch(s: string): string {
 }
 
 function findSynonymKey(text: string, groups: Record<string, string[]>): string | null {
-  const lower = String(text || "").toLowerCase();
+  const lower = normalizeForMatch(text);
   for (const [key, synonyms] of Object.entries(groups)) {
-    if (synonyms.some((s) => lower.includes(s))) return key;
+    const hit = synonyms.some((s) => {
+      const ns = normalizeForMatch(s);
+      if (!ns) return false;
+      // Short aliases ("ca", "t") are dangerously ambiguous as substrings —
+      // require a whole-word match for them; longer aliases may prefix-match.
+      if (ns.length <= 3) {
+        return new RegExp(`(?:^| )${ns}(?:$| )`).test(lower);
+      }
+      return new RegExp(`(?:^| )${ns}`).test(lower);
+    });
+    if (hit) return key;
   }
   return null;
+}
+
+// Stage gating: findings stay hidden until their proper stage is reached.
+const STAGE_ORDER = ["history", "physical", "diagnostic", "laboratory", "treatment", "communication"];
+function stageAllowsReveal(source: "physical" | "diagnostic", stageType: string): boolean {
+  const idx = STAGE_ORDER.indexOf(stageType);
+  if (idx === -1) return true; // unknown/custom stage types: don't block
+  if (source === "physical") return idx >= STAGE_ORDER.indexOf("physical");
+  return idx >= STAGE_ORDER.indexOf("laboratory");
+}
+
+// Diagnostic records may embed interpretive conclusions (or a full
+// diagnostics_summary). Strip them — the student must reach those alone.
+function sanitizeDiagnosticText(text: string): string {
+  let t = text;
+  t = t.replace(/["']?diagnostics_summary["']?\s*:\s*"(?:[^"\\]|\\.)*["']?\s*,?/gi, "");
+  t = t.replace(/["']?diagnosis["']?\s*:\s*"(?:[^"\\]|\\.)*["']?\s*,?/gi, "");
+  t = t.replace(/[^."'\n]*(?:consistent with|suggestive of|indicat\w+|diagnos\w+)[^."'\n]*\.?/gi, "");
+  return t
+    .trim()
+    .replace(/^[,\s"-]+|[,."\s-]+$/g, "")
+    .replace(/,\s*,/g, ",")
+    .replace(/["']{2,}/g, '"')
+    .trim();
 }
 
 // Findings are stored as "Label: value" entries separated by newlines and/or
@@ -115,6 +149,7 @@ export async function POST(request: Request) {
     const caseId = typeof body?.caseId === "string" && body.caseId.length <= 200 ? body.caseId : "";
     const userText = typeof body?.userText === "string" ? body.userText.slice(0, 2000) : "";
     const assistantText = typeof body?.assistantText === "string" ? body.assistantText.slice(0, 4000) : "";
+    const stageType = typeof body?.stageType === "string" ? body.stageType.slice(0, 60) : "";
     if (!caseId || (!userText.trim() && !assistantText.trim())) {
       return NextResponse.json({ error: "caseId and userText or assistantText are required" }, { status: 400 });
     }
@@ -136,14 +171,16 @@ export async function POST(request: Request) {
     const seen = new Set<string>();
 
     // 1) Explicit requests: reveal only the entries whose canonical key or
-    // vocabulary the user asked for (on-demand, entry-level granularity).
+    // vocabulary the user asked for (on-demand, entry-level granularity) and
+    // only once their proper stage has been reached.
     const requested = parseRequestedKeys(userText);
     const allowedPhysKeys = new Set(Object.keys(PHYS_SYNONYMS));
     const requestedCanonical = new Set((requested.canonical ?? []).filter((k) => allowedPhysKeys.has(k)));
 
     const physEntries = extractFindingsEntries(physText);
+    const physAllowed = stageAllowsReveal("physical", stageType);
 
-    if (requestedCanonical.size > 0 || userText.trim()) {
+    if (physAllowed && (requestedCanonical.size > 0 || userText.trim())) {
       for (const entry of physEntries) {
         const entryKeys = canonicalKeysForLabel(entry.label);
         const canonicalHit = entryKeys.some((k) => requestedCanonical.has(k));
@@ -164,7 +201,7 @@ export async function POST(request: Request) {
     // 2) What the persona verbalized: reveal entries whose label appears in
     // the persona's spoken reply, so the panel mirrors the conversation.
     const haystack = normalizeForMatch(assistantText);
-    if (haystack) {
+    if (physAllowed && haystack) {
       for (const entry of physEntries) {
         const labelNorm = normalizeForMatch(entry.label);
         if (labelNorm.length < 3 || !haystack.includes(labelNorm)) continue;
@@ -180,11 +217,14 @@ export async function POST(request: Request) {
       }
     }
 
-    // 3) Diagnostic/lab values: reveal the group only when the user mentions it.
-    const diagKey = findSynonymKey(userText, DIAG_SYNONYMS);
+    // 3) Diagnostic/lab values: reveal the group only when the user mentions
+    // it AND the session reached the laboratory phase. Interpretive content
+    // is stripped so conclusions stay the student's job.
+    const diagAllowed = stageAllowsReveal("diagnostic", stageType);
+    const diagKey = diagAllowed ? findSynonymKey(userText, DIAG_SYNONYMS) : null;
     if (diagKey && diagText) {
       const synonyms = DIAG_SYNONYMS[diagKey] ?? [];
-      const diagLines = extractFindingsEntries(diagText)
+      const diagLines = extractFindingsEntries(sanitizeDiagnosticText(diagText))
         .filter((e) => synonyms.some((s) => `${e.label} ${e.value}`.toLowerCase().includes(s)))
         .map((e) => (e.value ? `${e.label}: ${e.value}` : e.label));
       if (diagLines.length > 0) {

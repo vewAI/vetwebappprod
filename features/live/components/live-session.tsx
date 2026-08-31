@@ -211,6 +211,11 @@ export function LiveSession({
       findingsSignatureRef.current = signature;
       try {
         const accessToken = await getAccessToken().catch(() => null);
+        const currentSettings = progress.stages[progress.currentStageIndex]?.settings as
+          | Record<string, unknown>
+          | undefined;
+        const stageType =
+          typeof currentSettings?.stage_type === "string" ? currentSettings.stage_type : "";
         const res = await fetch("/api/live/findings", {
           method: "POST",
           headers: {
@@ -221,6 +226,7 @@ export function LiveSession({
             caseId: caseItem.id,
             userText: lastUser?.content ?? "",
             assistantText: lastAssistant?.content ?? "",
+            stageType,
           }),
         });
         if (!res.ok) return;
@@ -581,13 +587,17 @@ export function LiveSession({
   // they want to move to the NEXT stage (e.g. "let's do the physical
   // examination"), advance immediately, bring the incoming persona into
   // focus, and let them open the conversation.
-  const intentProcessedIdRef = useRef<string | null>(null);
+  const intentProcessedSigRef = useRef<string>("");
   useEffect(() => {
     if (!nextStage) return;
     const userMsgs = live.messages.filter((m) => m.role === "user");
     const last = userMsgs[userMsgs.length - 1];
-    if (!last || intentProcessedIdRef.current === last.id) return;
-    intentProcessedIdRef.current = last.id;
+    if (!last) return;
+    // Interim entries GROW in place with a stable id — re-evaluate on every
+    // content change, not just the first time an id is seen.
+    const signature = `${last.id}:${last.content.length}`;
+    if (intentProcessedSigRef.current === signature) return;
+    intentProcessedSigRef.current = signature;
 
     const settings = nextStage.settings as Record<string, unknown> | undefined;
     const stageType = typeof settings?.stage_type === "string" ? settings.stage_type : "";
