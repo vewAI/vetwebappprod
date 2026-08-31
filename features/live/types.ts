@@ -69,7 +69,7 @@ export const STAGE_TYPE_TO_PERSONA: Record<string, string> = {
   history: "owner",
   physical: "veterinary-nurse",
   diagnostic: "owner",
-  laboratory: "lab-technician",
+  laboratory: "veterinary-nurse",
   treatment: "veterinary-nurse",
   communication: "owner",
 };

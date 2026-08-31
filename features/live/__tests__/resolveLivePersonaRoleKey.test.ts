@@ -26,7 +26,8 @@ describe("resolveLivePersonaRoleKey", () => {
     );
     assert.equal(
       resolveLivePersonaRoleKey(makeStage({ settings: { stage_type: "laboratory" } })),
-      "lab-technician"
+      // The nurse is the single gatekeeper of test results in Live sessions.
+      "veterinary-nurse"
     );
   });
 
@@ -64,10 +65,10 @@ describe("resolveLivePersonaRoleKey", () => {
     );
   });
 
-  it("infers lab from Laboratory & Tests", () => {
+  it("infers nurse from Laboratory & Tests (nurse is the results gatekeeper)", () => {
     assert.equal(
       resolveLivePersonaRoleKey(makeStage({ title: "Laboratory & Tests", role: "Laboratory Technician" })),
-      "lab-technician"
+      "veterinary-nurse"
     );
   });
 

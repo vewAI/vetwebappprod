@@ -201,7 +201,7 @@ function getPersonaRules(personaRoleKey: string, stageType: string): string {
 function getNurseRules(stageType: string): string {
   const rules = [
     "NURSE/LAB PERSONA RULES:",
-    "1) Only release findings when the student explicitly requests them — do not volunteer unrelated values",
+    "1) RESULTS GATEKEEPER (CRITICAL): Only release findings/results when the student EXPLICITLY requests them. NEVER volunteer, announce, offer, or preview results — never say 'I have some results here', 'do you want the bloodwork values?', or similar. If the student greets you or asks something unrelated, reply socially in ONE short sentence WITHOUT mentioning any results, then stop and wait.",
     "2) Selective reporting: if asked for one parameter, report only that parameter; if asked for 'electrolytes', report potassium, chloride, bicarbonate",
     "3) Use natural clinical speech in 1-3 sentences — avoid bullet points, raw JSON, or mechanical repetition",
     "4) If a requested value is not recorded, say 'no recorded value' — do not guess",
@@ -266,7 +266,8 @@ function getStageGuidance(stageType: string, roleKey: string): string {
       owner: "GUIDANCE FOR THIS STAGE:\nThe student is recommending diagnostic tests for your animal. You may be concerned about costs, worried about the procedures, or have questions. React naturally — ask about what each test involves, express concern about your animal's comfort, and discuss costs when relevant.",
     },
     laboratory: {
-      "lab-technician": "GUIDANCE FOR THIS STAGE:\nThe student is requesting laboratory test results. You are the lab technician. Provide results when they ask for specific tests. Report values accurately and flag any critical values WITHOUT interpreting them. Never name syndromes or diagnostic conclusions. Be professional. Guide them if they ask what tests are available.",
+      "veterinary-nurse": "GUIDANCE FOR THIS STAGE:\nThe student is requesting laboratory test results. You are the nurse holding the diagnostic record — the ONLY source of test results. Release results ONLY when the student explicitly asks for a test, panel, or value. NEVER announce results unprompted and NEVER offer ('do you want the values?'). If greeted, reply socially in one sentence and wait. Report values accurately, flag critical values WITHOUT interpreting them, and never name syndromes or diagnostic conclusions.",
+      "lab-technician": "GUIDANCE FOR THIS STAGE:\nThe student is requesting laboratory test results. You hold the diagnostic record. Release results ONLY when the student explicitly asks for a test, panel, or value. NEVER announce results unprompted and NEVER offer ('do you want the values?'). If greeted, reply socially in one sentence and wait. Report values accurately, flag critical values WITHOUT interpreting them, and never name syndromes or diagnostic conclusions.",
     },
     treatment: {
       "veterinary-nurse": "GUIDANCE FOR THIS STAGE:\nThe student is creating a treatment plan. You are the nurse who will execute it. Confirm medication orders, ask for clarification on doses if unclear, and report on the animal's response to treatment. Be thorough — double-check drug names, doses, and routes.",

@@ -2,8 +2,10 @@ import type { Stage } from "@/features/stages/types";
 import { STAGE_TYPE_TO_PERSONA } from "../types";
 
 const OWNER_HINTS = ["history", "owner", "client", "communication", "diagnostic"];
-const LAB_HINTS = ["lab", "laboratory"];
-const NURSE_HINTS = ["nurse", "physical", "treatment", "exam", "technician", "test"];
+// Laboratory & test stages are handled by the NURSE in the live session —
+// the nurse is the single gatekeeper of test results (released only on
+// explicit request). The lab persona remains available via manual switch.
+const NURSE_HINTS = ["nurse", "physical", "treatment", "exam", "technician", "test", "lab", "laboratory"];
 
 /**
  * Resolve which persona answers for a given stage in the live session.
@@ -27,7 +29,6 @@ export function resolveLivePersonaRoleKey(stage: Stage | undefined | null): stri
 
   const text = `${stage.title ?? ""} ${stage.role ?? ""}`.toLowerCase();
   if (OWNER_HINTS.some((hint) => text.includes(hint))) return "owner";
-  if (LAB_HINTS.some((hint) => text.includes(hint))) return "lab-technician";
   if (NURSE_HINTS.some((hint) => text.includes(hint))) return "veterinary-nurse";
 
   if (stage.personaRoleKey) return stage.personaRoleKey;
