@@ -518,7 +518,9 @@ export function LiveSession({
         const countAtSwitch = assistantCountRef.current;
         setTimeout(() => {
           if (live.status === "connected" && assistantCountRef.current === countAtSwitch) {
-            live.sendText("[SYS_TRIGGER]");
+            // Stage handoff: a role-appropriate acknowledgement, NOT the
+            // first-contact [SYS_TRIGGER] opening.
+            live.sendText("[HANDOFF]");
           }
         }, 2500);
       }
@@ -737,8 +739,8 @@ export function LiveSession({
     live.messages.length > 0;
   return (
     <div className="flex h-full bg-background">
-      {/* P2.5: Progress Sidebar (fixed on desktop) */}
-      <div className="hidden h-full lg:block">
+      {/* P2.5: Progress Sidebar (fixed on desktop, capped at 1/3 width) */}
+      <div className="hidden h-full max-w-[33.333vw] lg:block">
         <ProgressSidebar
           caseItem={caseItem}
           stages={progress.stages}

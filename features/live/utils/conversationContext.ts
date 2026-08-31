@@ -14,7 +14,7 @@ export function buildConversationContext(
 ): string {
   const viewerRoleKey = opts?.viewerRoleKey ?? null;
   return messages
-    .filter((m) => typeof m.content === "string" && m.content.trim() && !m.content.startsWith("[SYS_TRIGGER]"))
+    .filter((m) => typeof m.content === "string" && m.content.trim() && !m.content.startsWith("[SYS_TRIGGER]") && !m.content.startsWith("[HANDOFF]"))
     .map((m) => {
       let speaker: string;
       if (m.role === "user") {

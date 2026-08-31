@@ -5,7 +5,7 @@ import type { Message } from "@/features/chat/models/chat";
 import type { Stage } from "@/features/stages/types";
 import { ChatMessage } from "@/features/chat/components/chat-message";
 
-const HIDDEN_PATTERNS = ["[SYS_TRIGGER]", "[The veterinarian has just arrived"];
+const HIDDEN_PATTERNS = ["[SYS_TRIGGER]", "[HANDOFF]", "[The veterinarian has just arrived"];
 
 function isHiddenEntry(content: string): boolean {
   return HIDDEN_PATTERNS.some((p) => content.includes(p));

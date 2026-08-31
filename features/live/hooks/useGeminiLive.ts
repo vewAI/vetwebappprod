@@ -456,7 +456,7 @@ export function useGeminiLive(
       serviceRef.current?.sendText(text);
 
       const normalized = text.trim();
-      if (!normalized || normalized.startsWith("[SYS_TRIGGER]")) return;
+      if (!normalized || normalized.startsWith("[SYS_TRIGGER]") || normalized.startsWith("[HANDOFF]")) return;
 
       // Client-entered messages do not always produce inputTranscription
       // events, so record them immediately (ported from live). This keeps

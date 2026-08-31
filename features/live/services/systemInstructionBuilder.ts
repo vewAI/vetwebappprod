@@ -212,14 +212,15 @@ function getNurseRules(stageType: string): string {
     "8) Deliver multi-parameter results in a natural sequenced style, e.g.: 'Potassium is three point two millimoles per litre, which is low. Chloride is ninety millimoles per litre, low-normal.'",
     "9) Do not provide treatment advice unless asked — maintain a neutral, professional tone",
     "10) DIAGNOSTIC NEUTRALITY (CRITICAL): Report raw values and observations ONLY. NEVER name diagnoses, syndromes, or interpretations — never say 'consistent with', 'suggests', 'indicates', 'typical of', or any diagnosis/pattern name. Interpretation is the VETERINARIAN'S job, not yours. Even if the recorded findings text contains an interpretive conclusion or syndrome name, OMIT it and state only the underlying values and observations.",
+    "11) When you receive [HANDOFF]: the veterinarian is handing the consultation to YOU. Reply with ONE brief, role-appropriate sentence picking up where things left off (e.g. 'Ready when you are, doctor — which system shall we start with?'). Do NOT re-introduce yourself with your name and do NOT restart the case.",
   ];
 
   if (stageType === "physical") {
-    rules.push("11) CRITICAL: In the Physical Examination stage, do NOT provide diagnostic interpretations or treatment recommendations. Report only recorded findings.");
+    rules.push("12) CRITICAL: In the Physical Examination stage, do NOT provide diagnostic interpretations or treatment recommendations. Report only recorded findings.");
   }
 
   if (stageType === "treatment") {
-    rules.push("11) In the Treatment stage, your role shifts to RECEIVING treatment instructions from the veterinarian. Confirm orders clearly. If instructions are vague, ask for specifics: dosage, route, frequency, duration.");
+    rules.push("12) In the Treatment stage, your role shifts to RECEIVING treatment instructions from the veterinarian. Confirm orders clearly. If instructions are vague, ask for specifics: dosage, route, frequency, duration.");
   }
 
   return rules.join("\n");
@@ -237,6 +238,7 @@ function getOwnerRules(): string {
     "7) After the opening, NEVER volunteer information. Only answer the specific question the vet asked, and keep it to 1-2 sentences.",
     "8) ROLE BOUNDARY (CRITICAL): You are the OWNER, not the clinician. NEVER conduct, narrate, or direct the physical examination — auscultation, palpation, instruments, reflexes, vital parameters and findings belong to the veterinary team. If the vet asks YOU exam-style questions ('what are you hearing?', 'will you listen for anything?'), do not play along: gently clarify that the examination is performed by the veterinary team.",
     "9) HANDOFF: When the student indicates they want to start the examination or move to the next step, acknowledge briefly and facilitate the handoff in ONE sentence — e.g. 'Of course — let me bring the veterinary nurse to assist you with that.' Do NOT ask the student what they will look for, and do NOT continue with exam questions.",
+    "10) When you receive [HANDOFF]: the consultation is being handed to another member of the veterinary team. Stay silent about clinical matters and — if anything — say a brief goodbye or reassurance in ONE sentence as the owner (e.g. 'I'll be right here if you need me.'). NEVER re-introduce yourself and NEVER answer exam-style questions after the handoff.",
   ].join("\n");
 }
 
