@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import type { Case } from "@/features/case-selection/models/case";
 import type { Stage } from "@/features/stages/types";
+import { getStudentGuidance } from "@/features/stages/services/studentGuidance";
 
 type ProgressSidebarProps = {
   caseItem: Case;
@@ -77,6 +78,33 @@ export function ProgressSidebar({ caseItem, stages, currentStageIndex, onStageSe
             <span>{guidedMode ? "Guided mode ON" : "Enable guided mode"}</span>
           </button>
         )}
+
+        {/* Guided mode: concise stage tips right below the toggle */}
+        {guidedMode && currentStage && (() => {
+          const guidance = getStudentGuidance(currentStage);
+          if (!guidance) return null;
+          return (
+            <div
+              role="note"
+              className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30"
+            >
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                {guidance.title}
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-amber-900 dark:text-amber-100">
+                {guidance.whatToDo}
+              </p>
+              <ul className="mt-2 space-y-1">
+                {guidance.tips.slice(0, 3).map((tip) => (
+                  <li key={tip} className="flex gap-1.5 text-xs leading-relaxed text-amber-800 dark:text-amber-200">
+                    <span aria-hidden="true">·</span>
+                    <span>{tip}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })()}
       </div>
 
       <div className="border-t p-4">
