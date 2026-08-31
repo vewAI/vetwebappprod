@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/app/api/_lib/auth";
 import { consumeRateLimit } from "@/app/api/_lib/rateLimit";
-import { parseRequestedKeys, matchPhysicalFindings, PHYS_SYNONYMS } from "@/features/chat/services/physFinder";
+import { parseRequestedKeys, PHYS_SYNONYMS } from "@/features/chat/services/physFinder";
 
 // Diagnostic/lab synonym groups — kept in sync with the map in
 // app/api/chat/route.ts (DIAG_SYNONYMS).
@@ -17,13 +17,6 @@ const DIAG_SYNONYMS: Record<string, string[]> = {
   calcium: ["calcium", "ca"],
 };
 
-const PHYS_LABELS: Record<string, string> = {
-  heart_rate: "Heart rate",
-  respiratory_rate: "Respiratory rate",
-  temperature: "Temperature",
-  blood_pressure: "Blood pressure",
-};
-
 type FindingItem = {
   key: string;
   label: string;
@@ -31,13 +24,7 @@ type FindingItem = {
   source: "physical" | "diagnostic";
 };
 
-function findSynonymKey(text: string, groups: Record<string, string[]>): string | null {
-  const lower = String(text || "").toLowerCase();
-  for (const [key, synonyms] of Object.entries(groups)) {
-    if (synonyms.some((s) => lower.includes(s))) return key;
-  }
-  return null;
-}
+type FindingsEntry = { label: string; value: string };
 
 function normalizeForMatch(s: string): string {
   return String(s || "")
@@ -47,24 +34,49 @@ function normalizeForMatch(s: string): string {
     .trim();
 }
 
-// The persona verbalizes results in free speech ("her heart rate was
-// seventy-eight..."). Match each stored findings line's label (the part
-// before ":") against that speech so every result the persona actually
-// revealed becomes written text, even when the student's phrasing doesn't
-// map to a canonical key.
-function extractMentionedLines(findingsText: string, assistantText: string): string[] {
-  const haystack = normalizeForMatch(assistantText);
-  if (!haystack) return [];
-  const out: string[] = [];
-  for (const raw of findingsText.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line) continue;
-    const label = normalizeForMatch(line.split(":")[0]);
-    if (label.length >= 3 && haystack.includes(label)) {
-      out.push(line);
+function findSynonymKey(text: string, groups: Record<string, string[]>): string | null {
+  const lower = String(text || "").toLowerCase();
+  for (const [key, synonyms] of Object.entries(groups)) {
+    if (synonyms.some((s) => lower.includes(s))) return key;
+  }
+  return null;
+}
+
+// Findings are stored as "Label: value" entries separated by newlines and/or
+// " - " bullets — often ALL inside a single line. Split into granular
+// entries so revealing one match never exposes the whole dataset.
+function extractFindingsEntries(findingsText: string): FindingsEntry[] {
+  const entries: FindingsEntry[] = [];
+  const parts = String(findingsText || "")
+    .replace(/\r?\n/g, " - ")
+    .split(/\s-\s+/);
+  for (const partRaw of parts) {
+    const part = partRaw.trim().replace(/^-\s*/, "");
+    if (!part) continue;
+    const colonIdx = part.indexOf(":");
+    if (colonIdx > 0 && colonIdx <= 48) {
+      entries.push({
+        label: part.slice(0, colonIdx).trim(),
+        value: part.slice(colonIdx + 1).trim(),
+      });
+    } else {
+      entries.push({ label: part, value: "" });
     }
   }
-  return out;
+  return entries;
+}
+
+function canonicalKeysForLabel(label: string): string[] {
+  const normalizedLabel = normalizeForMatch(label);
+  const keys: string[] = [];
+  for (const [canon, aliases] of Object.entries(PHYS_SYNONYMS)) {
+    // Prefix match on the entry label: "Heart Rate" ↔ alias "heart rate" ✓,
+    // while "Digital pulses" must NOT match the heart_rate alias "pulse".
+    if (aliases.some((a) => normalizedLabel.startsWith(normalizeForMatch(a)))) {
+      keys.push(canon);
+    }
+  }
+  return keys;
 }
 
 export async function POST(request: Request) {
@@ -99,58 +111,66 @@ export async function POST(request: Request) {
     const diagText = typeof caseRow.diagnostic_findings === "string" ? caseRow.diagnostic_findings : "";
 
     const items: FindingItem[] = [];
+    const seen = new Set<string>();
 
-    // Physical exam values: reveal only the canonical keys the user asked for
-    // (on-demand strategy — same semantics as the classic chat route).
+    // 1) Explicit requests: reveal only the entries whose canonical key the
+    // user asked for (on-demand strategy, entry-level granularity).
     const requested = parseRequestedKeys(userText);
     const allowedPhysKeys = new Set(Object.keys(PHYS_SYNONYMS));
-    const requestedPhys = (requested.canonical ?? []).filter((k) => allowedPhysKeys.has(k));
-    if (requestedPhys.length > 0 && physText) {
-      const matches = matchPhysicalFindings({ ...requested, canonical: requestedPhys }, physText);
-      for (const match of matches) {
-        if (!match.lines?.length) continue;
+    const requestedCanonical = new Set((requested.canonical ?? []).filter((k) => allowedPhysKeys.has(k)));
+
+    const physEntries = extractFindingsEntries(physText);
+
+    if (requestedCanonical.size > 0) {
+      for (const entry of physEntries) {
+        const entryKeys = canonicalKeysForLabel(entry.label);
+        if (!entryKeys.some((k) => requestedCanonical.has(k))) continue;
+        const dedupeKey = `phys:${normalizeForMatch(entry.label)}`;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
         items.push({
-          key: match.canonicalKey,
-          label: PHYS_LABELS[match.canonicalKey] ?? match.canonicalKey.replace(/_/g, " "),
-          value: match.lines.join(" · "),
+          key: dedupeKey,
+          label: entry.label,
+          value: entry.value || entry.label,
           source: "physical",
         });
       }
     }
 
-    // Diagnostic/lab values: reveal the group only when the user mentions it.
-    const diagKey = findSynonymKey(userText, DIAG_SYNONYMS);
-    if (diagKey && diagText) {
-      const synonyms = DIAG_SYNONYMS[diagKey] ?? [];
-      const lines = diagText
-        .split(/\r?\n/)
-        .map((l) => l.trim())
-        .filter(Boolean)
-        .filter((line) => synonyms.some((s) => line.toLowerCase().includes(s)));
-      if (lines.length > 0) {
+    // 2) What the persona verbalized: reveal entries whose label appears in
+    // the persona's spoken reply, so the panel mirrors the conversation.
+    const haystack = normalizeForMatch(assistantText);
+    if (haystack) {
+      for (const entry of physEntries) {
+        const labelNorm = normalizeForMatch(entry.label);
+        if (labelNorm.length < 3 || !haystack.includes(labelNorm)) continue;
+        const dedupeKey = `phys:${labelNorm}`;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
         items.push({
-          key: diagKey,
-          label: diagKey.toUpperCase(),
-          value: lines.join(" · "),
-          source: "diagnostic",
+          key: dedupeKey,
+          label: entry.label,
+          value: entry.value || entry.label,
+          source: "physical",
         });
       }
     }
 
-    // Results the persona verbalized: match spoken assistant text against the
-    // stored findings lines so the panel mirrors everything already revealed.
-    const mentioned = physText ? extractMentionedLines(physText, assistantText) : [];
-    for (const line of mentioned) {
-      const key = `spoken:${normalizeForMatch(line.split(":")[0])}`;
-      if (items.some((it) => it.key === key)) continue;
-      const rawLabel = line.split(":")[0].trim();
-      const label = rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1);
-      items.push({
-        key,
-        label,
-        value: line.split(":").slice(1).join(":").trim() || line,
-        source: "physical",
-      });
+    // 3) Diagnostic/lab values: reveal the group only when the user mentions it.
+    const diagKey = findSynonymKey(userText, DIAG_SYNONYMS);
+    if (diagKey && diagText) {
+      const synonyms = DIAG_SYNONYMS[diagKey] ?? [];
+      const diagLines = extractFindingsEntries(diagText)
+        .filter((e) => synonyms.some((s) => `${e.label} ${e.value}`.toLowerCase().includes(s)))
+        .map((e) => (e.value ? `${e.label}: ${e.value}` : e.label));
+      if (diagLines.length > 0) {
+        items.push({
+          key: diagKey,
+          label: diagKey.toUpperCase(),
+          value: diagLines.join(" · "),
+          source: "diagnostic",
+        });
+      }
     }
 
     return NextResponse.json({ items });
