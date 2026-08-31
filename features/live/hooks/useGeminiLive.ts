@@ -30,6 +30,7 @@ export type UseGeminiLiveResult = {
   setOnInterrupted: (cb: (() => void) | null) => void;
   /** True while the persona's generated audio is actually playing locally. */
   setModelAudioActive: (active: boolean) => void;
+  setKnownPersonaNames: (names: string[]) => void;
 };
 
 export function useGeminiLive(
@@ -70,6 +71,9 @@ export function useGeminiLive(
   // still playing through the local queue.
   const isSpeakingRef = useRef(false);
   const modelAudioActiveRef = useRef(false);
+  // Display names of every session persona — used to strip speaker-label
+  // artifacts copied from the replayed transcript format.
+  const knownPersonaNamesRef = useRef<string[]>([]);
 
   const setSpeaking = useCallback((v: boolean) => {
     isSpeakingRef.current = v;
@@ -78,6 +82,10 @@ export function useGeminiLive(
 
   const setModelAudioActive = useCallback((active: boolean) => {
     modelAudioActiveRef.current = active;
+  }, []);
+
+  const setKnownPersonaNames = useCallback((names: string[]) => {
+    knownPersonaNamesRef.current = names.filter(Boolean);
   }, []);
 
   const personaRef = useRef<PersonaInstruction | null>(null);
@@ -332,11 +340,29 @@ export function useGeminiLive(
             // of the completed assistant turn. If suppressed, drop the message;
             // otherwise replace its content with the filtered text.
             if (personaRef.current && pendingAssistantIdRef.current) {
-              const filtered = filterLivePersonaText(pendingAssistantRef.current ?? "");
+              // Context-replay artifact: models sometimes prefix their reply
+              // with a speaker label copied from the transcript format
+              // ("Martin Lambert: ..."). Strip it when the prefix is a KNOWN
+              // persona name — never touch legitimate "Label: value" content.
+              let spoken = pendingAssistantRef.current ?? "";
+              const knownNames = knownPersonaNamesRef.current
+                .slice()
+                .sort((a, b) => b.length - a.length);
+              for (const name of knownNames) {
+                const re = new RegExp(
+                  `^\\s*${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:\\s*`,
+                  "i"
+                );
+                if (re.test(spoken)) {
+                  spoken = spoken.replace(re, "");
+                  break;
+                }
+              }
+              const filtered = filterLivePersonaText(spoken);
               const pid = pendingAssistantIdRef.current;
               if (filtered.suppressed) {
                 commitMessages(messagesRef.current.filter((m) => m.id !== pid));
-              } else if (pendingAssistantRef.current && filtered.text !== pendingAssistantRef.current) {
+              } else if (spoken !== pendingAssistantRef.current || filtered.text !== spoken) {
                 commitMessages(
                   messagesRef.current.map((m) =>
                     m.id === pid ? { ...m, content: filtered.text } : m
@@ -506,5 +532,6 @@ export function useGeminiLive(
     setOnAudio,
     setOnInterrupted,
     setModelAudioActive,
+    setKnownPersonaNames,
   };
 }

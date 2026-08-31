@@ -193,7 +193,7 @@ export class GeminiLiveService {
       turns: [
         {
           role: "user",
-          parts: [{ text: `[CONTEXT: This is the conversation so far. Use it to maintain continuity — do NOT restart the conversation, repeat your introduction, or speak this context aloud.]\n\n${context}` }],
+          parts: [{ text: `[CONTEXT: This is the conversation so far. Use it to maintain continuity — do NOT restart the conversation, repeat your introduction, or speak this context aloud. Lines prefixed "You" are YOUR OWN previous statements. Lines prefixed with any other name belong to OTHER participants — never speak their lines and never adopt their role. When YOU reply, NEVER prefix your response with any name or speaker label — speak directly.]\n\n${context}` }],
         },
       ],
       turnComplete: false,

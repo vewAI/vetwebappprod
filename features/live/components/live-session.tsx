@@ -312,6 +312,15 @@ export function LiveSession({
     };
   }, [live, player]);
 
+  // Known persona names: lets the hook strip speaker-label artifacts
+  // ("Martin Lambert: ...") copied from the replayed transcript format.
+  useEffect(() => {
+    const names = Object.values(personaDirectory)
+      .map((p) => p.displayName)
+      .filter((n): n is string => Boolean(n));
+    live.setKnownPersonaNames(names);
+  }, [personaDirectory, live]);
+
   // Connect when persona becomes available
   const hasConnectedRef = useRef(false);
   const retryCountRef = useRef(0);
@@ -359,7 +368,7 @@ export function LiveSession({
         // so the model keeps continuity instead of starting from zero; only
         // greet with the owner trigger on a truly fresh session.
         if (live.messages.length > 0) {
-          live.sendContext(buildConversationContext(live.messages));
+          live.sendContext(buildConversationContext(live.messages, { viewerRoleKey: persona.roleKey }));
         } else if (persona.roleKey === "owner") {
           // The model often opens spontaneously; nudge with the trigger only
           // if it hasn't spoken after a grace period (prevents the double
@@ -436,7 +445,7 @@ export function LiveSession({
         // the conversation so far; skip the greeting trigger (the session is
         // not starting over).
         if (live.messages.length > 0) {
-          live.sendContext(buildConversationContext(live.messages));
+          live.sendContext(buildConversationContext(live.messages, { viewerRoleKey: persona.roleKey }));
         } else if (persona.roleKey === "owner") {
           live.sendText("[SYS_TRIGGER]");
         }
@@ -500,7 +509,7 @@ export function LiveSession({
       switchedPersonaRoleRef.current = persona.roleKey;
       // Replay the transcript so a voice-change reconnect (owner↔nurse↔lab)
       // keeps continuity instead of treating the stage change as first contact.
-      live.switchPersona(persona, buildConversationContext(live.messages));
+      live.switchPersona(persona, buildConversationContext(live.messages, { viewerRoleKey: persona.roleKey }));
 
       const shouldOpen = persona.roleKey === "owner" || stageAdvancePendingRef.current;
       stageAdvancePendingRef.current = false;
