@@ -79,15 +79,22 @@ async function createEphemeralToken(): Promise<string> {
     apiKey: process.env.GEMINI_API_KEY as string,
     httpOptions: { apiVersion: "v1alpha" },
   });
-  const authToken = await ai.authTokens.create({
-    config: {
-      uses: EPHEMERAL_TOKEN_MAX_USES,
-      expireTime: new Date(Date.now() + EPHEMERAL_TOKEN_TTL_MS).toISOString(),
-      newSessionExpireTime: new Date(
-        Date.now() + EPHEMERAL_NEW_SESSION_WINDOW_MS
-      ).toISOString(),
-    },
-  });
+  // Fail fast: a hanging Google API call must never stall the request past
+  // the function timeout — race it with a hard 6s limit.
+  const authToken = await Promise.race([
+    ai.authTokens.create({
+      config: {
+        uses: EPHEMERAL_TOKEN_MAX_USES,
+        expireTime: new Date(Date.now() + EPHEMERAL_TOKEN_TTL_MS).toISOString(),
+        newSessionExpireTime: new Date(
+          Date.now() + EPHEMERAL_NEW_SESSION_WINDOW_MS
+        ).toISOString(),
+      },
+    }),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("ephemeral token request timeout")), 6_000)
+    ),
+  ]);
   if (!authToken.name) {
     throw new Error("Ephemeral token response missing name");
   }

@@ -22,14 +22,32 @@ async function ensureRedis(): Promise<RedisClientType | null> {
   if (Date.now() - redisLastFailureAt < REDIS_RETRY_MS) return null;
   try {
     const { createClient } = await import("redis");
-    const client = createClient({ url });
-    await client.connect();
+    const client = createClient({
+      url,
+      socket: { connectTimeout: 2_000 },
+    });
+    // Fail fast: a hanging connect must never stall the request path.
+    await Promise.race([
+      client.connect(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("redis connect timeout")), 2_500)
+      ),
+    ]);
     redisClient = client as RedisClientType;
     return redisClient;
   } catch {
     redisLastFailureAt = Date.now();
     return null;
   }
+}
+
+/** Race any Redis operation with a short timeout so a wedged connection
+ * degrades to the in-memory fallback instead of stalling the request. */
+async function withTimeout<T>(op: Promise<T>, ms = 1_500): Promise<T | null> {
+  return Promise.race([
+    op,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
 }
 
 function consumeInMemory(key: string, maxRequests: number, windowMs: number): boolean {
@@ -53,9 +71,17 @@ export async function consumeRateLimit(
   if (client) {
     const redisKey = `ratelimit:${key}`;
     try {
-      const count = await client.incr(redisKey);
+      const count = await withTimeout(client.incr(redisKey));
+      if (count === null) {
+        // Timed out: treat as unusable and degrade to in-memory.
+        redisLastFailureAt = Date.now();
+        redisClient = null;
+        return consumeInMemory(key, maxRequests, windowMs);
+      }
       if (count === 1) {
-        await client.expire(redisKey, Math.max(1, Math.ceil(windowMs / 1000)));
+        await withTimeout(
+          client.expire(redisKey, Math.max(1, Math.ceil(windowMs / 1000)))
+        );
       }
       return count <= maxRequests;
     } catch {
