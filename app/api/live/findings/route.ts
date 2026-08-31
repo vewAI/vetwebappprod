@@ -79,6 +79,28 @@ function canonicalKeysForLabel(label: string): string[] {
   return keys;
 }
 
+function words(s: string): string[] {
+  return normalizeForMatch(s).split(" ").filter((w) => w.length >= 4);
+}
+
+function commonPrefixLength(a: string, b: string): number {
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  return i;
+}
+
+// Fuzzy vocabulary match: "musculoskeletal" ↔ "Muscle palpation" share the
+// 5-char stem "muscl"; "temp" is a prefix of "temperature". Requires a
+// ≥5-char common prefix so generic words never match.
+function entryMatchesUserText(entryLabel: string, userText: string): boolean {
+  const labelWords = words(entryLabel);
+  const userWords = words(userText);
+  if (labelWords.length === 0 || userWords.length === 0) return false;
+  return labelWords.some((lw) =>
+    userWords.some((uw) => commonPrefixLength(lw, uw) >= 5)
+  );
+}
+
 export async function POST(request: Request) {
   try {
     const auth = await requireUser(request);
@@ -93,8 +115,8 @@ export async function POST(request: Request) {
     const caseId = typeof body?.caseId === "string" && body.caseId.length <= 200 ? body.caseId : "";
     const userText = typeof body?.userText === "string" ? body.userText.slice(0, 2000) : "";
     const assistantText = typeof body?.assistantText === "string" ? body.assistantText.slice(0, 4000) : "";
-    if (!caseId || !userText.trim()) {
-      return NextResponse.json({ error: "caseId and userText are required" }, { status: 400 });
+    if (!caseId || (!userText.trim() && !assistantText.trim())) {
+      return NextResponse.json({ error: "caseId and userText or assistantText are required" }, { status: 400 });
     }
 
     const { supabase } = auth;
@@ -113,18 +135,20 @@ export async function POST(request: Request) {
     const items: FindingItem[] = [];
     const seen = new Set<string>();
 
-    // 1) Explicit requests: reveal only the entries whose canonical key the
-    // user asked for (on-demand strategy, entry-level granularity).
+    // 1) Explicit requests: reveal only the entries whose canonical key or
+    // vocabulary the user asked for (on-demand, entry-level granularity).
     const requested = parseRequestedKeys(userText);
     const allowedPhysKeys = new Set(Object.keys(PHYS_SYNONYMS));
     const requestedCanonical = new Set((requested.canonical ?? []).filter((k) => allowedPhysKeys.has(k)));
 
     const physEntries = extractFindingsEntries(physText);
 
-    if (requestedCanonical.size > 0) {
+    if (requestedCanonical.size > 0 || userText.trim()) {
       for (const entry of physEntries) {
         const entryKeys = canonicalKeysForLabel(entry.label);
-        if (!entryKeys.some((k) => requestedCanonical.has(k))) continue;
+        const canonicalHit = entryKeys.some((k) => requestedCanonical.has(k));
+        const vocabHit = entryMatchesUserText(entry.label, userText);
+        if (!canonicalHit && !vocabHit) continue;
         const dedupeKey = `phys:${normalizeForMatch(entry.label)}`;
         if (seen.has(dedupeKey)) continue;
         seen.add(dedupeKey);

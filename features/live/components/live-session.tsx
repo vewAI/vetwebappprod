@@ -65,6 +65,24 @@ const STAGE_INTENT_PATTERNS: Record<string, RegExp> = {
     /\b(?:let'?s|let us|we'?ll|we should|i'?d like to|i want to|i would like to|time to|move on to|proceed to|start|begin)\b[^.?!]*\b(?:client|owner|communicat|explaining|explain|discharge|conversation)\b/i,
 };
 
+// Softer orientation signals: the conversation is drifting toward the NEXT
+// stage's domain. This only UNLOCKS "Next Stage" (with a hint) — it never
+// auto-advances.
+const STAGE_ORIENTATION_PATTERNS: Record<string, RegExp> = {
+  history:
+    /\b(?:history|anamnesis|background|symptoms?|onset)\b/i,
+  physical:
+    /\b(?:physical|examin\w*|auscult\w*|palpat\w*|stethoscope|nurse|listen to|heart sounds|lung sounds|vitals?)\b/i,
+  diagnostic:
+    /\b(?:differential|diagnos\w*|x-?rays?|ultrasound|imaging|echo)\b/i,
+  laboratory:
+    /\b(?:labs?|laboratory|blood ?work|bloods?\b|blood test|tests?|sample|pcv|chemistry|electrolytes?)\b/i,
+  treatment:
+    /\b(?:treatment|therap\w*|medicat\w*|prescri\w*|antibiot\w*|drip|plan)\b/i,
+  communication:
+    /\b(?:explain|discharge|prognosis|costs?|home care|owner|client)\b/i,
+};
+
 export function LiveSession({
   caseItem,
   stages: initialStages,
@@ -174,24 +192,23 @@ export function LiveSession({
     assistantCountRef.current = live.messages.filter((m) => m.role !== "user").length;
   }, [live.messages]);
 
-  // Test results panel: whenever the user asks for an exam value or lab test,
-  // the server reveals ONLY those values (on-demand) and they become available
-  // as written text in the panel.
+  // Test results panel: reveal entries as the conversation progresses —
+  // triggered by BOTH the student's requests and the persona's spoken
+  // replies, debounced so streaming text settles before the lookup.
   const [revealedFindings, setRevealedFindings] = useState<RevealedFinding[]>([]);
-  const findingsProcessedIdRef = useRef<string | null>(null);
+  const findingsSignatureRef = useRef<string>("");
+  const findingsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    const userMsgs = live.messages.filter((m) => m.role === "user");
-    const last = userMsgs[userMsgs.length - 1];
-    if (!last || findingsProcessedIdRef.current === last.id) return;
-    findingsProcessedIdRef.current = last.id;
+    const msgs = live.messages;
+    if (msgs.length === 0) return;
+    const lastUser = [...msgs].reverse().find((m) => m.role === "user");
+    const lastAssistant = [...msgs].reverse().find((m) => m.role !== "user");
+    const signature = `${lastUser?.id ?? ""}|${lastAssistant?.id ?? ""}|${lastAssistant?.content?.length ?? 0}`;
+    if (signature === findingsSignatureRef.current) return;
 
-    let cancelled = false;
-    const userText = last.content;
-    // Include what the persona just said so the server can reveal every
-    // finding the persona verbalized (free speech → stored findings lines).
-    const assistantMsgs = live.messages.filter((m) => m.role !== "user");
-    const assistantText = assistantMsgs[assistantMsgs.length - 1]?.content ?? "";
-    void (async () => {
+    if (findingsTimerRef.current) clearTimeout(findingsTimerRef.current);
+    findingsTimerRef.current = setTimeout(async () => {
+      findingsSignatureRef.current = signature;
       try {
         const accessToken = await getAccessToken().catch(() => null);
         const res = await fetch("/api/live/findings", {
@@ -200,12 +217,16 @@ export function LiveSession({
             "Content-Type": "application/json",
             ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
           },
-          body: JSON.stringify({ caseId: caseItem.id, userText, assistantText }),
+          body: JSON.stringify({
+            caseId: caseItem.id,
+            userText: lastUser?.content ?? "",
+            assistantText: lastAssistant?.content ?? "",
+          }),
         });
         if (!res.ok) return;
         const data = await res.json();
         const items = Array.isArray(data.items) ? data.items : [];
-        if (cancelled || items.length === 0) return;
+        if (items.length === 0) return;
         setRevealedFindings((prev) => {
           const known = new Set(prev.map((f) => f.key));
           const fresh = items
@@ -216,11 +237,7 @@ export function LiveSession({
       } catch {
         // non-critical: panel stays as-is
       }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    }, 1200);
   }, [live.messages, caseItem.id]);
 
   // Auto-save messages debounced 2s after last change
@@ -241,7 +258,14 @@ export function LiveSession({
     return emitStageEvaluation(caseItem.id, progress.currentStageIndex, live.messages);
   }, [caseItem.id, progress.currentStageIndex, live.messages]);
 
-  const canAdvanceEval = stageEval?.status === "ready" || progress.canAdvance;
+  // F-flow: when the conversation orients toward the NEXT stage's domain,
+  // unlock "Next Stage" (with the hint) even before the turn minimum.
+  const [stageOriented, setStageOriented] = useState(false);
+  useEffect(() => {
+    setStageOriented(false);
+  }, [progress.currentStageIndex]);
+
+  const canAdvanceEval = stageEval?.status === "ready" || progress.canAdvance || stageOriented;
 
   // Wire mic audio to live session
   useEffect(() => {
@@ -456,7 +480,9 @@ export function LiveSession({
       // Commit the switch only when it actually runs, so a switch requested
       // while reconnecting is retried once the status flips to connected.
       switchedPersonaRoleRef.current = persona.roleKey;
-      live.switchPersona(persona);
+      // Replay the transcript so a voice-change reconnect (owner↔nurse↔lab)
+      // keeps continuity instead of treating the stage change as first contact.
+      live.switchPersona(persona, buildConversationContext(live.messages));
 
       const shouldOpen = persona.roleKey === "owner" || stageAdvancePendingRef.current;
       stageAdvancePendingRef.current = false;
@@ -553,6 +579,13 @@ export function LiveSession({
 
     const settings = nextStage.settings as Record<string, unknown> | undefined;
     const stageType = typeof settings?.stage_type === "string" ? settings.stage_type : "";
+
+    // Orientation unlock: softer signals enable "Next Stage" + hint.
+    const orientationPattern = stageType ? STAGE_ORIENTATION_PATTERNS[stageType] : undefined;
+    if (orientationPattern?.test(last.content)) {
+      setStageOriented(true);
+    }
+
     const pattern = stageType ? STAGE_INTENT_PATTERNS[stageType] : undefined;
     if (pattern && pattern.test(last.content)) {
       console.log("[Session] Stage intent detected for:", stageType, "->", last.content);
