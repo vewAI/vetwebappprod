@@ -18,17 +18,39 @@ const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { pe
 
 async function processOne() {
   try {
-    const { data: job } = await admin
-      .from('job_queue')
-      .select('*')
-      .eq('status', 'pending')
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
+    // F4.5: claim atomically via RPC when available (FOR UPDATE SKIP LOCKED),
+    // so parallel workers never process the same job. Falls back to the
+    // legacy non-atomic select+update when the migration hasn't been applied.
+    let job = null;
+    const claimed = await admin.rpc('claim_pending_job', { p_queue_name: null });
+    if (!claimed.error && claimed.data) {
+      job = Array.isArray(claimed.data) ? claimed.data[0] : claimed.data;
+    } else {
+      if (claimed.error) {
+        console.warn('claim_pending_job unavailable, using legacy claim:', claimed.error.message);
+      }
+      const { data: candidate } = await admin
+        .from('job_queue')
+        .select('*')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (!candidate) return false;
+
+      // Re-read with a guard: only mark it in_progress if it is still pending.
+      const { data: locked } = await admin
+        .from('job_queue')
+        .update({ status: 'in_progress', attempt_count: candidate.attempt_count + 1, updated_at: new Date().toISOString() })
+        .eq('id', candidate.id)
+        .eq('status', 'pending')
+        .select();
+      if (!locked || locked.length === 0) return false; // another worker took it
+      job = locked[0];
+    }
 
     if (!job) return false;
-
-    await admin.from('job_queue').update({ status: 'in_progress', attempt_count: job.attempt_count + 1, updated_at: new Date().toISOString() }).eq('id', job.id);
 
     try {
       if (job.queue_name === 'paper-ingest') {

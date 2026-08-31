@@ -10,6 +10,8 @@ export type UseMicrophoneResult = {
   stop: () => void;
   toggle: () => Promise<void>;
   onAudioData: ((handler: (chunk: ArrayBuffer) => void) => void) | null;
+  /** Current mic RMS level in [0, 1] for real-amplitude visualizations. */
+  getMicLevel: () => number;
 };
 
 /**
@@ -30,11 +32,32 @@ export function useMicrophone(targetSampleRate = 16000): UseMicrophoneResult {
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const handlerRef = useRef<((chunk: ArrayBuffer) => void) | null>(null);
   const workletLoadedRef = useRef(false);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+
+  // F5.3: RMS level of the live mic input, for the real-amplitude waveform.
+  const getMicLevel = useCallback((): number => {
+    const analyser = analyserRef.current;
+    if (!analyser) return 0;
+    const data = new Uint8Array(analyser.fftSize);
+    analyser.getByteTimeDomainData(data);
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) {
+      const v = (data[i] - 128) / 128;
+      sum += v * v;
+    }
+    return Math.min(1, Math.sqrt(sum / data.length) * 2.5);
+  }, []);
 
   const stop = useCallback(() => {
     if (workletNodeRef.current) {
       workletNodeRef.current.disconnect();
       workletNodeRef.current = null;
+    }
+    if (analyserRef.current) {
+      try {
+        analyserRef.current.disconnect();
+      } catch {}
+      analyserRef.current = null;
     }
     if (contextRef.current) {
       contextRef.current.close().catch(() => {});
@@ -93,6 +116,12 @@ export function useMicrophone(targetSampleRate = 16000): UseMicrophoneResult {
       source.connect(processor);
       processor.connect(ctx.destination);
 
+      // F5.3: tap the source for real-amplitude visualization.
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+
       (workletNodeRef as unknown as { current: { disconnect: () => void } | null }).current = {
         disconnect: () => {
           processor.disconnect();
@@ -145,6 +174,12 @@ export function useMicrophone(targetSampleRate = 16000): UseMicrophoneResult {
 
       source.connect(workletNode);
 
+      // F5.3: tap the source for real-amplitude visualization.
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+
       setIsRecording(true);
     } catch (err: unknown) {
       // getUserMedia failed (permission denied / no device) — surface the error.
@@ -191,6 +226,7 @@ export function useMicrophone(targetSampleRate = 16000): UseMicrophoneResult {
     stop,
     toggle,
     onAudioData: setAudioHandler,
+    getMicLevel,
   };
 }
 

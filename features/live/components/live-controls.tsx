@@ -101,7 +101,7 @@ export function LiveControls({
               <Send className="h-4 w-4" />
             </Button>
           </div>
-          <p className="mt-1 text-[10px] text-muted-foreground">
+          <p className="mt-1 text-xs text-muted-foreground">
             Press Enter to send · Shift+Enter for a new line
           </p>
         </div>
@@ -141,7 +141,7 @@ export function LiveControls({
             {isRecording ? <MicOff className="h-6 w-6 text-white sm:h-7 sm:w-7" /> : <Mic className="h-6 w-6 text-primary-foreground sm:h-7 sm:w-7" />}
             {isRecording && <span className="absolute inset-0 animate-ping rounded-full bg-red-400 opacity-30" />}
           </button>
-          <p className="text-center text-[10px] text-muted-foreground">
+          <p className="text-center text-xs text-muted-foreground">
             {isConnecting
               ? "Connecting..."
               : !isConnected
@@ -177,7 +177,7 @@ export function LiveControls({
       </div>
 
       {isConnected && (
-        <p className="text-center text-[10px] text-muted-foreground/80">
+        <p className="text-center text-xs text-muted-foreground/80">
           You are talking to {personas.find((persona) => persona.isActive)?.label ?? "the current persona"} — click an avatar to switch.
         </p>
       )}

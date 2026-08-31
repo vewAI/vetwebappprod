@@ -6,10 +6,12 @@ import { cn } from "@/lib/utils";
 type AudioWaveformProps = {
   isActive: boolean;
   mode: "speaking" | "listening" | "idle";
+  /** Real-time RMS level source in [0, 1] (mic while listening, output while speaking). */
+  getLevel?: () => number;
   className?: string;
 };
 
-export function AudioWaveform({ isActive, mode, className }: AudioWaveformProps) {
+export function AudioWaveform({ isActive, mode, getLevel, className }: AudioWaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>(0);
   const phaseRef = useRef(0);
@@ -36,6 +38,15 @@ export function AudioWaveform({ isActive, mode, className }: AudioWaveformProps)
     ctx.clearRect(0, 0, w, h);
     phaseRef.current += 0.03;
 
+    // F5.3: real audio amplitude when a level source is wired; falls back to
+    // the decorative animation when no analyser is available.
+    let level = 0;
+    try {
+      level = Math.max(0, Math.min(1, getLevel?.() ?? 0));
+    } catch {
+      level = 0;
+    }
+
     if (!isActive) {
       animationRef.current = requestAnimationFrame(() => drawRef.current?.());
       return;
@@ -58,13 +69,14 @@ export function AudioWaveform({ isActive, mode, className }: AudioWaveformProps)
       ctx.fillStyle = "rgba(148, 163, 184, 0.5)";
       ctx.fill();
     } else if (mode === "listening") {
-      // Pulsing outward rings
+      // Real-amplitude pulsing rings: the innermost ring tracks your voice.
       const rings = 3;
       for (let i = 0; i < rings; i++) {
         const ringPhase = phaseRef.current + i * 0.8;
         const scale = 0.3 + 0.7 * ((ringPhase % 2) / 2);
         const alpha = 1 - ((ringPhase % 2) / 2);
-        const radius = Math.min(cx, cy) * 0.2 * scale;
+        const voiceBoost = i === 0 ? level * 1.2 : level * 0.4;
+        const radius = Math.min(cx, cy) * (0.2 * scale + voiceBoost);
 
         ctx.beginPath();
         ctx.arc(cx, cy, radius, 0, Math.PI * 2);
@@ -79,18 +91,19 @@ export function AudioWaveform({ isActive, mode, className }: AudioWaveformProps)
       ctx.fillStyle = "rgba(59, 130, 246, 0.8)";
       ctx.fill();
     } else if (mode === "speaking") {
-      // Animated waveform bars
+      // Waveform bars driven by the persona's real output amplitude.
       const bars = 32;
       const barWidth = (w * 0.7) / bars;
       const gap = barWidth * 0.3;
       const startX = w * 0.15;
+      const envelope = 0.15 + level;
 
       for (let i = 0; i < bars; i++) {
         const x = startX + i * (barWidth + gap);
         const wave = Math.sin(phaseRef.current * 2 + i * 0.3);
         const wave2 = Math.sin(phaseRef.current * 1.5 + i * 0.5);
         const combined = (wave + wave2) / 2;
-        const barHeight = Math.abs(combined) * h * 0.6 + 4;
+        const barHeight = Math.abs(combined) * h * 0.6 * envelope + 4;
 
         const gradient = ctx.createLinearGradient(x, cy - barHeight / 2, x, cy + barHeight / 2);
         gradient.addColorStop(0, "rgba(16, 185, 129, 0.8)");

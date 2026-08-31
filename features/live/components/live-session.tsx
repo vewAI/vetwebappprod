@@ -687,7 +687,10 @@ export function LiveSession({
       <div className="flex flex-1 flex-col min-w-0 min-h-0 overflow-hidden">
         {/* P3.5: Persona joining banner */}
         {personaJoining && (
-          <div className="flex items-center justify-center gap-2 bg-blue-50 dark:bg-blue-950/30 px-4 py-2 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div
+            aria-live="polite"
+            className="flex items-center justify-center gap-2 bg-blue-50 dark:bg-blue-950/30 px-4 py-2 animate-in fade-in slide-in-from-top-2 duration-300"
+          >
             <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
               {personaJoining} is joining…
             </span>
@@ -717,6 +720,7 @@ export function LiveSession({
             <AudioWaveform
               isActive={live.status === "connected"}
               mode={waveformMode}
+              getLevel={waveformMode === "speaking" ? player.getOutputLevel : mic.getMicLevel}
               className="h-24 w-full max-w-xs"
             />
           </div>
@@ -731,7 +735,7 @@ export function LiveSession({
 
         {/* P3.4: Stage advance confirmation banner */}
         {showAdvanceConfirm && nextStage && (
-          <div className="mx-4 mb-2 rounded-lg border border-yellow-400/50 bg-yellow-50 dark:bg-yellow-950/20 p-3 animate-in slide-in-from-bottom-2 duration-200">
+          <div role="alert" className="mx-4 mb-2 rounded-lg border border-yellow-400/50 bg-yellow-50 dark:bg-yellow-950/20 p-3 animate-in slide-in-from-bottom-2 duration-200">
             <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-2">
               Did you finish the{" "}
               <strong>{currentStage?.title ?? "current stage"}</strong>?
@@ -849,6 +853,7 @@ export function LiveSession({
         </div>
 
         {/* Error / status display */}
+        <div aria-live={"assertive"} className={"contents"}>
         {initError && (
           <div className="mx-4 mb-4 rounded-lg bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-600 dark:text-red-400">
             {initError}
@@ -880,6 +885,7 @@ export function LiveSession({
             Connection lost. Tap the mic to retry or end the session.
           </div>
         )}
+        </div>
       </div>
 
       {/* P2.4: Notepad overlay */}

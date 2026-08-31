@@ -10,6 +10,8 @@ export type UseAudioPlayerResult = {
   flush: () => void;
   stop: () => void;
   setMuted: (muted: boolean) => void;
+  /** RMS level of the audio currently playing, in [0, 1]. */
+  getOutputLevel: () => number;
   setOnPlayingChange: (cb: ((playing: boolean) => void) | null) => void;
 };
 
@@ -33,7 +35,22 @@ export function useAudioPlayer(): UseAudioPlayerResult {
   const stoppedRef = useRef(false);
   const mutedRef = useRef(false);
   const generationRef = useRef(0);
+  const analyserRef = useRef<AnalyserNode | null>(null);
   const drainQueueRef = useRef<(() => void) | null>(null);
+
+  // F5.3: RMS level of the audio currently playing, for the waveform.
+  const getOutputLevel = useCallback((): number => {
+    const analyser = analyserRef.current;
+    if (!analyser) return 0;
+    const data = new Uint8Array(analyser.fftSize);
+    analyser.getByteTimeDomainData(data);
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) {
+      const v = (data[i] - 128) / 128;
+      sum += v * v;
+    }
+    return Math.min(1, Math.sqrt(sum / data.length) * 2.5);
+  }, []);
 
   const getContext = useCallback(() => {
     if (!contextRef.current || contextRef.current.state === "closed") {
@@ -57,7 +74,13 @@ export function useAudioPlayer(): UseAudioPlayerResult {
     const buffer = queueRef.current.shift()!;
     const source = ctx.createBufferSource();
     source.buffer = buffer;
-    source.connect(ctx.destination);
+    if (!analyserRef.current) {
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.connect(ctx.destination);
+      analyserRef.current = analyser;
+    }
+    source.connect(analyserRef.current);
     source.onended = () => {
       sourceRef.current = null;
       // Only continue draining if generation hasn't changed (stop wasn't called)
@@ -144,5 +167,5 @@ export function useAudioPlayer(): UseAudioPlayerResult {
     };
   }, [stop]);
 
-  return { isPlaying, play, enqueue, flush, stop, setMuted, setOnPlayingChange };
+  return { isPlaying, play, enqueue, flush, stop, setMuted, getOutputLevel, setOnPlayingChange };
 }
