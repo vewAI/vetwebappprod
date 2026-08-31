@@ -135,6 +135,28 @@ function entryMatchesUserText(entryLabel: string, userText: string): boolean {
   );
 }
 
+// Diagnostic records are frequently JSON-as-text ("glucose": "3.8 ...").
+// Extract labelled pairs from that shape first; fall back to the generic
+// entry extraction for plain prose records.
+function extractDiagPairs(diagText: string): FindingsEntry[] {
+  const text = sanitizeDiagnosticText(diagText);
+  const pairs: FindingsEntry[] = [];
+  const jsonRe = /["']([a-z0-9_\- ]{2,48})["']\s*:\s*["']([^"']*)["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = jsonRe.exec(text))) {
+    const label = m[1].replace(/_/g, " ").trim();
+    const value = m[2].trim();
+    if (label) pairs.push({ label, value });
+  }
+  if (pairs.length > 0) return pairs;
+  return extractFindingsEntries(text);
+}
+
+function capitalizeLabel(label: string): string {
+  const clean = label.trim();
+  return clean.charAt(0).toUpperCase() + clean.slice(1);
+}
+
 export async function POST(request: Request) {
   try {
     const auth = await requireUser(request);
@@ -224,7 +246,7 @@ export async function POST(request: Request) {
     const diagKey = diagAllowed ? findSynonymKey(userText, DIAG_SYNONYMS) : null;
     if (diagKey && diagText) {
       const synonyms = DIAG_SYNONYMS[diagKey] ?? [];
-      const diagLines = extractFindingsEntries(sanitizeDiagnosticText(diagText))
+      const diagLines = extractDiagPairs(diagText)
         .filter((e) => synonyms.some((s) => `${e.label} ${e.value}`.toLowerCase().includes(s)))
         .map((e) => (e.value ? `${e.label}: ${e.value}` : e.label));
       if (diagLines.length > 0) {
@@ -232,6 +254,26 @@ export async function POST(request: Request) {
           key: diagKey,
           label: diagKey.toUpperCase(),
           value: diagLines.join(" · "),
+          source: "diagnostic",
+        });
+      }
+    }
+
+    // 4) Lab values the persona verbalized: during the laboratory phase the
+    // nurse reads results aloud — each spoken entry lands in the panel live,
+    // same as physical findings.
+    if (diagAllowed && diagText && haystack) {
+      const diagEntries = extractDiagPairs(diagText);
+      for (const entry of diagEntries) {
+        const labelNorm = normalizeForMatch(entry.label);
+        if (labelNorm.length < 3 || !haystack.includes(labelNorm)) continue;
+        const dedupeKey = `diag:${labelNorm}`;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+        items.push({
+          key: dedupeKey,
+          label: capitalizeLabel(entry.label),
+          value: entry.value || entry.label,
           source: "diagnostic",
         });
       }
