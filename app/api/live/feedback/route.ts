@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import { marked } from "marked";
-import DOMPurify from "isomorphic-dompurify";
 import { createOpenAIClient } from "@/lib/llm/openaiClient";
 import { getLiveFeedbackPrompt } from "@/features/role-info/db-role-info";
 import { requireUser } from "@/app/api/_lib/auth";
@@ -208,30 +206,47 @@ export async function POST(request: Request) {
     // Render markdown via `marked` and sanitize with DOMPurify so OpenAI
     // generated HTML/scripts cannot reach the client. The previous regex
     // chain had no sanitization — a prompt-injection in the LLM response
-    // could land <script> tags in the DOM.
-    const renderedHtml = marked.parse(feedbackContent, {
-      gfm: true,
-      breaks: true,
-    }) as string;
-    const wrappedFeedback = DOMPurify.sanitize(renderedHtml, {
-      ALLOWED_TAGS: [
-        "h1",
-        "h2",
-        "h3",
-        "h4",
-        "p",
-        "br",
-        "strong",
-        "em",
-        "ul",
-        "ol",
-        "li",
-        "code",
-        "pre",
-        "blockquote",
-      ],
-      ALLOWED_ATTR: [],
-    });
+    // could land <script> tags in the DOM. Both libs load dynamically:
+    // isomorphic-dompurify (jsdom) is a known source of module-init crashes
+    // in bundled serverless functions.
+    let wrappedFeedback: string;
+    try {
+      const [{ default: DOMPurify }, { marked }] = await Promise.all([
+        import("isomorphic-dompurify"),
+        import("marked"),
+      ]);
+      const renderedHtml = marked.parse(feedbackContent, {
+        gfm: true,
+        breaks: true,
+      }) as string;
+      wrappedFeedback = DOMPurify.sanitize(renderedHtml, {
+        ALLOWED_TAGS: [
+          "h1",
+          "h2",
+          "h3",
+          "h4",
+          "p",
+          "br",
+          "strong",
+          "em",
+          "ul",
+          "ol",
+          "li",
+          "code",
+          "pre",
+          "blockquote",
+        ],
+        ALLOWED_ATTR: [],
+      });
+    } catch (renderErr) {
+      console.error("Live feedback rendering failed, returning plain text:", renderErr);
+      const plain = feedbackContent
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\n/g, "<br>");
+      wrappedFeedback = `<p>${plain}</p>`;
+    }
 
     return NextResponse.json({ feedback: wrappedFeedback });
   } catch (error) {

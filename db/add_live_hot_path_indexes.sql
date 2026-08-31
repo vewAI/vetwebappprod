@@ -22,8 +22,12 @@ ALTER TABLE attempt_messages ADD COLUMN IF NOT EXISTS persona_role_key text;
 -- F4.1: Stable client-side message id so autosave can UPSERT rows in place
 -- instead of DELETE + full reINSERT (O(n) churn instead of O(n²) rewrites,
 -- no lost updates between racing tabs).
+-- NOTE: must be a FULL unique index (no WHERE clause) — PostgREST's
+-- `onConflict` cannot infer a partial index and fails with
+-- "no unique or exclusion constraint matching the ON CONFLICT specification".
+-- NULLs remain non-colliding in Postgres unique indexes, so legacy rows are safe.
 ALTER TABLE attempt_messages ADD COLUMN IF NOT EXISTS client_msg_id text;
 
+DROP INDEX IF EXISTS uq_attempt_messages_client_msg;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_attempt_messages_client_msg
-  ON attempt_messages (attempt_id, client_msg_id)
-  WHERE client_msg_id IS NOT NULL;
+  ON attempt_messages (attempt_id, client_msg_id);

@@ -142,7 +142,10 @@ export async function POST(req: Request) {
     // the legacy delete-all + reinsert path without the new columns so saving
     // keeps working.
     const isStaleSchemaError = (err: { message?: string } | null | undefined) =>
-      Boolean(err?.message && /schema cache|could not find the/i.test(err.message));
+      Boolean(
+        err?.message &&
+          /schema cache|could not find the|on conflict specification/i.test(err.message)
+      );
 
     const legacyRows = messageRows.map(({ client_msg_id: _c, persona_role_key: _p, ...rest }) => rest);
 
