@@ -28,6 +28,8 @@ export type UseGeminiLiveResult = {
   interrupt: () => void;
   setOnAudio: (cb: ((chunk: ArrayBuffer) => void) | null) => void;
   setOnInterrupted: (cb: (() => void) | null) => void;
+  /** True while the persona's generated audio is actually playing locally. */
+  setModelAudioActive: (active: boolean) => void;
 };
 
 export function useGeminiLive(
@@ -64,6 +66,20 @@ export function useGeminiLive(
 
   const onAudioRef = useRef<((chunk: ArrayBuffer) => void) | null>(null);
   const onInterruptedRef = useRef<(() => void) | null>(null);
+  // Echo guard mirror: true while the persona's audio is being generated OR
+  // still playing through the local queue.
+  const isSpeakingRef = useRef(false);
+  const modelAudioActiveRef = useRef(false);
+
+  const setSpeaking = useCallback((v: boolean) => {
+    isSpeakingRef.current = v;
+    setIsSpeaking(v);
+  }, []);
+
+  const setModelAudioActive = useCallback((active: boolean) => {
+    modelAudioActiveRef.current = active;
+  }, []);
+
   const personaRef = useRef<PersonaInstruction | null>(null);
   const tokenRef = useRef<string | null>(null);
   const stageIndexRef = useRef(currentStageIndex);
@@ -108,6 +124,26 @@ export function useGeminiLive(
     pendingAssistantRef.current = null;
     pendingAssistantIdRef.current = null;
   }, []);
+
+  // The model's own TTS picked up by an open mic gets transcribed as user
+  // input. If a candidate "user" utterance substantially overlaps the latest
+  // assistant message, it is echo — drop it.
+  const isEchoOfAssistant = useCallback(
+    (text: string): boolean => {
+      const norm = (s: string) =>
+        s.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+      const candidate = norm(text);
+      if (candidate.length < 25) return false;
+      const lastAssistant = [...messagesRef.current]
+        .reverse()
+        .find((m) => m.role !== "user");
+      if (!lastAssistant?.content) return false;
+      const assistant = norm(lastAssistant.content);
+      if (!assistant) return false;
+      return assistant.includes(candidate) || candidate.includes(assistant);
+    },
+    []
+  );
 
   // Create or update the in-flight user entry (see pendingUserIdRef).
   const upsertPendingUserEntry = useCallback(
@@ -186,7 +222,7 @@ export function useGeminiLive(
               // conversation feel. Disclaimer blocking is handled by the
               // persona system prompt instead of gating playback here.
               onAudioRef.current?.(event.data);
-              setIsSpeaking(true);
+              setSpeaking(true);
             }
             break;
           case "textReceived": {
@@ -223,6 +259,14 @@ export function useGeminiLive(
             break;
           }
           case "inputTranscription": {
+            // ECHO GUARD: while the persona is generating or playing audio,
+            // an open mic hears the model's own voice — those transcriptions
+            // are NOT the user speaking. Drop them entirely.
+            if (isSpeakingRef.current || modelAudioActiveRef.current) {
+              pendingInputRef.current = null;
+              setPendingInput(null);
+              break;
+            }
             const payload = event.data;
             const text =
               typeof payload === "string"
@@ -233,6 +277,14 @@ export function useGeminiLive(
               payload !== null &&
               (payload as { finished?: boolean }).finished === true;
             if (!text || !text.trim()) break;
+            // Late-arriving echo: a transcription that substantially repeats
+            // the latest assistant reply is the model hearing itself — drop it.
+            if (isEchoOfAssistant(text)) {
+              pendingInputRef.current = null;
+              setPendingInput(null);
+              pendingUserIdRef.current = null;
+              break;
+            }
             if (finished) {
               // Final transcription → commit/update the user entry with the
               // authoritative text.
@@ -294,13 +346,13 @@ export function useGeminiLive(
             }
 
             // Generation is complete; queued audio may still be draining.
-            setIsSpeaking(false);
+            setSpeaking(false);
             resetPendingAssistant();
             break;
           }
           case "interrupted":
             pendingInputRef.current = null;
-            setIsSpeaking(false);
+            setSpeaking(false);
             // Barge-in: the model was cut off mid-turn, so drop any audio the
             // local player still has queued (wired from live-session).
             onInterruptedRef.current?.();
@@ -309,7 +361,7 @@ export function useGeminiLive(
             break;
           case "disconnected":
             setStatus("disconnected");
-            setIsSpeaking(false);
+            setSpeaking(false);
             pendingInputRef.current = null;
             setPendingInput(null);
             pendingUserIdRef.current = null;
@@ -324,7 +376,7 @@ export function useGeminiLive(
           case "error":
             setError(typeof event.data === "string" ? event.data : "Unknown error");
             setStatus("error");
-            setIsSpeaking(false);
+            setSpeaking(false);
             pendingInputRef.current = null;
             setPendingInput(null);
             pendingUserIdRef.current = null;
@@ -363,7 +415,7 @@ export function useGeminiLive(
   const disconnect = useCallback(() => {
     serviceRef.current?.disconnect();
     setStatus("disconnected");
-    setIsSpeaking(false);
+    setSpeaking(false);
     pendingInputRef.current = null;
     setPendingInput(null);
     resetPendingAssistant();
@@ -423,7 +475,7 @@ export function useGeminiLive(
 
   const interrupt = useCallback(() => {
     serviceRef.current?.interrupt();
-    setIsSpeaking(false);
+    setSpeaking(false);
     pendingInputRef.current = null;
     setPendingInput(null);
     resetPendingAssistant();
@@ -453,5 +505,6 @@ export function useGeminiLive(
     interrupt,
     setOnAudio,
     setOnInterrupted,
+    setModelAudioActive,
   };
 }

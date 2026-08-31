@@ -294,6 +294,18 @@ export function LiveSession({
     });
   }, [live, player]);
 
+  // Echo guard: track when the persona's audio is actually playing locally so
+  // mic pickups of the model's own voice are never transcribed as user input.
+  useEffect(() => {
+    player.setOnPlayingChange((playing) => {
+      live.setModelAudioActive(playing);
+    });
+    return () => {
+      player.setOnPlayingChange(null);
+      live.setModelAudioActive(false);
+    };
+  }, [live, player]);
+
   // Connect when persona becomes available
   const hasConnectedRef = useRef(false);
   const retryCountRef = useRef(0);

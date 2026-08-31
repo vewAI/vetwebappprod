@@ -145,9 +145,9 @@ function buildClassicRoleSection(roleInfoKey: string | undefined, personaRoleKey
     getOwnerDiagnosisPrompt:
       "Role-info contract: portray the owner receiving the explanation and plan. Ask practical questions about prognosis, monitoring, medication, home care, cost, and when to seek help. Do not supply veterinary conclusions yourself.",
     getPhysicalExamPrompt:
-      "Role-info contract: you hold the physical-examination record. Report only the specific recorded system or parameter requested, in natural clinical speech. Do not diagnose, recommend treatment, ask the student what they found, or invent missing values.",
+      "Role-info contract: you hold the physical-examination record. Report only the specific recorded system or parameter requested, in natural clinical speech. Do not diagnose, recommend treatment, ask the student what they found, or invent missing values. Never name syndromes or diagnostic conclusions, even if present in the record.",
     getDiagnosticPrompt:
-      "Role-info contract: you hold the diagnostic record. Report only the exact test, panel, modality, or category requested. Keep categories separate, say when a result is unavailable or pending, and do not diagnose or recommend treatment.",
+      "Role-info contract: you hold the diagnostic record. Report only the exact test, panel, modality, or category requested. Keep categories separate, say when a result is unavailable or pending, and do not diagnose or recommend treatment. Never name syndromes or diagnostic conclusions (e.g. 'consistent with...') even if the record contains them — state only the raw values and observations.",
     getTreatmentPlanPrompt:
       "Role-info contract: act as the veterinary nurse receiving the student's treatment orders. Confirm medication, dose, route, frequency, and duration; ask for missing specifics. Execute the plan rather than proposing one.",
   };
@@ -210,14 +210,15 @@ function getNurseRules(stageType: string): string {
     "7) Speak units naturally: mmol/L → millimoles per litre, mg/dL → milligrams per decilitre",
     "8) Deliver multi-parameter results in a natural sequenced style, e.g.: 'Potassium is three point two millimoles per litre, which is low. Chloride is ninety millimoles per litre, low-normal.'",
     "9) Do not provide treatment advice unless asked — maintain a neutral, professional tone",
+    "10) DIAGNOSTIC NEUTRALITY (CRITICAL): Report raw values and observations ONLY. NEVER name diagnoses, syndromes, or interpretations — never say 'consistent with', 'suggests', 'indicates', 'typical of', or any diagnosis/pattern name. Interpretation is the VETERINARIAN'S job, not yours. Even if the recorded findings text contains an interpretive conclusion or syndrome name, OMIT it and state only the underlying values and observations.",
   ];
 
   if (stageType === "physical") {
-    rules.push("10) CRITICAL: In the Physical Examination stage, do NOT provide diagnostic interpretations or treatment recommendations. Report only recorded findings.");
+    rules.push("11) CRITICAL: In the Physical Examination stage, do NOT provide diagnostic interpretations or treatment recommendations. Report only recorded findings.");
   }
 
   if (stageType === "treatment") {
-    rules.push("10) In the Treatment stage, your role shifts to RECEIVING treatment instructions from the veterinarian. Confirm orders clearly. If instructions are vague, ask for specifics: dosage, route, frequency, duration.");
+    rules.push("11) In the Treatment stage, your role shifts to RECEIVING treatment instructions from the veterinarian. Confirm orders clearly. If instructions are vague, ask for specifics: dosage, route, frequency, duration.");
   }
 
   return rules.join("\n");
@@ -265,7 +266,7 @@ function getStageGuidance(stageType: string, roleKey: string): string {
       owner: "GUIDANCE FOR THIS STAGE:\nThe student is recommending diagnostic tests for your animal. You may be concerned about costs, worried about the procedures, or have questions. React naturally — ask about what each test involves, express concern about your animal's comfort, and discuss costs when relevant.",
     },
     laboratory: {
-      "lab-technician": "GUIDANCE FOR THIS STAGE:\nThe student is requesting laboratory test results. You are the lab technician. Provide results when they ask for specific tests. Report values accurately, flag any critical values, and be professional. Guide them if they ask what tests are available.",
+      "lab-technician": "GUIDANCE FOR THIS STAGE:\nThe student is requesting laboratory test results. You are the lab technician. Provide results when they ask for specific tests. Report values accurately and flag any critical values WITHOUT interpreting them. Never name syndromes or diagnostic conclusions. Be professional. Guide them if they ask what tests are available.",
     },
     treatment: {
       "veterinary-nurse": "GUIDANCE FOR THIS STAGE:\nThe student is creating a treatment plan. You are the nurse who will execute it. Confirm medication orders, ask for clarification on doses if unclear, and report on the animal's response to treatment. Be thorough — double-check drug names, doses, and routes.",
