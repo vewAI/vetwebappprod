@@ -39,6 +39,34 @@ function findSynonymKey(text: string, groups: Record<string, string[]>): string 
   return null;
 }
 
+function normalizeForMatch(s: string): string {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// The persona verbalizes results in free speech ("her heart rate was
+// seventy-eight..."). Match each stored findings line's label (the part
+// before ":") against that speech so every result the persona actually
+// revealed becomes written text, even when the student's phrasing doesn't
+// map to a canonical key.
+function extractMentionedLines(findingsText: string, assistantText: string): string[] {
+  const haystack = normalizeForMatch(assistantText);
+  if (!haystack) return [];
+  const out: string[] = [];
+  for (const raw of findingsText.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const label = normalizeForMatch(line.split(":")[0]);
+    if (label.length >= 3 && haystack.includes(label)) {
+      out.push(line);
+    }
+  }
+  return out;
+}
+
 export async function POST(request: Request) {
   try {
     const auth = await requireUser(request);
@@ -52,6 +80,7 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => null);
     const caseId = typeof body?.caseId === "string" && body.caseId.length <= 200 ? body.caseId : "";
     const userText = typeof body?.userText === "string" ? body.userText.slice(0, 2000) : "";
+    const assistantText = typeof body?.assistantText === "string" ? body.assistantText.slice(0, 4000) : "";
     if (!caseId || !userText.trim()) {
       return NextResponse.json({ error: "caseId and userText are required" }, { status: 400 });
     }
@@ -106,6 +135,22 @@ export async function POST(request: Request) {
           source: "diagnostic",
         });
       }
+    }
+
+    // Results the persona verbalized: match spoken assistant text against the
+    // stored findings lines so the panel mirrors everything already revealed.
+    const mentioned = physText ? extractMentionedLines(physText, assistantText) : [];
+    for (const line of mentioned) {
+      const key = `spoken:${normalizeForMatch(line.split(":")[0])}`;
+      if (items.some((it) => it.key === key)) continue;
+      const rawLabel = line.split(":")[0].trim();
+      const label = rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1);
+      items.push({
+        key,
+        label,
+        value: line.split(":").slice(1).join(":").trim() || line,
+        source: "physical",
+      });
     }
 
     return NextResponse.json({ items });

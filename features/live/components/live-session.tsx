@@ -184,6 +184,10 @@ export function LiveSession({
 
     let cancelled = false;
     const userText = last.content;
+    // Include what the persona just said so the server can reveal every
+    // finding the persona verbalized (free speech → stored findings lines).
+    const assistantMsgs = live.messages.filter((m) => m.role !== "user");
+    const assistantText = assistantMsgs[assistantMsgs.length - 1]?.content ?? "";
     void (async () => {
       try {
         const accessToken = await getAccessToken().catch(() => null);
@@ -193,7 +197,7 @@ export function LiveSession({
             "Content-Type": "application/json",
             ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
           },
-          body: JSON.stringify({ caseId: caseItem.id, userText }),
+          body: JSON.stringify({ caseId: caseItem.id, userText, assistantText }),
         });
         if (!res.ok) return;
         const data = await res.json();
@@ -729,8 +733,8 @@ export function LiveSession({
         {showAdvanceConfirm && nextStage && (
           <div className="mx-4 mb-2 rounded-lg border border-yellow-400/50 bg-yellow-50 dark:bg-yellow-950/20 p-3 animate-in slide-in-from-bottom-2 duration-200">
             <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-2">
-              Did you finish with the{" "}
-              <strong>{persona?.displayName ?? "current role"}</strong>?
+              Did you finish the{" "}
+              <strong>{currentStage?.title ?? "current stage"}</strong>?
             </p>
             <div className="flex gap-2">
               <Button

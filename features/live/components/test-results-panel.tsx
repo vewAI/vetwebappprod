@@ -19,6 +19,15 @@ type TestResultsPanelProps = {
 export function TestResultsPanel({ findings }: TestResultsPanelProps) {
   const [isOpen, setIsOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const prevCountRef = useRef(0);
+
+  // Auto-open whenever a new result is revealed so the student notices.
+  useEffect(() => {
+    if (findings.length > prevCountRef.current) {
+      setIsOpen(true);
+    }
+    prevCountRef.current = findings.length;
+  }, [findings.length]);
 
   useEffect(() => {
     if (!isOpen) return;
