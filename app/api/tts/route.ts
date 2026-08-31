@@ -63,10 +63,12 @@ export async function POST(req: Request) {
           // Fallback to OpenAI if ElevenLabs fails
           voice = "alloy";
         } else {
-          const audioBuffer = await elevenLabsRes.arrayBuffer();
-          return new NextResponse(audioBuffer, {
+          // F4.4: stream the upstream audio through instead of buffering the
+          // whole payload in memory (lower latency to first byte, less RAM).
+          return new Response(elevenLabsRes.body, {
             headers: {
               "Content-Type": "audio/mpeg",
+              "Cache-Control": "no-store",
             },
           });
         }
@@ -119,11 +121,13 @@ export async function POST(req: Request) {
       );
     }
 
-    const arrayBuffer = await openAiRes.arrayBuffer();
-    return new Response(arrayBuffer, {
+    // F4.4: stream the upstream audio through instead of buffering the whole
+    // payload in memory (lower latency to first byte, less server RAM).
+    return new Response(openAiRes.body, {
       status: 200,
       headers: {
         "Content-Type": openAiRes.headers.get("content-type") ?? "audio/mpeg",
+        "Cache-Control": "no-store",
       },
     });
   } catch (err: unknown) {

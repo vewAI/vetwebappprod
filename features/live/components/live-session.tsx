@@ -28,7 +28,7 @@ import {
 } from "../services/transcriptExport";
 import { buildConversationContext } from "../utils/conversationContext";
 import { Button } from "@/components/ui/button";
-import { FileText, Download, Copy, Check } from "lucide-react";
+import { FileText, Download, Copy, Check, PanelLeft } from "lucide-react";
 
 type LiveSessionProps = {
   caseItem: Case;
@@ -134,6 +134,9 @@ export function LiveSession({
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const timeSpentRef = useRef(initialTimeSpentSeconds);
   const lastUserMessageTimeRef = useRef(Date.now());
+
+  // F5.4: Mobile drawer for the case progress sidebar (desktop keeps it fixed).
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Restores the accumulated time when resuming a session.
   const [elapsedDisplay, setElapsedDisplay] = useState(() =>
@@ -670,21 +673,57 @@ export function LiveSession({
     live.messages.length > 0;
   return (
     <div className="flex h-full bg-background">
-      {/* P2.5: Progress Sidebar */}
-      <ProgressSidebar
-        caseItem={caseItem}
-        stages={progress.stages}
-        currentStageIndex={progress.currentStageIndex}
-        onStageSelect={(index) => {
-          if (index <= progress.currentStageIndex) {
-            progress.setStageIndex(index);
-          }
-        }}
-        guidedMode={guidedMode}
-      />
+      {/* P2.5: Progress Sidebar (fixed on desktop) */}
+      <div className="hidden h-full lg:block">
+        <ProgressSidebar
+          caseItem={caseItem}
+          stages={progress.stages}
+          currentStageIndex={progress.currentStageIndex}
+          onStageSelect={(index) => {
+            if (index <= progress.currentStageIndex) {
+              progress.setStageIndex(index);
+            }
+          }}
+          guidedMode={guidedMode}
+        />
+      </div>
+
+      {/* F5.4: Progress Sidebar drawer (mobile) */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Case progress">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setSidebarOpen(false)} />
+          <div className="absolute left-0 top-0 h-full w-72 max-w-[85vw] shadow-xl">
+            <ProgressSidebar
+              caseItem={caseItem}
+              stages={progress.stages}
+              currentStageIndex={progress.currentStageIndex}
+              onStageSelect={(index) => {
+                if (index <= progress.currentStageIndex) {
+                  progress.setStageIndex(index);
+                }
+                setSidebarOpen(false);
+              }}
+              guidedMode={guidedMode}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Main content area */}
       <div className="flex flex-1 flex-col min-w-0 min-h-0 overflow-hidden">
+        {/* F5.4: sidebar toggle (mobile only) */}
+        <div className="flex items-center px-2 pt-2 lg:hidden">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 rounded-full"
+            aria-label="Toggle case progress"
+            aria-expanded={sidebarOpen}
+            onClick={() => setSidebarOpen((prev) => !prev)}
+          >
+            <PanelLeft className="h-4 w-4" />
+          </Button>
+        </div>
         {/* P3.5: Persona joining banner */}
         {personaJoining && (
           <div
