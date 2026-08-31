@@ -10,8 +10,8 @@
 | Fase 2: Resume & consistencia (UX) | ✅ **IMPLEMENTADO** — replay de contexto, turnCount por etapa, timer, barge-in |
 | F2.5 Transcript ordering | ✅ **IMPLEMENTADO** — el mensaje del usuario aparece al instante, siempre antes de la respuesta (upsert de entrada in-flight en `useGeminiLive`) |
 | Fase 3: Seguridad estructural | 🔶 **EN PROGRESO** — F3.2 listo (rate limiting Redis + límite en `/api/chat`); tokens efímeros implementados con fallback (pendiente debug de emisión con logs de Vercel); `liveConnectConstraints` pendiente |
-| Fase 4: Escalabilidad | 🔶 **EN PROGRESO** — F4.1 autosave upsert ✅, F4.2 claim atómico de sesión ✅, F4.3 paginación ✅, F4.5 job queue atómica ✅; F4.4 streaming en proxies pendiente |
-| Fase 5: Pulido UX | 🔶 **EN PROGRESO** — F5.2 captions+interrupt ✅, F5.3 waveform real ✅, F5.5 accesibilidad ✅; panel de resultados con auto-open ✅; F5.1 intro overlay implementado y revertido por decisión de producto; F5.4 móvil pendiente |
+| Fase 4: Escalabilidad | ✅ **COMPLETA** — F4.1 autosave upsert ✅, F4.2 claim atómico de sesión ✅, F4.3 paginación ✅, F4.4 streaming TTS ✅, F4.5 job queue atómica ✅ (streaming del LLM de chat postergado: requiere cambiar el contrato del cliente) |
+| Fase 5: Pulido UX | ✅ **COMPLETA** — F5.2 captions+interrupt ✅, F5.3 waveform real ✅, F5.4 sidebar responsivo ✅, F5.5 accesibilidad ✅, panel de resultados con auto-open ✅ (F5.1 intro overlay revertido por decisión de producto) |
 | Integración a producción | 🔶 Rama `merge/main-integration` lista (incluye strapline de main + todo el trabajo Live) — PR a main pendiente |
 
 ---
