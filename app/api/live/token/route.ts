@@ -34,18 +34,62 @@ const EPHEMERAL_NEW_SESSION_WINDOW_MS = 15 * 60 * 1000; // 15 min
 const EPHEMERAL_TOKEN_MAX_USES = 10;
 
 function getAllowedOrigins(): string[] {
+  const origins = new Set<string>();
   const env = process.env.LIVE_ALLOWED_ORIGINS;
-  if (env) return env.split(",").map((s) => s.trim()).filter(Boolean);
-  if (process.env.NEXT_PUBLIC_APP_URL) {
-    return [process.env.NEXT_PUBLIC_APP_URL];
+  if (env) env.split(",").map((s) => s.trim()).filter(Boolean).forEach((o) => origins.add(o));
+  if (process.env.NEXT_PUBLIC_APP_URL) origins.add(process.env.NEXT_PUBLIC_APP_URL);
+  if (process.env.VERCEL_URL) origins.add(`https://${process.env.VERCEL_URL}`);
+  // Stable Vercel domains: the production alias and the git-branch URL differ
+  // from the per-deployment VERCEL_URL, so users hitting the stable link were
+  // rejected with "Origin not allowed".
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    origins.add(`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`);
   }
-  if (process.env.VERCEL_URL) {
-    return [`https://${process.env.VERCEL_URL}`];
+  if (process.env.VERCEL_BRANCH_URL) {
+    origins.add(`https://${process.env.VERCEL_BRANCH_URL}`);
   }
   if (process.env.NODE_ENV !== "production") {
-    return ["http://localhost:3000", "http://127.0.0.1:3000"];
+    origins.add("http://localhost:3000");
+    origins.add("http://127.0.0.1:3000");
   }
-  return [];
+  return [...origins];
+}
+
+function hostOf(url: string): string | null {
+  try {
+    return new URL(url).host.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function isOriginAllowed(req: Request): boolean {
+  const origin =
+    req.headers.get("origin") ??
+    req.headers.get("referer")?.match(/^https?:\/\/[^/]+/)?.[0];
+  if (!origin) return false;
+
+  const originHost = hostOf(origin);
+  if (!originHost) return false;
+
+  // Same-origin: the browser's Origin is the very host serving this request.
+  // This makes the endpoint work on ANY deployment URL or custom domain
+  // without extra configuration.
+  const requestHost = (
+    req.headers.get("x-forwarded-host") ??
+    req.headers.get("host") ??
+    ""
+  ).toLowerCase();
+  if (requestHost && originHost === requestHost) {
+    return true;
+  }
+
+  const allowed = getAllowedOrigins();
+  return allowed.some((a) => {
+    if (origin === a || origin.startsWith(a + "/")) return true;
+    const allowedHost = hostOf(a);
+    return Boolean(allowedHost && allowedHost === originHost);
+  });
 }
 
 // Loud-fail at module load (Node runtime): if a production deploy has no
@@ -58,19 +102,6 @@ if (
   console.error(
     "[api/live/token] Misconfiguration: no LIVE_ALLOWED_ORIGINS, NEXT_PUBLIC_APP_URL or VERCEL_URL set. All Live token requests will be rejected with 403.",
   );
-}
-
-function isOriginAllowed(req: Request): boolean {
-  const allowed = getAllowedOrigins();
-  if (allowed.length === 0) {
-    // Strict-deny in production when no allowlist is configured.
-    return false;
-  }
-  const origin =
-    req.headers.get("origin") ??
-    req.headers.get("referer")?.match(/^https?:\/\/[^/]+/)?.[0];
-  if (!origin) return false;
-  return allowed.some((a) => origin === a || origin.startsWith(a + "/"));
 }
 
 async function createEphemeralToken(): Promise<string> {
