@@ -140,25 +140,38 @@ export default function LiveSessionPage() {
       if (messages && messages.length > 0 && session?.attemptId) {
         const token = await getAccessToken().catch(() => null);
 
-        // Generate feedback
-        const feedbackRes = await fetch("/api/live/feedback", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ caseId, attemptId: session.attemptId, messages }),
-        });
+        // Generate feedback — one automatic retry on transient server errors
+        // (important when a whole class finishes sessions at once).
+        let feedbackRes: Response | null = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          if (attempt > 0) await new Promise((r) => setTimeout(r, 2500));
+          feedbackRes = await fetch("/api/live/feedback", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ caseId, attemptId: session.attemptId, messages }),
+          });
+          if (feedbackRes.ok) break;
+          if (feedbackRes.status < 500) break; // don't retry client errors
+        }
 
-        if (feedbackRes.ok) {
+        if (feedbackRes && feedbackRes.ok) {
           const data = await feedbackRes.json();
           setFeedbackContent(data.feedback || "");
           // Persist feedback to attempt
           await completeAttempt(session.attemptId, data.feedback || "");
         } else {
-          const err = await feedbackRes.json().catch(() => ({ error: `HTTP ${feedbackRes.status}` }));
-          console.error("Live feedback request failed:", feedbackRes.status, err);
-          const detail = typeof err.error === "string" ? ` (${err.error.replace(/[<>&]/g, "")})` : "";
+          const status = feedbackRes?.status ?? 0;
+          const err = await feedbackRes
+            ?.json()
+            .catch(() => ({ error: `HTTP ${status}` }));
+          console.error("Live feedback request failed:", status, err);
+          const detail =
+            typeof (err as { error?: unknown })?.error === "string"
+              ? ` (${((err as { error: string }).error).replace(/[<>&]/g, "")})`
+              : "";
           setFeedbackContent(
             `<p>Unable to generate feedback at this time${detail}. Your session has been recorded.</p>`
           );

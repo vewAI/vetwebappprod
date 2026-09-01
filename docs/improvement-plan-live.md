@@ -73,3 +73,28 @@ F1 (hecho) â†’ F2.1/F2.2 (resume roto afecta a cada usuario recurrente)
 â†’ F3.1 (P0 seguridad) â†’ F3.2 â†’ F4.1/F4.2 (integridad de datos)
 â†’ F3.3-F3.6 â†’ F4.3-F4.6 â†’ F5
 ```
+
+---
+
+## F6 — Class rollout: fixes from first classroom session + Professor panel
+
+### Classroom feedback (Marco, Sep 1) — status
+| # | Report | Status |
+|---|--------|--------|
+| 1 | Voice drifted to Spanish / unidentified Asian language | ? LANGUAGE (STRICT) rule added: always answer in English regardless of input language |
+| 2 | No feedback at the end | ? Client retries once on server errors (class concurrency); persistent 5xx still needs Vercel logs |
+| 3 | Test results released before asked | ? Stage-gated + entry-level on-demand reveal was shipped the same day |
+| 4 | Resume confusion; couldn't find restart | ? Blue "Continued from your previous session" banner on resume + visible "Restart case" button in the sidebar |
+| 5 | Random bandage/incision talk (rhabdomyolysis case) | ? CASE BOUNDARY (STRICT) rule: never mention procedures not in this case's record |
+| 6 | Random red banner in Spanish | ? Server error strings translated to English |
+| 7 | Clear restart button | ? "Restart case" button in the sidebar (completes attempt + fresh start) |
+| S1 | Pause button | ? Pause/Play in the control bar (mic off + avatar silenced, session stays alive) |
+| S2 | Way back into a live case | Resume works by reopening the case; now announced by the blue banner |
+| S3 | Automatic stage swap | Semi-automatic: when oriented + criteria met, the "advance?" banner opens by itself (one click). Fully automatic available as a per-case toggle if needed |
+
+### Professor panel & learning objectives (roadmap)
+1. **Learning objectives per case (now)**: add an learning_objectives text list to the case editor (teacher pastes objectives at case creation). Stored per case; Moodle link deferred.
+2. **Objectives-aware feedback**: live feedback and overall feedback prompts receive the case objectives and must produce one section per objective (covered / partially / not observed) with evidence from the transcript.
+3. **Class sessions**: professor creates a "class session" = case + group of students (+ optional objectives). Students join with a code or assignment.
+4. **Professor dashboard**: list of students × completion status × stage reached × feedback ready; export CSV; one-click open of each student's feedback + transcript.
+5. **Group AI report**: aggregate all feedback for the session; AI produces a group-level report: common weak points, objective-by-objective performance, recommended discussion topics for the wrap-up.

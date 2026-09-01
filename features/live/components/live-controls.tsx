@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Mic, MicOff, Send, SkipForward, PhoneOff, Volume2, VolumeX, Hand } from "lucide-react";
+import { Mic, MicOff, Send, SkipForward, PhoneOff, Volume2, VolumeX, Hand, Pause, Play } from "lucide-react";
 import type { LiveSessionStatus } from "../types";
 import { StageAdvanceHint } from "./stage-advance-hint";
 import { PersonaButton } from "@/features/chat/components/PersonaButton";
@@ -35,6 +35,8 @@ type LiveControlsProps = {
   onAdvanceStage: () => void;
   onEndSession: () => void;
   onInterrupt?: () => void;
+  isPaused?: boolean;
+  onTogglePause?: () => void;
   onToggleMute: () => void;
 };
 
@@ -56,6 +58,8 @@ export function LiveControls({
   onAdvanceStage,
   onEndSession,
   onToggleMute,
+  isPaused,
+  onTogglePause,
   onInterrupt,
 }: LiveControlsProps) {
   const isConnected = status === "connected";
@@ -184,6 +188,25 @@ export function LiveControls({
 
       {/* Secondary controls */}
       <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+        {/* Pause: stop the mic and silence the avatar without ending the session */}
+        {onTogglePause && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onTogglePause}
+            className={cn(
+              "h-9 w-9 rounded-full",
+              isPaused
+                ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300"
+                : "text-muted-foreground hover:bg-muted",
+            )}
+            aria-label={isPaused ? "Resume session" : "Pause session"}
+            title={isPaused ? "Resume" : "Pause"}
+          >
+            {isPaused ? <Play className="h-5 w-5" /> : <Pause className="h-5 w-5" />}
+          </Button>
+        )}
+
         {/* Barge-in: cut the persona off mid-sentence */}
         {isSpeaking && onInterrupt && (
           <Button

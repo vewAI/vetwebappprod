@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle, Circle, ChevronLeft, Lightbulb } from "lucide-react";
+import { CheckCircle, Circle, ChevronLeft, Lightbulb, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -14,9 +14,12 @@ type ProgressSidebarProps = {
   currentStageIndex: number;
   onStageSelect: (index: number) => void;
   guidedMode?: boolean;
+  /** Live sessions: explicit "start over" action (creates a fresh attempt). */
+  onRestartCase?: () => void;
+  isRestarting?: boolean;
 };
 
-export function ProgressSidebar({ caseItem, stages, currentStageIndex, onStageSelect, guidedMode }: ProgressSidebarProps) {
+export function ProgressSidebar({ caseItem, stages, currentStageIndex, onStageSelect, guidedMode, onRestartCase, isRestarting }: ProgressSidebarProps) {
   const currentStage = stages[currentStageIndex];
 
   return (
@@ -30,6 +33,18 @@ export function ProgressSidebar({ caseItem, stages, currentStageIndex, onStageSe
             </Button>
           </Link>
         </div>
+        {onRestartCase && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={onRestartCase}
+            disabled={isRestarting}
+          >
+            <RotateCcw className={cn("mr-2 h-4 w-4", isRestarting && "animate-spin")} />
+            {isRestarting ? "Restarting…" : "Restart case"}
+          </Button>
+        )}
         <div>
           <h2 className="text-lg font-semibold leading-tight">{caseItem.title}</h2>
           <div className="mt-1 text-sm text-muted-foreground">

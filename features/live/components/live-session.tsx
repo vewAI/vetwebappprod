@@ -155,6 +155,10 @@ export function LiveSession({
 
   // F5.4: Mobile drawer for the case progress sidebar (desktop keeps it fixed).
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Pause: mic off + avatar silenced without ending the session.
+  const [isPaused, setIsPaused] = useState(false);
+  const [isRestarting, setIsRestarting] = useState(false);
+  const [showResumeBanner, setShowResumeBanner] = useState(initialMessages.length > 0);
 
   // Restores the accumulated time when resuming a session.
   const [elapsedDisplay, setElapsedDisplay] = useState(() =>
@@ -551,6 +555,22 @@ export function LiveSession({
     }
   }, [canAdvanceEval, progress.currentStageIndex]);
 
+  // Semi-automatic stage swap: once the conversation is oriented to the next
+  // stage AND the completion criteria are met, open the confirmation banner
+  // so the student only presses "Yes, advance".
+  const autoConfirmStageRef = useRef<number>(-1);
+  useEffect(() => {
+    if (
+      nextStage &&
+      stageOriented &&
+      progress.canAdvance &&
+      autoConfirmStageRef.current !== progress.currentStageIndex
+    ) {
+      autoConfirmStageRef.current = progress.currentStageIndex;
+      setShowAdvanceConfirm(true);
+    }
+  }, [stageOriented, progress.canAdvance, progress.currentStageIndex, nextStage]);
+
   // Ported from live: the mic button doubles as a speak/write mode toggle.
   const handleToggleMic = useCallback(async () => {
     if (isTextMode) {
@@ -672,6 +692,42 @@ export function LiveSession({
     player.stop();
   }, [live, player]);
 
+  // Pause: stop the mic and silence the avatar; the session stays connected.
+  const handleTogglePause = useCallback(() => {
+    const next = !isPaused;
+    setIsPaused(next);
+    if (next) {
+      mic.stop();
+      player.setMuted(true);
+      setIsTextMode(false);
+    } else {
+      void mic.start();
+      player.setMuted(false);
+    }
+  }, [isPaused, mic, player]);
+
+  // Restart: complete the current attempt and reload so a fresh one starts.
+  const handleRestartCase = useCallback(async () => {
+    setIsRestarting(true);
+    userInitiatedDisconnectRef.current = true;
+    mic.stop();
+    live.disconnect();
+    try {
+      const accessToken = await getAccessToken().catch(() => null);
+      await fetch("/api/live/session", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        body: JSON.stringify({ attemptId, status: "completed" }),
+      });
+    } catch {
+      // reload regardless — worst case the same attempt resumes
+    }
+    window.location.reload();
+  }, [mic, live, attemptId]);
+
   // P3.6: Export handlers + click-outside close
   const exportMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -751,6 +807,8 @@ export function LiveSession({
             }
           }}
           guidedMode={guidedMode}
+          onRestartCase={handleRestartCase}
+          isRestarting={isRestarting}
         />
       </div>
 
@@ -770,6 +828,8 @@ export function LiveSession({
                 setSidebarOpen(false);
               }}
               guidedMode={guidedMode}
+              onRestartCase={handleRestartCase}
+              isRestarting={isRestarting}
             />
           </div>
         </div>
@@ -799,6 +859,23 @@ export function LiveSession({
             <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
               {personaJoining} is joining…
             </span>
+          </div>
+        )}
+
+        {/* Resume notice: the student is continuing a previous attempt */}
+        {showResumeBanner && (
+          <div
+            aria-live="polite"
+            className="mx-4 mb-1 flex items-center justify-between gap-2 rounded-md bg-blue-50 dark:bg-blue-950/30 px-3 py-1.5 text-xs text-blue-700 dark:text-blue-300 animate-in fade-in duration-300"
+          >
+            <span>Continued from your previous session — use “Restart case” in the sidebar to start fresh.</span>
+            <button
+              onClick={() => setShowResumeBanner(false)}
+              className="shrink-0 font-semibold underline underline-offset-2"
+              aria-label="Dismiss"
+            >
+              Dismiss
+            </button>
           </div>
         )}
 
@@ -954,6 +1031,8 @@ export function LiveSession({
             onEndSession={handleEndSession}
             onToggleMute={handleToggleMute}
             onInterrupt={handleInterrupt}
+            isPaused={isPaused}
+            onTogglePause={handleTogglePause}
           />
         </div>
 

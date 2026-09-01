@@ -64,11 +64,11 @@ export class GeminiLiveService {
             let userMessage = reason;
             if (reason && typeof reason === "string") {
               if (reason.toLowerCase().includes("api key expired") || reason.toLowerCase().includes("api_key_expired")) {
-                userMessage = "La clave de API de voz expiró. Contactá al administrador para renovarla.";
+                userMessage = "The voice API key has expired. Please contact the administrator to renew it.";
               } else if (reason.toLowerCase().includes("quota") || reason.toLowerCase().includes("rate limit")) {
-                userMessage = "El servicio de voz está temporalmente no disponible por alta demanda. Intentá de nuevo en unos minutos.";
+                userMessage = "The voice service is temporarily unavailable due to high demand. Please try again in a few minutes.";
               } else if (reason.toLowerCase().includes("unavailable") || reason.toLowerCase().includes("not found")) {
-                userMessage = "El servicio de voz no está disponible. Intentá de nuevo más tarde.";
+                userMessage = "The voice service is currently unavailable. Please try again later.";
               }
             }
 
