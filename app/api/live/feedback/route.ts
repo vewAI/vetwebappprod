@@ -79,6 +79,16 @@ function formatTranscript(entries: TranscriptEntry[]): string {
     .join("\n\n");
 }
 
+// F6.2: parse the case's learning_objectives field (one objective per line).
+function extractLearningObjectives(caseRow: Record<string, unknown> | null): string[] {
+  const raw = caseRow && typeof caseRow.learning_objectives === "string" ? caseRow.learning_objectives : "";
+  return raw
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[-•*\d.)\s]+/, "").trim())
+    .filter((line) => line.length > 3)
+    .slice(0, 12);
+}
+
 export async function POST(request: Request) {
   try {
     const auth = await requireUser(request);
@@ -152,7 +162,7 @@ export async function POST(request: Request) {
 
     const context = formatTranscript(entries);
 
-    // Fetch case row for per-case prompt overrides
+    // Fetch case row for per-case prompt overrides and learning objectives
     let caseRow: Record<string, unknown> | null = null;
     try {
       const { data, error } = await supabase
@@ -165,7 +175,14 @@ export async function POST(request: Request) {
       console.warn("Could not fetch case row for live feedback:", e);
     }
 
-    const feedbackPrompt = getLiveFeedbackPrompt(caseRow, context);
+    const learningObjectives = extractLearningObjectives(caseRow);
+    const objectivesSection = learningObjectives.length
+      ? `\n\nLEARNING OBJECTIVES for this case (assess EACH one):\n${learningObjectives
+          .map((o, i) => `${i + 1}. ${o}`)
+          .join("\n")}\n\nAfter your general comments, add a section titled "Learning Objectives Coverage" with one line per objective:\n- <objective> — Covered | Partially covered | Not observed — <one-line evidence from the transcript>`
+      : "";
+
+    const feedbackPrompt = getLiveFeedbackPrompt(caseRow, context) + objectivesSection;
 
     // Fallback when OpenAI is not configured
     if (!process.env.OPENAI_API_KEY) {

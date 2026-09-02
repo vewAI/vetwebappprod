@@ -38,6 +38,16 @@ function resolveSpeakerLabel(msg: Message): string {
   return "Assistant";
 }
 
+// F6.2: parse the case's learning_objectives field (one objective per line).
+function extractLearningObjectives(caseRow: Record<string, unknown> | null): string[] {
+  const raw = caseRow && typeof caseRow.learning_objectives === "string" ? caseRow.learning_objectives : "";
+  return raw
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[-•*\d.)\s]+/, "").trim())
+    .filter((line) => line.length > 3)
+    .slice(0, 12);
+}
+
 export async function POST(request: Request) {
   try {
     const auth = await requireUser(request);
@@ -109,6 +119,14 @@ export async function POST(request: Request) {
     // Generic fallback if still no prompt
     if (!feedbackPrompt) {
       feedbackPrompt = `Please provide constructive feedback for the student's performance using the context below. Focus on history taking, physical exam thoroughness, diagnostic reasoning, and client communication.\n\n${context}`;
+    }
+
+    // F6.2: objectives-aware feedback — assess each learning objective
+    const learningObjectives = extractLearningObjectives(caseRow);
+    if (learningObjectives.length > 0) {
+      feedbackPrompt = `${feedbackPrompt}\n\nLEARNING OBJECTIVES for this case (assess EACH one):\n${learningObjectives
+        .map((o, i) => `${i + 1}. ${o}`)
+        .join("\n")}\n\nAfter your general comments, add a section titled "Learning Objectives Coverage" with one line per objective:\n- <objective> — Covered | Partially covered | Not observed — <one-line evidence from the transcript>`;
     }
 
     // If OpenAI API key is not configured, return a helpful fallback

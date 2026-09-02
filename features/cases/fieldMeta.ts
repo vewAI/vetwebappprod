@@ -17,6 +17,7 @@ export type CaseFieldKey =
   | "details"
   | "physical_exam_findings"
   | "diagnostic_findings"
+  | "learning_objectives"
   | "owner_background"
   | "history_feedback"
   | "owner_follow_up"
@@ -223,9 +224,17 @@ const metaList: CaseFieldMeta[] = [
     key: "diagnostic_findings",
     label: "Lab & Diagnostic Results (Answer Key)",
     placeholder: "Use a Markdown table for numeric results, e.g. | Test | Analyte | Value | Units | Reference Range | Note |",
-    help: "Provide numeric results as a Markdown table with reference ranges and units for easy display. For imaging or narrative findings, add short bullet points below the table. Do NOT invent values — extract from the source or mark as pending.",
+    help: "Provide numeric results as a Markdown table with reference ranges and units for easy display. For imaging or narrative findings, add short bullet points below the table. Do NOT invent values �? extract from the source or mark as pending.",
     multiline: true,
     rows: 6,
+  },
+  {
+    key: "learning_objectives",
+    label: "Learning Objectives (one per line)",
+    placeholder: "Perform an ultrasound examination of the equine distal limb\nIdentify common soft tissue structures in the distal limb\n...",
+    help: "One objective per line. The AI feedback will evaluate the student against EACH of these objectives and report coverage — keep them observable and assessable from the consultation.",
+    multiline: true,
+    rows: 5,
   },
   {
     key: "owner_background",

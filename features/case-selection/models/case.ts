@@ -16,6 +16,7 @@ export type Case = {
     media?: CaseMediaItem[]
     ownerBackground?: string
     physicalExamFindings?: string
+    learningObjectives?: string
     diagnosticFindings?: string
     details?: string
     patientName?: string

@@ -21,6 +21,7 @@ type DbCase = {
   owner_background?: string | null;
   physical_exam_findings?: string | null;
   diagnostic_findings?: string | null;
+  learning_objectives?: string | null;
   details?: string | null;
   patient_name?: string | null;
   patient_age?: string | null;
@@ -171,6 +172,7 @@ export function mapDbCaseToCase(dbCase: DbCase): Case {
     media: normalizeCaseMedia(dbCase.media),
     ownerBackground: dbCase.owner_background ?? undefined,
     physicalExamFindings: dbCase.physical_exam_findings ?? undefined,
+    learningObjectives: dbCase.learning_objectives ?? undefined,
     diagnosticFindings: dbCase.diagnostic_findings ?? undefined,
     details: dbCase.details ?? undefined,
     patientName: dbCase.patient_name ?? undefined,
