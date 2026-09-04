@@ -202,6 +202,7 @@ export function LiveSession({
   const [revealedFindings, setRevealedFindings] = useState<RevealedFinding[]>([]);
   const findingsSignatureRef = useRef<string>("");
   const findingsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const findingsPrimedRef = useRef(false);
   useEffect(() => {
     const msgs = live.messages;
     if (msgs.length === 0) return;
@@ -209,6 +210,12 @@ export function LiveSession({
     const lastAssistant = [...msgs].reverse().find((m) => m.role !== "user");
     const signature = `${lastUser?.id ?? ""}|${lastAssistant?.id ?? ""}|${lastAssistant?.content?.length ?? 0}`;
     if (signature === findingsSignatureRef.current) return;
+    if (!findingsPrimedRef.current) {
+      // First run (incl. resume): acknowledge history without revealing.
+      findingsPrimedRef.current = true;
+      findingsSignatureRef.current = signature;
+      return;
+    }
 
     if (findingsTimerRef.current) clearTimeout(findingsTimerRef.current);
     findingsTimerRef.current = setTimeout(async () => {
@@ -366,7 +373,9 @@ export function LiveSession({
         console.log("[Session] Got token, connecting with persona:", persona.displayName);
         await live.connect(token, persona);
 
-        await mic.start();
+        if (!isPausedRef.current) {
+          await mic.start();
+        }
 
         // F2.1: If this is a resumed session, replay the persisted transcript
         // so the model keeps continuity instead of starting from zero; only
@@ -444,7 +453,9 @@ export function LiveSession({
         if (cancelled) return;
         console.log("[Session] Reconnected with persona:", persona.displayName);
         await live.connect(token, persona);
-        await mic.start();
+        if (!isPausedRef.current) {
+          await mic.start();
+        }
         // F2.1: Restore continuity after an unexpected disconnect by replaying
         // the conversation so far; skip the greeting trigger (the session is
         // not starting over).
@@ -575,6 +586,7 @@ export function LiveSession({
 
   // Ported from live: the mic button doubles as a speak/write mode toggle.
   const handleToggleMic = useCallback(async () => {
+    if (isPaused) return; // paused: mic stays off
     if (isTextMode) {
       setIsTextMode(false);
       await mic.start();
@@ -588,7 +600,7 @@ export function LiveSession({
     }
 
     await mic.start();
-  }, [isTextMode, mic]);
+  }, [isTextMode, mic, isPaused]);
 
   // Ported from live: send typed messages through the live session.
   const handleSendText = useCallback(() => {
@@ -621,6 +633,9 @@ export function LiveSession({
   // examination"), advance immediately, bring the incoming persona into
   // focus, and let them open the conversation.
   const intentProcessedSigRef = useRef<string>("");
+  // Historical messages (resume) must never trigger intent auto-advance:
+  // prime the signature on first sight so only NEW speech acts on it.
+  const intentPrimedRef = useRef(false);
   useEffect(() => {
     if (!nextStage) return;
     const userMsgs = live.messages.filter((m) => m.role === "user");
@@ -630,6 +645,12 @@ export function LiveSession({
     // content change, not just the first time an id is seen.
     const signature = `${last.id}:${last.content.length}`;
     if (intentProcessedSigRef.current === signature) return;
+    if (!intentPrimedRef.current) {
+      // First run (incl. resume): acknowledge history without acting on it.
+      intentPrimedRef.current = true;
+      intentProcessedSigRef.current = signature;
+      return;
+    }
     intentProcessedSigRef.current = signature;
 
     const settings = nextStage.settings as Record<string, unknown> | undefined;
@@ -695,8 +716,10 @@ export function LiveSession({
   }, [live, player]);
 
   // Pause: stop the mic and silence the avatar; the session stays connected.
+  const isPausedRef = useRef(false);
   const handleTogglePause = useCallback(() => {
     const next = !isPaused;
+    isPausedRef.current = next;
     setIsPaused(next);
     if (next) {
       mic.stop();
