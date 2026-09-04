@@ -157,10 +157,13 @@ export function useMicrophone(targetSampleRate = 16000): UseMicrophoneResult {
         void ctx.resume().catch(() => {});
       }
 
-      if (!workletLoadedRef.current) {
-        await ctx.audioWorklet.addModule("/mic-processor.js");
-        workletLoadedRef.current = true;
-      }
+      // AudioWorklet modules are registered PER AudioContext: every start()
+      // creates a fresh context (after pause, mic-stop or reconnect), so the
+      // module MUST be (re)loaded here every time — gating it with a global
+      // flag made every subsequent start fail with InvalidStateError and
+      // fall back to the deprecated ScriptProcessor.
+      await ctx.audioWorklet.addModule("/mic-processor.js");
+      workletLoadedRef.current = true;
 
       const source = ctx.createMediaStreamSource(stream);
       const workletNode = new AudioWorkletNode(ctx, "mic-processor");

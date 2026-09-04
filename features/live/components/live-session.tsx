@@ -493,13 +493,15 @@ export function LiveSession({
   // on manual OWNER↔NURSE↔LAB switches (override is reset on stage change).
   const switchedPersonaRoleRef = useRef<string | null>(null);
   // Set when the stage index changes so the incoming persona (any role) opens
-  // the conversation, not just when the owner joins.
+  // the conversation. Only FORWARD movement is a handoff: going back to an
+  // earlier stage must NOT tell that persona to "step aside and stay silent".
   const stageAdvancePendingRef = useRef(false);
   const prevStageIndexRef = useRef(initialStageIndex);
   useEffect(() => {
     if (progress.currentStageIndex !== prevStageIndexRef.current) {
+      stageAdvancePendingRef.current =
+        progress.currentStageIndex > prevStageIndexRef.current;
       prevStageIndexRef.current = progress.currentStageIndex;
-      stageAdvancePendingRef.current = true;
     }
   }, [progress.currentStageIndex]);
 
