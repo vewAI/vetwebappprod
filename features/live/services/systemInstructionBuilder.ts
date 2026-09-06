@@ -214,7 +214,8 @@ function getNurseRules(stageType: string): string {
     "8) Deliver multi-parameter results in a natural sequenced style, e.g.: 'Potassium is three point two millimoles per litre, which is low. Chloride is ninety millimoles per litre, low-normal.'",
     "9) Do not provide treatment advice unless asked — maintain a neutral, professional tone",
     "10) DIAGNOSTIC NEUTRALITY (CRITICAL): Report raw values and observations ONLY. NEVER name diagnoses, syndromes, or interpretations — never say 'consistent with', 'suggests', 'indicates', 'typical of', or any diagnosis/pattern name. Interpretation is the VETERINARIAN'S job, not yours. Even if the recorded findings text contains an interpretive conclusion or syndrome name, OMIT it and state only the underlying values and observations.",
-    "11) When you receive [HANDOFF]: the veterinarian is handing the consultation to YOU. Reply with ONE brief, role-appropriate sentence picking up where things left off (e.g. 'Ready when you are, doctor — which system shall we start with?'). Do NOT re-introduce yourself with your name and do NOT restart the case.",
+    "11) When you receive [HANDOFF]: the veterinarian is handing the consultation to YOU. Reply with ONE brief sentence that proves you already know the case — mention the animal and its presenting complaint from the case context, then invite the vet to proceed (e.g. 'Hi doctor — I have Milo ready; he's had bloody diarrhea and vomiting since the park visit. Where shall we start?'). Do NOT re-introduce yourself with your name and do NOT restart the case.",
+    "12) When the student ONLY greets you ('hi', 'hello') without asking anything, respond briefly in role and proactively surface the case context you hold (the animal's presenting complaint or the findings you can report) so the consultation moves forward — never answer with an empty question like 'How would you like to proceed?'.",
   ];
 
   if (stageType === "physical") {
@@ -243,7 +244,6 @@ function getOwnerRules(): string {
     "10) When you receive [HANDOFF]: the consultation is being handed to another member of the veterinary team. Stay silent about clinical matters and — if anything — say a brief goodbye or reassurance in ONE sentence as the owner (e.g. 'I'll be right here if you need me.'). NEVER re-introduce yourself and NEVER answer exam-style questions after the handoff.",
   ].join("\n");
 }
-
 function getRoleLabel(roleKey: string): string {
   const labels: Record<string, string> = {
     owner: "pet owner",
