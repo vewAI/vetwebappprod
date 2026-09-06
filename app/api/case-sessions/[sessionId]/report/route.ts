@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { createOpenAIClient } from "@/lib/llm/openaiClient";
 import { requireUser } from "@/app/api/_lib/auth";
 import { consumeRateLimit } from "@/app/api/_lib/rateLimit";
 
@@ -126,20 +125,47 @@ ${objectivesSection}
 --- STUDENT FEEDBACK REPORTS ---
 ${perStudent}`;
 
-    if (!process.env.OPENAI_API_KEY) {
+    if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json({ error: "AI service is not configured" }, { status: 503 });
     }
 
-    const openai = await createOpenAIClient();
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "system", content: prompt }],
-      temperature: 0.4,
-      max_tokens: 2500,
-    });
-    const report = response.choices?.[0]?.message?.content ?? "";
-    if (!report.trim()) {
-      return NextResponse.json({ error: "The AI returned an empty report" }, { status: 502 });
+    // Gemini text generation (same key the voice sessions already use).
+    const generate = async (model: string): Promise<string> => {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": process.env.GEMINI_API_KEY as string,
+          },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.4, maxOutputTokens: 2500 },
+          }),
+          signal: AbortSignal.timeout(90_000),
+        }
+      );
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "");
+        throw new Error(`Gemini ${model} failed: ${res.status} ${detail.slice(0, 300)}`);
+      }
+      const data = await res.json();
+      const parts = data?.candidates?.[0]?.content?.parts ?? [];
+      const text = parts
+        .map((p: { text?: string }) => p.text ?? "")
+        .join("")
+        .trim();
+      if (!text) throw new Error(`Gemini ${model} returned an empty report`);
+      return text;
+    };
+
+    let report: string;
+    try {
+      report = await generate("gemini-2.5-flash");
+    } catch {
+      // Model availability varies per project — fall back once.
+      report = await generate("gemini-2.0-flash");
     }
 
     // Render markdown and sanitize exactly like the student feedback endpoints.
