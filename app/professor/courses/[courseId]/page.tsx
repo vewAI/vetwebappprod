@@ -22,6 +22,7 @@ export default function CourseDashboardPage() {
   const { session } = useAuth();
   const [course, setCourse] = useState<CourseInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!session?.access_token || !courseId) return;
@@ -31,7 +32,16 @@ export default function CourseDashboardPage() {
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
         setCourse(resp.data);
-      } catch {
+        setFetchError(null);
+      } catch (err) {
+        console.error("Failed to load course:", err);
+        const detail =
+          axios.isAxiosError(err) && err.response?.data?.error
+            ? String(err.response.data.error)
+            : err instanceof Error
+              ? err.message
+              : "unknown error";
+        setFetchError(detail);
         setCourse({ id: courseId, name: "Course", description: "" });
       } finally {
         setLoading(false);
@@ -76,6 +86,11 @@ export default function CourseDashboardPage() {
       </div>
 
       <CourseDashboard courseId={courseId} />
+      {fetchError && (
+        <p className="mt-4 text-xs text-muted-foreground">
+          Course data error: {fetchError}
+        </p>
+      )}
     </div>
   );
 }

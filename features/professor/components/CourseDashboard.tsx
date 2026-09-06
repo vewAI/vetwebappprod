@@ -26,6 +26,7 @@ export function CourseDashboard({ courseId }: Props) {
   const { session } = useAuth();
   const [stats, setStats] = useState<CourseStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [statsError, setStatsError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
@@ -38,8 +39,16 @@ export function CourseDashboard({ courseId }: Props) {
           { headers: { Authorization: `Bearer ${session.access_token}` } }
         );
         setStats(resp.data);
+        setStatsError(null);
       } catch (err) {
         console.error("Failed to load course stats:", err);
+        const detail =
+          axios.isAxiosError(err) && err.response?.data?.error
+            ? String(err.response.data.error)
+            : err instanceof Error
+              ? err.message
+              : "unknown error";
+        setStatsError(detail);
       } finally {
         setLoading(false);
       }
@@ -107,7 +116,16 @@ export function CourseDashboard({ courseId }: Props) {
   }
 
   if (!stats) {
-    return <p className="text-red-600">Failed to load course data.</p>;
+    return (
+      <div className="space-y-3">
+        <p className="text-red-600">Failed to load course data.</p>
+        {statsError && (
+          <p className="text-xs text-muted-foreground">
+            Error: {statsError}
+          </p>
+        )}
+      </div>
+    );
   }
 
   return (
