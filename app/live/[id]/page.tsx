@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -97,9 +97,14 @@ export default function LiveSessionPage() {
     loadStages();
   }, [caseId]);
 
-  // Create or resume session
+  // Create or resume session — once per case. The auth `user` object can
+  // change identity across token refreshes; re-running this effect mid-session
+  // re-POSTed the session and surfaced the resume/fresh chooser mid-conversation.
+  const initializedCaseRef = useRef<string | null>(null);
   useEffect(() => {
     if (!caseId || !user) return;
+    if (initializedCaseRef.current === caseId) return;
+    initializedCaseRef.current = caseId;
 
     async function initSession() {
       try {
@@ -203,38 +208,59 @@ export default function LiveSessionPage() {
   };
 
   // Start fresh: complete the in-progress attempt and request a new one.
+  // Failures must be visible — silently continuing would resume the old
+  // session while the student believes they started fresh.
   const handleStartFresh = async () => {
     if (!session) return;
     setStartingFresh(true);
     try {
       const token = await getAccessToken().catch(() => null);
+      if (!token) {
+        setError("Your session expired. Please reload the page and try again.");
+        return;
+      }
       const headers = {
         "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        Authorization: `Bearer ${token}`,
       };
-      await fetch("/api/live/session", {
+      const patchRes = await fetch("/api/live/session", {
         method: "PATCH",
         headers,
         body: JSON.stringify({ attemptId: session.attemptId, status: "completed" }),
       });
+      if (!patchRes.ok) {
+        const err = await patchRes.json().catch(() => ({ error: `HTTP ${patchRes.status}` }));
+        throw new Error(
+          typeof err.error === "string" ? err.error : `HTTP ${patchRes.status}`
+        );
+      }
       const res = await fetch("/api/live/session", {
         method: "POST",
         headers,
         body: JSON.stringify({ caseId }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        setSession({
-          attemptId: data.attemptId,
-          currentStageIndex: data.currentStageIndex ?? 0,
-          resumed: data.resumed ?? false,
-          messages: Array.isArray(data.messages) ? (data.messages as Message[]) : [],
-          timeSpentSeconds: typeof data.timeSpentSeconds === "number" ? data.timeSpentSeconds : 0,
-        });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(
+          typeof err.error === "string" ? err.error : `HTTP ${res.status}`
+        );
       }
+      const data = await res.json();
+      setSession({
+        attemptId: data.attemptId,
+        currentStageIndex: data.currentStageIndex ?? 0,
+        resumed: data.resumed ?? false,
+        messages: Array.isArray(data.messages) ? (data.messages as Message[]) : [],
+        timeSpentSeconds: typeof data.timeSpentSeconds === "number" ? data.timeSpentSeconds : 0,
+      });
       setResumeChoice("decided");
     } catch (err) {
       console.error("Start fresh failed:", err);
+      setError(
+        `Could not start a fresh session: ${
+          err instanceof Error ? err.message : "unknown error"
+        }. Your previous session is still available — press Continue to resume it.`
+      );
       setResumeChoice("decided");
     } finally {
       setStartingFresh(false);
