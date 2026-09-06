@@ -14,9 +14,11 @@ export async function GET(
   const { courseId } = await params;
   const { supabase } = auth;
 
-  const { data, error } = await supabase
+  // No profiles embed: course_students.student_id references auth.users, not
+  // profiles — resolve identities with a second query instead.
+  const { data: enrollments, error } = await supabase
     .from("course_students")
-    .select("*, profiles!course_students_student_id_fkey(user_id, full_name, email, avatar_url)")
+    .select("id, course_id, student_id, added_at")
     .eq("course_id", courseId)
     .order("added_at", { ascending: true });
 
@@ -24,8 +26,20 @@ export async function GET(
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const students = (data ?? []).map((row: Record<string, unknown>) => {
-    const p = row.profiles as Record<string, unknown> | undefined;
+  const studentIds = (enrollments ?? []).map((e: Record<string, unknown>) => e.student_id as string);
+  const profilesById = new Map<string, Record<string, unknown>>();
+  if (studentIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("user_id, full_name, email, avatar_url")
+      .in("user_id", studentIds);
+    for (const p of profiles ?? []) {
+      profilesById.set((p as Record<string, unknown>).user_id as string, p as Record<string, unknown>);
+    }
+  }
+
+  const students = (enrollments ?? []).map((row: Record<string, unknown>) => {
+    const p = profilesById.get(row.student_id as string);
     return {
       id: row.id,
       courseId: row.course_id,

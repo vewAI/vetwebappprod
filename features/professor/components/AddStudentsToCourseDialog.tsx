@@ -10,7 +10,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useAuth } from "@/features/auth/services/authService";
-import { professorService } from "../services/professorService";
 import axios from "axios";
 
 type Props = {
@@ -21,41 +20,37 @@ type Props = {
 export function AddStudentsToCourseDialog({ courseId, onAdded }: Props) {
   const { session, user } = useAuth();
   const [open, setOpen] = useState(false);
-  const [allStudents, setAllStudents] = useState<
+  const [availableStudents, setAvailableStudents] = useState<
     { id: string; fullName: string; email: string }[]
   >([]);
-  const [existingIds, setExistingIds] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     if (!open || !user?.id) return;
     (async () => {
+      setLoading(true);
       try {
-        // Fetch professor's students
-        const students = await professorService.getProfessorStudents(user.id);
-        setAllStudents(
-          students.map((s: Record<string, unknown>) => ({
-            id: s.student_id as string,
-            fullName: (s.full_name as string) ?? (s.email as string) ?? "Unknown",
-            email: (s.email as string) ?? "",
-          }))
-        );
-
-        // Fetch students already in course
-        const resp = await axios.get(
-          `/api/professor/courses/${courseId}/students`,
-          { headers: { Authorization: `Bearer ${session?.access_token}` } }
-        );
-        const enrolled: { studentId: string }[] = resp.data;
-        setExistingIds(new Set(enrolled.map((e) => e.studentId)));
+        // Students under this professor NOT enrolled in any of their courses
+        const resp = await axios.get("/api/professor/students/available", {
+          params: { courseId },
+          headers: { Authorization: `Bearer ${session?.access_token}` },
+        });
+        setAvailableStudents(resp.data.students ?? []);
       } catch (err) {
-        console.error("Failed to load students", err);
+        console.error("Failed to load available students", err);
+      } finally {
+        setLoading(false);
       }
     })();
   }, [open, user?.id, courseId, session?.access_token]);
 
-  const available = allStudents.filter((s) => !existingIds.has(s.id));
+  const available = availableStudents.filter((s) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return s.fullName.toLowerCase().includes(q) || s.email.toLowerCase().includes(q);
+  });
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -97,28 +92,38 @@ export function AddStudentsToCourseDialog({ courseId, onAdded }: Props) {
         </DialogHeader>
         {available.length === 0 ? (
           <p className="text-sm text-muted-foreground py-4">
-            All your students are already in this course, or you have no students yet.
+            {loading
+              ? "Loading students…"
+              : "No students available to add. Students you manage appear here once they are not already enrolled in any of your courses."}
           </p>
         ) : (
-          <div className="grid gap-2 max-h-80 overflow-y-auto">
-            {available.map((s) => (
-              <label
-                key={s.id}
-                className="flex items-center gap-3 p-2 rounded hover:bg-muted/50 cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  checked={selected.has(s.id)}
-                  onChange={() => toggle(s.id)}
-                  className="rounded"
-                />
-                <div>
-                  <p className="text-sm font-medium">{s.fullName}</p>
-                  <p className="text-xs text-muted-foreground">{s.email}</p>
-                </div>
-              </label>
-            ))}
-          </div>
+          <>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name or email…"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <div className="grid gap-2 max-h-80 overflow-y-auto">
+              {available.map((s) => (
+                <label
+                  key={s.id}
+                  className="flex items-center gap-3 p-2 rounded hover:bg-muted/50 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.has(s.id)}
+                    onChange={() => toggle(s.id)}
+                    className="rounded"
+                  />
+                  <div>
+                    <p className="text-sm font-medium">{s.fullName}</p>
+                    <p className="text-xs text-muted-foreground">{s.email}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </>
         )}
         <div className="flex justify-between items-center mt-4">
           <span className="text-sm text-muted-foreground">

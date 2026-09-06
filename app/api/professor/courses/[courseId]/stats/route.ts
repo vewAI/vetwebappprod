@@ -25,25 +25,39 @@ export async function GET(
     return NextResponse.json({ error: "Course not found" }, { status: 404 });
   }
 
-  // 1. Get all students in the course
+  // 1. Get all students in the course (no embeds — see students route note)
   const { data: enrollments, error: enrollErr } = await db
     .from("course_students")
-    .select("student_id, profiles!course_students_student_id_fkey(user_id, full_name, email)")
+    .select("student_id")
     .eq("course_id", courseId);
   if (enrollErr) {
     return NextResponse.json({ error: enrollErr.message }, { status: 500 });
   }
 
-  const students = (enrollments ?? []).map((e: Record<string, unknown>) => {
-    const p = e.profiles as Record<string, unknown> | undefined;
-    return {
-      studentId: e.student_id as string,
-      fullName: (p?.full_name as string) ?? "Unknown",
-      email: (p?.email as string) ?? "",
-    };
-  });
+  const studentIds = (enrollments ?? []).map((e: Record<string, unknown>) => e.student_id as string);
 
-  const studentIds = students.map((s) => s.studentId);
+  const profilesById = new Map<string, { fullName: string; email: string }>();
+  if (studentIds.length > 0) {
+    const { data: profiles, error: profilesErr } = await db
+      .from("profiles")
+      .select("user_id, full_name, email")
+      .in("user_id", studentIds);
+    if (profilesErr) {
+      return NextResponse.json({ error: profilesErr.message }, { status: 500 });
+    }
+    for (const p of profiles ?? []) {
+      const pr = p as Record<string, unknown>;
+      profilesById.set(pr.user_id as string, {
+        fullName: (pr.full_name as string) ?? "Unknown",
+        email: (pr.email as string) ?? "",
+      });
+    }
+  }
+
+  const students = studentIds.map((sid: string) => {
+    const p = profilesById.get(sid);
+    return { studentId: sid, fullName: p?.fullName ?? "Unknown", email: p?.email ?? "" };
+  });
 
   if (studentIds.length === 0) {
     return NextResponse.json({

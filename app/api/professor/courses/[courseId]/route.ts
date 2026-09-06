@@ -14,9 +14,11 @@ export async function GET(
   const { courseId } = await params;
   const { supabase } = auth;
 
+  // No embeds: course_students.student_id references auth.users, so
+  // PostgREST relationship embeds (profiles!/count) fail on this table.
   const { data, error } = await supabase
     .from("courses")
-    .select("*, course_students(count)")
+    .select("*")
     .eq("id", courseId)
     .maybeSingle();
 
@@ -28,13 +30,17 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const sc = data.course_students as { count: number }[] | undefined;
+  const { count, error: countError } = await supabase
+    .from("course_students")
+    .select("*", { count: "exact", head: true })
+    .eq("course_id", courseId);
+
   return NextResponse.json({
     id: data.id,
     name: data.name,
     description: data.description ?? "",
     professorId: data.professor_id,
-    studentCount: sc?.[0]?.count ?? 0,
+    studentCount: countError ? 0 : count ?? 0,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
   });
