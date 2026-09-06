@@ -13,7 +13,7 @@ import {
   LogOut,
   History,
   GraduationCap,
-  FileText,
+
   User,
   Radio,
   CalendarDays,
@@ -79,16 +79,7 @@ export function Navbar() {
                 <span>Dashboard</span>
               </Link>
             )}
-            {/* Cases is admin-only: students use /student or Sessions */}
-            {isAdmin && (
-              <Link
-                href="/cases"
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground hover:text-primary transition-colors"
-              >
-                <FileText className="size-4" />
-                <span>Cases</span>
-              </Link>
-            )}
+            {/* Cases lives inside the Admin page now — removed from the main menu */}
             <Link
               href="/live"
               className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground hover:text-primary transition-colors"
@@ -222,16 +213,7 @@ export function Navbar() {
                 <span>Dashboard</span>
               </Link>
             )}
-            {isAdmin && (
-              <Link
-                href="/cases"
-                className="flex items-center gap-2 rounded-md px-3 py-2 text-base font-medium text-foreground hover:bg-accent hover:text-accent-foreground"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                <FileText className="size-5" />
-                <span>Cases</span>
-              </Link>
-            )}
+            {/* Cases lives inside the Admin page now — removed from the main menu */}
             <Link
               href="/live"
               className="flex items-center gap-2 rounded-md px-3 py-2 text-base font-medium text-foreground hover:bg-accent hover:text-accent-foreground"

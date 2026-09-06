@@ -81,6 +81,17 @@ export default function AdminPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            id="btn-clinical-cases"
+            className="w-full justify-start"
+            onClick={() => router.push("/cases")}
+          >
+            Clinical Cases Library
+          </Button>
+          <HelpTip content="Browse the full student-facing case catalog (hidden from the main menu — admins only)." />
+        </div>
+
+        <div className="flex items-center gap-2">
           <Button className="w-full justify-start" onClick={() => setLlmOpen(true)}>
             LLM Provider Manager
           </Button>
