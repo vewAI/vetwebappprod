@@ -280,7 +280,7 @@ export default function HomePage() {
             </p>
             <div className="flex flex-wrap justify-center gap-3">
               <Button asChild size="sm" className="rounded-full bg-primary-foreground text-primary hover:bg-white dark:text-white/90">
-                <Link href="/cases">Browse all cases</Link>
+                <Link href="/live">Browse all cases</Link>
               </Button>
               <Button
                 asChild
@@ -288,7 +288,7 @@ export default function HomePage() {
                 variant="sessions-outline"
                 className="rounded-full border-sessions/50 bg-sessions/10 text-sessions-foreground hover:bg-sessions/20 hover:text-sessions-foreground dark:border-sessions/40 dark:text-white"
               >
-                <Link href="/case-sessions">Jump into training</Link>
+                <Link href="/live">Jump into training</Link>
               </Button>
             </div>
           </div>
@@ -308,15 +308,11 @@ export default function HomePage() {
               </p>
               {role === "student" && (
                 <p className="mt-3 text-sm leading-relaxed text-muted-foreground/80">
-                  To practice <strong>knowledge and clinical skills</strong>, choose from the cases below or click on the{" "}
-                  <Link href="/cases" className="font-medium text-primary underline underline-offset-2 hover:text-primary/80">
-                    Cases
-                  </Link>{" "}
-                  menu link. If you&apos;d like to practice your <strong>communication skills</strong>, click on the{" "}
+                  To practice <strong>knowledge, clinical skills and communication</strong>, open the{" "}
                   <Link href="/live" className="font-medium text-primary underline underline-offset-2 hover:text-primary/80">
                     Live
                   </Link>{" "}
-                  menu link at the top.
+                  menu link and choose a case — you will speak with the owner and the veterinary team just like in a real consultation.
                 </p>
               )}
             </div>
@@ -333,7 +329,7 @@ export default function HomePage() {
             description="Your professor has assigned these cases for you to complete."
             action={
               <Button asChild variant="ghost" size="sm">
-                <Link href="/cases">View all</Link>
+                <Link href="/live">View all</Link>
               </Button>
             }
           />
@@ -460,7 +456,7 @@ export default function HomePage() {
           description="Explore newly added or recently updated cases to keep your skills sharp."
           action={
             <Button asChild variant="ghost" size="sm">
-              <Link href="/cases">View all</Link>
+              <Link href="/live">View all</Link>
             </Button>
           }
         />

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { generateGeminiText } from "@/app/api/_lib/gemini";
 import { requireUser } from "@/app/api/_lib/auth";
 import { consumeRateLimit } from "@/app/api/_lib/rateLimit";
 
@@ -129,44 +130,12 @@ ${perStudent}`;
       return NextResponse.json({ error: "AI service is not configured" }, { status: 503 });
     }
 
-    // Gemini text generation (same key the voice sessions already use).
-    const generate = async (model: string): Promise<string> => {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": process.env.GEMINI_API_KEY as string,
-          },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.4, maxOutputTokens: 2500 },
-          }),
-          signal: AbortSignal.timeout(90_000),
-        }
-      );
-      if (!res.ok) {
-        const detail = await res.text().catch(() => "");
-        throw new Error(`Gemini ${model} failed: ${res.status} ${detail.slice(0, 300)}`);
-      }
-      const data = await res.json();
-      const parts = data?.candidates?.[0]?.content?.parts ?? [];
-      const text = parts
-        .map((p: { text?: string }) => p.text ?? "")
-        .join("")
-        .trim();
-      if (!text) throw new Error(`Gemini ${model} returned an empty report`);
-      return text;
-    };
-
-    let report: string;
-    try {
-      report = await generate("gemini-2.5-flash");
-    } catch {
-      // Model availability varies per project — fall back once.
-      report = await generate("gemini-2.0-flash");
-    }
+    const report = await generateGeminiText({
+      prompt,
+      temperature: 0.4,
+      maxOutputTokens: 2500,
+      timeoutMs: 90_000,
+    });
 
     // Render markdown and sanitize exactly like the student feedback endpoints.
     const [{ default: DOMPurify }, { marked }] = await Promise.all([

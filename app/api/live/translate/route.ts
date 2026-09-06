@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createOpenAIClient } from "@/lib/llm/openaiClient";
+import { generateGeminiText } from "@/app/api/_lib/gemini";
 import { requireUser } from "@/app/api/_lib/auth";
 import { consumeRateLimit } from "@/app/api/_lib/rateLimit";
 
@@ -26,27 +26,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "text is required" }, { status: 400 });
     }
 
-    if (!process.env.OPENAI_API_KEY) {
+    if (!process.env.GEMINI_API_KEY) {
       // Nothing to do — return the original so the caller keeps the entry.
       return NextResponse.json({ text });
     }
 
-    const openai = await createOpenAIClient();
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content:
-            "Translate the user's words into natural English. Output ONLY the translation with no quotes, no explanations. Context: these are spoken transcriptions from a veterinary student during a clinical consultation simulation; preserve clinical meaning and proper nouns exactly.",
-        },
-        { role: "user", content: text },
-      ],
+    const translated = await generateGeminiText({
+      prompt: `Translate the user's words into natural English. Output ONLY the translation with no quotes, no explanations. Context: these are spoken transcriptions from a veterinary student during a clinical consultation simulation; preserve clinical meaning and proper nouns exactly.\n\n${text}`,
       temperature: 0.2,
-      max_tokens: 500,
+      maxOutputTokens: 500,
+      timeoutMs: 20_000,
     });
-
-    const translated = response.choices?.[0]?.message?.content?.trim() ?? "";
     return NextResponse.json({ text: translated || text });
   } catch (error) {
     console.error("Live translate failed:", error);

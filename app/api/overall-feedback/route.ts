@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { marked } from "marked";
 import DOMPurify from "isomorphic-dompurify";
-import { createOpenAIClient } from "@/lib/llm/openaiClient";
+import { generateGeminiText } from "@/app/api/_lib/gemini";
 import { case1RoleInfo } from "@/features/role-info/case1";
 import type { Message } from "@/features/chat/models/chat";
 import { requireUser } from "@/app/api/_lib/auth";
@@ -129,40 +129,27 @@ export async function POST(request: Request) {
         .join("\n")}\n\nAfter your general comments, add a section titled "Learning Objectives Coverage" with one line per objective:\n- <objective> — Covered | Partially covered | Not observed — <one-line evidence from the transcript>`;
     }
 
-    // If OpenAI API key is not configured, return a helpful fallback
-    if (!process.env.OPENAI_API_KEY) {
-      console.warn("OPENAI_API_KEY is not set; returning fallback overall feedback");
-      const fallback = `<p>Examination completed. Automated detailed feedback is unavailable because the AI service is not configured. Here are a few suggestions you can review:</p><ul><li>Did you collect a clear history and relevant risk factors?</li><li>Were your physical examination findings systematic and documented?</li><li>Were test selections justified and prioritized?</li><li>Did you communicate next steps and biosecurity clearly to the client?</li></ul><p>Please enable the OpenAI API key to generate richer, tailored feedback.</p>`;
+    // If the AI service is not configured, return a helpful fallback
+    if (!process.env.GEMINI_API_KEY) {
+      console.warn("GEMINI_API_KEY is not set; returning fallback overall feedback");
+      const fallback = `<p>Examination completed. Automated detailed feedback is unavailable because the AI service is not configured. Here are a few suggestions you can review:</p><ul><li>Did you collect a clear history and relevant risk factors?</li><li>Were your physical examination findings systematic and documented?</li><li>Were test selections justified and prioritized?</li><li>Did you communicate next steps and biosecurity clearly to the client?</li></ul><p>Please enable the AI API key to generate richer, tailored feedback.</p>`;
       return NextResponse.json({ feedback: fallback });
     }
 
-    // Generate feedback using OpenAI (wrapped in try/catch to allow fallback)
+    // Generate feedback using Gemini (wrapped in try/catch to allow fallback)
     let feedbackContent = "";
-
-    // Create validated OpenAI client; if creation fails, log and fall back to conservative feedback
-    let openai: any = null;
     try {
-      openai = await createOpenAIClient();
-    } catch (clientErr) {
-      console.error("OpenAI client creation failed for overall feedback:", clientErr);
-      feedbackContent = `Examination completed. Automated detailed feedback is currently unavailable because the AI service is not configured correctly. Please enable a valid OpenAI API key.`;
-    }
-
-    if (openai) {
-      try {
-        const promptToSend = `${feedbackPrompt ?? `Please provide constructive feedback for the student's performance using the context below:\n\n${context}`}\n\nTRANSCRIPT ROLE INTERPRETATION (STRICT):\n- Treat "Student" as the learner.\n- Treat "Client (Owner...)" as owner/client persona turns.\n- Treat "Veterinary Nurse (...)" as nurse persona turns, NOT as owner/client.\n- Do not merge owner and nurse into a single "client" role when evaluating communication.`;
-        const response = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [{ role: "system", content: promptToSend }],
-          temperature: 0.7,
-          max_tokens: 2000,
-        });
-        feedbackContent = response.choices?.[0]?.message?.content ?? "";
-      } catch (aiErr) {
-        console.error("OpenAI call failed for overall feedback:", aiErr);
-        // Provide a conservative fallback feedback so the UI still shows something
-        feedbackContent = `Examination completed. Automated detailed feedback is currently unavailable due to an upstream error. Consider the following review points:\n\n- History: Was sufficient information gathered from the client?\n- Physical exam: Were findings documented and prioritized?\n- Diagnostics: Were test requests appropriate and justified?\n- Client communication: Were recommendations and biosecurity clearly explained?\n\nPlease try again later or enable the AI service for full feedback.`;
-      }
+      const promptToSend = `${feedbackPrompt ?? `Please provide constructive feedback for the student's performance using the context below:\n\n${context}`}\n\nTRANSCRIPT ROLE INTERPRETATION (STRICT):\n- Treat "Student" as the learner.\n- Treat "Client (Owner...)" as owner/client persona turns.\n- Treat "Veterinary Nurse (...)" as nurse persona turns, NOT as owner/client.\n- Do not merge owner and nurse into a single "client" role when evaluating communication.`;
+      feedbackContent = await generateGeminiText({
+        prompt: promptToSend,
+        temperature: 0.7,
+        maxOutputTokens: 2000,
+        timeoutMs: 50_000,
+      });
+    } catch (aiErr) {
+      console.error("Gemini call failed for overall feedback:", aiErr);
+      // Provide a conservative fallback feedback so the UI still shows something
+      feedbackContent = `Examination completed. Automated detailed feedback is currently unavailable due to an upstream error. Consider the following review points:\n\n- History: Was sufficient information gathered from the client?\n- Physical exam: Were findings documented and prioritized?\n- Diagnostics: Were test requests appropriate and justified?\n- Client communication: Were recommendations and biosecurity clearly explained?\n\nPlease try again later or enable the AI service for full feedback.`;
     }
 
     // Render markdown via `marked` and sanitize with DOMPurify so LLM-generated

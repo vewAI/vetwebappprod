@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createOpenAIClient } from "@/lib/llm/openaiClient";
+import { generateGeminiText } from "@/app/api/_lib/gemini";
 import { getLiveFeedbackPrompt } from "@/features/role-info/db-role-info";
 import { requireUser } from "@/app/api/_lib/auth";
 import { authorizeAttemptAccess } from "@/app/api/_lib/authorization";
@@ -184,40 +184,27 @@ export async function POST(request: Request) {
 
     const feedbackPrompt = getLiveFeedbackPrompt(caseRow, context) + objectivesSection;
 
-    // Fallback when OpenAI is not configured
-    if (!process.env.OPENAI_API_KEY) {
-      console.warn("OPENAI_API_KEY not set; returning fallback live feedback");
-      const fallback = `<p>Live session completed. Automated detailed feedback is unavailable because the AI service is not configured. Here are a few communication review points:</p><ul><li>Did you greet the owner and establish the reason for the consultation?</li><li>Did you use open questions first, then focused questions?</li><li>Did you acknowledge the owner's concerns and emotions?</li><li>Did you explain your reasoning and check understanding?</li><li>Did you communicate clearly with the veterinary nurse or team?</li></ul><p>Please enable the OpenAI API key to generate richer, tailored feedback.</p>`;
+    // Fallback when Gemini is not configured
+    if (!process.env.GEMINI_API_KEY) {
+      console.warn("GEMINI_API_KEY not set; returning fallback live feedback");
+      const fallback = `<p>Live session completed. Automated detailed feedback is unavailable because the AI service is not configured. Here are a few communication review points:</p><ul><li>Did you greet the owner and establish the reason for the consultation?</li><li>Did you use open questions first, then focused questions?</li><li>Did you acknowledge the owner's concerns and emotions?</li><li>Did you explain your reasoning and check understanding?</li><li>Did you communicate clearly with the veterinary nurse or team?</li></ul><p>Please enable the AI API key to generate richer, tailored feedback.</p>`;
       return NextResponse.json({ feedback: fallback });
     }
 
-    // Generate feedback via OpenAI
+    // Generate feedback via Gemini
     let feedbackContent = "";
-
-    let openai: Awaited<ReturnType<typeof createOpenAIClient>> | null = null;
     try {
-      openai = await createOpenAIClient();
-    } catch (clientErr) {
-      console.error("OpenAI client creation failed for live feedback:", clientErr);
+      const promptToSend = `${feedbackPrompt}\n\nTRANSCRIPT ROLE INTERPRETATION (STRICT):\n- "Student" is the learner being assessed.\n- "Owner" is the simulated client/patient owner.\n- "Veterinary Nurse" and "Lab Technician" are the simulated clinical team.\n- Attribute every observation to the correct speaker, and evaluate the student's communication with each role they interacted with.`;
+      feedbackContent = await generateGeminiText({
+        prompt: promptToSend,
+        temperature: 0.7,
+        maxOutputTokens: 2000,
+        timeoutMs: 50_000,
+      });
+    } catch (aiErr) {
+      console.error("Gemini call failed for live feedback:", aiErr);
       feedbackContent =
-        "Live session completed. Automated detailed feedback is currently unavailable. Please enable a valid OpenAI API key.";
-    }
-
-    if (openai) {
-      try {
-        const promptToSend = `${feedbackPrompt}\n\nTRANSCRIPT ROLE INTERPRETATION (STRICT):\n- "Student" is the learner being assessed.\n- "Owner" is the simulated client/patient owner.\n- "Veterinary Nurse" and "Lab Technician" are the simulated clinical team.\n- Attribute every observation to the correct speaker, and evaluate the student's communication with each role they interacted with.`;
-        const response = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [{ role: "system", content: promptToSend }],
-          temperature: 0.7,
-          max_tokens: 2000,
-        });
-        feedbackContent = response.choices?.[0]?.message?.content ?? "";
-      } catch (aiErr) {
-        console.error("OpenAI call failed for live feedback:", aiErr);
-        feedbackContent =
-          "Live session completed. Automated detailed feedback is currently unavailable due to an upstream error. Consider reviewing your conversation flow, questioning technique, and empathy in future sessions.";
-      }
+        "Live session completed. Automated detailed feedback is currently unavailable due to an upstream error. Consider reviewing your conversation flow, questioning technique, and empathy in future sessions.";
     }
 
     // Render markdown via `marked` and sanitize with DOMPurify so OpenAI

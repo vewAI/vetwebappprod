@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createOpenAIClient } from "@/lib/llm/openaiClient";
+import { generateGeminiText } from "@/app/api/_lib/gemini";
 import { feedbackPromptRegistry } from "@/features/feedback/feedback-prompts";
 import DOMPurify from "isomorphic-dompurify";
 import { marked } from "marked";
@@ -69,24 +69,23 @@ export async function POST(request: NextRequest) {
       context: string,
     ) => string)(caseRow as Record<string, unknown> | null, context);
 
-    // Create validated OpenAI client for this request
-    let openai: any;
+    // Generate feedback via Gemini
+    let feedbackContent: string;
     try {
-      openai = await createOpenAIClient();
+      feedbackContent = await generateGeminiText({
+        prompt: feedbackPrompt,
+        temperature: 0.7,
+        maxOutputTokens: 1000,
+        timeoutMs: 50_000,
+      });
     } catch (err: any) {
-      console.error("OpenAI client creation failed for feedback API:", err);
-      return NextResponse.json({ error: err?.message ?? String(err) }, { status: 500 });
+      console.error("Gemini generation failed for feedback API:", err);
+      return NextResponse.json({ error: err?.message ?? String(err) }, { status: 502 });
     }
 
-    // Call OpenAI API
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "system", content: feedbackPrompt }],
-      temperature: 0.7,
-      max_tokens: 1000,
-    });
-
-    const feedbackContent = response.choices[0].message.content || "No feedback available.";
+    if (!feedbackContent || feedbackContent === "No feedback available.") {
+      feedbackContent = "No feedback available.";
+    }
     const renderedFeedback = marked.parse(feedbackContent, { gfm: true, breaks: true }) as string;
     const wrappedFeedback = DOMPurify.sanitize(renderedFeedback, {
       ALLOWED_TAGS: ["h1", "h2", "h3", "p", "br", "strong", "em", "ul", "ol", "li", "code", "pre", "blockquote"],

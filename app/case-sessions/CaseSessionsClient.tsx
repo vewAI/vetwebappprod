@@ -87,6 +87,25 @@ export default function CaseSessionsClient() {
             </Button>
           </div>
         </div>
+
+        {/* How sessions work — short intro so nobody gets lost */}
+        {!showAllStatuses && (
+          <div
+            role="note"
+            className="mt-4 rounded-lg border border-sessions/30 bg-sessions/5 p-4 text-sm leading-relaxed text-muted-foreground"
+          >
+            <p>
+              <strong className="text-sessions">What is a session?</strong> Your instructor assigns one clinical
+              case to the class during a specific time window. Open a session below, enter the access code your
+              instructor gave you, and complete the case by voice or by chat — every attempt counts towards the
+              session automatically.
+            </p>
+            <p className="mt-2">
+              You can track your attempt from the session page, and your instructor sees the same progress and
+              feedback to prepare the class debrief.
+            </p>
+          </div>
+        )}
       </header>
 
       {loading ? (
