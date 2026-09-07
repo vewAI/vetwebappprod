@@ -1,6 +1,7 @@
 "use client";
 
 import { Navbar } from "@/features/navigation/components/navbar";
+import { ClientErrorReporter } from "@/components/dev/client-error-reporter";
 import { usePathname } from "next/navigation";
 import { Footer } from "../ui/footer";
 
@@ -18,6 +19,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <>
+      <ClientErrorReporter />
       {!caseInProgress ? <Navbar /> : null}
       <main className={liveSessionInProgress ? "min-h-0 flex-1 overflow-hidden" : "flex-1"}>{children}</main>
       {!caseInProgress && !liveSessionInProgress ? <Footer /> : null}

@@ -603,22 +603,34 @@ export function LiveSession({
   }, [stageOriented, progress.canAdvance, progress.currentStageIndex, nextStage]);
 
   // Ported from live: the mic button doubles as a speak/write mode toggle.
+  // isTextModeRef mirrors the state so reconnect/pause flows never silently
+  // restart the microphone while the student is writing.
+  const isTextModeRef = useRef(false);
+  const setTextMode = useCallback((v: boolean) => {
+    isTextModeRef.current = v;
+    setIsTextMode(v);
+  }, []);
+  const startMicIfInteractive = useCallback(async () => {
+    if (isPausedRef.current || isTextModeRef.current) return;
+    await mic.start();
+  }, [mic]);
+
   const handleToggleMic = useCallback(async () => {
     if (isPaused) return; // paused: mic stays off
     if (isTextMode) {
-      setIsTextMode(false);
+      setTextMode(false);
       await mic.start();
       return;
     }
 
     if (mic.isRecording) {
       mic.stop();
-      setIsTextMode(true);
+      setTextMode(true);
       return;
     }
 
     await mic.start();
-  }, [isTextMode, mic, isPaused]);
+  }, [isTextMode, mic, isPaused, setTextMode]);
 
   // Ported from live: send typed messages through the live session.
   const handleSendText = useCallback(() => {
@@ -740,6 +752,7 @@ export function LiveSession({
       mic.stop();
       player.setMuted(true);
       setIsTextMode(false);
+      isTextModeRef.current = false;
     } else {
       void mic.start();
       player.setMuted(false);
