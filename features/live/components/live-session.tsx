@@ -389,7 +389,9 @@ export function LiveSession({
           const countAtConnect = assistantCountRef.current;
           setTimeout(() => {
             if (live.status === "connected" && assistantCountRef.current === countAtConnect) {
-              live.sendText("[SYS_TRIGGER]");
+              live.sendText(
+                "[SYS_TRIGGER] This is the FIRST contact with the veterinarian. Greet them in ONE short sentence: state your exact name, your animal's name, and the main concern. Then stop and wait."
+              );
             }
           }, 4500);
         }
@@ -462,7 +464,9 @@ export function LiveSession({
         if (live.messages.length > 0) {
           live.sendContext(buildConversationContext(live.messages, { viewerRoleKey: persona.roleKey }));
         } else if (persona.roleKey === "owner") {
-          live.sendText("[SYS_TRIGGER]");
+          live.sendText(
+            "[SYS_TRIGGER] This is the FIRST contact with the veterinarian. Greet them in ONE short sentence: state your exact name, your animal's name, and the main concern. Then stop and wait."
+          );
         }
       } catch (err) {
         if (!cancelled) {
@@ -537,7 +541,9 @@ export function LiveSession({
           if (live.status === "connected" && assistantCountRef.current === countAtSwitch) {
             // Stage handoff: a role-appropriate acknowledgement, NOT the
             // first-contact [SYS_TRIGGER] opening.
-            live.sendText("[HANDOFF]");
+            live.sendText(
+              "[HANDOFF] The consultation is being handed over to you. Reply with ONE short sentence in YOUR OWN role — acknowledge the handoff and pick up where the conversation left off. Do NOT re-introduce yourself."
+            );
           }
         }, 2500);
       }
