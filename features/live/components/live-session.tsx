@@ -371,6 +371,10 @@ export function LiveSession({
         if (cancelled) return;
         console.log("[Session] Got token, connecting with persona:", persona.displayName);
         await live.connect(token, persona);
+        // Mark this persona as already connected so the persona-switch effect
+        // does NOT treat the initial connection as a handoff (that made the
+        // owner answer the HANDOFF goodbye instead of the first-contact greeting).
+        switchedPersonaRoleRef.current = persona.roleKey;
 
         if (!isPausedRef.current) {
           await mic.start();
@@ -454,6 +458,7 @@ export function LiveSession({
         if (cancelled) return;
         console.log("[Session] Reconnected with persona:", persona.displayName);
         await live.connect(token, persona);
+        switchedPersonaRoleRef.current = persona.roleKey;
         if (!isPausedRef.current) {
           await mic.start();
         }
@@ -531,15 +536,15 @@ export function LiveSession({
       // keeps continuity instead of treating the stage change as first contact.
       live.switchPersona(persona, buildConversationContext(live.messages, { viewerRoleKey: persona.roleKey }));
 
-      const shouldOpen = persona.roleKey === "owner" || stageAdvancePendingRef.current;
-      stageAdvancePendingRef.current = false;
-      if (shouldOpen) {
-        // Same anti-double-greeting guard as the initial connect.
+      // Nudge only on FORWARD stage movement: the incoming persona opens with
+      // a role-appropriate line. The INITIAL persona never passes through here
+      // (the connect effect marks it as already switched), so a fresh session
+      // can never receive a handoff acknowledgement as its greeting.
+      if (stageAdvancePendingRef.current) {
+        stageAdvancePendingRef.current = false;
         const countAtSwitch = assistantCountRef.current;
         setTimeout(() => {
           if (live.status === "connected" && assistantCountRef.current === countAtSwitch) {
-            // Stage handoff: a role-appropriate acknowledgement, NOT the
-            // first-contact [SYS_TRIGGER] opening.
             live.sendText(
               "[HANDOFF] The consultation is being handed over to you. Reply with ONE short sentence in YOUR OWN role — acknowledge the handoff and pick up where the conversation left off. Do NOT re-introduce yourself."
             );
