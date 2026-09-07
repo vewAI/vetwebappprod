@@ -13,7 +13,6 @@ import { useAudioPlayer } from "../hooks/useAudioPlayer";
 import { useLiveProgress } from "../hooks/useLiveProgress";
 import { useSaveAttempt } from "@/features/attempts/hooks/useSaveAttempt";
 import { PersonaHeader } from "./persona-header";
-import { AudioWaveform } from "./audio-waveform";
 import type { LivePersonaDef, LivePersonaRoleKey } from "./live-controls";
 import { LiveControls } from "./live-controls";
 import { ProgressSidebar } from "@/features/chat/components/progress-sidebar";
@@ -910,12 +909,14 @@ export function LiveSession({
           </div>
         )}
 
-        {/* Top: Persona header */}
+        {/* Top: Persona header (horizontal — keeps vertical space for the transcript) */}
         <div className="flex-shrink-0">
           <PersonaHeader
             persona={persona}
             stageTitle={currentStage?.title ?? ""}
             isSpeaking={live.isSpeaking}
+            waveformMode={live.status === "connected" ? waveformMode : "idle"}
+            getLevel={waveformMode === "speaking" ? player.getOutputLevel : mic.getMicLevel}
           />
         </div>
 
@@ -928,16 +929,6 @@ export function LiveSession({
 
         {/* Center: Flexible area */}
         <div className="flex-1 flex flex-col min-h-0">
-          {/* Waveform */}
-          <div className="flex-shrink-0 flex items-center justify-center px-4 py-2">
-            <AudioWaveform
-              isActive={live.status === "connected"}
-              mode={waveformMode}
-              getLevel={waveformMode === "speaking" ? player.getOutputLevel : mic.getMicLevel}
-              className="h-24 w-full max-w-xs"
-            />
-          </div>
-
           {/* P2.2: Scrollable chat history */}
           <LiveTranscript
             messages={live.messages}
