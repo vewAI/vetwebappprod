@@ -209,6 +209,18 @@ export function LiveSession({
     const lastAssistant = [...msgs].reverse().find((m) => m.role !== "user");
     const signature = `${lastUser?.id ?? ""}|${lastAssistant?.id ?? ""}|${lastAssistant?.content?.length ?? 0}`;
     if (signature === findingsSignatureRef.current) return;
+
+    // History Taking never reveals findings — skip the lookup entirely.
+    const currentSettings = progress.stages[progress.currentStageIndex]?.settings as
+      | Record<string, unknown>
+      | undefined;
+    const currentStageType =
+      typeof currentSettings?.stage_type === "string" ? currentSettings.stage_type : "";
+    if (currentStageType === "history") {
+      findingsSignatureRef.current = signature;
+      return;
+    }
+
     if (!findingsPrimedRef.current) {
       // First run (incl. resume): acknowledge history without revealing.
       findingsPrimedRef.current = true;
@@ -221,11 +233,6 @@ export function LiveSession({
       findingsSignatureRef.current = signature;
       try {
         const accessToken = await getAccessToken().catch(() => null);
-        const currentSettings = progress.stages[progress.currentStageIndex]?.settings as
-          | Record<string, unknown>
-          | undefined;
-        const stageType =
-          typeof currentSettings?.stage_type === "string" ? currentSettings.stage_type : "";
         const res = await fetch("/api/live/findings", {
           method: "POST",
           headers: {
@@ -236,7 +243,7 @@ export function LiveSession({
             caseId: caseItem.id,
             userText: lastUser?.content ?? "",
             assistantText: lastAssistant?.content ?? "",
-            stageType,
+            stageType: currentStageType,
           }),
         });
         if (!res.ok) return;
@@ -254,7 +261,7 @@ export function LiveSession({
         // non-critical: panel stays as-is
       }
     }, 1200);
-  }, [live.messages, caseItem.id]);
+  }, [live.messages, caseItem.id, progress.currentStageIndex, progress.stages]);
 
   // Auto-save messages debounced 2s after last change
   useEffect(() => {

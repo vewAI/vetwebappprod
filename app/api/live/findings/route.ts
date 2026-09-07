@@ -53,10 +53,11 @@ function findSynonymKey(text: string, groups: Record<string, string[]>): string 
 }
 
 // Stage gating: findings stay hidden until their proper stage is reached.
+// DEFAULT-DENY: an unknown/missing stage type never reveals anything.
 const STAGE_ORDER = ["history", "physical", "diagnostic", "laboratory", "treatment", "communication"];
 function stageAllowsReveal(source: "physical" | "diagnostic", stageType: string): boolean {
-  const idx = STAGE_ORDER.indexOf(stageType);
-  if (idx === -1) return true; // unknown/custom stage types: don't block
+  const idx = STAGE_ORDER.indexOf(normalizeForMatch(stageType));
+  if (idx === -1) return false;
   if (source === "physical") return idx >= STAGE_ORDER.indexOf("physical");
   return idx >= STAGE_ORDER.indexOf("laboratory");
 }
@@ -279,6 +280,7 @@ export async function POST(request: Request) {
       }
     }
 
+    console.log("[live/findings]", { stageType, revealed: items.length });
     return NextResponse.json({ items });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
