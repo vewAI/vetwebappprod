@@ -243,9 +243,13 @@ export function LiveSession({
             stageType: currentStageType,
           }),
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          console.warn("[findings] lookup failed:", res.status);
+          return;
+        }
         const data = await res.json();
         const items = Array.isArray(data.items) ? data.items : [];
+        console.log("[findings] revealed:", items.length, items);
         if (items.length === 0) return;
         setRevealedFindings((prev) => {
           const known = new Set(prev.map((f) => f.key));
