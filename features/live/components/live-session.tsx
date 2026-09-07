@@ -53,7 +53,7 @@ const STAGE_INTENT_PATTERNS: Record<string, RegExp> = {
   history:
     /\b(?:let'?s|let us|we'?ll|we should|i'?d like to|i want to|i would like to|time to|move on to|proceed to|start|begin|go back to)\b[^.?!]*\b(?:history|anamnesis|background)\b/i,
   physical:
-    /\b(?:let'?s|let us|we'?ll|we should|i'?d like to|i want to|i would like to|time to|move on to|proceed to|start|begin|perform|do)\b[^.?!]*\b(?:physical|exam|examination|auscultat|palpat)\b/i,
+    /\b(?:let'?s|let us|let me|we'?ll|we should|i'?d like to|i want to|i would like to|time to|move on to|proceed to|start|begin|perform|do)\b[^.?!]*\b(?:physical|exam|examination|auscultat|palpat|nurse)\b/i,
   diagnostic:
     /\b(?:let'?s|let us|we'?ll|we should|i'?d like to|i want to|i would like to|time to|move on to|proceed to|start|begin|work on|form)\b[^.?!]*\b(?:differential|diagnos|diagnostic|plan)\b/i,
   laboratory:
@@ -199,9 +199,15 @@ export function LiveSession({
   // triggered by BOTH the student's requests and the persona's spoken
   // replies, debounced so streaming text settles before the lookup.
   const [revealedFindings, setRevealedFindings] = useState<RevealedFinding[]>([]);
-  const findingsSignatureRef = useRef<string>("");
+  // Prime the signature with the INITIAL transcript so resumed history is
+  // acknowledged without triggering anything — but the first NEW message of
+  // any session (fresh or resumed) is always evaluated.
+  const initLastUser = initialMessages.filter((m) => m.role === "user").slice(-1)[0];
+  const initLastAssistant = initialMessages.filter((m) => m.role !== "user").slice(-1)[0];
+  const findingsSignatureRef = useRef<string>(
+    `${initLastUser?.id ?? ""}|${initLastAssistant?.id ?? ""}|${initLastAssistant?.content?.length ?? 0}`
+  );
   const findingsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const findingsPrimedRef = useRef(false);
   useEffect(() => {
     const msgs = live.messages;
     if (msgs.length === 0) return;
@@ -209,21 +215,12 @@ export function LiveSession({
     const lastAssistant = [...msgs].reverse().find((m) => m.role !== "user");
     const signature = `${lastUser?.id ?? ""}|${lastAssistant?.id ?? ""}|${lastAssistant?.content?.length ?? 0}`;
     if (signature === findingsSignatureRef.current) return;
-
-    // History Taking never reveals findings — skip the lookup entirely.
     const currentSettings = progress.stages[progress.currentStageIndex]?.settings as
       | Record<string, unknown>
       | undefined;
     const currentStageType =
       typeof currentSettings?.stage_type === "string" ? currentSettings.stage_type : "";
     if (currentStageType === "history") {
-      findingsSignatureRef.current = signature;
-      return;
-    }
-
-    if (!findingsPrimedRef.current) {
-      // First run (incl. resume): acknowledge history without revealing.
-      findingsPrimedRef.current = true;
       findingsSignatureRef.current = signature;
       return;
     }
@@ -649,10 +646,13 @@ export function LiveSession({
   // they want to move to the NEXT stage (e.g. "let's do the physical
   // examination"), advance immediately, bring the incoming persona into
   // focus, and let them open the conversation.
-  const intentProcessedSigRef = useRef<string>("");
-  // Historical messages (resume) must never trigger intent auto-advance:
-  // prime the signature on first sight so only NEW speech acts on it.
-  const intentPrimedRef = useRef(false);
+  // The signature is primed with the INITIAL transcript's last user message:
+  // resumed history is acknowledged without acting on it, while the first
+  // NEW message of any session is always evaluated.
+  const initialLastUser = initialMessages.filter((m) => m.role === "user").slice(-1)[0];
+  const intentProcessedSigRef = useRef<string>(
+    initialLastUser ? `${initialLastUser.id}:${initialLastUser.content.length}` : ""
+  );
   useEffect(() => {
     if (!nextStage) return;
     const userMsgs = live.messages.filter((m) => m.role === "user");
@@ -662,12 +662,6 @@ export function LiveSession({
     // content change, not just the first time an id is seen.
     const signature = `${last.id}:${last.content.length}`;
     if (intentProcessedSigRef.current === signature) return;
-    if (!intentPrimedRef.current) {
-      // First run (incl. resume): acknowledge history without acting on it.
-      intentPrimedRef.current = true;
-      intentProcessedSigRef.current = signature;
-      return;
-    }
     intentProcessedSigRef.current = signature;
 
     const settings = nextStage.settings as Record<string, unknown> | undefined;
