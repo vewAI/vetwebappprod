@@ -21,6 +21,7 @@ async function ensureRedis() {
   // Dynamic import so local dev without redis doesn't need the package at runtime
   const { createClient } = await import("redis");
   const client = createClient({ url });
+  client.on("error", () => {});
   try {
     await client.connect();
     redisClient = client as RedisClientType;

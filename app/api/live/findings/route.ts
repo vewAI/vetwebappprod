@@ -138,6 +138,19 @@ function entryMatchesUserText(entryLabel: string, userText: string): boolean {
   );
 }
 
+// Diagnostic entries match when the student names the test group OR uses
+// vocabulary sharing a ≥5-char stem with the entry label ("biochemistry
+// values" ↔ "Glucose"/"Creatinine" rows).
+function entryMatchesUserTextDiag(userText: string, diagText: string): boolean {
+  const userWords = words(userText);
+  if (userWords.length === 0) return false;
+  return extractDiagPairs(diagText).some((entry) =>
+    words(entry.label).some((lw) =>
+      userWords.some((uw) => commonPrefixLength(lw, uw) >= 5)
+    )
+  );
+}
+
 // Diagnostic records are frequently JSON-as-text ("glucose": "3.8 ...").
 // Extract labelled pairs from that shape first; fall back to the generic
 // entry extraction for plain prose records.
@@ -263,27 +276,24 @@ export async function POST(request: Request) {
       }
     }
 
-    // 3) Diagnostic/lab values: reveal when the user names a specific test
-    // OR asks generically for results/findings (once the laboratory phase is
-    // reached). Interpretive content is stripped — conclusions are the
-    // student's job. Entries come back individually so the panel can render
-    // them as a table.
+    // 3) Diagnostic/lab values: reveal ONLY the entries matching a test the
+    // student explicitly named (once the laboratory phase is reached).
+    // Interpretive content is stripped — conclusions are the student's job.
+    // Entries come back individually so the panel can render them as a table.
     const diagAllowed = stageAllowsReveal("diagnostic", stageType);
-    const genericResultsRequest =
-      /\b(?:results?|findings?|blood ?work|bloods?|tests?|labs?|panel|report|values?)\b/i.test(userText);
     const diagKey = diagAllowed ? findSynonymKey(userText, DIAG_SYNONYMS) : null;
-    const revealAllDiag = diagAllowed && (genericResultsRequest || Boolean(diagKey)) && diagText;
+    const vocabDiag = diagAllowed && entryMatchesUserTextDiag(userText, diagText);
 
-    if (revealAllDiag) {
+    if (diagAllowed && diagText && (diagKey || vocabDiag)) {
       const synonyms = diagKey ? DIAG_SYNONYMS[diagKey] ?? [] : [];
       for (const entry of extractDiagPairs(diagText)) {
         const labelNorm = normalizeForMatch(entry.label);
         if (!labelNorm) continue;
-        // When a specific test was named, keep only matching entries;
-        // generic requests reveal the whole sanitized set.
-        if (synonyms.length > 0 && !synonyms.some((s) => `${entry.label} ${entry.value}`.toLowerCase().includes(s))) {
-          continue;
-        }
+        // Only entries matching the requested test group (or vocabulary)
+        const relevant = synonyms.length > 0
+          ? synonyms.some((s) => `${entry.label} ${entry.value}`.toLowerCase().includes(s))
+          : entryMatchesUserText(entry.label, userText);
+        if (!relevant) continue;
         const dedupeKey = `diag:${labelNorm}`;
         if (seen.has(dedupeKey)) continue;
         seen.add(dedupeKey);

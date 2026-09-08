@@ -26,6 +26,9 @@ async function ensureRedis(): Promise<RedisClientType | null> {
       url,
       socket: { connectTimeout: 2_000 },
     });
+    // node-redis requires an 'error' listener: without one, a dropped socket
+    // crashes the whole lambda (Uncaught Exception: Socket closed unexpectedly).
+    client.on("error", () => {});
     // Fail fast: a hanging connect must never stall the request path.
     await Promise.race([
       client.connect(),
