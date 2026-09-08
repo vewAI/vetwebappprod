@@ -26,7 +26,7 @@ import {
   copyTranscriptToClipboard,
 } from "../services/transcriptExport";
 import { buildConversationContext } from "../utils/conversationContext";
-import { normalizeStageType } from "../utils/normalizeStageType";
+import { normalizeStageType, inferStageTypeFromText } from "../utils/normalizeStageType";
 import { Button } from "@/components/ui/button";
 import { FileText, Download, Copy, Check, PanelLeft } from "lucide-react";
 
@@ -50,7 +50,7 @@ function formatElapsed(seconds: number): string {
 // Broad first-person transition phrasing, matched against the NEXT stage's
 // type. Covers natural variants: "I think we'll do a physical examination
 // now", "shall we move to the labs?", "let me talk to the nurse"...
-const INTENT_VERBS = String.raw`\b(?:let'?s|let us|let me|we'?ll|we will|we should|we can|we must|i'?d like to|i want to|i would want to|i would like to|i think we'?ll|i think we should|i think i'?ll|i guess i'?ll|i guess we'?ll|shall we|how about|why don'?t we|time to|ready to|wanna|gonna|want to move|move on to|move to|move forward|proceed to|go to|going to|go ahead and|switch to|talk to|speak to|see|visit|start|begin|perform|run|order|send|do)\b`;
+const INTENT_VERBS = String.raw`\b(?:let'?s|let us|let me|we'?ll|we will|we should|we can|we must|need to|i'?d like to|i want to|i would want to|i would like to|i think we'?ll|i think we should|i think i'?ll|i guess i'?ll|i guess we'?ll|shall we|how about|why don'?t we|time to|ready to|wanna|gonna|want to move|move on to|move to|move forward|proceed to|go to|going to|go ahead and|switch to|talk to|speak to|see|visit|start|begin|perform|run|order|send|do)\b`;
 
 const STAGE_INTENT_PATTERNS: Record<string, RegExp> = {
   history:
@@ -216,12 +216,14 @@ export function LiveSession({
     const lastAssistant = [...msgs].reverse().find((m) => m.role !== "user");
     const signature = `${lastUser?.id ?? ""}|${lastAssistant?.id ?? ""}|${lastAssistant?.content?.length ?? 0}`;
     if (signature === findingsSignatureRef.current) return;
-    const currentSettings = progress.stages[progress.currentStageIndex]?.settings as
-      | Record<string, unknown>
-      | undefined;
-    const currentStageType =
+    const currentStage = progress.stages[progress.currentStageIndex];
+    const currentSettings = currentStage?.settings as Record<string, unknown> | undefined;
+    const currentStageRaw =
       typeof currentSettings?.stage_type === "string" ? currentSettings.stage_type : "";
-    const normalizedCurrentStageType = normalizeStageType(currentStageType);
+    // Cases often omit stage_type — infer from the title/description.
+    const normalizedCurrentStageType =
+      normalizeStageType(currentStageRaw) ||
+      inferStageTypeFromText(`${currentStage?.title ?? ""} ${currentStage?.description ?? ""}`);
     if (normalizedCurrentStageType === "history") {
       findingsSignatureRef.current = signature;
       return;
@@ -697,10 +699,10 @@ export function LiveSession({
     intentProcessedSigRef.current = signature;
 
     const settings = nextStage.settings as Record<string, unknown> | undefined;
-    // Normalize: cases may store "physical_exam", "Laboratory & Tests", etc.
-    const stageType = normalizeStageType(
-      typeof settings?.stage_type === "string" ? settings.stage_type : ""
-    );
+    // Normalize, and when the case omits stage_type, infer from the title.
+    const stageType =
+      normalizeStageType(typeof settings?.stage_type === "string" ? settings.stage_type : "") ||
+      inferStageTypeFromText(`${nextStage.title ?? ""} ${nextStage.description ?? ""}`);
 
     // Generic explicit request: "next stage" always advances.
     if (/\b(?:the )?next (?:stage|phase)\b|\bsiguient(?:e|es) (?:etapa|fase|paso)\b/i.test(last.content)) {
