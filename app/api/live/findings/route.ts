@@ -296,7 +296,27 @@ export async function POST(request: Request) {
     }
 
     console.log("[live/findings]", { stageType: normalizeStageType(stageType), revealed: items.length });
-    return NextResponse.json({ items });
+    console.log(
+      "[live/findings]",
+      JSON.stringify({
+        stageTypeRaw: stageType,
+        stageType: normalizeStageType(stageType),
+        physEntries: physEntries.length,
+        physTextLength: physText.length,
+        physAllowed,
+        diagAllowed,
+        revealed: items.length,
+      })
+    );
+    return NextResponse.json({
+      items,
+      debug: {
+        stageType: normalizeStageType(stageType),
+        physEntries: physEntries.length,
+        physAllowed,
+        diagAllowed,
+      },
+    });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("Live findings lookup failed:", err);

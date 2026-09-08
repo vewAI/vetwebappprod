@@ -251,7 +251,10 @@ export function LiveSession({
         }
         const data = await res.json();
         const items = Array.isArray(data.items) ? data.items : [];
-        console.log("[findings] revealed:", items.length, items);
+        console.log(
+          `[findings] revealed: ${items.length} | stage=${data.debug?.stageType} physEntries=${data.debug?.physEntries} physAllowed=${data.debug?.physAllowed}`,
+          items
+        );
         if (items.length === 0) return;
         setRevealedFindings((prev) => {
           const known = new Set(prev.map((f) => f.key));
