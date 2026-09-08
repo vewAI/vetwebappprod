@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { parseRequestedKeys, PHYS_SYNONYMS } from "@/features/chat/services/physFinder";
+import { normalizeStageType } from "@/features/live/utils/normalizeStageType";
 import { requireUser } from "@/app/api/_lib/auth";
 import { consumeRateLimit } from "@/app/api/_lib/rateLimit";
-import { parseRequestedKeys, PHYS_SYNONYMS } from "@/features/chat/services/physFinder";
 
 // Diagnostic/lab synonym groups — kept in sync with the map in
 // app/api/chat/route.ts (DIAG_SYNONYMS).
@@ -56,7 +57,8 @@ function findSynonymKey(text: string, groups: Record<string, string[]>): string 
 // DEFAULT-DENY: an unknown/missing stage type never reveals anything.
 const STAGE_ORDER = ["history", "physical", "diagnostic", "laboratory", "treatment", "communication"];
 function stageAllowsReveal(source: "physical" | "diagnostic", stageType: string): boolean {
-  const idx = STAGE_ORDER.indexOf(normalizeForMatch(stageType));
+  const normalized = normalizeStageType(stageType);
+  const idx = STAGE_ORDER.indexOf(normalized);
   if (idx === -1) return false;
   if (source === "physical") return idx >= STAGE_ORDER.indexOf("physical");
   return idx >= STAGE_ORDER.indexOf("laboratory");
@@ -293,7 +295,7 @@ export async function POST(request: Request) {
       }
     }
 
-    console.log("[live/findings]", { stageType, revealed: items.length });
+    console.log("[live/findings]", { stageType: normalizeStageType(stageType), revealed: items.length });
     return NextResponse.json({ items });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

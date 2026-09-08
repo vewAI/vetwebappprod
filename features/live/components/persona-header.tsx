@@ -27,14 +27,21 @@ export function PersonaHeader({ persona, stageTitle, isSpeaking, waveformMode = 
           : "";
 
   return (
-    <div className="flex shrink-0 items-center gap-3 border-b bg-background/60 px-4 py-2 sm:gap-4 sm:px-6">
-      {/* Portrait (compact) */}
+    <div
+      className={cn(
+        "flex shrink-0 items-center gap-4 border-b px-4 py-3 sm:gap-5 sm:px-6",
+        isSpeaking
+          ? "border-primary/40 bg-primary/10"
+          : "border-border bg-primary/5"
+      )}
+    >
+      {/* Portrait (current speaker — highlighted) */}
       <div
         className={cn(
-          "relative h-14 w-14 shrink-0 overflow-hidden rounded-full border-2 transition-all duration-500",
+          "relative h-16 w-16 shrink-0 overflow-hidden rounded-full border-[3px] transition-all duration-500 sm:h-[4.5rem] sm:w-[4.5rem]",
           isSpeaking
-            ? "border-primary shadow-[0_0_18px_rgba(59,130,246,0.4)] scale-105"
-            : "border-muted shadow-sm"
+            ? "border-primary shadow-[0_0_22px_rgba(59,130,246,0.55)] scale-105"
+            : "border-primary/50 shadow-md"
         )}
       >
         {persona?.portraitUrl ? (
@@ -43,10 +50,10 @@ export function PersonaHeader({ persona, stageTitle, isSpeaking, waveformMode = 
             alt={persona.displayName}
             fill
             className="object-cover"
-            sizes="56px"
+            sizes="72px"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center bg-muted text-lg font-semibold text-muted-foreground">
+          <div className="flex h-full w-full items-center justify-center bg-muted text-xl font-semibold text-muted-foreground">
             {persona?.displayName?.charAt(0) ?? "?"}
           </div>
         )}
@@ -54,10 +61,10 @@ export function PersonaHeader({ persona, stageTitle, isSpeaking, waveformMode = 
 
       {/* Identity */}
       <div className="min-w-0">
-        <h2 className="truncate text-base font-semibold leading-tight sm:text-lg">
+        <h2 className="truncate text-xl font-bold leading-tight tracking-tight sm:text-2xl">
           {persona?.displayName ?? "Connecting..."}
         </h2>
-        <p className="truncate text-xs text-muted-foreground">{roleLabel}</p>
+        <p className="truncate text-sm text-primary/90">{roleLabel}</p>
       </div>
 
       {/* Stage + voice activity on the right */}

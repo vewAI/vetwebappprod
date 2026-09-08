@@ -26,6 +26,7 @@ import {
   copyTranscriptToClipboard,
 } from "../services/transcriptExport";
 import { buildConversationContext } from "../utils/conversationContext";
+import { normalizeStageType } from "../utils/normalizeStageType";
 import { Button } from "@/components/ui/button";
 import { FileText, Download, Copy, Check, PanelLeft } from "lucide-react";
 
@@ -46,22 +47,24 @@ function formatElapsed(seconds: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-// First-person transition phrases matched against the NEXT stage's type.
-// Deliberately requires an explicit action phrasing so mentions like
-// "when would you do a physical exam?" do NOT trigger an advance.
+// Broad first-person transition phrasing, matched against the NEXT stage's
+// type. Covers natural variants: "I think we'll do a physical examination
+// now", "shall we move to the labs?", "let me talk to the nurse"...
+const INTENT_VERBS = String.raw`\b(?:let'?s|let us|let me|we'?ll|we will|we should|we can|we must|i'?d like to|i want to|i would like to|i think we'?ll|i think we should|i guess we'?ll|shall we|how about|why don'?t we|time to|move on to|move to|proceed to|go to|going to|go ahead|switch to|talk to|speak to|see|visit|start|begin|perform|run|order|send|do)\b`;
+
 const STAGE_INTENT_PATTERNS: Record<string, RegExp> = {
   history:
-    /\b(?:let'?s|let us|we'?ll|we should|i'?d like to|i want to|i would like to|time to|move on to|proceed to|start|begin|go back to)\b[^.?!]*\b(?:history|anamnesis|background)\b/i,
+    new RegExp(`${INTENT_VERBS}[^.?!]*\\b(?:history|anamnesis|background)\\b`, "i"),
   physical:
-    /\b(?:let'?s|let us|let me|we'?ll|we should|i'?d like to|i want to|i would like to|time to|move on to|proceed to|start|begin|perform|do)\b[^.?!]*\b(?:physical|exam|examination|auscultat|palpat|nurse)\b/i,
+    new RegExp(`${INTENT_VERBS}[^.?!]*\\b(?:physical|exam|examination|auscultat\\w*|palpat\\w*|nurse)\\b`, "i"),
   diagnostic:
-    /\b(?:let'?s|let us|we'?ll|we should|i'?d like to|i want to|i would like to|time to|move on to|proceed to|start|begin|work on|form)\b[^.?!]*\b(?:differential|diagnos|diagnostic|plan)\b/i,
+    new RegExp(`${INTENT_VERBS}[^.?!]*\\b(?:differential|diagnos\\w*|diagnostic|plan)\\b`, "i"),
   laboratory:
-    /\b(?:let'?s|let us|we'?ll|we should|i'?d like to|i want to|i would like to|time to|move on to|proceed to|start|begin|run|order|send|do)\b[^.?!]*\b(?:lab|laboratory|blood ?work|bloods?\b|tests?|sampling|samples?)\b/i,
+    new RegExp(`${INTENT_VERBS}[^.?!]*\\b(?:lab|laboratory|blood ?work|bloods?\\b|tests?|sampling|samples?)\\b`, "i"),
   treatment:
-    /\b(?:let'?s|let us|we'?ll|we should|i'?d like to|i want to|i would like to|time to|move on to|proceed to|start|begin|formulate|do)\b[^.?!]*\b(?:treatment|therap|medicat|prescri|plan)\b/i,
+    new RegExp(`${INTENT_VERBS}[^.?!]*\\b(?:treatment|therap\\w*|medicat\\w*|prescri\\w*|plan)\\b`, "i"),
   communication:
-    /\b(?:let'?s|let us|we'?ll|we should|i'?d like to|i want to|i would like to|time to|move on to|proceed to|start|begin)\b[^.?!]*\b(?:client|owner|communicat|explaining|explain|discharge|conversation)\b/i,
+    new RegExp(`${INTENT_VERBS}[^.?!]*\\b(?:client|owner|communicat\\w*|explain\\w*|discharge|conversation)\\b`, "i"),
 };
 
 // Softer orientation signals: the conversation is drifting toward the NEXT
@@ -71,13 +74,13 @@ const STAGE_ORIENTATION_PATTERNS: Record<string, RegExp> = {
   history:
     /\b(?:history|anamnesis|background|symptoms?|onset)\b/i,
   physical:
-    /\b(?:physical|examin\w*|auscult\w*|palpat\w*|stethoscope|nurse|listen to|heart sounds|lung sounds|vitals?)\b/i,
+    /\b(?:physical|examin\w*|auscult\w*|palpat\w*|stethoscope|nurse|listen to|heart sounds|lung sounds|vitals?|temperature|heart rate|respiratory)\b/i,
   diagnostic:
-    /\b(?:differential|diagnos\w*|x-?rays?|ultrasound|imaging|echo)\b/i,
+    /\b(?:differential|diagnos\w*|x-?rays?|ultrasound|imaging|echo|scan)\b/i,
   laboratory:
-    /\b(?:labs?|laboratory|blood ?work|bloods?\b|blood test|tests?|sample|pcv|chemistry|electrolytes?)\b/i,
+    /\b(?:labs?|laboratory|blood ?work|bloods?\b|blood test|tests?|sample|pcv|chemistry|electrolytes?|glucose|creatinine|potassium|calcium)\b/i,
   treatment:
-    /\b(?:treatment|therap\w*|medicat\w*|prescri\w*|antibiot\w*|drip|plan)\b/i,
+    /\b(?:treatment|therap\w*|medicat\w*|prescri\w*|antibiot\w*|drip|plan|fluids?)\b/i,
   communication:
     /\b(?:explain|discharge|prognosis|costs?|home care|owner|client)\b/i,
 };
@@ -218,7 +221,8 @@ export function LiveSession({
       | undefined;
     const currentStageType =
       typeof currentSettings?.stage_type === "string" ? currentSettings.stage_type : "";
-    if (currentStageType === "history") {
+    const normalizedCurrentStageType = normalizeStageType(currentStageType);
+    if (normalizedCurrentStageType === "history") {
       findingsSignatureRef.current = signature;
       return;
     }
@@ -238,7 +242,7 @@ export function LiveSession({
             caseId: caseItem.id,
             userText: lastUser?.content ?? "",
             assistantText: lastAssistant?.content ?? "",
-            stageType: currentStageType,
+            stageType: normalizedCurrentStageType,
           }),
         });
         if (!res.ok) {
@@ -548,11 +552,12 @@ export function LiveSession({
       // can never receive a handoff acknowledgement as its greeting.
       if (stageAdvancePendingRef.current) {
         stageAdvancePendingRef.current = false;
+        const stageTitle = progress.stages[progress.currentStageIndex]?.title ?? "";
         const countAtSwitch = assistantCountRef.current;
         setTimeout(() => {
           if (live.status === "connected" && assistantCountRef.current === countAtSwitch) {
             live.sendText(
-              "[HANDOFF] The consultation is being handed over to you. Reply with ONE short sentence in YOUR OWN role — acknowledge the handoff and pick up where the conversation left off. Do NOT re-introduce yourself."
+              `[HANDOFF] The consultation has now moved to the "${stageTitle}" stage. Reply with ONE short sentence in YOUR OWN role acknowledging this next phase and pick up the conversation from there. Do NOT re-introduce yourself and do NOT keep discussing the previous stage.`
             );
           }
         }, 2500);
@@ -643,6 +648,7 @@ export function LiveSession({
   const handleSendText = useCallback(() => {
     const message = textInput.trim();
     if (!message || !isTextMode) return;
+    if (isPausedRef.current) return; // paused: no input reaches the model
 
     live.sendText(message);
     setTextInput("");
@@ -688,7 +694,17 @@ export function LiveSession({
     intentProcessedSigRef.current = signature;
 
     const settings = nextStage.settings as Record<string, unknown> | undefined;
-    const stageType = typeof settings?.stage_type === "string" ? settings.stage_type : "";
+    // Normalize: cases may store "physical_exam", "Laboratory & Tests", etc.
+    const stageType = normalizeStageType(
+      typeof settings?.stage_type === "string" ? settings.stage_type : ""
+    );
+
+    // Generic explicit request: "next stage" always advances.
+    if (/\b(?:the )?next (?:stage|phase)\b|\bsiguient(?:e|es) (?:etapa|fase|paso)\b/i.test(last.content)) {
+      console.log("[Session] Generic next-stage request detected ->", last.content);
+      handleConfirmAdvance();
+      return;
+    }
 
     // Orientation unlock: softer signals enable "Next Stage" + hint.
     const orientationPattern = stageType ? STAGE_ORIENTATION_PATTERNS[stageType] : undefined;
@@ -749,7 +765,8 @@ export function LiveSession({
     player.stop();
   }, [live, player]);
 
-  // Pause: stop the mic and silence the avatar; the session stays connected.
+  // Pause: stop the mic, silence the avatar and block ALL input; the session
+  // stays connected but nothing reaches the model until resumed.
   const isPausedRef = useRef(false);
   const handleTogglePause = useCallback(() => {
     const next = !isPaused;

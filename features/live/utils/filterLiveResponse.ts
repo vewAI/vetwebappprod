@@ -70,7 +70,16 @@ export function appendLiveTextFragment(current: string, fragment: string): strin
   const maxOverlap = Math.min(current.length, next.length);
   for (let overlap = maxOverlap; overlap > 0; overlap--) {
     if (current.endsWith(next.slice(0, overlap))) {
-      return `${current}${next.slice(overlap)}`;
+      const joined = `${current}${next.slice(overlap)}`;
+      // When the junction fuses two word characters the overlap was a false
+      // positive (e.g. "What will that" + "ell us?" -> "thatell"): prefer a
+      // space-separated join so words stay readable.
+      const before = joined.charAt(current.length - overlap);
+      const after = joined.charAt(current.length - overlap + 1);
+      if (overlap <= 2 && /\w/.test(before) && /\w/.test(after)) {
+        return `${current} ${next}`.replace(/[ \t]{2,}/g, " ");
+      }
+      return joined;
     }
   }
 
