@@ -50,17 +50,17 @@ function formatElapsed(seconds: number): string {
 // Broad first-person transition phrasing, matched against the NEXT stage's
 // type. Covers natural variants: "I think we'll do a physical examination
 // now", "shall we move to the labs?", "let me talk to the nurse"...
-const INTENT_VERBS = String.raw`\b(?:let'?s|let us|let me|we'?ll|we will|we should|we can|we must|i'?d like to|i want to|i would like to|i think we'?ll|i think we should|i guess we'?ll|shall we|how about|why don'?t we|time to|move on to|move to|proceed to|go to|going to|go ahead|switch to|talk to|speak to|see|visit|start|begin|perform|run|order|send|do)\b`;
+const INTENT_VERBS = String.raw`\b(?:let'?s|let us|let me|we'?ll|we will|we should|we can|we must|i'?d like to|i want to|i would want to|i would like to|i think we'?ll|i think we should|i think i'?ll|i guess i'?ll|i guess we'?ll|shall we|how about|why don'?t we|time to|ready to|wanna|gonna|want to move|move on to|move to|move forward|proceed to|go to|going to|go ahead and|switch to|talk to|speak to|see|visit|start|begin|perform|run|order|send|do)\b`;
 
 const STAGE_INTENT_PATTERNS: Record<string, RegExp> = {
   history:
     new RegExp(`${INTENT_VERBS}[^.?!]*\\b(?:history|anamnesis|background)\\b`, "i"),
   physical:
-    new RegExp(`${INTENT_VERBS}[^.?!]*\\b(?:physical|exam|examination|auscultat\\w*|palpat\\w*|nurse)\\b`, "i"),
+    new RegExp(`${INTENT_VERBS}[^.?!]*\\b(?:physical|exam|examination|auscultat\\w*|palpat\\w*|nurse|stethoscope)\\b`, "i"),
   diagnostic:
     new RegExp(`${INTENT_VERBS}[^.?!]*\\b(?:differential|diagnos\\w*|diagnostic|plan)\\b`, "i"),
   laboratory:
-    new RegExp(`${INTENT_VERBS}[^.?!]*\\b(?:lab|laboratory|blood ?work|bloods?\\b|tests?|sampling|samples?)\\b`, "i"),
+    new RegExp(`${INTENT_VERBS}[^.?!]*\\b(?:lab|laboratory|blood ?work|bloods?\\b|tests?|sampling|samples?|results?)\\b`, "i"),
   treatment:
     new RegExp(`${INTENT_VERBS}[^.?!]*\\b(?:treatment|therap\\w*|medicat\\w*|prescri\\w*|plan)\\b`, "i"),
   communication:
@@ -716,8 +716,17 @@ export function LiveSession({
     }
 
     const pattern = stageType ? STAGE_INTENT_PATTERNS[stageType] : undefined;
-    if (pattern && pattern.test(last.content)) {
-      console.log("[Session] Stage intent detected for:", stageType, "->", last.content);
+    const matched = Boolean(pattern?.test(last.content));
+    console.log(
+      "[intent]",
+      JSON.stringify({
+        stageType,
+        nextStageTitle: nextStage.title,
+        matched,
+        text: last.content.slice(0, 80),
+      })
+    );
+    if (pattern && matched) {
       handleConfirmAdvance();
     }
   }, [live.messages, nextStage, handleConfirmAdvance]);
