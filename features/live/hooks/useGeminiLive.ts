@@ -2,13 +2,12 @@
 
 import { useRef, useState, useCallback, useEffect } from "react";
 import { GeminiLiveService } from "../services/geminiLiveService";
-import { mergeAssistantFragment } from "../utils/mergeAssistantFragment";
 import type { Message } from "@/features/chat/models/chat";
 import type {
   LiveSessionStatus,
   PersonaInstruction,
 } from "../types";
-import { filterLivePersonaText } from "../utils/filterLiveResponse";
+import { appendLiveTextFragment, filterLivePersonaText } from "../utils/filterLiveResponse";
 import { isLikelyNonEnglish, translateTranscriptToEnglish } from "../utils/transcriptLanguage";
 
 export type UseGeminiLiveResult = {
@@ -63,7 +62,6 @@ export function useGeminiLive(
 
   // Partial assistant text of the current turn (see mergeAssistantFragment).
   const pendingAssistantRef = useRef<string | null>(null);
-  const pendingAssistantIdRef = useRef<string | null>(null);
 
   const onAudioRef = useRef<((chunk: ArrayBuffer) => void) | null>(null);
   const onInterruptedRef = useRef<(() => void) | null>(null);
@@ -130,7 +128,7 @@ export function useGeminiLive(
 
   const resetPendingAssistant = useCallback(() => {
     pendingAssistantRef.current = null;
-    pendingAssistantIdRef.current = null;
+
   }, []);
 
   // The model's own TTS picked up by an open mic gets transcribed as user
@@ -244,26 +242,13 @@ export function useGeminiLive(
               setPendingInput(null);
               upsertPendingUserEntry(flushed);
             }
-            const p = personaRef.current;
-            // Accumulate streaming fragments into ONE entry per intervention.
-            const result = mergeAssistantFragment(
-              messagesRef.current,
-              event.data,
-              pendingAssistantIdRef.current,
-              pendingAssistantRef.current,
-              {
-                displayName: p.displayName,
-                roleKey: p.roleKey,
-                portraitUrl: p.portraitUrl,
-                voiceName: p.voiceName,
-              },
-              stageIndexRef.current,
-              entryIdCounterRef.current
+            // UX: the reply text is accumulated DURING the turn but committed
+            // to the transcript only at turnComplete — the student focuses on
+            // the voice instead of reading along.
+            pendingAssistantRef.current = appendLiveTextFragment(
+              pendingAssistantRef.current ?? "",
+              event.data
             );
-            pendingAssistantIdRef.current = result.pendingId;
-            pendingAssistantRef.current = result.pendingText;
-            entryIdCounterRef.current = result.nextId;
-            commitMessages(result.messages);
             break;
           }
           case "inputTranscription": {
@@ -336,15 +321,12 @@ export function useGeminiLive(
             pendingUserIdRef.current = null;
             pendingUserFinalRef.current = false;
 
-            // Ported from live: filter persona disclaimers/meta commentary out
-            // of the completed assistant turn. If suppressed, drop the message;
-            // otherwise replace its content with the filtered text.
-            if (personaRef.current && pendingAssistantIdRef.current) {
-              // Context-replay artifact: models sometimes prefix their reply
-              // with a speaker label copied from the transcript format
-              // ("Martin Lambert: ..."). Strip it when the prefix is a KNOWN
-              // persona name — never touch legitimate "Label: value" content.
-              let spoken = pendingAssistantRef.current ?? "";
+            // UX: NOW the reply becomes visible — the persona finished speaking.
+            // Filter disclaimers and speaker-label artifacts, then commit the
+            // accumulated text as ONE entry.
+            if (personaRef.current && pendingAssistantRef.current) {
+              let spoken = pendingAssistantRef.current;
+              // Context-replay artifact: strip a leading known persona name.
               const knownNames = knownPersonaNamesRef.current
                 .slice()
                 .sort((a, b) => b.length - a.length);
@@ -359,16 +341,24 @@ export function useGeminiLive(
                 }
               }
               const filtered = filterLivePersonaText(spoken);
-              const pid = pendingAssistantIdRef.current;
-              if (filtered.suppressed) {
-                commitMessages(messagesRef.current.filter((m) => m.id !== pid));
-              } else if (spoken !== pendingAssistantRef.current || filtered.text !== spoken) {
-                commitMessages(
-                  messagesRef.current.map((m) =>
-                    m.id === pid ? { ...m, content: filtered.text } : m
-                  )
-                );
+              if (!filtered.suppressed && filtered.text.trim()) {
+                const p = personaRef.current;
+                commitMessages([
+                  ...messagesRef.current,
+                  {
+                    id: `entry_${++entryIdCounterRef.current}`,
+                    role: "assistant" as const,
+                    content: filtered.text,
+                    timestamp: new Date().toISOString(),
+                    stageIndex: stageIndexRef.current,
+                    displayRole: p.displayName,
+                    personaRoleKey: p.roleKey,
+                    portraitUrl: p.portraitUrl,
+                    status: "sent" as const,
+                  },
+                ]);
               }
+              // Suppressed replies leave no transcript entry at all.
             }
 
             // Generation is complete; queued audio may still be draining.

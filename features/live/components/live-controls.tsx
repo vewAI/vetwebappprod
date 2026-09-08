@@ -241,17 +241,16 @@ export function LiveControls({
         )}
 
         <div className="relative">
-          <StageAdvanceHint visible={showAdvanceHint && canAdvance} />
+          {/* Next Stage is ALWAYS clickable — the case must never get stuck. */}
+          <StageAdvanceHint visible={showAdvanceHint} />
           <Button
             variant="outline"
             size="sm"
             onClick={onAdvanceStage}
-            disabled={!canAdvance}
             className={cn(
               "gap-2 rounded-full px-4",
-              canAdvance
-                ? "border-yellow-400/50 text-yellow-400 hover:bg-yellow-400/10"
-                : "border-muted text-muted-foreground hover:bg-muted/50",
+              "border-yellow-400/50 text-yellow-400 hover:bg-yellow-400/10",
+              showAdvanceHint && "animate-pulse",
             )}
           >
             <SkipForward className="h-4 w-4" />

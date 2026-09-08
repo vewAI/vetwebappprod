@@ -60,7 +60,7 @@ export function TestResultsPanel({ findings }: TestResultsPanelProps) {
       </Button>
 
       {isOpen && (
-        <div className="absolute right-0 bottom-10 w-80 rounded-md border bg-popover shadow-md z-20 p-3 animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute right-0 bottom-10 w-[28rem] max-w-[92vw] rounded-md border bg-popover shadow-md z-20 p-3 animate-in fade-in zoom-in-95 duration-150">
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Test results
@@ -81,21 +81,46 @@ export function TestResultsPanel({ findings }: TestResultsPanelProps) {
               exam value.
             </p>
           ) : (
-            <ul className="space-y-2 max-h-72 overflow-y-auto">
-              {sorted.map((f) => (
-                <li key={f.key} className="rounded-md border px-2 py-1.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold">{f.label}</span>
-                    <span className="text-[10px] uppercase text-muted-foreground">
-                      {f.source}
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-0.5 whitespace-pre-wrap">
-                    {f.value}
-                  </p>
-                </li>
-              ))}
-            </ul>
+            <div className="max-h-[55vh] overflow-y-auto space-y-3">
+              {/* Physical findings as cards */}
+              {sorted.filter((f) => f.source === "physical").length > 0 && (
+                <ul className="space-y-2">
+                  {sorted
+                    .filter((f) => f.source === "physical")
+                    .map((f) => (
+                      <li key={f.key} className="rounded-md border px-2 py-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-semibold">{f.label}</span>
+                          <span className="text-[10px] uppercase text-muted-foreground">exam</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5 whitespace-pre-wrap">{f.value}</p>
+                      </li>
+                    ))}
+                </ul>
+              )}
+
+              {/* Lab results as a table */}
+              {sorted.filter((f) => f.source === "diagnostic").length > 0 && (
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b text-left">
+                      <th className="py-1 pr-2 font-semibold uppercase tracking-wide text-muted-foreground">Test</th>
+                      <th className="py-1 font-semibold uppercase tracking-wide text-muted-foreground">Result</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sorted
+                      .filter((f) => f.source === "diagnostic")
+                      .map((f) => (
+                        <tr key={f.key} className="border-b border-muted/60">
+                          <td className="py-1 pr-2 font-medium align-top">{f.label}</td>
+                          <td className="py-1 align-top text-muted-foreground">{f.value}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
           )}
         </div>
       )}

@@ -143,8 +143,6 @@ export function LiveSession({
     progress.currentStageIndex < progress.stages.length - 1
       ? progress.stages[progress.currentStageIndex + 1]
       : null;
-
-  const hintShownForStageRef = useRef<number>(-1);
   const [showAdvanceHint, setShowAdvanceHint] = useState(false);
 
   // P3.8: Session timer
@@ -578,13 +576,22 @@ export function LiveSession({
     progress.syncTurnCount(stageTurns);
   }, [live.messages, progress.currentStageIndex, progress]);
 
-  // Show advance hint once per stage
+  // Flash the advance hint: after 30s in the current stage and after every
+  // 2 user↔avatar interactions — the case must never stall.
+  const stageUserInteractions = live.messages.filter(
+    (m) => m.role === "user" && m.stageIndex === progress.currentStageIndex
+  ).length;
   useEffect(() => {
-    if (canAdvanceEval && progress.currentStageIndex !== hintShownForStageRef.current) {
-      hintShownForStageRef.current = progress.currentStageIndex;
+    const t = setTimeout(() => setShowAdvanceHint(true), 30_000);
+    return () => clearTimeout(t);
+  }, [progress.currentStageIndex]);
+  useEffect(() => {
+    if (stageUserInteractions > 0 && stageUserInteractions % 2 === 0) {
       setShowAdvanceHint(true);
+      const t = setTimeout(() => setShowAdvanceHint(false), 6000);
+      return () => clearTimeout(t);
     }
-  }, [canAdvanceEval, progress.currentStageIndex]);
+  }, [stageUserInteractions]);
 
   // Semi-automatic stage swap: once the conversation is oriented to the next
   // stage AND the completion criteria are met, open the confirmation banner

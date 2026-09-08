@@ -240,21 +240,34 @@ export async function POST(request: Request) {
       }
     }
 
-    // 3) Diagnostic/lab values: reveal the group only when the user mentions
-    // it AND the session reached the laboratory phase. Interpretive content
-    // is stripped so conclusions stay the student's job.
+    // 3) Diagnostic/lab values: reveal when the user names a specific test
+    // OR asks generically for results/findings (once the laboratory phase is
+    // reached). Interpretive content is stripped — conclusions are the
+    // student's job. Entries come back individually so the panel can render
+    // them as a table.
     const diagAllowed = stageAllowsReveal("diagnostic", stageType);
+    const genericResultsRequest =
+      /\b(?:results?|findings?|blood ?work|bloods?|tests?|labs?|panel|report|values?)\b/i.test(userText);
     const diagKey = diagAllowed ? findSynonymKey(userText, DIAG_SYNONYMS) : null;
-    if (diagKey && diagText) {
-      const synonyms = DIAG_SYNONYMS[diagKey] ?? [];
-      const diagLines = extractDiagPairs(diagText)
-        .filter((e) => synonyms.some((s) => `${e.label} ${e.value}`.toLowerCase().includes(s)))
-        .map((e) => (e.value ? `${e.label}: ${e.value}` : e.label));
-      if (diagLines.length > 0) {
+    const revealAllDiag = diagAllowed && (genericResultsRequest || Boolean(diagKey)) && diagText;
+
+    if (revealAllDiag) {
+      const synonyms = diagKey ? DIAG_SYNONYMS[diagKey] ?? [] : [];
+      for (const entry of extractDiagPairs(diagText)) {
+        const labelNorm = normalizeForMatch(entry.label);
+        if (!labelNorm) continue;
+        // When a specific test was named, keep only matching entries;
+        // generic requests reveal the whole sanitized set.
+        if (synonyms.length > 0 && !synonyms.some((s) => `${entry.label} ${entry.value}`.toLowerCase().includes(s))) {
+          continue;
+        }
+        const dedupeKey = `diag:${labelNorm}`;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
         items.push({
-          key: diagKey,
-          label: diagKey.toUpperCase(),
-          value: diagLines.join(" · "),
+          key: dedupeKey,
+          label: capitalizeLabel(entry.label),
+          value: entry.value || entry.label,
           source: "diagnostic",
         });
       }
