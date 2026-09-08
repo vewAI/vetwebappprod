@@ -160,6 +160,27 @@ function capitalizeLabel(label: string): string {
   return clean.charAt(0).toUpperCase() + clean.slice(1);
 }
 
+// Prettify raw record keys ("respiratory_rate" -> "Respiratory Rate").
+function prettifyLabel(label: string): string {
+  return capitalizeLabel(String(label || "").replace(/_+/g, " ").trim());
+}
+
+// Stored records sometimes contain clarifying questions or prompt fragments
+// ("Which specific aspects... do you want to know about?") — never findings.
+function isGarbageEntry(label: string, value: string): boolean {
+  const combined = `${label} ${value}`;
+  if (label.includes("/") || combined.includes("?")) return true;
+  if (/which\s+specific|do you want to know|please (ask|specify)|tell me what/i.test(combined)) return true;
+  return false;
+}
+
+function cleanValue(value: string): string {
+  return String(value || "")
+    .replace(/^["'`,.\s-]+/, "")
+    .replace(/["'`,\s]+$/, "")
+    .trim();
+}
+
 export async function POST(request: Request) {
   try {
     const auth = await requireUser(request);
@@ -205,8 +226,8 @@ export async function POST(request: Request) {
     const physEntries = extractFindingsEntries(physText);
     const physAllowed = stageAllowsReveal("physical", stageType);
 
-    if (physAllowed && (requestedCanonical.size > 0 || userText.trim())) {
-      for (const entry of physEntries) {
+    if (physAllowed && (requestedCanonical.size > 0 || userText.trim())) {      for (const entry of physEntries) {
+        if (isGarbageEntry(entry.label, entry.value)) continue;
         const entryKeys = canonicalKeysForLabel(entry.label);
         const canonicalHit = entryKeys.some((k) => requestedCanonical.has(k));
         const vocabHit = entryMatchesUserText(entry.label, userText);
@@ -216,8 +237,8 @@ export async function POST(request: Request) {
         seen.add(dedupeKey);
         items.push({
           key: dedupeKey,
-          label: entry.label,
-          value: entry.value || entry.label,
+          label: prettifyLabel(entry.label),
+          value: cleanValue(entry.value) || prettifyLabel(entry.label),
           source: "physical",
         });
       }
@@ -226,8 +247,8 @@ export async function POST(request: Request) {
     // 2) What the persona verbalized: reveal entries whose label appears in
     // the persona's spoken reply, so the panel mirrors the conversation.
     const haystack = normalizeForMatch(assistantText);
-    if (physAllowed && haystack) {
-      for (const entry of physEntries) {
+    if (physAllowed && haystack) {      for (const entry of physEntries) {
+        if (isGarbageEntry(entry.label, entry.value)) continue;
         const labelNorm = normalizeForMatch(entry.label);
         if (labelNorm.length < 3 || !haystack.includes(labelNorm)) continue;
         const dedupeKey = `phys:${labelNorm}`;
@@ -235,8 +256,8 @@ export async function POST(request: Request) {
         seen.add(dedupeKey);
         items.push({
           key: dedupeKey,
-          label: entry.label,
-          value: entry.value || entry.label,
+          label: prettifyLabel(entry.label),
+          value: cleanValue(entry.value) || prettifyLabel(entry.label),
           source: "physical",
         });
       }
@@ -278,9 +299,9 @@ export async function POST(request: Request) {
     // 4) Lab values the persona verbalized: during the laboratory phase the
     // nurse reads results aloud — each spoken entry lands in the panel live,
     // same as physical findings.
-    if (diagAllowed && diagText && haystack) {
-      const diagEntries = extractDiagPairs(diagText);
+    if (diagAllowed && diagText && haystack) {      const diagEntries = extractDiagPairs(diagText);
       for (const entry of diagEntries) {
+        if (isGarbageEntry(entry.label, entry.value)) continue;
         const labelNorm = normalizeForMatch(entry.label);
         if (labelNorm.length < 3 || !haystack.includes(labelNorm)) continue;
         const dedupeKey = `diag:${labelNorm}`;
@@ -288,8 +309,8 @@ export async function POST(request: Request) {
         seen.add(dedupeKey);
         items.push({
           key: dedupeKey,
-          label: capitalizeLabel(entry.label),
-          value: entry.value || entry.label,
+          label: prettifyLabel(entry.label),
+          value: cleanValue(entry.value) || prettifyLabel(entry.label),
           source: "diagnostic",
         });
       }

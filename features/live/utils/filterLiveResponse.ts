@@ -25,7 +25,15 @@ const DISCLAIMER_PATTERNS: RegExp[] = [
   // Broad catch: "I need to inform you that" + advice disclaimer
   /(?:^\s*|[.!?]\s*)[^.!?]*I\s+need\s+to\s+inform\s+you\s+that[^.!?]*(?:advice|diagnosis|professional)[^.!?]*[.!?]?/gi,
   // Broad catch: "seek care/attention" after a disclaimer phrase
-  /(?:^\s*|[.!?]\s*)[^.!?]*seek\s+(?:care|attention|medical\s+help|veterinary\s+care)[^.!?]*[.!?]?/gi,
+  /(?:^|[.!?]\s*)[^.!?]*seek\s+(?:care|attention|medical\s+help|veterinary\s+care)[^.!?]*[.!?]?\s*/gi,
+  // "seek professional help" (generic — no medical/veterinary qualifier)
+  /(?:^|[.!?]\s*)[^.!?]*\bseek\s+professional\s+help\b[^.!?]*[.!?]?\s*/gi,
+  // "not a substitute for professional advice/care"
+  /(?:^|[.!?]\s*)[^.!?]*\bnot\s+(?:a\s+)?(?:substitute|replacement)\s+for\b[^.!?]*[.!?]?\s*/gi,
+  // "reach out to / contact a professional, clinic, vet..."
+  /(?:^|[.!?]\s*)[^.!?]*\b(?:reach\s+out\s+to|contact|consult\s+with)\s+(?:a|an|your|the)?\s*(?:professional|veterinar\w*|clinic\w*|expert)[^.!?]*[.!?]?\s*/gi,
+  // "recommend seeing/consulting" boilerplate
+  /(?:^|[.!?]\s*)[^.!?]*\b(?:i|we)\s+(?:would|'?d)?\s*recommend\s+(?:seeing|consulting|visiting)\b[^.!?]*[.!?]?\s*/gi,
 ];
 
 /**
