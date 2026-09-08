@@ -69,7 +69,7 @@ export function PersonaHeader({ persona, stageTitle, isSpeaking, waveformMode = 
 
       {/* Stage + voice activity on the right */}
       <div className="ml-auto flex shrink-0 items-center gap-3">
-        <div className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+        <div className="rounded-full border border-yellow-400/60 bg-yellow-400/10 px-4 py-1.5 text-sm font-semibold tracking-wide text-yellow-400">
           {stageTitle}
         </div>
         {waveformMode !== "idle" && (

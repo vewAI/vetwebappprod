@@ -668,8 +668,9 @@ export function LiveSession({
 
   const handleConfirmAdvance = useCallback(() => {
     setShowAdvanceConfirm(false);
-    saveProgress(progress.currentStageIndex, live.messages, timeSpentRef.current);
+    // Advance FIRST — the case must never stall on a save error.
     progress.advanceStage();
+    void saveProgress(progress.currentStageIndex, live.messages, timeSpentRef.current).catch(() => {});
   }, [progress, saveProgress, live.messages]);
 
   const handleCancelAdvance = useCallback(() => {
