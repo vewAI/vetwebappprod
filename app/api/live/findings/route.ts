@@ -60,31 +60,13 @@ function findSynonymKey(text: string, groups: Record<string, string[]>): string 
 }
 
 // A spoken phrase reveals an entry when the full label appears in it, or
-// when any significant label word does ("respirations are 28" ↔ "Resp Rate").
+// when any significant label word does ("respirations are 28" — "Resp Rate").
 function labelSpokenIn(label: string, haystack: string): boolean {
   const labelNorm = normalizeForMatch(label);
   if (labelNorm.length >= 3 && haystack.includes(labelNorm)) return true;
   return labelNorm
     .split(" ")
     .some((w) => w.length >= 5 && haystack.includes(w));
-}
-
-function findSynonymKey(text: string, groups: Record<string, string[]>): string | null {
-  const lower = normalizeForMatch(text);
-  for (const [key, synonyms] of Object.entries(groups)) {
-    const hit = synonyms.some((s) => {
-      const ns = normalizeForMatch(s);
-      if (!ns) return false;
-      // Short aliases ("ca", "t") are dangerously ambiguous as substrings —
-      // require a whole-word match for them; longer aliases may prefix-match.
-      if (ns.length <= 3) {
-        return new RegExp(`(?:^| )${ns}(?:$| )`).test(lower);
-      }
-      return new RegExp(`(?:^| )${ns}`).test(lower);
-    });
-    if (hit) return key;
-  }
-  return null;
 }
 
 // Stage gating: findings stay hidden until their proper stage is reached.
