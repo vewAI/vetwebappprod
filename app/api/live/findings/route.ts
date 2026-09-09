@@ -31,8 +31,42 @@ function normalizeForMatch(s: string): string {
   return String(s || "")
     .toLowerCase()
     .replace(/[^a-z0-9 ]+/g, " ")
+    // Collapse British digraphs so "haematology" matches "hemat" stems
+    .replace(/ae/g, "e")
+    .replace(/oe/g, "e")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function findSynonymKey(text: string, groups: Record<string, string[]>): string | null {
+  const lower = normalizeForMatch(text);
+  const textWords = lower.split(" ").filter((w) => w.length >= 4);
+  for (const [key, synonyms] of Object.entries(groups)) {
+    const hit = synonyms.some((s) => {
+      const ns = normalizeForMatch(s);
+      if (!ns) return false;
+      // Short aliases ("ca") need whole words; longer ones prefix-match
+      if (ns.length <= 3) {
+        return new RegExp(`(?:^| )${ns}(?:$| )`).test(lower);
+      }
+      if (lower.includes(ns)) return true;
+      // Stem match: "hemat" ↔ "hematology" (alias starts with the user stem)
+      const nsStem = ns.split(" ")[0].slice(0, 5);
+      return nsStem.length >= 4 && textWords.some((tw) => nsStem.startsWith(tw));
+    });
+    if (hit) return key;
+  }
+  return null;
+}
+
+// A spoken phrase reveals an entry when the full label appears in it, or
+// when any significant label word does ("respirations are 28" ↔ "Resp Rate").
+function labelSpokenIn(label: string, haystack: string): boolean {
+  const labelNorm = normalizeForMatch(label);
+  if (labelNorm.length >= 3 && haystack.includes(labelNorm)) return true;
+  return labelNorm
+    .split(" ")
+    .some((w) => w.length >= 5 && haystack.includes(w));
 }
 
 function findSynonymKey(text: string, groups: Record<string, string[]>): string | null {
@@ -271,7 +305,7 @@ export async function POST(request: Request) {
     if (physAllowed && haystack) {      for (const entry of physEntries) {
         if (isGarbageEntry(entry.label, entry.value)) continue;
         const labelNorm = normalizeForMatch(entry.label);
-        if (labelNorm.length < 3 || !haystack.includes(labelNorm)) continue;
+        if (labelNorm.length < 3 || !labelSpokenIn(labelNorm, haystack)) continue;
         const dedupeKey = `phys:${labelNorm}`;
         if (seen.has(dedupeKey)) continue;
         seen.add(dedupeKey);
@@ -321,7 +355,7 @@ export async function POST(request: Request) {
       for (const entry of diagEntries) {
         if (isGarbageEntry(entry.label, entry.value)) continue;
         const labelNorm = normalizeForMatch(entry.label);
-        if (labelNorm.length < 3 || !haystack.includes(labelNorm)) continue;
+        if (labelNorm.length < 3 || !labelSpokenIn(labelNorm, haystack)) continue;
         const dedupeKey = `diag:${labelNorm}`;
         if (seen.has(dedupeKey)) continue;
         seen.add(dedupeKey);
