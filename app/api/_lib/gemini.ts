@@ -34,44 +34,53 @@ export async function generateGeminiText(opts: {
 
   let lastError: Error | null = null;
   for (const candidate of MODELS) {
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${candidate.model}:generateContent`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": apiKey,
-          },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              temperature,
-              maxOutputTokens,
-              ...candidate.body,
-            },
-          }),
-          signal: AbortSignal.timeout(timeoutMs),
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        // Backoff before retrying the same model on transient errors.
+        if (attempt > 0) {
+          await new Promise((r) => setTimeout(r, 2000 * attempt));
         }
-      );
-      if (!res.ok) {
-        const detail = await res.text().catch(() => "");
-        lastError = new Error(`Gemini ${candidate.model} failed: ${res.status} ${detail.slice(0, 300)}`);
-        continue; // try the next model
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${candidate.model}:generateContent`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-goog-api-key": apiKey,
+            },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: {
+                temperature,
+                maxOutputTokens,
+                ...candidate.body,
+              },
+            }),
+            signal: AbortSignal.timeout(timeoutMs),
+          }
+        );
+        if (!res.ok) {
+          const detail = await res.text().catch(() => "");
+          lastError = new Error(`Gemini ${candidate.model} failed: ${res.status} ${detail.slice(0, 300)}`);
+          // 429/5xx are transient: retry this model once before moving on.
+          if (res.status === 429 || res.status >= 500) continue;
+          break; // client error (4xx): don't hammer, move to next model
+        }
+        const data = await res.json();
+        const parts = data?.candidates?.[0]?.content?.parts ?? [];
+        const text = parts
+          .map((p: { text?: string }) => p.text ?? "")
+          .join("")
+          .trim();
+        if (!text) {
+          lastError = new Error(`Gemini ${candidate.model} returned an empty response`);
+          break; // next model
+        }
+        return text;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        if (attempt > 0) break;
       }
-      const data = await res.json();
-      const parts = data?.candidates?.[0]?.content?.parts ?? [];
-      const text = parts
-        .map((p: { text?: string }) => p.text ?? "")
-        .join("")
-        .trim();
-      if (!text) {
-        lastError = new Error(`Gemini ${candidate.model} returned an empty response`);
-        continue;
-      }
-      return text;
-    } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err));
     }
   }
   throw lastError ?? new Error("Gemini generation failed");

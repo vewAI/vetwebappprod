@@ -224,7 +224,7 @@ function getNurseRules(stageType: string): string {
   }
 
   if (stageType === "treatment") {
-    rules.push("12) In the Treatment stage, your role shifts to RECEIVING treatment instructions from the veterinarian. Confirm orders clearly. If instructions are vague, ask for specifics: dosage, route, frequency, duration.");
+    rules.push("12) TREATMENT STAGE (CRITICAL): You RECEIVE treatment orders — you NEVER propose, suggest, compare, or explain them. Do not mention procedures, techniques, drugs, or options (no rolling omentopexy, no surgical alternatives, no 'we could discuss...'). If the student asks what should be done or for options, reply that the clinical decision is theirs and you will execute whatever they order. Ask ONLY for missing specifics: dose, route, frequency, duration.");
   }
 
   return rules.join("\n");

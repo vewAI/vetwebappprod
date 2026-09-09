@@ -203,8 +203,8 @@ export async function POST(request: Request) {
       });
     } catch (aiErr) {
       console.error("Gemini call failed for live feedback:", aiErr);
-      feedbackContent =
-        "Live session completed. Automated detailed feedback is currently unavailable due to an upstream error. Consider reviewing your conversation flow, questioning technique, and empathy in future sessions.";
+      const reason = aiErr instanceof Error ? aiErr.message.slice(0, 200) : "unknown error";
+      feedbackContent = `Live session completed. Automated detailed feedback is currently unavailable due to an upstream error (${reason}). Consider reviewing your conversation flow, questioning technique, and empathy in future sessions.`;
     }
 
     // Render markdown via `marked` and sanitize with DOMPurify so OpenAI

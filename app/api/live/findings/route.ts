@@ -79,30 +79,6 @@ function sanitizeDiagnosticText(text: string): string {
     .trim();
 }
 
-// Findings are stored as "Label: value" entries separated by newlines and/or
-// " - " bullets — often ALL inside a single line. Split into granular
-// entries so revealing one match never exposes the whole dataset.
-function extractFindingsEntries(findingsText: string): FindingsEntry[] {
-  const entries: FindingsEntry[] = [];
-  const parts = String(findingsText || "")
-    .replace(/\r?\n/g, " - ")
-    .split(/\s-\s+/);
-  for (const partRaw of parts) {
-    const part = partRaw.trim().replace(/^-\s*/, "");
-    if (!part) continue;
-    const colonIdx = part.indexOf(":");
-    if (colonIdx > 0 && colonIdx <= 48) {
-      entries.push({
-        label: part.slice(0, colonIdx).trim(),
-        value: part.slice(colonIdx + 1).trim(),
-      });
-    } else {
-      entries.push({ label: part, value: "" });
-    }
-  }
-  return entries;
-}
-
 function canonicalKeysForLabel(label: string): string[] {
   const normalizedLabel = normalizeForMatch(label);
   const keys: string[] = [];
@@ -151,11 +127,8 @@ function entryMatchesUserTextDiag(userText: string, diagText: string): boolean {
   );
 }
 
-// Diagnostic records are frequently JSON-as-text ("glucose": "3.8 ...").
-// Extract labelled pairs from that shape first; fall back to the generic
-// entry extraction for plain prose records.
-function extractDiagPairs(diagText: string): FindingsEntry[] {
-  const text = sanitizeDiagnosticText(diagText);
+// Extract labelled pairs from JSON-as-text records ("glucose": "3.8 ...").
+function extractLabelledPairs(text: string): FindingsEntry[] {
   const pairs: FindingsEntry[] = [];
   const jsonRe = /["']([a-z0-9_\- ]{2,48})["']\s*:\s*["']([^"']*)["']/gi;
   let m: RegExpExecArray | null;
@@ -164,13 +137,48 @@ function extractDiagPairs(diagText: string): FindingsEntry[] {
     const value = m[2].trim();
     if (label) pairs.push({ label, value });
   }
-  if (pairs.length > 0) return pairs;
-  return extractFindingsEntries(text);
+  return pairs;
+}
+
+// Findings are stored as "Label: value" entries separated by newlines and/or
+// " - " bullets — often ALL inside a single line, or as JSON-as-text. Split
+// into granular entries so revealing one match never exposes the whole dataset.
+function extractFindingsEntries(findingsText: string): FindingsEntry[] {
+  const text = String(findingsText || "").trim();
+  if (!text) return [];
+  // JSON-shaped records first (quoted keys are the giveaway).
+  if (text.startsWith("{") || /["'][a-z0-9_\- ]{2,48}["']\s*:/.test(text)) {
+    const jsonPairs = extractLabelledPairs(text);
+    if (jsonPairs.length > 0) return jsonPairs;
+  }
+  const entries: FindingsEntry[] = [];
+  const parts = text.replace(/\r?\n/g, " - ").split(/\s-\s+/);
+  for (const partRaw of parts) {
+    const part = partRaw.trim().replace(/^-\s*/, "");
+    if (!part) continue;
+    const colonIdx = part.indexOf(":");
+    if (colonIdx > 0 && colonIdx <= 48) {
+      entries.push({
+        label: part.slice(0, colonIdx).trim(),
+        value: part.slice(colonIdx + 1).trim(),
+      });
+    } else {
+      entries.push({ label: part, value: "" });
+    }
+  }
+  return entries;
 }
 
 function capitalizeLabel(label: string): string {
   const clean = label.trim();
   return clean.charAt(0).toUpperCase() + clean.slice(1);
+}
+
+function extractDiagPairs(diagText: string): FindingsEntry[] {
+  const text = sanitizeDiagnosticText(diagText);
+  const pairs = extractLabelledPairs(text);
+  if (pairs.length > 0) return pairs;
+  return extractFindingsEntries(text);
 }
 
 // Prettify raw record keys ("respiratory_rate" -> "Respiratory Rate").

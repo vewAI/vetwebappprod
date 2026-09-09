@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ClipboardList, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export type RevealedFinding = {
   key: string;
@@ -18,16 +19,27 @@ type TestResultsPanelProps = {
 
 export function TestResultsPanel({ findings }: TestResultsPanelProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [glow, setGlow] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const prevCountRef = useRef(0);
+  const glowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Auto-open whenever a new result is revealed so the student notices.
+  // Auto-open AND flash the icon whenever a new result is revealed.
   useEffect(() => {
     if (findings.length > prevCountRef.current) {
       setIsOpen(true);
+      setGlow(true);
+      if (glowTimerRef.current) clearTimeout(glowTimerRef.current);
+      glowTimerRef.current = setTimeout(() => setGlow(false), 5000);
     }
     prevCountRef.current = findings.length;
   }, [findings.length]);
+
+  useEffect(() => {
+    return () => {
+      if (glowTimerRef.current) clearTimeout(glowTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -48,7 +60,10 @@ export function TestResultsPanel({ findings }: TestResultsPanelProps) {
         variant="ghost"
         size="icon"
         onClick={() => setIsOpen((prev) => !prev)}
-        className="h-9 w-9 rounded-full"
+        className={cn(
+          "h-9 w-9 rounded-full",
+          glow && "ring-2 ring-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.7)] animate-pulse"
+        )}
         title="Test results"
       >
         <ClipboardList className="h-4 w-4" />

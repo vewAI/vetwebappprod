@@ -659,13 +659,6 @@ export function LiveSession({
     setTextInput("");
   }, [isTextMode, live, textInput]);
 
-  // P3.4: Stage advance with confirmation
-  const handleAdvanceClick = useCallback(() => {
-    if (nextStage) {
-      setShowAdvanceConfirm(true);
-    }
-  }, [nextStage]);
-
   const handleConfirmAdvance = useCallback(() => {
     setShowAdvanceConfirm(false);
     // Advance FIRST — the case must never stall on a save error.
@@ -797,6 +790,16 @@ export function LiveSession({
       player.setMuted(false);
     }
   }, [isPaused, mic, player]);
+
+  // P3.4: Stage advance with confirmation. In the LAST stage the button
+  // finishes the case and opens the AI feedback instead.
+  const handleAdvanceClick = useCallback(() => {
+    if (nextStage) {
+      setShowAdvanceConfirm(true);
+      return;
+    }
+    void handleEndSession();
+  }, [nextStage, handleEndSession]);
 
   // Restart: complete the current attempt and reload so a fresh one starts.
   const handleRestartCase = useCallback(async () => {
