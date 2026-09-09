@@ -321,13 +321,22 @@ export async function PUT(req: Request) {
   }
 }
 
-// Delete a case by id (query param ?id=...)
+// Delete a case by id (query param ?id=...). Also handles the soft
+// archive/restore modes used by the case viewer:
+//   ?mode=archive  -> mark archived + unpublished (admins and professors)
+//   ?mode=restore  -> clear archive markers (admins and professors)
+//   (no mode)      -> HARD delete — admins only.
 export async function DELETE(req: Request) {
-  const auth = await requireUser(req, { requireAdmin: true });
+  const auth = await requireUser(req);
   if ("error" in auth) {
     return auth.error;
   }
-  const { supabase, user } = auth;
+  if (auth.role !== "admin" && auth.role !== "professor") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const db = auth.adminSupabase ?? auth.supabase;
+  const isAdmin = auth.role === "admin";
+  const { user } = auth;
   try {
     const url = new URL(req.url);
     const id = url.searchParams.get("id");
@@ -338,7 +347,7 @@ export async function DELETE(req: Request) {
 
     // Restore mode: remove archive markers and keep the case available in admin lists.
     if (mode === "restore") {
-      const { data: row, error: fetchError } = await supabase.from("cases").select("settings").eq("id", id).maybeSingle();
+      const { data: row, error: fetchError } = await db.from("cases").select("settings").eq("id", id).maybeSingle();
 
       if (fetchError) {
         return NextResponse.json({ error: fetchError.message }, { status: 500 });
@@ -357,7 +366,7 @@ export async function DELETE(req: Request) {
       delete baseSettings.archivedAt;
       delete baseSettings.archivedBy;
 
-      const { error: restoreError } = await supabase.from("cases").update({ settings: baseSettings }).eq("id", id);
+      const { error: restoreError } = await db.from("cases").update({ settings: baseSettings }).eq("id", id);
 
       if (restoreError) {
         return NextResponse.json({ error: restoreError.message }, { status: 500 });
@@ -369,7 +378,7 @@ export async function DELETE(req: Request) {
     // Soft archive mode: keep row but mark it archived and unpublished.
     if (mode === "archive") {
       console.log(`[ARCHIVE] Beginning archive for case: ${id}`);
-      const { data: row, error: fetchError } = await supabase.from("cases").select("settings").eq("id", id).maybeSingle();
+      const { data: row, error: fetchError } = await db.from("cases").select("settings").eq("id", id).maybeSingle();
 
       if (fetchError) {
         console.error(`[ARCHIVE] Fetch error:`, fetchError);
@@ -395,7 +404,7 @@ export async function DELETE(req: Request) {
 
       console.log(`[ARCHIVE] Updated settings object:`, nextSettings);
 
-      const { error: archiveError, data: updateResult } = await supabase
+      const { error: archiveError, data: updateResult } = await db
         .from("cases")
         .update({
           is_published: false,
@@ -420,7 +429,15 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ success: true, archived: true });
     }
 
-    const { error } = await supabase.from("cases").delete().eq("id", id);
+    // Hard delete: admins only, and only when no mode was requested.
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: "mode query param is required (archive|restore)" },
+        { status: 400 }
+      );
+    }
+
+    const { error } = await db.from("cases").delete().eq("id", id);
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }

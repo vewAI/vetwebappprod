@@ -126,7 +126,7 @@ function entryMatchesUserText(entryLabel: string, userText: string): boolean {
   const userWords = words(userText);
   if (labelWords.length === 0 || userWords.length === 0) return false;
   return labelWords.some((lw) =>
-    userWords.some((uw) => commonPrefixLength(lw, uw) >= 5)
+    userWords.some((uw) => commonPrefixLength(lw, uw) >= 4)
   );
 }
 
@@ -138,7 +138,7 @@ function entryMatchesUserTextDiag(userText: string, diagText: string): boolean {
   if (userWords.length === 0) return false;
   return extractDiagPairs(diagText).some((entry) =>
     words(entry.label).some((lw) =>
-      userWords.some((uw) => commonPrefixLength(lw, uw) >= 5)
+      userWords.some((uw) => commonPrefixLength(lw, uw) >= 4)
     )
   );
 }
