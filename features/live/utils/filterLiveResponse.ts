@@ -34,6 +34,11 @@ const DISCLAIMER_PATTERNS: RegExp[] = [
   /(?:^|[.!?]\s*)[^.!?]*\b(?:reach\s+out\s+to|contact|consult\s+with)\s+(?:a|an|your|the)?\s*(?:professional|veterinar\w*|clinic\w*|expert)[^.!?]*[.!?]?\s*/gi,
   // "recommend seeing/consulting" boilerplate
   /(?:^|[.!?]\s*)[^.!?]*\b(?:i|we)\s+(?:would|'?d)?\s*recommend\s+(?:seeing|consulting|visiting)\b[^.!?]*[.!?]?\s*/gi,
+  // "a snapshot in time and not a diagnosis..." style epilogues
+  /(?:^|[.!?]\s*)[^.!?]*\bsnapshot\s+in\s+time\b[^.!?]*[.!?]?\s*/gi,
+  /(?:^|[.!?]\s*)[^.!?]*\bnot\s+(?:a\s+)?diagnos\w*\b[^.!?]*[.!?]?\s*/gi,
+  /(?:^|[.!?]\s*)[^.!?]*\b(?:not|isn'?t)\s+(?:meant|intended)\s+to\s+diagnos\w*[^.!?]*[.!?]?\s*/gi,
+  /(?:^|[.!?]\s*)[^.!?]*\b(?:for\s+)?any\s+personal\s+(?:health\s+)?concerns\b[^.!?]*[.!?]?\s*/gi,
 ];
 
 /**
