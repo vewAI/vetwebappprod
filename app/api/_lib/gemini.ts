@@ -3,14 +3,16 @@
 // timeout and falls back across model availability automatically.
 
 const MODELS: { model: string; body: Record<string, unknown> }[] = [
-  // 2.5 is a "thinking" model: without thinkingBudget: 0 it burns the whole
-  // output budget on reasoning and returns EMPTY text at small maxOutputTokens.
-  {
-    model: "gemini-2.0-flash",
-    body: {},
-  },
+  // Cascade ordered for keys created recently: Google retires old model
+  // names for new projects (2.5-flash now 404s for them), so we try the
+  // rolling "latest" alias first, then known-stable models.
+  { model: "gemini-flash-latest", body: {} },
+  { model: "gemini-2.0-flash", body: {} },
   {
     model: "gemini-2.5-flash",
+    // 2.5 is a "thinking" model: without thinkingBudget: 0 it burns the whole
+    // output budget on reasoning and returns EMPTY text at small
+    // maxOutputTokens.
     body: { thinkingConfig: { thinkingBudget: 0 } },
   },
 ];
