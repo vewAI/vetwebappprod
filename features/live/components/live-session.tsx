@@ -575,11 +575,27 @@ export function LiveSession({
       if (stageAdvancePendingRef.current) {
         stageAdvancePendingRef.current = false;
         const stageTitle = progress.stages[progress.currentStageIndex]?.title ?? "";
+        const nextSettings = progress.stages[progress.currentStageIndex]?.settings as
+          | Record<string, unknown>
+          | undefined;
+        const nextType =
+          normalizeStageType(typeof nextSettings?.stage_type === "string" ? nextSettings.stage_type : "") ||
+          inferStageTypeFromText(`${progress.stages[progress.currentStageIndex]?.title ?? ""} ${progress.stages[progress.currentStageIndex]?.description ?? ""}`);
+        // Stage-specific ask so the incoming persona opens with the RIGHT move.
+        const handoffAsk: Record<string, string> = {
+          history: "Ask the veterinarian what history they would like to take.",
+          physical: "Ask the veterinarian which findings or body system they would like to examine first.",
+          diagnostic: "Ask the veterinarian which differentials or diagnostics they are considering.",
+          laboratory: "Ask the veterinarian which tests or panels they would like run.",
+          treatment: "Ask the veterinarian FOR THE TREATMENT PLAN (e.g. 'So doctor, what's the treatment plan?').",
+          communication: "Invite the veterinarian to explain the plan and prognosis to the owner.",
+        };
+        const ask = handoffAsk[nextType] ?? "Acknowledge the handoff briefly and invite the veterinarian to proceed.";
         const countAtSwitch = assistantCountRef.current;
         setTimeout(() => {
           if (live.status === "connected" && assistantCountRef.current === countAtSwitch) {
             live.sendText(
-              `[HANDOFF] The consultation has now moved to the "${stageTitle}" stage. Reply with ONE short sentence in YOUR OWN role acknowledging this next phase and pick up the conversation from there. Do NOT re-introduce yourself and do NOT keep discussing the previous stage.`
+              `[HANDOFF] The consultation has now moved to the "${stageTitle}" stage. ${ask} Reply with ONE short sentence in YOUR OWN role. Do NOT re-introduce yourself and do NOT keep discussing the previous stage.`
             );
           }
         }, 2500);
