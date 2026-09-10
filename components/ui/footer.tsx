@@ -75,6 +75,11 @@ export function Footer() {
         <div className="border-t border-primary-foreground/20 dark:border-white/20 mt-8 pt-8">
           <p className="text-center text-sm text-primary-foreground/60 dark:text-white/60">
             © {currentYear} VEWAI. All rights reserved.
+            {process.env.NEXT_PUBLIC_COMMIT_SHA && (
+              <span className="ml-2 text-xs opacity-60">
+                build {process.env.NEXT_PUBLIC_COMMIT_SHA.slice(0, 7)}
+              </span>
+            )}
           </p>
         </div>
       </div>

@@ -51,6 +51,11 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Expose the deploy's commit so anyone can verify they are on the latest
+  // build (shown in the footer).
+  env: {
+    NEXT_PUBLIC_COMMIT_SHA: process.env.VERCEL_GIT_COMMIT_SHA ?? "local-dev",
+  },
   images: {
     remotePatterns,
   },

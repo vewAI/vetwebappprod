@@ -138,6 +138,11 @@ export function ProgressSidebar({ caseItem, stages, currentStageIndex, onStageSe
               }}
             />
           </div>
+          {process.env.NEXT_PUBLIC_COMMIT_SHA && (
+            <p className="mt-2 text-[10px] text-muted-foreground">
+              build {process.env.NEXT_PUBLIC_COMMIT_SHA.slice(0, 7)}
+            </p>
+          )}
         </div>
       </div>
     </div>
