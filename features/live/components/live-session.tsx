@@ -160,14 +160,23 @@ export function LiveSession({
   const [isRestarting, setIsRestarting] = useState(false);
   const [showResumeBanner, setShowResumeBanner] = useState(initialMessages.length > 0);
 
-  // Restores the accumulated time when resuming a session.
-  const [elapsedDisplay, setElapsedDisplay] = useState(() =>
-    formatElapsed(initialTimeSpentSeconds)
-  );
+  // Timed stations: each stage gets a 90-second countdown. Pausing freezes
+  // the countdown, the ring and the total-time accumulation. At zero the
+  // stage auto-advances (the last stage ends the case).
+  const STAGE_SECONDS = 90;
+  const [stageSecondsLeft, setStageSecondsLeft] = useState(STAGE_SECONDS);
+  const stageProgress = Math.max(0, Math.min(1, stageSecondsLeft / STAGE_SECONDS));
+  const countdownDisplay = formatElapsed(stageSecondsLeft);
+
+  useEffect(() => {
+    setStageSecondsLeft(STAGE_SECONDS);
+  }, [progress.currentStageIndex]);
+
   useEffect(() => {
     const timer = setInterval(() => {
+      if (isPausedRef.current) return; // paused: freeze countdown and clock
       timeSpentRef.current += 1;
-      setElapsedDisplay(formatElapsed(timeSpentRef.current));
+      setStageSecondsLeft((s) => (s > 0 ? s - 1 : 0));
     }, 1000);
     return () => clearInterval(timer);
   }, []);
@@ -831,6 +840,27 @@ export function LiveSession({
     window.location.reload();
   }, [mic, live, attemptId]);
 
+  // Timed stations: when the countdown reaches zero, advance automatically.
+  // In the LAST stage, finishing the countdown ends the case (AI feedback).
+  const autoAdvancedStageRef = useRef(-1);
+  const autoEndedRef = useRef(false);
+  useEffect(() => {
+    if (stageSecondsLeft > 0) return;
+    if (isPausedRef.current) return; // paused: clock frozen, no auto-advance
+    if (nextStage) {
+      if (autoAdvancedStageRef.current !== progress.currentStageIndex) {
+        autoAdvancedStageRef.current = progress.currentStageIndex;
+        console.log("[Session] Stage time expired, auto-advancing to:", nextStage.title);
+        handleConfirmAdvance();
+      }
+    } else if (!autoEndedRef.current) {
+      autoEndedRef.current = true;
+      console.log("[Session] Case time expired, ending session");
+      void handleEndSession();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stageSecondsLeft, nextStage, handleConfirmAdvance, handleEndSession]);
+
   // P3.6: Export handlers + click-outside close
   const exportMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -1116,7 +1146,8 @@ export function LiveSession({
             canAdvance={canAdvanceEval}
             isMuted={isMuted}
             showAdvanceHint={showAdvanceHint}
-            elapsedTime={elapsedDisplay}
+            elapsedTime={countdownDisplay}
+            stageProgress={stageProgress}
             personas={personaDefs}
             onToggleMic={handleToggleMic}
             onSelectPersona={handleSelectPersona}

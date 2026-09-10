@@ -36,6 +36,8 @@ type LiveControlsProps = {
   onEndSession: () => void;
   onInterrupt?: () => void;
   isPaused?: boolean;
+  /** Fraction of the stage countdown remaining, in [0, 1]. */
+  stageProgress?: number;
   onTogglePause?: () => void;
   onToggleMute: () => void;
 };
@@ -60,6 +62,7 @@ export function LiveControls({
   onToggleMute,
   isPaused,
   onTogglePause,
+  stageProgress,
   onInterrupt,
 }: LiveControlsProps) {
   const isConnected = status === "connected";
@@ -188,23 +191,40 @@ export function LiveControls({
 
       {/* Secondary controls */}
       <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
-        {/* Pause: stop the mic and silence the avatar without ending the session */}
+        {/* Pause with stage countdown ring: larger and always visible. The
+            ring drains as the stage's 90 seconds are consumed. */}
         {onTogglePause && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onTogglePause}
-            className={cn(
-              "h-9 w-9 rounded-full",
-              isPaused
-                ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300"
-                : "text-muted-foreground hover:bg-muted",
-            )}
-            aria-label={isPaused ? "Resume session" : "Pause session"}
-            title={isPaused ? "Resume" : "Pause"}
-          >
-            {isPaused ? <Play className="h-5 w-5" /> : <Pause className="h-5 w-5" />}
-          </Button>
+          <div className="relative flex h-14 w-14 items-center justify-center">
+            <svg viewBox="0 0 56 56" className="absolute inset-0 h-14 w-14 -rotate-90" aria-hidden="true">
+              <circle cx="28" cy="28" r="25" fill="none" strokeWidth="3" className="stroke-muted" />
+              <circle
+                cx="28"
+                cy="28"
+                r="25"
+                fill="none"
+                strokeWidth="3"
+                strokeLinecap="round"
+                className="stroke-yellow-400 transition-[stroke-dashoffset] duration-1000 ease-linear"
+                strokeDasharray={157.08}
+                strokeDashoffset={157.08 * (1 - (stageProgress ?? 1))}
+              />
+            </svg>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onTogglePause}
+              className={cn(
+                "h-11 w-11 rounded-full",
+                isPaused
+                  ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300"
+                  : "text-muted-foreground hover:bg-muted",
+              )}
+              aria-label={isPaused ? "Resume session" : "Pause session"}
+              title={isPaused ? "Resume" : "Pause"}
+            >
+              {isPaused ? <Play className="h-6 w-6" /> : <Pause className="h-6 w-6" />}
+            </Button>
+          </div>
         )}
 
         {/* Barge-in: cut the persona off mid-sentence */}
