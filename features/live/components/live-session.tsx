@@ -231,8 +231,8 @@ export function LiveSession({
       typeof currentSettings?.stage_type === "string" ? currentSettings.stage_type : "";
     // Cases often omit stage_type — infer from the title/description.
     const normalizedCurrentStageType =
-      normalizeStageType(currentStageRaw) ||
-      inferStageTypeFromText(`${currentStage?.title ?? ""} ${currentStage?.description ?? ""}`);
+      inferStageTypeFromText(`${currentStage?.title ?? ""} ${currentStage?.description ?? ""}`) ||
+      normalizeStageType(currentStageRaw);
     if (normalizedCurrentStageType === "history") {
       findingsSignatureRef.current = signature;
       return;
@@ -579,8 +579,8 @@ export function LiveSession({
           | Record<string, unknown>
           | undefined;
         const nextType =
-          normalizeStageType(typeof nextSettings?.stage_type === "string" ? nextSettings.stage_type : "") ||
-          inferStageTypeFromText(`${progress.stages[progress.currentStageIndex]?.title ?? ""} ${progress.stages[progress.currentStageIndex]?.description ?? ""}`);
+          inferStageTypeFromText(`${progress.stages[progress.currentStageIndex]?.title ?? ""} ${progress.stages[progress.currentStageIndex]?.description ?? ""}`) ||
+          normalizeStageType(typeof nextSettings?.stage_type === "string" ? nextSettings.stage_type : "");
         // Stage-specific ask so the incoming persona opens with the RIGHT move.
         const handoffAsk: Record<string, string> = {
           history: "Ask the veterinarian what history they would like to take.",
@@ -728,8 +728,8 @@ export function LiveSession({
     const settings = nextStage.settings as Record<string, unknown> | undefined;
     // Normalize, and when the case omits stage_type, infer from the title.
     const stageType =
-      normalizeStageType(typeof settings?.stage_type === "string" ? settings.stage_type : "") ||
-      inferStageTypeFromText(`${nextStage.title ?? ""} ${nextStage.description ?? ""}`);
+      inferStageTypeFromText(`${nextStage.title ?? ""} ${nextStage.description ?? ""}`) ||
+      normalizeStageType(typeof settings?.stage_type === "string" ? settings.stage_type : "");
 
     // Generic explicit request: "next stage" always advances.
     if (/\b(?:the )?next (?:stage|phase)\b|\bsiguient(?:e|es) (?:etapa|fase|paso)\b/i.test(last.content)) {
@@ -856,21 +856,23 @@ export function LiveSession({
     window.location.reload();
   }, [mic, live, attemptId]);
 
-  // Timed stations: when the countdown reaches zero, advance automatically.
-  // In the LAST stage, finishing the countdown ends the case (AI feedback).
-  const autoAdvancedStageRef = useRef(-1);
+  // Timed stations: when the countdown reaches zero, advance automatically
+  // ONCE per zero-crossing (the flag resets when the next stage's countdown
+  // restarts at 90). In the LAST stage, ending the countdown ends the case.
+  const autoAdvancedRef = useRef(false);
   const autoEndedRef = useRef(false);
   useEffect(() => {
-    if (stageSecondsLeft > 0) return;
+    if (stageSecondsLeft > 0) {
+      autoAdvancedRef.current = false;
+      return;
+    }
     if (isPausedRef.current) return; // paused: clock frozen, no auto-advance
+    if (autoAdvancedRef.current) return;
+    autoAdvancedRef.current = true;
     if (nextStage) {
-      if (autoAdvancedStageRef.current !== progress.currentStageIndex) {
-        autoAdvancedStageRef.current = progress.currentStageIndex;
-        console.log("[Session] Stage time expired, auto-advancing to:", nextStage.title);
-        handleConfirmAdvance();
-      }
-    } else if (!autoEndedRef.current) {
-      autoEndedRef.current = true;
+      console.log("[Session] Stage time expired, auto-advancing to:", nextStage.title);
+      handleConfirmAdvance();
+    } else {
       console.log("[Session] Case time expired, ending session");
       void handleEndSession();
     }
