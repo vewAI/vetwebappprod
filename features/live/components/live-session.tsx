@@ -229,6 +229,14 @@ export function LiveSession({
       return;
     }
 
+    // Stage-transition phrases ("let's do the physical examination") advance
+    // the stage — they are NOT findings requests, so they never reveal.
+    const intentText = lastUser?.content ?? "";
+    if (intentText && Object.values(STAGE_INTENT_PATTERNS).some((p) => p.test(intentText))) {
+      findingsSignatureRef.current = signature;
+      return;
+    }
+
     if (findingsTimerRef.current) clearTimeout(findingsTimerRef.current);
     findingsTimerRef.current = setTimeout(async () => {
       findingsSignatureRef.current = signature;
