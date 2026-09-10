@@ -310,15 +310,13 @@ export async function POST(request: Request) {
     const vocabDiag = diagAllowed && entryMatchesUserTextDiag(userText, diagText);
 
     if (diagAllowed && diagText && (diagKey || vocabDiag)) {
-      const synonyms = diagKey ? DIAG_SYNONYMS[diagKey] ?? [] : [];
+      // A named group or vocabulary match reveals the whole sanitized
+      // diagnostic panel — the data is not tagged per sub-panel, and the
+      // student asked for it. Filter only garbage (questions/prompts).
       for (const entry of extractDiagPairs(diagText)) {
+        if (isGarbageEntry(entry.label, entry.value)) continue;
         const labelNorm = normalizeForMatch(entry.label);
         if (!labelNorm) continue;
-        // Only entries matching the requested test group (or vocabulary)
-        const relevant = synonyms.length > 0
-          ? synonyms.some((s) => `${entry.label} ${entry.value}`.toLowerCase().includes(s))
-          : entryMatchesUserText(entry.label, userText);
-        if (!relevant) continue;
         const dedupeKey = `diag:${labelNorm}`;
         if (seen.has(dedupeKey)) continue;
         seen.add(dedupeKey);
