@@ -69,15 +69,16 @@ function labelSpokenIn(label: string, haystack: string): boolean {
     .some((w) => w.length >= 5 && haystack.includes(w));
 }
 
-// Stage gating: findings stay hidden until their proper stage is reached.
-// DEFAULT-DENY: an unknown/missing stage type never reveals anything.
+// Stage gating: findings reveal ONLY while the consultation is IN their
+// proper stage — physical findings during the Physical Examination stage,
+// lab results during Laboratory & Tests. Other stages (History, Diagnostic
+// Planning, Treatment, Communication) never reveal. Accumulated entries
+// persist in the panel afterwards; unknown/missing types never reveal.
 const STAGE_ORDER = ["history", "physical", "diagnostic", "laboratory", "treatment", "communication"];
 function stageAllowsReveal(source: "physical" | "diagnostic", stageType: string): boolean {
   const normalized = normalizeStageType(stageType);
-  const idx = STAGE_ORDER.indexOf(normalized);
-  if (idx === -1) return false;
-  if (source === "physical") return idx >= STAGE_ORDER.indexOf("physical");
-  return idx >= STAGE_ORDER.indexOf("laboratory");
+  if (source === "physical") return normalized === "physical";
+  return normalized === "laboratory";
 }
 
 // Diagnostic records may embed interpretive conclusions (or a full
