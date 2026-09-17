@@ -229,10 +229,13 @@ export function LiveSession({
     const currentSettings = currentStage?.settings as Record<string, unknown> | undefined;
     const currentStageRaw =
       typeof currentSettings?.stage_type === "string" ? currentSettings.stage_type : "";
-    // Cases often omit stage_type — infer from the title/description.
+    // settings.stage_type is authoritative (backfilled in DB); infer from the
+    // title/description only when it is missing. Title inference must NOT run
+    // first: a Laboratory stage whose description mentions "diagnostic" would
+    // be misclassified and the gate would block all lab reveals.
     const normalizedCurrentStageType =
-      inferStageTypeFromText(`${currentStage?.title ?? ""} ${currentStage?.description ?? ""}`) ||
-      normalizeStageType(currentStageRaw);
+      normalizeStageType(currentStageRaw) ||
+      inferStageTypeFromText(`${currentStage?.title ?? ""} ${currentStage?.description ?? ""}`);
     if (normalizedCurrentStageType === "history") {
       findingsSignatureRef.current = signature;
       return;
@@ -579,8 +582,8 @@ export function LiveSession({
           | Record<string, unknown>
           | undefined;
         const nextType =
-          inferStageTypeFromText(`${progress.stages[progress.currentStageIndex]?.title ?? ""} ${progress.stages[progress.currentStageIndex]?.description ?? ""}`) ||
-          normalizeStageType(typeof nextSettings?.stage_type === "string" ? nextSettings.stage_type : "");
+          normalizeStageType(typeof nextSettings?.stage_type === "string" ? nextSettings.stage_type : "") ||
+          inferStageTypeFromText(`${progress.stages[progress.currentStageIndex]?.title ?? ""} ${progress.stages[progress.currentStageIndex]?.description ?? ""}`);
         // Stage-specific ask so the incoming persona opens with the RIGHT move.
         const handoffAsk: Record<string, string> = {
           history: "Ask the veterinarian what history they would like to take.",
@@ -726,10 +729,10 @@ export function LiveSession({
     intentProcessedSigRef.current = signature;
 
     const settings = nextStage.settings as Record<string, unknown> | undefined;
-    // Normalize, and when the case omits stage_type, infer from the title.
+    // settings.stage_type is authoritative; infer from the title only when missing.
     const stageType =
-      inferStageTypeFromText(`${nextStage.title ?? ""} ${nextStage.description ?? ""}`) ||
-      normalizeStageType(typeof settings?.stage_type === "string" ? settings.stage_type : "");
+      normalizeStageType(typeof settings?.stage_type === "string" ? settings.stage_type : "") ||
+      inferStageTypeFromText(`${nextStage.title ?? ""} ${nextStage.description ?? ""}`);
 
     // Generic explicit request: "next stage" always advances.
     if (/\b(?:the )?next (?:stage|phase)\b|\bsiguient(?:e|es) (?:etapa|fase|paso)\b/i.test(last.content)) {
