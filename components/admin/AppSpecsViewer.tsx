@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { getAccessToken } from "@/lib/auth-headers";
 
 interface RolePromptDefinition {
   key: string;
@@ -145,24 +146,37 @@ export function AppSpecsViewer({ open, onOpenChange }: AppSpecsViewerProps) {
     if (open && !specs) {
       setLoading(true);
       setError(null);
-      fetch("/api/admin/app-specs")
-        .then((res) => {
-          if (!res.ok) throw new Error("Failed to load specs");
-          return res.json();
-        })
-        .then((data) => setSpecs(data))
-        .catch((err) => setError(err.message))
-        .finally(() => setLoading(false));
+      (async () => {
+        try {
+          // requireAdmin needs the Bearer token — without it the API 401s.
+          const token = await getAccessToken().catch(() => null);
+          const res = await fetch("/api/admin/app-specs", {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          if (!res.ok) {
+            const detail = await res.text().catch(() => "");
+            throw new Error(`Failed to load specs (${res.status}) ${detail.slice(0, 120)}`);
+          }
+          const data = await res.json();
+          setSpecs(data);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : String(err));
+        } finally {
+          setLoading(false);
+        }
+      })();
     }
 
     if (open) {
       // Load current prompt overrides (admin only)
-      fetch("/api/prompts")
-        .then((res) => {
-          if (!res.ok) throw new Error("Failed to load prompt overrides");
-          return res.json();
-        })
-        .then((data) => {
+      (async () => {
+        try {
+          const token = await getAccessToken().catch(() => null);
+          const res = await fetch("/api/prompts", {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          if (!res.ok) return;
+          const data = await res.json();
           if (data && Array.isArray(data.prompts)) {
             const map: Record<string, string> = {};
             data.prompts.forEach((p: any) => {
@@ -170,10 +184,10 @@ export function AppSpecsViewer({ open, onOpenChange }: AppSpecsViewerProps) {
             });
             setPromptOverrides(map);
           }
-        })
-        .catch(() => {
+        } catch {
           // ignore - not fatal
-        });
+        }
+      })();
     }
   }, [open, specs]);
 
