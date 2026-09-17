@@ -10,6 +10,10 @@ export function isLikelyNonEnglish(text: string): boolean {
   return NON_LATIN_SCRIPT_RE.test(text);
 }
 
+// Shown when the repair call fails or itself returns non-Latin text: the
+// student sees a neutral marker instead of confusing foreign script.
+export const UNRECOGNIZED_VOICE_PLACEHOLDER = "[voice input not recognized]";
+
 export async function translateTranscriptToEnglish(text: string): Promise<string | null> {
   try {
     const { getAccessToken } = await import("@/lib/auth-headers");

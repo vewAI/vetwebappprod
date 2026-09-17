@@ -8,7 +8,7 @@ import type {
   PersonaInstruction,
 } from "../types";
 import { appendLiveTextFragment, filterLivePersonaText } from "../utils/filterLiveResponse";
-import { isLikelyNonEnglish, translateTranscriptToEnglish } from "../utils/transcriptLanguage";
+import { isLikelyNonEnglish, translateTranscriptToEnglish, UNRECOGNIZED_VOICE_PLACEHOLDER } from "../utils/transcriptLanguage";
 
 export type UseGeminiLiveResult = {
   status: LiveSessionStatus;
@@ -290,8 +290,12 @@ export function useGeminiLive(
               if (committedId && isLikelyNonEnglish(text)) {
                 const entryId = committedId;
                 void translateTranscriptToEnglish(text).then((english) => {
-                  if (english && english !== text) {
+                  if (english && !isLikelyNonEnglish(english) && english !== text) {
                     rewriteEntryContent(entryId, text, english);
+                  } else {
+                    // Repair failed (or came back in another script) — show a
+                    // neutral marker instead of confusing foreign script.
+                    rewriteEntryContent(entryId, text, UNRECOGNIZED_VOICE_PLACEHOLDER);
                   }
                 });
               }

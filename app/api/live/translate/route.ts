@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     }
 
     const translated = await generateGeminiText({
-      prompt: `Translate the user's words into natural English. Output ONLY the translation with no quotes, no explanations. Context: these are spoken transcriptions from a veterinary student during a clinical consultation simulation; preserve clinical meaning and proper nouns exactly.\n\n${text}`,
+      prompt: `A speech recognizer produced the text below while transcribing a veterinary student speaking ENGLISH (occasionally with Spanish words) during a clinical consultation simulation. The recognizer mistakenly wrote the sounds using a foreign script (Hangul, Cyrillic, Arabic, CJK, etc.) — it did NOT translate the meaning; it just chose wrong symbols for the sounds it heard.\n\nYour job: determine the most likely intended English words from their SOUND (phonetic reconstruction), as if the recognizer had used the Latin alphabet. Prefer veterinary clinical vocabulary (anatomy, tests, findings, treatments) when deciding what was said.\n\nOutput ONLY the reconstructed English text — no quotes, no explanations, no transliteration tables. If the input is already in Latin script, return it unchanged.\n\n${text}`,
       temperature: 0.2,
       maxOutputTokens: 500,
       timeoutMs: 20_000,

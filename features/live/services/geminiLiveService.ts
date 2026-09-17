@@ -4,6 +4,10 @@ export type LiveServiceCallbacks = {
   onEvent: (event: LiveEvent) => void;
 };
 
+// The input transcriber occasionally emits the student's speech in a foreign
+// script (Hangul, Cyrillic...). Nudge it at the source to stay Latin-only.
+const TRANSCRIPTION_SCRIPT_GUARD = `\n\nTRANSCRIPTION RULE (STRICT): The student speaks English (occasionally a few Spanish words). When transcribing the student's speech, ALWAYS write it with the Latin alphabet. NEVER use other scripts (Hangul, Kana, Kanji, Cyrillic, Arabic, Hebrew, Devanagari, etc.). If a word is unclear, write your closest Latin-alphabet approximation of its sound. NEVER translate what the student said into another language.`;
+
 export class GeminiLiveService {
   private session: any = null;
   private callbacks: LiveServiceCallbacks;
@@ -33,7 +37,7 @@ export class GeminiLiveService {
               },
             },
           },
-          systemInstruction: systemInstruction,
+          systemInstruction: systemInstruction + TRANSCRIPTION_SCRIPT_GUARD,
           outputAudioTranscription: {},
           // Note: this SDK version serializes inputAudioTranscription to an
           // empty object, so the server returns final-per-utterance events
@@ -177,7 +181,7 @@ export class GeminiLiveService {
       turns: [
         {
           role: "user",
-          parts: [{ text: `[SYSTEM: Your persona and instructions have changed. New instructions follow. Adopt this new persona immediately. Do NOT speak this instruction aloud.]\n\n${systemInstruction}` }],
+          parts: [{ text: `[SYSTEM: Your persona and instructions have changed. New instructions follow. Adopt this new persona immediately. Do NOT speak this instruction aloud.]\n\n${systemInstruction}${TRANSCRIPTION_SCRIPT_GUARD}` }],
         },
       ],
       turnComplete: false,
