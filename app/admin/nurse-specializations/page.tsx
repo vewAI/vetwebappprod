@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2, Plus, Trash2, Edit, Save, X } from "lucide-react";
+import { getAccessToken } from "@/lib/auth-headers";
 
 type Skill = {
   name: string;
@@ -82,10 +83,15 @@ export default function NurseSpecializationsPage() {
   const fetchSpecs = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/nurse-specializations");
+      const token = await getAccessToken().catch(() => null);
+      const res = await fetch("/api/admin/nurse-specializations", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       if (res.ok) {
         const data = await res.json();
         setSpecs(data.specializations ?? []);
+      } else {
+        console.error("Failed to fetch specializations:", res.status);
       }
     } catch (e) {
       console.error("Failed to fetch specializations", e);
@@ -101,9 +107,13 @@ export default function NurseSpecializationsPage() {
   const handleSave = async (spec: Specialization) => {
     setSaving(true);
     try {
+      const token = await getAccessToken().catch(() => null);
       const res = await fetch("/api/admin/nurse-specializations", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify(spec),
       });
       if (res.ok) {
@@ -125,9 +135,13 @@ export default function NurseSpecializationsPage() {
   const handleDelete = async (speciesKey: string) => {
     if (!confirm(`Delete the ${speciesKey} specialization?`)) return;
     try {
+      const token = await getAccessToken().catch(() => null);
       await fetch("/api/admin/nurse-specializations", {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ species_key: speciesKey }),
       });
       await fetchSpecs();
