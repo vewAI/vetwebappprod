@@ -370,7 +370,13 @@ This was a real-time voice conversation between the student and simulated person
 
 NOTE: Since this is a voice interaction, you cannot observe body language or written communication.
 Focus your evaluation entirely on what was SAID and how it was structured verbally.
-The transcript labels are "Student" (the learner), "Owner" (the simulated client), and "Veterinary Nurse" / "Lab Technician" (the simulated clinical team).`;
+The transcript labels are "Student" (the learner), "Owner" (the simulated client), and "Veterinary Nurse" / "Lab Technician" (the simulated clinical team).
+
+SPEECH-TO-TEXT TOLERANCE (IMPORTANT):
+- This transcript was produced by automatic speech recognition, so phonetic mis-transcriptions are expected: e.g. "findings" captured as "fun facts", "liver" as "lever", or garbled anatomical terms, test names and drug names.
+- When a student utterance contains an odd word or phrase that has a plausible same-sounding clinical meaning, interpret it CHARITABLY as the intended clinical term. Do NOT count it as unclear, unprofessional, or vague language, and do NOT lower communication scores for it.
+- Only mention transcription artifacts if they recur frequently across the session — and then bring it up ONCE, briefly and kindly, as a possible dictation/enunciation pattern worth watching (e.g. "some words may have been mis-transcribed; consider speaking a bit slower for the microphone"), never as a professionalism failure.
+- Base your communication assessment on structure, question sequence, empathy, delegation and clinical reasoning — not on spelling or word-choice artifacts introduced by the transcription.`;
 
 const defaultLiveFeedbackCaseFocus = `LIVE SESSION EVALUATION FOCUS
 
