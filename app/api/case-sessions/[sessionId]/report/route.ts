@@ -126,10 +126,6 @@ ${objectivesSection}
 --- STUDENT FEEDBACK REPORTS ---
 ${perStudent}`;
 
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json({ error: "AI service is not configured" }, { status: 503 });
-    }
-
     const report = await generateGeminiText({
       prompt,
       temperature: 0.4,

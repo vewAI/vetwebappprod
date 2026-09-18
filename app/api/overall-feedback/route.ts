@@ -129,14 +129,8 @@ export async function POST(request: Request) {
         .join("\n")}\n\nAfter your general comments, add a section titled "Learning Objectives Coverage" with one line per objective:\n- <objective> — Covered | Partially covered | Not observed — <one-line evidence from the transcript>`;
     }
 
-    // If the AI service is not configured, return a helpful fallback
-    if (!process.env.GEMINI_API_KEY) {
-      console.warn("GEMINI_API_KEY is not set; returning fallback overall feedback");
-      const fallback = `<p>Examination completed. Automated detailed feedback is unavailable because the AI service is not configured. Here are a few suggestions you can review:</p><ul><li>Did you collect a clear history and relevant risk factors?</li><li>Were your physical examination findings systematic and documented?</li><li>Were test selections justified and prioritized?</li><li>Did you communicate next steps and biosecurity clearly to the client?</li></ul><p>Please enable the AI API key to generate richer, tailored feedback.</p>`;
-      return NextResponse.json({ feedback: fallback });
-    }
-
-    // Generate feedback using Gemini (wrapped in try/catch to allow fallback)
+    // Generate feedback using Gemini (Vertex AI + ADC; wrapped in try/catch to
+    // allow fallback)
     let feedbackContent = "";
     try {
       const promptToSend = `${feedbackPrompt ?? `Please provide constructive feedback for the student's performance using the context below:\n\n${context}`}\n\nTRANSCRIPT ROLE INTERPRETATION (STRICT):\n- Treat "Student" as the learner.\n- Treat "Client (Owner...)" as owner/client persona turns.\n- Treat "Veterinary Nurse (...)" as nurse persona turns, NOT as owner/client.\n- Do not merge owner and nurse into a single "client" role when evaluating communication.`;

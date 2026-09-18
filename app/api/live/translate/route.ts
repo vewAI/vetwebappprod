@@ -26,18 +26,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "text is required" }, { status: 400 });
     }
 
-    if (!process.env.GEMINI_API_KEY) {
-      // Nothing to do — return the original so the caller keeps the entry.
+    // Best-effort repair on Vertex AI + ADC: on failure return the original so
+    // the caller keeps the entry.
+    let translated: string;
+    try {
+      translated = await generateGeminiText({
+        prompt: `A speech recognizer produced the text below while transcribing a veterinary student speaking ENGLISH (occasionally with Spanish words) during a clinical consultation simulation. The recognizer mistakenly wrote the sounds using a foreign script (Hangul, Cyrillic, Arabic, CJK, etc.) — it did NOT translate the meaning; it just chose wrong symbols for the sounds it heard.\n\nYour job: determine the most likely intended English words from their SOUND (phonetic reconstruction), as if the recognizer had used the Latin alphabet. Prefer veterinary clinical vocabulary (anatomy, tests, findings, treatments) when deciding what was said.\n\nOutput ONLY the reconstructed English text — no quotes, no explanations, no transliteration tables. If the input is already in Latin script, return it unchanged.\n\n${text}`,
+        temperature: 0.2,
+        maxOutputTokens: 500,
+        timeoutMs: 20_000,
+      });
+      return NextResponse.json({ text: translated || text });
+    } catch (error) {
+      console.error("Live translate failed:", error);
+      // Repair is best-effort: hand back the original so the caller keeps it.
       return NextResponse.json({ text });
     }
-
-    const translated = await generateGeminiText({
-      prompt: `A speech recognizer produced the text below while transcribing a veterinary student speaking ENGLISH (occasionally with Spanish words) during a clinical consultation simulation. The recognizer mistakenly wrote the sounds using a foreign script (Hangul, Cyrillic, Arabic, CJK, etc.) — it did NOT translate the meaning; it just chose wrong symbols for the sounds it heard.\n\nYour job: determine the most likely intended English words from their SOUND (phonetic reconstruction), as if the recognizer had used the Latin alphabet. Prefer veterinary clinical vocabulary (anatomy, tests, findings, treatments) when deciding what was said.\n\nOutput ONLY the reconstructed English text — no quotes, no explanations, no transliteration tables. If the input is already in Latin script, return it unchanged.\n\n${text}`,
-      temperature: 0.2,
-      maxOutputTokens: 500,
-      timeoutMs: 20_000,
-    });
-    return NextResponse.json({ text: translated || text });
   } catch (error) {
     console.error("Live translate failed:", error);
     return NextResponse.json({ error: "Translation failed" }, { status: 500 });

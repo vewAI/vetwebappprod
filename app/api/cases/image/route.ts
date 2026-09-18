@@ -51,10 +51,13 @@ export async function PUT(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (!openai && !geminiKey) {
+  // Gemini/Imagen now runs on Vertex AI with ADC — no API key required.
+  const vertexReady = Boolean(
+    process.env.GOOGLE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_APPLICATION_CREDENTIALS
+  );
+  if (!openai && !vertexReady) {
     return NextResponse.json(
-      { error: "No image generation provider configured. Set OPENAI_API_KEY or GEMINI_API_KEY." },
+      { error: "No image generation provider configured. Set OPENAI_API_KEY or Google ADC (GOOGLE_SERVICE_ACCOUNT_JSON)." },
       { status: 500 }
     );
   }

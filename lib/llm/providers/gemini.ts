@@ -1,16 +1,14 @@
-// Minimal Gemini embeddings wrapper. This attempts to call Google's
-// Generative Embeddings endpoint when `GEMINI_API_KEY` is present.
-// NOTE: Endpoint and model names may vary; adjust for your Google Cloud setup.
+// Vertex AI embeddings wrapper (ADC-authenticated REST).
+// Replaces the retired AI Studio v1beta2 embed endpoint. Uses the Vertex
+// publisher model text-embedding-005 via
+// projects/{p}/locations/{l}/publishers/google/models/{model}:predict.
+
+import { getVertexAccessToken, vertexModelUrl } from "@/app/api/_lib/vertex";
 
 export async function createEmbeddingsGemini(inputs: string[], model?: string) {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) {
-    const err: any = new Error("Gemini API key not configured");
-    err.status = 403;
-    throw err;
-  }
-  const usedModel = model || process.env.GEMINI_EMBEDDING_MODEL || "textembedding-gecko-001";
-  const url = `https://generativelanguage.googleapis.com/v1beta2/models/${usedModel}:embed`;
+  const usedModel = model || process.env.GEMINI_EMBEDDING_MODEL || "text-embedding-005";
+  const url = vertexModelUrl(usedModel, "predict");
+  const accessToken = await getVertexAccessToken();
 
   const maxAttempts = 3;
   let attempt = 0;
@@ -20,24 +18,34 @@ export async function createEmbeddingsGemini(inputs: string[], model?: string) {
       const res = await fetch(url, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${key}`,
+          Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ input: inputs }),
+        body: JSON.stringify({
+          instances: inputs.map((input) => ({ content: input })),
+          parameters: { taskType: "RETRIEVAL_DOCUMENT" },
+        }),
       });
 
       if (!res.ok) {
         const text = await res.text();
-        const err: any = new Error(`Gemini responded ${res.status}: ${text}`);
+        const err: any = new Error(`Vertex embeddings responded ${res.status}: ${text}`);
         err.status = res.status;
         throw err;
       }
 
       const data = await res.json();
-      const out = (data?.embeddings || []).map((e: any) => ({ embedding: e?.embedding ?? e, model: usedModel }));
+      const predictions = (data?.predictions ?? []) as Array<{
+        embeddings?: { values?: number[] };
+      }>;
+      const out = predictions.map((p, i) => ({
+        embedding: p?.embeddings?.values ?? [],
+        model: usedModel,
+        index: i,
+      }));
       return out;
     } catch (err: any) {
-      console.warn(`Gemini embeddings attempt ${attempt} failed:`, err?.message ?? err);
+      console.warn(`Vertex embeddings attempt ${attempt} failed:`, err?.message ?? err);
       if (attempt >= maxAttempts) throw err;
       await new Promise((r) => setTimeout(r, 100 * Math.pow(2, attempt)));
     }

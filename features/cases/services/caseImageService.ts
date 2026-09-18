@@ -147,20 +147,20 @@ function buildSafetyFallbackPrompt(caseData: CaseRecord): string {
   return truncatePrompt(prompt);
 }
 
-// ── Gemini Imagen via REST ──
+// ── Vertex AI Imagen (ADC-authenticated REST) ──
 
 async function generateWithGemini(
   prompt: string,
 ): Promise<Buffer | null> {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) return null;
+  const { getVertexAccessToken, vertexModelUrl } = await import("@/app/api/_lib/vertex");
+  const accessToken = await getVertexAccessToken();
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict`;
+  const url = vertexModelUrl("imagen-3.0-generate-002", "predict");
 
   const res = await fetch(url, {
     method: "POST",
     headers: {
-      "x-goog-api-key": key,
+      Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -175,7 +175,7 @@ async function generateWithGemini(
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Gemini Imagen responded ${res.status}: ${text}`);
+    throw new Error(`Vertex Imagen responded ${res.status}: ${text}`);
   }
 
   const data = await res.json();
