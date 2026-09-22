@@ -288,7 +288,7 @@ export function LiveSession({
       } catch {
         // non-critical: panel stays as-is
       }
-    }, 1200);
+    }, 600);
   }, [live.messages, caseItem.id, progress.currentStageIndex, progress.stages]);
 
   // Auto-save messages debounced 2s after last change
