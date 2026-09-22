@@ -16,6 +16,23 @@ const DIAG_SYNONYMS: Record<string, string[]> = {
   ultrasound: ["ultrasound", "usg", "echography", "echo"],
   ecg: ["ecg", "ecg tracing", "ecg report"],
   calcium: ["calcium", "ca"],
+  // Generic asks ("what labs do we have?", "run blood work") — the most
+  // natural way students request results. Reveals the whole sanitized
+  // diagnostic panel, same as naming a specific group.
+  labs: [
+    "lab",
+    "labs",
+    "lab work",
+    "labwork",
+    "lab results",
+    "lab tests",
+    "laboratory",
+    "blood work",
+    "bloods",
+    "blood test",
+    "blood tests",
+    "blood sample",
+  ],
 };
 
 type FindingItem = {
