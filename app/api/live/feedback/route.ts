@@ -184,7 +184,14 @@ export async function POST(request: Request) {
 
     const feedbackPrompt = getLiveFeedbackPrompt(caseRow, context) + objectivesSection;
 
-    // Generate feedback via Gemini (Vertex AI + ADC; errors fall back below)
+    // Fallback when Gemini is not configured
+    if (!process.env.GEMINI_API_KEY) {
+      console.warn("GEMINI_API_KEY not set; returning fallback live feedback");
+      const fallback = `<p>Live session completed. Automated detailed feedback is unavailable because the AI service is not configured. Here are a few communication review points:</p><ul><li>Did you greet the owner and establish the reason for the consultation?</li><li>Did you use open questions first, then focused questions?</li><li>Did you acknowledge the owner's concerns and emotions?</li><li>Did you explain your reasoning and check understanding?</li><li>Did you communicate clearly with the veterinary nurse or team?</li></ul><p>Please enable the AI API key to generate richer, tailored feedback.</p>`;
+      return NextResponse.json({ feedback: fallback });
+    }
+
+    // Generate feedback via Gemini
     let feedbackContent = "";
     try {
       const promptToSend = `${feedbackPrompt}\n\nTRANSCRIPT ROLE INTERPRETATION (STRICT):\n- "Student" is the learner being assessed.\n- "Owner" is the simulated client/patient owner.\n- "Veterinary Nurse" and "Lab Technician" are the simulated clinical team.\n- Attribute every observation to the correct speaker, and evaluate the student's communication with each role they interacted with.`;

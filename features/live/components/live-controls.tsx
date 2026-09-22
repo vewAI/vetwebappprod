@@ -195,7 +195,7 @@ export function LiveControls({
             ring drains as the stage's 90 seconds are consumed. */}
         {onTogglePause && (
           <div className="relative flex h-14 w-14 items-center justify-center">
-            <svg viewBox="0 0 56 56" className="pointer-events-none absolute inset-0 h-14 w-14 -rotate-90" aria-hidden="true">
+            <svg viewBox="0 0 56 56" className="absolute inset-0 h-14 w-14 -rotate-90" aria-hidden="true">
               <circle cx="28" cy="28" r="25" fill="none" strokeWidth="3" className="stroke-muted" />
               <circle
                 cx="28"

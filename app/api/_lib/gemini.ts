@@ -1,20 +1,20 @@
-// Shared Gemini text-generation helper, now on Google Cloud Vertex AI.
-// Auth is entirely ADC (see app/api/_lib/vertex.ts) — no API keys anywhere.
-// Fails fast with a hard timeout and falls back across model availability
-// automatically. Model cascade: Vertex projects expose stable Gemini IDs
-// (the AI Studio "gemini-flash-latest" alias does not exist on Vertex), and
-// 2.5 is a "thinking" model that needs thinkingBudget: 0 to avoid burning the
-// whole output budget on reasoning and returning EMPTY text.
-
-import { getVertexAISdk } from "./vertex";
+// Shared Gemini text-generation helper (v1beta REST API).
+// Uses the same GEMINI_API_KEY as the voice sessions. Fails fast with a hard
+// timeout and falls back across model availability automatically.
 
 const MODELS: { model: string; body: Record<string, unknown> }[] = [
+  // Cascade ordered for keys created recently: Google retires old model
+  // names for new projects (2.5-flash now 404s for them), so we try the
+  // rolling "latest" alias first, then known-stable models.
+  { model: "gemini-flash-latest", body: {} },
+  { model: "gemini-2.0-flash", body: {} },
   {
     model: "gemini-2.5-flash",
+    // 2.5 is a "thinking" model: without thinkingBudget: 0 it burns the whole
+    // output budget on reasoning and returns EMPTY text at small
+    // maxOutputTokens.
     body: { thinkingConfig: { thinkingBudget: 0 } },
   },
-  { model: "gemini-2.0-flash", body: {} },
-  { model: "gemini-2.0-flash-lite", body: {} },
 ];
 
 export async function generateGeminiText(opts: {
@@ -23,6 +23,10 @@ export async function generateGeminiText(opts: {
   maxOutputTokens?: number;
   timeoutMs?: number;
 }): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY is not configured");
+  }
   const {
     prompt,
     temperature = 0.4,
@@ -30,9 +34,7 @@ export async function generateGeminiText(opts: {
     timeoutMs = 90_000,
   } = opts;
 
-  const ai = await getVertexAISdk();
   let lastError: Error | null = null;
-
   for (const candidate of MODELS) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
@@ -40,35 +42,46 @@ export async function generateGeminiText(opts: {
         if (attempt > 0) {
           await new Promise((r) => setTimeout(r, 2000 * attempt));
         }
-        const generationConfig = {
-          temperature,
-          maxOutputTokens,
-          ...candidate.body,
-          // Vertex accepts thinkingConfig inside generationConfig; the SDK's
-          // typings lag the surface, hence the loose cast below.
-        } as never;
-        const generativeModel = ai.getGenerativeModel({
-          model: candidate.model,
-          generationConfig,
-        });
-        const result = await Promise.race([
-          generativeModel.generateContent(prompt),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error(`Gemini ${candidate.model} timed out after ${timeoutMs}ms`)), timeoutMs)
-          ),
-        ]);
-        const text = (result as { response?: { text?: () => string } }).response?.text?.() ?? "";
-        const trimmed = text.trim();
-        if (!trimmed) {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${candidate.model}:generateContent`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-goog-api-key": apiKey,
+            },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: {
+                temperature,
+                maxOutputTokens,
+                ...candidate.body,
+              },
+            }),
+            signal: AbortSignal.timeout(timeoutMs),
+          }
+        );
+        if (!res.ok) {
+          const detail = await res.text().catch(() => "");
+          lastError = new Error(`Gemini ${candidate.model} failed: ${res.status} ${detail.slice(0, 300)}`);
+          // 429/5xx are transient: retry this model once before moving on.
+          if (res.status === 429 || res.status >= 500) continue;
+          break; // client error (4xx): don't hammer, move to next model
+        }
+        const data = await res.json();
+        const parts = data?.candidates?.[0]?.content?.parts ?? [];
+        const text = parts
+          .map((p: { text?: string }) => p.text ?? "")
+          .join("")
+          .trim();
+        if (!text) {
           lastError = new Error(`Gemini ${candidate.model} returned an empty response`);
           break; // next model
         }
-        return trimmed;
+        return text;
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
-        const message = lastError.message;
-        const transient = /\b(429|500|502|503|504)\b|timed out|ECONNRESET|aborted/i.test(message);
-        if (!transient || attempt > 0) break; // move to next model
+        if (attempt > 0) break;
       }
     }
   }
