@@ -214,7 +214,7 @@ export function LiveControls({
               size="icon"
               onClick={onTogglePause}
               className={cn(
-                "h-11 w-11 rounded-full",
+                "relative z-10 h-11 w-11 rounded-full",
                 isPaused
                   ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300"
                   : "text-muted-foreground hover:bg-muted",
