@@ -2509,65 +2509,19 @@ export function ChatInterface({
 
     const stageLocked = isStageIntentLocked();
 
-    if (!shouldAutoAdvance && hasNextStage && readinessSignal?.intent === "advance") {
-      if (stageResult.status === "ready" && !stageLocked) {
-        shouldAutoAdvance = true;
-        // Offer the user a visible confirmation before advancing (YES/NO banner)
-        const nextIndex = Math.min(currentStageIndex + 1, stages.length - 1);
-        const nextTitle = stages[nextIndex]?.title ?? `Stage ${nextIndex + 1}`;
-        setPendingStageAdvance({ stageIndex: nextIndex, title: nextTitle });
-      } else if (stageResult.status !== "ready") {
-        // Allow a high-confidence user request to move into Physical Examination
-        // even if assistant findings are not yet present. This supports students
-        // explicitly asking to start the exam (e.g., "college basketball" → cardiovascular).
-        try {
-          const nextTitleText = stages[currentStageIndex + 1]?.title ?? "";
-          if (readinessSignal?.confidence === "high" && nextTitleText.toLowerCase().includes("physical") && !stageLocked) {
-            shouldAutoAdvance = true;
-            const nextIndex = Math.min(currentStageIndex + 1, stages.length - 1);
-            const nextTitle = stages[nextIndex]?.title ?? `Stage ${nextIndex + 1}`;
-            setPendingStageAdvance({ stageIndex: nextIndex, title: nextTitle });
-
-            reset();
-            baseInputRef.current = "";
-            return;
-          }
-        } catch (e) {
-          // ignore detection errors
-        }
-
-        // If we have already warned the user for this stage (guardActive), allow them to proceed
-        // if they persist (intent === "advance").
-        if (guardActive) {
-          shouldAutoAdvance = true;
-        } else {
-          if (userMessage) {
-            setMessages((prev) => prev.map((m) => (m.id === userMessage!.id ? { ...m, status: "sent" } : m)));
-          }
-          setAdvanceGuard({
-            stageIndex: currentStageIndex,
-            askedAt: Date.now(),
-            metrics: stageResult.metrics,
-          });
-          await emitStageReadinessPrompt(currentStageIndex, stageResult);
-          reset();
-          baseInputRef.current = "";
-          return;
-        }
-      }
-    } else if (!shouldAutoAdvance && hasNextStage && stageResult.status === "ready" && guardActive && !stageLocked) {
+    // MANUAL-ONLY STAGE TRANSITIONS: NLP-based auto-advance is disabled.
+    // Students must click the "Next Stage" button to advance.
+    // The readinessSignal still runs above for telemetry and stay/rollback locking,
+    // but we no longer set shouldAutoAdvance based on it.
+    // If a guard was active and the stage is now ready, clear it silently.
+    if (!shouldAutoAdvance && hasNextStage && stageResult.status === "ready" && guardActive && !stageLocked) {
       setAdvanceGuard(null);
     }
 
-    if (shouldAutoAdvance) {
-      clearStageIntentLocks();
-      if (userMessage) {
-        setMessages((prev) => prev.map((m) => (m.id === userMessage!.id ? { ...m, status: "sent" } : m)));
-      }
-      reset();
-      baseInputRef.current = "";
-      scheduleAutoProceedRef.current?.();
-      return;
+    // Show the proceed hint when the stage readiness is met, nudging the
+    // student to click the button instead of auto-advancing.
+    if (hasNextStage && stageResult.status === "ready" && readinessSignal?.intent === "advance") {
+      setShowProceedHint(true);
     }
 
     // Prevent double-sends for the same message id when multiple triggers fire simultaneously

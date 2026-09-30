@@ -1,4 +1,4 @@
-﻿import type { Case } from "@/features/case-selection/models/case";
+import type { Case } from "@/features/case-selection/models/case";
 import type { Stage } from "@/features/stages/types";
 import { CHAT_SYSTEM_GUIDELINE } from "@/features/chat/prompts/systemGuideline";
 import { LIVE_BRITISH_ACCENT, type PersonaInstruction } from "../types";
@@ -243,7 +243,7 @@ function getOwnerRules(): string {
     "8) ROLE BOUNDARY (CRITICAL): You are the OWNER, not the clinician. NEVER conduct, narrate, or direct the physical examination — auscultation, palpation, instruments, reflexes, vital parameters and findings belong to the veterinary team. If the vet asks YOU exam-style questions ('what are you hearing?', 'will you listen for anything?'), do not play along: gently clarify that the examination is performed by the veterinary team.",
     "9) HANDOFF: When the student indicates they want to start the examination or move to the next step, acknowledge briefly and facilitate the handoff in ONE sentence — e.g. 'Of course — let me bring the veterinary nurse to assist you with that.' Do NOT ask the student what they will look for, and do NOT continue with exam questions.",
     "10) When you receive [HANDOFF]: the consultation is being handed to another member of the veterinary team. Stay silent about clinical matters and — if anything — say a brief goodbye or reassurance in ONE sentence as the owner (e.g. 'I'll be right here if you need me.'). NEVER re-introduce yourself and NEVER answer exam-style questions after the handoff.",
-    "11) TREATMENT DECISIONS BELONG TO THE VET (CRITICAL): NEVER evaluate, compare, propose, or discuss treatment alternatives, options, procedures, or their success rates — not even to reassure the student. Deciding the treatment is the VETERINARIAN'S role: your job is to ask questions (cost, safety, prognosis, home care) and react emotionally. If unsure about the plan, ask the vet to explain it again in simpler terms — never offer alternatives yourself.",
+    "11) TREATMENT DECISIONS BELONG TO THE VET (CRITICAL): NEVER evaluate, compare, propose, or discuss treatment alternatives, options, procedures, or their success rates — not even to reassure the student. Deciding the treatment is the VETERINARIAN'S role: your job is to ask questions (safety, prognosis, home care) and react emotionally. If unsure about the plan, ask the vet to explain it again in simpler terms — never offer alternatives yourself.",
   ].join("\n");
 }
 function getRoleLabel(roleKey: string): string {
@@ -270,7 +270,7 @@ function getStageGuidance(stageType: string, roleKey: string): string {
       "veterinary-nurse": "GUIDANCE FOR THIS STAGE:\nThe student is performing a physical examination. You are the nurse assisting them. When they ask for findings, acknowledge with a SHORT POINTER of a few words (e.g. 'In the results panel, doctor.') � never speak values, numbers, or findings aloud. Be thorough and professional.",
     },
     diagnostic: {
-      owner: "GUIDANCE FOR THIS STAGE:\nThe student is recommending diagnostic tests for your animal. You may be concerned about costs, worried about the procedures, or have questions. React naturally — ask about what each test involves, express concern about your animal's comfort, and discuss costs when relevant.",
+      owner: "GUIDANCE FOR THIS STAGE:\nThe student is recommending diagnostic tests for your animal. You may be concerned about costs, worried about the procedures, or have questions. React naturally — ask about what each test involves and express concern about your animal's comfort.",
     },
     laboratory: {
       "veterinary-nurse": "GUIDANCE FOR THIS STAGE:\nThe student is requesting laboratory test results. You are the nurse holding the diagnostic record — the ONLY source of test results. Release results ONLY when the student explicitly asks for a test, panel, or value. NEVER announce results unprompted and NEVER offer ('do you want the values?'). If greeted, reply socially in one sentence and wait. The results are delivered as WRITTEN TEXT in the results panel � NEVER speak values aloud; a brief acknowledgement and a pointer to the panel is enough. Never interpret and never name syndromes or diagnostic conclusions.",
@@ -280,7 +280,7 @@ function getStageGuidance(stageType: string, roleKey: string): string {
       "veterinary-nurse": "GUIDANCE FOR THIS STAGE:\nThe student is creating a treatment plan. You are the nurse who will execute it. Confirm medication orders, ask for clarification on doses if unclear, and report on the animal's response to treatment. Be thorough — double-check drug names, doses, and routes.",
     },
     communication: {
-      owner: "GUIDANCE FOR THIS STAGE:\nThe student is explaining the treatment and prognosis to you. Listen carefully, ask questions a real owner would ask: Will my animal be okay? How long will recovery take? What do I need to do at home? How much will this cost? Express your emotions naturally — relief, worry, gratitude.",
+      owner: "GUIDANCE FOR THIS STAGE:\nThe student is explaining the treatment and prognosis to you. Listen carefully, ask questions a real owner would ask: Will my animal be okay? How long will recovery take? What do I need to do at home? Express your emotions naturally — relief, worry, gratitude.",
     },
   };
 

@@ -706,13 +706,10 @@ export function LiveSession({
     setShowAdvanceConfirm(false);
   }, []);
 
-  // Stage-intent auto-advance: when the student explicitly tells the persona
-  // they want to move to the NEXT stage (e.g. "let's do the physical
-  // examination"), advance immediately, bring the incoming persona into
-  // focus, and let them open the conversation.
-  // The signature is primed with the INITIAL transcript's last user message:
-  // resumed history is acknowledged without acting on it, while the first
-  // NEW message of any session is always evaluated.
+  // MANUAL-ONLY STAGE TRANSITIONS: NLP intent detection still runs for
+  // orientation hints and logging, but no longer auto-advances.
+  // Instead, when intent is detected, show the confirmation banner so the
+  // student must explicitly click to advance.
   const initialLastUser = initialMessages.filter((m) => m.role === "user").slice(-1)[0];
   const intentProcessedSigRef = useRef<string>(
     initialLastUser ? `${initialLastUser.id}:${initialLastUser.content.length}` : ""
@@ -722,22 +719,19 @@ export function LiveSession({
     const userMsgs = live.messages.filter((m) => m.role === "user");
     const last = userMsgs[userMsgs.length - 1];
     if (!last) return;
-    // Interim entries GROW in place with a stable id — re-evaluate on every
-    // content change, not just the first time an id is seen.
     const signature = `${last.id}:${last.content.length}`;
     if (intentProcessedSigRef.current === signature) return;
     intentProcessedSigRef.current = signature;
 
     const settings = nextStage.settings as Record<string, unknown> | undefined;
-    // settings.stage_type is authoritative; infer from the title only when missing.
     const stageType =
       normalizeStageType(typeof settings?.stage_type === "string" ? settings.stage_type : "") ||
       inferStageTypeFromText(`${nextStage.title ?? ""} ${nextStage.description ?? ""}`);
 
-    // Generic explicit request: "next stage" always advances.
+    // Generic explicit request: "next stage" — show confirmation banner.
     if (/\b(?:the )?next (?:stage|phase)\b|\bsiguient(?:e|es) (?:etapa|fase|paso)\b/i.test(last.content)) {
-      console.log("[Session] Generic next-stage request detected ->", last.content);
-      handleConfirmAdvance();
+      console.log("[Session] Generic next-stage request detected (manual mode) ->", last.content);
+      setShowAdvanceConfirm(true);
       return;
     }
 
@@ -758,8 +752,9 @@ export function LiveSession({
         text: last.content.slice(0, 80),
       })
     );
+    // Stage-specific intent detected: show confirmation banner instead of auto-advancing.
     if (pattern && matched) {
-      handleConfirmAdvance();
+      setShowAdvanceConfirm(true);
     }
   }, [live.messages, nextStage, handleConfirmAdvance]);
 
@@ -859,9 +854,9 @@ export function LiveSession({
     window.location.reload();
   }, [mic, live, attemptId]);
 
-  // Timed stations: when the countdown reaches zero, advance automatically
-  // ONCE per zero-crossing (the flag resets when the next stage's countdown
-  // restarts at 90). In the LAST stage, ending the countdown ends the case.
+  // Timed stations: when the countdown reaches zero, show the confirmation
+  // banner instead of auto-advancing. The student must click to proceed.
+  // In the LAST stage, ending the countdown still ends the case (OSCE time limit).
   const autoAdvancedRef = useRef(false);
   const autoEndedRef = useRef(false);
   useEffect(() => {
@@ -873,8 +868,8 @@ export function LiveSession({
     if (autoAdvancedRef.current) return;
     autoAdvancedRef.current = true;
     if (nextStage) {
-      console.log("[Session] Stage time expired, auto-advancing to:", nextStage.title);
-      handleConfirmAdvance();
+      console.log("[Session] Stage time expired, showing advance prompt for:", nextStage.title);
+      setShowAdvanceConfirm(true);
     } else {
       console.log("[Session] Case time expired, ending session");
       void handleEndSession();

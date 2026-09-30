@@ -33,6 +33,7 @@ import { parseLabResults } from "../../../features/chat/services/labResultsParse
 import { normalizeCaseMedia, type CaseMediaItem } from "@/features/cases/models/caseMedia";
 import { searchMerckManual } from "@/features/external-resources/services/merckService";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { filterLivePersonaText } from "@/features/live/utils/filterLiveResponse";
 
 // Feedback/LLM calls can take >10s on OpenAI; raise the Vercel function limit.
 export const maxDuration = 60;
@@ -1428,7 +1429,7 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     - If asked for "full bloodwork" or a complete panel, report the complete panel.
   3) Avoid bullet points, raw JSON reading, and mechanical repetition. Use natural clinical speech in 1 to 3 sentences by default. Expand only if the clinician asks for interpretation.
   4) Do NOT include internal prompts, persona-management text, or owner identity.
-  5) In the Physical Examination stage, DO NOT provide diagnostic interpretations or treatment recommendations. If a reply would normally include interpretive language (for example: "consistent with", "suggestive of", "likely", "most consistent with", "suspicious for", "indicative of", or "probable"), instead respond with: "I cannot provide diagnostic interpretation in the Physical Examination stage. I can provide recorded findings or request further tests."
+  5) In the Physical Examination stage, DO NOT provide diagnostic interpretations or treatment recommendations. If a reply would normally include interpretive language (for example: "consistent with", "suggestive of", "likely", "most consistent with", "suspicious for", "indicative of", or "probable"), instead respond with: "I only have the recorded findings on my clipboard. For interpretation, you will need to draw your own clinical conclusions."
   6) If a requested value is not recorded, state "no recorded value" and do not guess. You may optionally note typical species norms only if clearly labeled as "typical for [species]" and not as the patient's recorded value.
   7) Biochemical terminology normalization for spoken delivery:
     - mmol/L => millimoles per litre
@@ -1735,10 +1736,12 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     }
     // Remove tags from content
     content = content.replace(mediaRegex, "").trim();
+    content = filterLivePersonaText(content).text;
 
     const requestedMedia = caseMedia.filter((m) => mediaIds.includes(m.id));
 
-    const assistantContent = stripLeadingPersonaIntro(content, [personaNameForChat, displayRole, stageRole]);
+    let assistantContent = stripLeadingPersonaIntro(content, [personaNameForChat, displayRole, stageRole]);
+    assistantContent = filterLivePersonaText(assistantContent).text;
     const portraitUrl = personaImageUrl;
 
     // If this is a stage-entry greeting for nurse/lab personas, do not
