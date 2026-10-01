@@ -285,6 +285,8 @@ export async function POST(request: Request) {
     // 2) What the persona verbalized: reveal entries whose label appears in
     // the persona's spoken reply, so the panel mirrors the conversation.
     const haystack = normalizeForMatch(assistantText);
+    // DISABLED: assistant-text-based reveal removed to prevent unrequested findings from appearing in the panel. Only student-requested findings should show.
+    /*
     if (physAllowed && haystack) {      for (const entry of physEntries) {
         if (isGarbageEntry(entry.label, entry.value)) continue;
         const labelNorm = normalizeForMatch(entry.label);
@@ -300,6 +302,7 @@ export async function POST(request: Request) {
         });
       }
     }
+    */
 
     // 3) Diagnostic/lab values: reveal ONLY the entries matching a test the
     // student explicitly named (once the laboratory phase is reached).
@@ -332,6 +335,8 @@ export async function POST(request: Request) {
     // 4) Lab values the persona verbalized: during the laboratory phase the
     // nurse reads results aloud — each spoken entry lands in the panel live,
     // same as physical findings.
+    // DISABLED: assistant-text-based reveal removed to prevent unrequested findings from appearing in the panel. Only student-requested findings should show.
+    /*
     if (diagAllowed && diagText && haystack) {      const diagEntries = extractDiagPairs(diagText);
       for (const entry of diagEntries) {
         if (isGarbageEntry(entry.label, entry.value)) continue;
@@ -348,6 +353,7 @@ export async function POST(request: Request) {
         });
       }
     }
+    */
 
     console.log("[live/findings]", { stageType: normalizeStageType(stageType), revealed: items.length });
     console.log(

@@ -1,4 +1,5 @@
 import type { LiveEvent } from "../types";
+import { DISCLAIMER_SUPPRESSION } from "@/features/chat/prompts/systemGuideline";
 
 export type LiveServiceCallbacks = {
   onEvent: (event: LiveEvent) => void;
@@ -37,7 +38,8 @@ export class GeminiLiveService {
               },
             },
           },
-          systemInstruction: systemInstruction + TRANSCRIPTION_SCRIPT_GUARD,
+          systemInstruction:
+            systemInstruction + "\n\n" + DISCLAIMER_SUPPRESSION + TRANSCRIPTION_SCRIPT_GUARD,
           outputAudioTranscription: {},
           // Note: this SDK version serializes inputAudioTranscription to an
           // empty object, so the server returns final-per-utterance events

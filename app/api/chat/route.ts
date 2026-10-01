@@ -22,7 +22,7 @@ import type { Stage } from "@/features/stages/types";
 import { resolveChatPersonaRoleKey, isAllowedChatPersonaKey } from "@/features/chat/utils/persona-guardrails";
 import { buildPersonaSeeds, buildSharedPersonaSeeds } from "@/features/personas/services/personaSeedService";
 import type { PersonaIdentity, PersonaSeed } from "@/features/personas/models/persona";
-import { CHAT_SYSTEM_GUIDELINE } from "@/features/chat/prompts/systemGuideline";
+import { CHAT_SYSTEM_GUIDELINE, DISCLAIMER_SUPPRESSION } from "@/features/chat/prompts/systemGuideline";
 import { resolvePromptValue } from "@/features/prompts/services/promptService";
 // dynamic import used for casePromptAutomation to avoid Turbopack static export checks
 // (see usage sites where we `await import()` the module)
@@ -1485,6 +1485,8 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     } catch (e) {
       // ignore errors reading settings
     }
+
+    systemGuideline += '\n\n' + DISCLAIMER_SUPPRESSION;
 
     enhancedMessages.unshift({ role: "system", content: systemGuideline });
 

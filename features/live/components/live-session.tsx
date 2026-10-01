@@ -697,14 +697,39 @@ export function LiveSession({
 
   const handleConfirmAdvance = useCallback(() => {
     setShowAdvanceConfirm(false);
+    // Resume the session if it was paused by the timer expiration.
+    if (isPausedRef.current) {
+      isPausedRef.current = false;
+      setIsPaused(false);
+      player.setMuted(false);
+    }
     // Advance FIRST — the case must never stall on a save error.
     progress.advanceStage();
     void saveProgress(progress.currentStageIndex, live.messages, timeSpentRef.current).catch(() => {});
-  }, [progress, saveProgress, live.messages]);
+  }, [progress, saveProgress, live.messages, player]);
 
   const handleCancelAdvance = useCallback(() => {
     setShowAdvanceConfirm(false);
-  }, []);
+    if (timerExpiredRef.current && nextStage) {
+      // Timer has expired — "Stay" is not possible, force advance.
+      console.log("[Session] Stay clicked but timer expired — advancing anyway");
+      if (isPausedRef.current) {
+        isPausedRef.current = false;
+        setIsPaused(false);
+        player.setMuted(false);
+      }
+      progress.advanceStage();
+      void saveProgress(progress.currentStageIndex, live.messages, timeSpentRef.current).catch(() => {});
+    } else {
+      // Timer still running — resume the session if it was paused by the banner.
+      if (isPausedRef.current) {
+        isPausedRef.current = false;
+        setIsPaused(false);
+        void mic.start();
+        player.setMuted(false);
+      }
+    }
+  }, [nextStage, progress, saveProgress, live.messages, mic, player]);
 
   // MANUAL-ONLY STAGE TRANSITIONS: NLP intent detection still runs for
   // orientation hints and logging, but no longer auto-advances.
@@ -855,20 +880,35 @@ export function LiveSession({
   }, [mic, live, attemptId]);
 
   // Timed stations: when the countdown reaches zero, show the confirmation
-  // banner instead of auto-advancing. The student must click to proceed.
+  // banner AND pause the session. The student must click a button to continue:
+  //   - "Advance" → proceeds to the next stage
+  //   - "Stay" → if time has expired, auto-advances immediately since the
+  //     stage time limit has been reached
   // In the LAST stage, ending the countdown still ends the case (OSCE time limit).
   const autoAdvancedRef = useRef(false);
   const autoEndedRef = useRef(false);
+  // Track whether the timer expired so handleCancelAdvance knows to force-advance.
+  const timerExpiredRef = useRef(false);
   useEffect(() => {
     if (stageSecondsLeft > 0) {
       autoAdvancedRef.current = false;
+      timerExpiredRef.current = false;
       return;
     }
-    if (isPausedRef.current) return; // paused: clock frozen, no auto-advance
+    timerExpiredRef.current = true;
+    if (isPausedRef.current) return; // already paused: don't re-fire
     if (autoAdvancedRef.current) return;
     autoAdvancedRef.current = true;
     if (nextStage) {
-      console.log("[Session] Stage time expired, showing advance prompt for:", nextStage.title);
+      console.log("[Session] Stage time expired, pausing and showing advance prompt for:", nextStage.title);
+      // Pause the session: stop mic, mute avatar
+      isPausedRef.current = true;
+      setIsPaused(true);
+      mic.stop();
+      player.setMuted(true);
+      setIsTextMode(false);
+      isTextModeRef.current = false;
+      // Show the advance banner
       setShowAdvanceConfirm(true);
     } else {
       console.log("[Session] Case time expired, ending session");
