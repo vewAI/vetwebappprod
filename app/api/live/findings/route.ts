@@ -119,12 +119,46 @@ function commonPrefixLength(a: string, b: string): number {
   return i;
 }
 
+const GENERIC_EXAM_WORDS = new Set([
+  "rate",
+  "rates",
+  "exam",
+  "examination",
+  "test",
+  "tests",
+  "check",
+  "sound",
+  "sounds",
+  "feel",
+  "area",
+  "part",
+  "side",
+  "left",
+  "right",
+  "body",
+  "sign",
+  "signs",
+  "note",
+  "with",
+  "from",
+  "have",
+  "this",
+  "that",
+  "were",
+  "been",
+  "will",
+  "would",
+  "could",
+  "should",
+  "please",
+]);
+
 // Fuzzy vocabulary match: "musculoskeletal" ↔ "Muscle palpation" share the
 // 5-char stem "muscl"; "temp" is a prefix of "temperature". Requires a
 // ≥5-char common prefix so generic words never match.
 function entryMatchesUserText(entryLabel: string, userText: string): boolean {
-  const labelWords = words(entryLabel);
-  const userWords = words(userText);
+  const labelWords = words(entryLabel).filter((w) => !GENERIC_EXAM_WORDS.has(w));
+  const userWords = words(userText).filter((w) => !GENERIC_EXAM_WORDS.has(w));
   if (labelWords.length === 0 || userWords.length === 0) return false;
   return labelWords.some((lw) =>
     userWords.some((uw) => commonPrefixLength(lw, uw) >= 4)
