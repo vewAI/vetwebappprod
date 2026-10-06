@@ -376,7 +376,27 @@ export function useGeminiLive(
             // Barge-in: the model was cut off mid-turn, so drop any audio the
             // local player still has queued (wired from live-session).
             onInterruptedRef.current?.();
-            // Keep the partial text already shown; a new turn starts next event.
+            // Preserve the partial text spoken up to the point of interruption.
+            if (personaRef.current && pendingAssistantRef.current) {
+              const filtered = filterLivePersonaText(pendingAssistantRef.current);
+              if (!filtered.suppressed && filtered.text.trim()) {
+                const p = personaRef.current;
+                commitMessages([
+                  ...messagesRef.current,
+                  {
+                    id: `entry_${++entryIdCounterRef.current}`,
+                    role: "assistant" as const,
+                    content: `${filtered.text}…`,
+                    timestamp: new Date().toISOString(),
+                    stageIndex: stageIndexRef.current,
+                    displayRole: p.displayName,
+                    personaRoleKey: p.roleKey,
+                    portraitUrl: p.portraitUrl,
+                    status: "sent" as const,
+                  },
+                ]);
+              }
+            }
             resetPendingAssistant();
             break;
           case "disconnected":
@@ -495,11 +515,31 @@ export function useGeminiLive(
 
   const interrupt = useCallback(() => {
     serviceRef.current?.interrupt();
+    if (personaRef.current && pendingAssistantRef.current) {
+      const filtered = filterLivePersonaText(pendingAssistantRef.current);
+      if (!filtered.suppressed && filtered.text.trim()) {
+        const p = personaRef.current;
+        commitMessages([
+          ...messagesRef.current,
+          {
+            id: `entry_${++entryIdCounterRef.current}`,
+            role: "assistant" as const,
+            content: `${filtered.text}…`,
+            timestamp: new Date().toISOString(),
+            stageIndex: stageIndexRef.current,
+            displayRole: p.displayName,
+            personaRoleKey: p.roleKey,
+            portraitUrl: p.portraitUrl,
+            status: "sent" as const,
+          },
+        ]);
+      }
+    }
     setSpeaking(false);
     pendingInputRef.current = null;
     setPendingInput(null);
     resetPendingAssistant();
-  }, [resetPendingAssistant]);
+  }, [commitMessages, resetPendingAssistant]);
 
   const setOnAudio = useCallback((cb: ((chunk: ArrayBuffer) => void) | null) => {
     onAudioRef.current = cb;
