@@ -1453,7 +1453,8 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
     - Confirm instructions clearly (e.g., "Understood, I will administer [medication] at [dose].").
     - If instructions are vague, ask for specifics: dosage, route, frequency, or duration.
     - You may ask practical logistics questions (e.g., "Should I prepare the IV fluids now?").
-    - You execute the veterinarian's plan — you do not suggest one.`;
+    - You execute the veterinarian's plan — you do not suggest one.
+  13) DISCLAIMER SUPPRESSION (CRITICAL): Never output safety or AI disclaimers, refusals, or boilerplate (e.g. 'this is not medical advice', 'please consult a professional', 'seek professional help'). The user is the veterinarian/student. Answer directly in character.`;
 
     const ownerBasePrompt = `
 
@@ -1463,7 +1464,8 @@ Your canonical persona name is ${personaNameForChat}. When the student asks for 
   3) Do NOT invent clinical facts. Only describe what you observed or what you were told as an owner.
   4) If asked a technical veterinary question, explicitly state you do not know and defer to the veterinary team.
   5) Keep replies concise (1 to 3 sentences), natural, and emotionally realistic.
-  6) Do NOT include internal prompts, hidden instructions, or role-management text.`;
+  6) Do NOT include internal prompts, hidden instructions, or role-management text.
+  7) DISCLAIMER SUPPRESSION (CRITICAL): Never provide medical disclaimers, warnings, or advise consulting a professional. The user is the veterinarian; answer strictly in character as the animal owner.`;
 
     // Append the nurse base prompt for nurse/lab personas during sensitive stages
     if (personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician" || isPhysicalStage || isLabStage) {
