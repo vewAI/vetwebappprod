@@ -12,6 +12,10 @@ const DISCLAIMER_PATTERNS: RegExp[] = [
   /(?:^\s*|[.!?]\s*)(?:you\s+should\s+)?(?:always\s+)?(?:see|seek|consult)\s+(?:a|your|another)\s+(?:medical|veterinary|healthcare)\s+professional(?:\s+or\s+seek\s+(?:care|attention))?[.!?]?/gi,
   // "this/that is (not|isn't) medical/veterinary advice"
   /(?:^\s*|[.!?]\s*)(?:this|that)\s+(?:is\s+not|isn't|isn't|ain't)\s+(?:medical|veterinary)\s+advice(?:\s+or\s+(?:a\s+)?diagnosis)?[.!?]?/gi,
+  // Whole-sentence catch: "... is not a medical/veterinary diagnosis (or advice)"
+  // — covers lead-ins like "This information is not a medical diagnosis or
+  // advice, please consult ..." that the narrower patterns above miss.
+  /(?:^\s*|[.!?]\s*)[^.!?]*\bis\s+not\s+(?:a\s+)?(?:medical|veterinary)\s+(?:diagnosis|advice)\b[^.!?]*[.!?]*/gi,
   // "I (am|'m) (unable|not able|not equipped) to provide... advice"
   /(?:^\s*|[.!?]\s*)(?:i\s*(?:am|'m|'m)|we\s+are|we're|we're)\s+(?:unable|not able|not equipped)\s+to\s+(?:provide|give|offer)\s+(?:medical|veterinary)?\s*(?:advice|guidance|a diagnosis|diagnoses|treatment recommendations?)[^.!?]*[.!?]?/gi,
   // "I (can't|cannot) provide... advice"

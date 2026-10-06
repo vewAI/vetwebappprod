@@ -288,7 +288,7 @@ export function LiveSession({
       } catch {
         // non-critical: panel stays as-is
       }
-    }, 1200);
+    }, 600);
   }, [live.messages, caseItem.id, progress.currentStageIndex, progress.stages]);
 
   // Auto-save messages debounced 2s after last change
@@ -698,8 +698,9 @@ export function LiveSession({
   const handleConfirmAdvance = useCallback(() => {
     setShowAdvanceConfirm(false);
     // Advance FIRST — the case must never stall on a save error.
+    const nextIndex = progress.currentStageIndex + 1;
     progress.advanceStage();
-    void saveProgress(progress.currentStageIndex, live.messages, timeSpentRef.current).catch(() => {});
+    void saveProgress(nextIndex, live.messages, timeSpentRef.current).catch(() => {});
   }, [progress, saveProgress, live.messages]);
 
   const handleCancelAdvance = useCallback(() => {
@@ -759,7 +760,7 @@ export function LiveSession({
       })
     );
     if (pattern && matched) {
-      handleConfirmAdvance();
+      setShowAdvanceConfirm(true);
     }
   }, [live.messages, nextStage, handleConfirmAdvance]);
 
@@ -812,20 +813,28 @@ export function LiveSession({
   // Pause: stop the mic, silence the avatar and block ALL input; the session
   // stays connected but nothing reaches the model until resumed.
   const isPausedRef = useRef(false);
+  const wasInTextModeBeforePauseRef = useRef(false);
   const handleTogglePause = useCallback(() => {
     const next = !isPaused;
     isPausedRef.current = next;
     setIsPaused(next);
     if (next) {
-      mic.stop();
+      live.interrupt();
+      player.stop();
       player.setMuted(true);
+      mic.stop();
+      wasInTextModeBeforePauseRef.current = isTextModeRef.current;
       setIsTextMode(false);
       isTextModeRef.current = false;
     } else {
-      void mic.start();
-      player.setMuted(false);
+      player.setMuted(isMuted);
+      if (wasInTextModeBeforePauseRef.current) {
+        setTextMode(true);
+      } else {
+        void mic.start();
+      }
     }
-  }, [isPaused, mic, player]);
+  }, [isPaused, isMuted, live, mic, player, setTextMode]);
 
   // P3.4: Stage advance with confirmation. In the LAST stage the button
   // finishes the case and opens the AI feedback instead.

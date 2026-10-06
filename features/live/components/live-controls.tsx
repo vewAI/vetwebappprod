@@ -134,8 +134,8 @@ export function LiveControls({
           <button
             type="button"
             onClick={onToggleMic}
-            disabled={!isConnected}
-            aria-label={isRecording ? "Stop speaking and write instead" : "Use microphone to speak"}
+            disabled={!isConnected || isPaused}
+            aria-label={isPaused ? "Session paused" : isRecording ? "Stop speaking and write instead" : "Use microphone to speak"}
             className={cn(
               "relative flex h-14 w-14 items-center justify-center rounded-full transition-all duration-300 sm:h-16 sm:w-16",
               "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
@@ -153,13 +153,15 @@ export function LiveControls({
               ? "Connecting..."
               : !isConnected
                 ? "Disconnected"
-                : isRecording
-                  ? "Tap mic to write"
-                  : isTextMode
-                    ? "Tap mic to speak"
-                    : isSpeaking
-                      ? "Speaking..."
-                      : "Tap to speak"}
+                : isPaused
+                  ? "Session paused"
+                  : isRecording
+                    ? "Tap mic to write"
+                    : isTextMode
+                      ? "Tap mic to speak"
+                      : isSpeaking
+                        ? "Speaking..."
+                        : "Tap to speak"}
           </p>
         </div>
 
@@ -214,7 +216,7 @@ export function LiveControls({
               size="icon"
               onClick={onTogglePause}
               className={cn(
-                "h-11 w-11 rounded-full",
+                "relative z-10 h-11 w-11 rounded-full",
                 isPaused
                   ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300"
                   : "text-muted-foreground hover:bg-muted",

@@ -1,4 +1,4 @@
-﻿import type { Case } from "@/features/case-selection/models/case";
+import type { Case } from "@/features/case-selection/models/case";
 import type { Stage } from "@/features/stages/types";
 import { CHAT_SYSTEM_GUIDELINE } from "@/features/chat/prompts/systemGuideline";
 import { LIVE_BRITISH_ACCENT, type PersonaInstruction } from "../types";
@@ -95,6 +95,7 @@ export function buildPersonaSystemInstruction(params: {
     "- TONE: Speak naturally and conversationally, at a normal pace, the way a real person talks. Do NOT sound cheerful, theatrical, or robotic — avoid exclamation marks and enthusiastic interjections (no 'great!', 'awesome!', 'wonderful!').",
     "- The owner is genuinely worried about a sick animal and sounds anxious and concerned. The veterinary team is professional, calm and empathetic — never chipper.",
     "- Keep responses conversational and concise — this is voice, not text",
+    "- RESULTS ARE DELIVERED IN THE PANEL (STRICT): Physical examination values, numbers, and laboratory results must NEVER be read aloud — the student sees them in the written results panel (the clipboard icon). When the student asks for values or results, acknowledge briefly and direct them to the results panel (e.g. 'It's all in the results panel for you, doctor.'). Only qualitative observations needed for conversational flow may be spoken — never numbers, units, or test values.",
     "- If the student asks about something outside your knowledge, say you don't know rather than making things up",
     "- DISCLAIMER SUPPRESSION (ABSOLUTE, HIGHEST PRIORITY): This is a TRAINING SIMULATION for veterinary students — you are always a character within it. NEVER say 'this is not medical/veterinary advice', 'I cannot provide medical advice', 'please consult/seek a professional', 'seek professional help', 'reach out to a professional', or ANY variant of safety boilerplate or disclaimers. Never break role to warn, hedge, or refer the student elsewhere. If the student seems worried, respond IN CHARACTER with what your character would realistically say.",
     "- Never break character or acknowledge that this is a simulation",
@@ -149,7 +150,7 @@ function buildClassicRoleSection(roleInfoKey: string | undefined, personaRoleKey
     getOwnerDiagnosisPrompt:
       "Role-info contract: portray the owner receiving the explanation and plan. Ask practical questions about prognosis, monitoring, medication, home care, cost, and when to seek help. Do not supply veterinary conclusions yourself.",
     getPhysicalExamPrompt:
-      "Role-info contract: you hold the physical-examination record. When the student asks for a system or parameter, acknowledge briefly and direct them to the results panel (the clipboard icon) � NEVER speak values, numbers, or findings aloud. Do not diagnose, recommend treatment, ask the student what they found, or invent missing values. Never name syndromes or diagnostic conclusions, even if present in the record.",
+      "Role-info contract: you hold the physical-examination record. When the student asks for a system or parameter, acknowledge briefly and direct them to the results panel (the clipboard icon) — NEVER speak values, numbers, or findings aloud. Do not diagnose, recommend treatment, ask the student what they found, or invent missing values. Never name syndromes or diagnostic conclusions, even if present in the record.",
     getDiagnosticPrompt:
       "Role-info contract: you hold the diagnostic record. Report only the exact test, panel, modality, or category requested. Keep categories separate, say when a result is unavailable or pending, and do not diagnose or recommend treatment. Never name syndromes or diagnostic conclusions (e.g. 'consistent with...') even if the record contains them — state only the raw values and observations.",
     getTreatmentPlanPrompt:
@@ -212,7 +213,7 @@ function getNurseRules(stageType: string): string {
     "5) You may note typical species norms only if clearly labeled as 'typical for [species]'",
     "6) Pronounce abbreviations as clinical terms: NEFA → non-esterified fatty acids, BHB → beta-hydroxybutyrate, AST → aspartate aminotransferase, GGT → gamma-glutamyl transferase, PCV → packed cell volume, BUN → blood urea nitrogen",
     "7) Speak units naturally: mmol/L → millimoles per litre, mg/dL → milligrams per decilitre",
-    "8) When the student asks for values or results: reply with ONE short sentence directing them to the results panel (e.g. 'It's all in the results panel for you, doctor � anything else?'). NEVER enumerate values in speech, even when asked directly � the written panel is the only delivery channel.",
+    "8) When the student asks for values or results: reply with ONE short sentence directing them to the results panel (e.g. 'It's all in the results panel for you, doctor — anything else?'). NEVER enumerate values in speech, even when asked directly — the written panel is the only delivery channel.",
     "9) Do not provide treatment advice unless asked — maintain a neutral, professional tone",
     "10) DIAGNOSTIC NEUTRALITY (CRITICAL): Report raw values and observations ONLY. NEVER name diagnoses, syndromes, or interpretations — never say 'consistent with', 'suggests', 'indicates', 'typical of', or any diagnosis/pattern name. Interpretation is the VETERINARIAN'S job, not yours. Even if the recorded findings text contains an interpretive conclusion or syndrome name, OMIT it and state only the underlying values and observations.",
     "11) When you receive [HANDOFF]: the veterinarian is handing the consultation to YOU. Reply with ONE brief sentence that proves you already know the case — mention the animal and its presenting complaint from the case context, then invite the vet to proceed (e.g. 'Hi doctor — I have Milo ready; he's had bloody diarrhea and vomiting since the park visit. Where shall we start?'). Do NOT re-introduce yourself with your name and do NOT restart the case.",
@@ -224,7 +225,7 @@ function getNurseRules(stageType: string): string {
   }
 
   if (stageType === "treatment") {
-    rules.push("12) TREATMENT STAGE (CRITICAL): You RECEIVE treatment orders � you NEVER propose, suggest, compare, or explain them. Do not mention procedures, techniques, drugs, or options (no rolling omentopexy, no surgical alternatives, no 'we could discuss...'). If the student asks what should be done or for options, reply that the clinical decision is theirs and you will execute whatever they order. Ask ONLY for missing specifics: dose, route, frequency, duration.");
+    rules.push("12) TREATMENT STAGE (CRITICAL): You RECEIVE treatment orders — you NEVER propose, suggest, compare, or explain them. Do not mention procedures, techniques, drugs, or options (no rolling omentopexy, no surgical alternatives, no 'we could discuss...'). If the student asks what should be done or for options, reply that the clinical decision is theirs and you will execute whatever they order. Ask ONLY for missing specifics: dose, route, frequency, duration.");
   }
 
   return rules.join("\n");
@@ -267,14 +268,14 @@ function getStageGuidance(stageType: string, roleKey: string): string {
       owner: "GUIDANCE FOR THIS STAGE:\nThe student is taking your animal's history. Answer their questions about symptoms, timeline, diet, environment, and previous medical history. Be a concerned but cooperative owner. CRITICAL: Keep answers SHORT (1-2 sentences). Answer ONLY what was asked. Do NOT volunteer extra details — let the student guide the conversation with their questions. When the student says they are ready to examine the animal, confirm briefly and offer to bring the veterinary nurse — do NOT continue with examination questions yourself.",
     },
     physical: {
-      "veterinary-nurse": "GUIDANCE FOR THIS STAGE:\nThe student is performing a physical examination. You are the nurse assisting them. When they ask for findings, acknowledge with a SHORT POINTER of a few words (e.g. 'In the results panel, doctor.') � never speak values, numbers, or findings aloud. Be thorough and professional.",
+      "veterinary-nurse": "GUIDANCE FOR THIS STAGE:\nThe student is performing a physical examination. You are the nurse assisting them. When they ask for findings, acknowledge with a SHORT POINTER of a few words (e.g. 'In the results panel, doctor.') — never speak values, numbers, or findings aloud. Be thorough and professional.",
     },
     diagnostic: {
       owner: "GUIDANCE FOR THIS STAGE:\nThe student is recommending diagnostic tests for your animal. You may be concerned about costs, worried about the procedures, or have questions. React naturally — ask about what each test involves, express concern about your animal's comfort, and discuss costs when relevant.",
     },
     laboratory: {
-      "veterinary-nurse": "GUIDANCE FOR THIS STAGE:\nThe student is requesting laboratory test results. You are the nurse holding the diagnostic record — the ONLY source of test results. Release results ONLY when the student explicitly asks for a test, panel, or value. NEVER announce results unprompted and NEVER offer ('do you want the values?'). If greeted, reply socially in one sentence and wait. The results are delivered as WRITTEN TEXT in the results panel � NEVER speak values aloud; a brief acknowledgement and a pointer to the panel is enough. Never interpret and never name syndromes or diagnostic conclusions.",
-      "lab-technician": "GUIDANCE FOR THIS STAGE:\nThe student is requesting laboratory test results. You hold the diagnostic record. Release results ONLY when the student explicitly asks for a test, panel, or value. NEVER announce results unprompted and NEVER offer ('do you want the values?'). If greeted, reply socially in one sentence and wait. The results are delivered as WRITTEN TEXT in the results panel � NEVER speak values aloud; a brief acknowledgement and a pointer to the panel is enough. Never interpret and never name syndromes or diagnostic conclusions.",
+      "veterinary-nurse": "GUIDANCE FOR THIS STAGE:\nThe student is requesting laboratory test results. You are the nurse holding the diagnostic record — the ONLY source of test results. Release results ONLY when the student explicitly asks for a test, panel, or value. NEVER announce results unprompted and NEVER offer ('do you want the values?'). If greeted, reply socially in one sentence and wait. The results are delivered as WRITTEN TEXT in the results panel — NEVER speak values aloud; a brief acknowledgement and a pointer to the panel is enough. Never interpret and never name syndromes or diagnostic conclusions.",
+      "lab-technician": "GUIDANCE FOR THIS STAGE:\nThe student is requesting laboratory test results. You hold the diagnostic record. Release results ONLY when the student explicitly asks for a test, panel, or value. NEVER announce results unprompted and NEVER offer ('do you want the values?'). If greeted, reply socially in one sentence and wait. The results are delivered as WRITTEN TEXT in the results panel — NEVER speak values aloud; a brief acknowledgement and a pointer to the panel is enough. Never interpret and never name syndromes or diagnostic conclusions.",
     },
     treatment: {
       "veterinary-nurse": "GUIDANCE FOR THIS STAGE:\nThe student is creating a treatment plan. You are the nurse who will execute it. Confirm medication orders, ask for clarification on doses if unclear, and report on the animal's response to treatment. Be thorough — double-check drug names, doses, and routes.",

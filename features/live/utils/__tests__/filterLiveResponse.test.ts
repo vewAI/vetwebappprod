@@ -24,6 +24,17 @@ describe("filterLivePersonaText", () => {
     expect(result).toEqual({ text: "", suppressed: true });
   });
 
+  it("removes the 'not a medical diagnosis' variant with its consult tail", () => {
+    const result = filterLivePersonaText(
+      "I'm not sure, you're the vet, what tests do you need to do? This information is not a medical diagnosis or advice, please consult a healthcare professional for human health questions or a veterinarian for pet matters.",
+    );
+
+    expect(result.suppressed).toBe(false);
+    expect(result.text).not.toContain("medical diagnosis");
+    expect(result.text).not.toContain("healthcare professional");
+    expect(result.text).toContain("what tests do you need to do");
+  });
+
   it("keeps normal persona dialogue unchanged", () => {
     const result = filterLivePersonaText(
       "He has been eating less since yesterday, but he is still drinking normally.",

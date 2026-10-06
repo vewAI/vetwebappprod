@@ -11,13 +11,16 @@ const TRANSCRIPTION_SCRIPT_GUARD = `\n\nTRANSCRIPTION RULE (STRICT): The student
 export class GeminiLiveService {
   private session: any = null;
   private callbacks: LiveServiceCallbacks;
+  private isIntentionalReconnect = false;
 
   constructor(callbacks: LiveServiceCallbacks) {
     this.callbacks = callbacks;
   }
 
   async connect(token: string, systemInstruction: string, voiceName?: string): Promise<void> {
+    this.isIntentionalReconnect = true;
     this.disconnect();
+    this.isIntentionalReconnect = false;
 
     console.log("[Live] Connecting via @google/genai SDK...");
 
@@ -74,6 +77,11 @@ export class GeminiLiveService {
               } else if (reason.toLowerCase().includes("unavailable") || reason.toLowerCase().includes("not found")) {
                 userMessage = "The voice service is currently unavailable. Please try again later.";
               }
+            }
+
+            if (this.isIntentionalReconnect) {
+              this.session = null;
+              return;
             }
 
             this.callbacks.onEvent({
@@ -207,9 +215,14 @@ export class GeminiLiveService {
   interrupt(): void {
     if (!this.session) return;
 
-    this.session.sendClientContent({
-      turnComplete: true,
-    });
+    try {
+      this.session.sendClientContent({
+        turns: [],
+        turnComplete: true,
+      });
+    } catch {
+      // ignore
+    }
   }
 
   disconnect(): void {
