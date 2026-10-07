@@ -23,4 +23,9 @@ describe("parseRequestedKeys", () => {
     // order is not important but keys should be present
     expect(r.canonical).toEqual(expect.arrayContaining(["rectal_palpation", "nasogastric_intubation", "abdominocentesis"]));
   });
+
+  it("does not match temperature for common words with 't' (e.g. 'about', 'rate')", () => {
+    const r = parseRequestedKeys("So about respiratory and heart rate.");
+    assert.deepEqual(r.canonical, ["respiratory_rate", "heart_rate"]);
+  });
 });
