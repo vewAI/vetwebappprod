@@ -15,11 +15,14 @@ export type UseAudioPlayerResult = {
   setOnPlayingChange: (cb: ((playing: boolean) => void) | null) => void;
 };
 
-function pcmToAudioBuffer(ctx: AudioContext, chunk: ArrayBuffer): AudioBuffer {
-  const pcm = new Int16Array(chunk);
+function pcmToAudioBuffer(ctx: AudioContext, chunk: ArrayBuffer): AudioBuffer | null {
+  const validByteLength = chunk.byteLength - (chunk.byteLength % 2);
+  if (validByteLength <= 0) return null;
+  const pcm = new Int16Array(chunk, 0, validByteLength / 2);
   const float32 = new Float32Array(pcm.length);
   for (let i = 0; i < pcm.length; i++) {
-    float32[i] = pcm[i] / 32768;
+    const val = pcm[i];
+    float32[i] = val < 0 ? val / 32768 : val / 32767;
   }
   const buffer = ctx.createBuffer(1, float32.length, LIVE_AUDIO_CONFIG.outputSampleRate);
   buffer.getChannelData(0).set(float32);
@@ -29,16 +32,14 @@ function pcmToAudioBuffer(ctx: AudioContext, chunk: ArrayBuffer): AudioBuffer {
 export function useAudioPlayer(): UseAudioPlayerResult {
   const [isPlaying, setIsPlaying] = useState(false);
   const contextRef = useRef<AudioContext | null>(null);
-  const sourceRef = useRef<AudioBufferSourceNode | null>(null);
-  const queueRef = useRef<AudioBuffer[]>([]);
+  const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const nextStartTimeRef = useRef(0);
   const playingCbRef = useRef<((playing: boolean) => void) | null>(null);
   const stoppedRef = useRef(false);
   const mutedRef = useRef(false);
-  const generationRef = useRef(0);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const drainQueueRef = useRef<(() => void) | null>(null);
 
-  // F5.3: RMS level of the audio currently playing, for the waveform.
+  // RMS level of the audio currently playing, for the waveform.
   const getOutputLevel = useCallback((): number => {
     const analyser = analyserRef.current;
     if (!analyser) return 0;
@@ -54,76 +55,96 @@ export function useAudioPlayer(): UseAudioPlayerResult {
 
   const getContext = useCallback(() => {
     if (!contextRef.current || contextRef.current.state === "closed") {
-      contextRef.current = new AudioContext({
-        sampleRate: LIVE_AUDIO_CONFIG.outputSampleRate,
-      });
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      // Do NOT force sampleRate: 24000. Let AudioContext use the device's native hardware
+      // rate (e.g. 48kHz / 44.1kHz). Web Audio automatically and cleanly resamples the
+      // 24000Hz AudioBuffers without WASAPI buffer underruns or driver-level clicks.
+      contextRef.current = new AudioCtx();
+    }
+    if (contextRef.current.state === "suspended") {
+      contextRef.current.resume().catch(() => {});
     }
     return contextRef.current;
   }, []);
 
-  const drainQueue = useCallback(() => {
-    if (stoppedRef.current) return;
-    if (queueRef.current.length === 0) {
-      setIsPlaying(false);
-      playingCbRef.current?.(false);
-      return;
-    }
-
-    const gen = generationRef.current;
+  const scheduleBuffer = useCallback((buffer: AudioBuffer) => {
+    if (stoppedRef.current || mutedRef.current) return;
     const ctx = getContext();
-    const buffer = queueRef.current.shift()!;
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
+
     if (!analyserRef.current) {
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
       analyser.connect(ctx.destination);
       analyserRef.current = analyser;
     }
-    source.connect(analyserRef.current);
-    source.onended = () => {
-      sourceRef.current = null;
-      // Only continue draining if generation hasn't changed (stop wasn't called)
-      if (gen === generationRef.current) {
-        drainQueueRef.current?.();
-      }
-    };
 
-    sourceRef.current = source;
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(analyserRef.current);
+
+    const currentTime = ctx.currentTime;
+    // Jitter buffer lead time:
+    // If the playhead has run dry or is just starting a new turn, schedule with an initial
+    // small lead time (e.g. 50ms) to absorb WebSocket packet jitter.
+    // If audio is actively playing, schedule with zero gap right at nextStartTime.
+    const isTimelineStale = nextStartTimeRef.current <= currentTime;
+    const leadTime = isTimelineStale ? 0.05 : 0.0;
+    const startTime = Math.max(currentTime + leadTime, nextStartTimeRef.current);
+
+    source.start(startTime);
+    nextStartTimeRef.current = startTime + buffer.duration;
+
+    activeSourcesRef.current.add(source);
     setIsPlaying(true);
     playingCbRef.current?.(true);
-    source.start();
-  }, [getContext]);
 
-  useEffect(() => {
-    drainQueueRef.current = drainQueue;
-  }, [drainQueue]);
+    source.onended = () => {
+      activeSourcesRef.current.delete(source);
+      try {
+        source.disconnect();
+      } catch {
+        /* ignore */
+      }
+      if (
+        activeSourcesRef.current.size === 0 &&
+        (!contextRef.current || nextStartTimeRef.current <= contextRef.current.currentTime + 0.02)
+      ) {
+        setIsPlaying(false);
+        playingCbRef.current?.(false);
+      }
+    };
+  }, [getContext]);
 
   const stop = useCallback(() => {
     stoppedRef.current = true;
-    generationRef.current++;
-    if (sourceRef.current) {
-      try { sourceRef.current.stop(); } catch { /* */ }
-      sourceRef.current = null;
+    nextStartTimeRef.current = 0;
+    for (const source of activeSourcesRef.current) {
+      try {
+        source.stop();
+        source.disconnect();
+      } catch {
+        /* ignore */
+      }
     }
-    queueRef.current = [];
+    activeSourcesRef.current.clear();
     setIsPlaying(false);
     playingCbRef.current?.(false);
   }, []);
 
-  const enqueue = useCallback((chunk: ArrayBuffer) => {
-    // While muted, discard incoming chunks entirely so future model turns
-    // stay silent until the user unmutes (stop() alone would be undone by
-    // the next enqueue resetting stoppedRef).
-    if (mutedRef.current) return;
-    stoppedRef.current = false;
-    const ctx = getContext();
-    const buffer = pcmToAudioBuffer(ctx, chunk);
-    queueRef.current.push(buffer);
-    if (!sourceRef.current) {
-      drainQueue();
-    }
-  }, [getContext, drainQueue]);
+  const enqueue = useCallback(
+    (chunk: ArrayBuffer) => {
+      if (mutedRef.current) return;
+      stoppedRef.current = false;
+      const ctx = getContext();
+      const buffer = pcmToAudioBuffer(ctx, chunk);
+      if (buffer) {
+        scheduleBuffer(buffer);
+      }
+    },
+    [getContext, scheduleBuffer]
+  );
 
   const setMuted = useCallback(
     (muted: boolean) => {
@@ -136,11 +157,8 @@ export function useAudioPlayer(): UseAudioPlayerResult {
   );
 
   const flush = useCallback(() => {
-    stoppedRef.current = false;
-    if (!sourceRef.current && queueRef.current.length > 0) {
-      drainQueue();
-    }
-  }, [drainQueue]);
+    // With timeline scheduling, buffers are scheduled immediately on arrival.
+  }, []);
 
   const play = useCallback(
     (chunks: ArrayBuffer[]) => {
@@ -149,11 +167,13 @@ export function useAudioPlayer(): UseAudioPlayerResult {
       stoppedRef.current = false;
       const ctx = getContext();
       for (const chunk of chunks) {
-        queueRef.current.push(pcmToAudioBuffer(ctx, chunk));
+        const buffer = pcmToAudioBuffer(ctx, chunk);
+        if (buffer) {
+          scheduleBuffer(buffer);
+        }
       }
-      drainQueue();
     },
-    [getContext, stop, drainQueue]
+    [getContext, stop, scheduleBuffer]
   );
 
   const setOnPlayingChange = useCallback((cb: ((playing: boolean) => void) | null) => {
