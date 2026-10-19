@@ -66,7 +66,7 @@ export function LoginForm() {
   // Redirect if user is already logged in
   useEffect(() => {
     if (user) {
-      router.push("/");
+      router.push("/dashboard");
     }
   }, [user, router]);
 
@@ -190,7 +190,7 @@ export function LoginForm() {
 
       setSuccess("OTP verified successfully! Redirecting...");
       setTimeout(() => {
-        router.push("/");
+        router.push("/dashboard");
       }, 1000);
     } catch (err: unknown) {
       const errObj = err instanceof Error ? err : new Error(String(err));
@@ -240,7 +240,7 @@ export function LoginForm() {
       });
       if (verifyError) throw verifyError;
 
-      router.push("/");
+      router.push("/dashboard");
     } catch (err) {
       if (err instanceof Error) {
         if (err.name === "NotAllowedError") return;

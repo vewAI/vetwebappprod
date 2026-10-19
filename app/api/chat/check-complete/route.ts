@@ -4,7 +4,13 @@ import { PHYS_SYNONYMS } from "@/features/chat/services/physFinder";
 import { requireUser } from "@/app/api/_lib/auth";
 import { consumeRateLimit } from "@/app/api/_lib/rateLimit";
 
-const openai = new OpenAi({ apiKey: process.env.OPENAI_API_KEY });
+let openaiInstance: OpenAi | null = null;
+function getOpenAI() {
+  if (!openaiInstance) {
+    openaiInstance = new OpenAi({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return openaiInstance;
+}
 
 function normalizeForMatching(s: string): string {
   return String(s || "").toLowerCase().replace(/[ _\-]+/g, " ").replace(/[^a-z0-9 ]+/g, "").trim();
@@ -76,7 +82,7 @@ export async function POST(req: NextRequest) {
     // Ask LLM to classify completeness when heuristic is unsure
     try {
       const checkPrompt = `You are a short classifier. Answer only valid JSON.\nReceived user fragment:\n"""${trimmed}\n"""\nReturn JSON with keys: complete (true/false), reason (short), canonical (optional canonical test name key if applicable). Do not include any extra text.`;
-      const response = await openai.chat.completions.create({
+      const response = await getOpenAI().chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
           { role: "system", content: "You classify whether a user utterance is a complete request or a fragment that needs continuation." },

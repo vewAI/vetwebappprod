@@ -3,9 +3,13 @@ import { OpenAI } from "openai";
 import { requireUser } from "@/app/api/_lib/auth";
 import { authorizeProfessorStudent } from "@/app/api/_lib/authorization";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+let openaiInstance: OpenAI | null = null;
+function getOpenAI() {
+  if (!openaiInstance) {
+    openaiInstance = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return openaiInstance;
+}
 
 export async function POST(request: Request) {
   const auth = await requireUser(request);
@@ -105,7 +109,7 @@ Your task:
 Be specific, constructive, and evidence-based. Reference actual feedback content when making observations. Write in clear, professional English.`;
 
   try {
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         { role: "system", content: systemPrompt },

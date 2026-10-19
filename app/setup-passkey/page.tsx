@@ -12,7 +12,7 @@ const logoSrc =
   process.env.NEXT_PUBLIC_BRAND_LOGO_URL ||
   (process.env.NEXT_PUBLIC_SUPABASE_URL
     ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/img/logo_transparent.png`
-    : "/placeholder.svg");
+    : "/images/logo-v.png");
 
 export default function SetupPasskeyPage() {
   const router = useRouter();

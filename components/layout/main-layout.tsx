@@ -5,7 +5,7 @@ import { ClientErrorReporter } from "@/components/dev/client-error-reporter";
 import { usePathname } from "next/navigation";
 import { Footer } from "../ui/footer";
 
-const NO_LAYOUT_PATHS = ["/login", "/auth/callback", "/setup-passkey"];
+const NO_LAYOUT_PATHS = ["/", "/login", "/auth/callback", "/setup-passkey"];
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

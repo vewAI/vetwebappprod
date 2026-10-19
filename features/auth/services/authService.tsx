@@ -61,10 +61,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             await clearInvalidRefreshTokenState(supabase);
 
-            // Redirect to login so the developer can sign in again
-            try {
-              router.push("/login");
-            } catch (__) {}
+            // Redirect to login so the developer can sign in again (skip public pages)
+            const isPublicPage = pathname === "/" || pathname === "/login" || pathname === "/auth/callback";
+            if (!isPublicPage) {
+              try {
+                router.push("/login");
+              } catch (__) {}
+            }
           } else {
             // Non-refresh related auth errors are useful to log for debugging
             if (process.env.NODE_ENV !== "production") {
@@ -88,11 +91,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(newSession);
       setLoading(false);
 
+      const isPublicPage = pathname === "/" || pathname === "/login" || pathname === "/auth/callback";
+
       // Only handle redirects during initial auth events or explicit sign-in/out actions
       if (!isInitialized) {
         setIsInitialized(true);
-        // Initial auth check - redirect only if needed
-        if (!newSession && event === "INITIAL_SESSION") {
+        // Initial auth check - redirect only if on a protected route
+        if (!newSession && event === "INITIAL_SESSION" && !isPublicPage) {
           router.push("/login");
         }
       } else {
@@ -101,10 +106,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Avoid forcing a redirect when the user is already on an authenticated page
           // such as /admin or /case-entry. Only redirect after explicit sign-in flows.
           if (pathname === "/login" || pathname === "/auth/callback") {
-            router.push("/");
+            router.push("/dashboard");
           }
         } else if (event === "SIGNED_OUT") {
-          router.push("/login");
+          if (pathname !== "/") {
+            router.push("/login");
+          }
         }
       }
     });

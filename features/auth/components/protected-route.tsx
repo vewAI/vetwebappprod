@@ -11,8 +11,8 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
-    // Skip protection for login and auth callback (callback needs to establish session)
-    if (pathname === "/login" || pathname === "/auth/callback") {
+    // Skip protection for public home, login and auth callback (callback needs to establish session)
+    if (pathname === "/" || pathname === "/login" || pathname === "/auth/callback") {
       return;
     }
 
@@ -30,21 +30,21 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
     // If user is authenticated but not admin and trying to access any /admin path, redirect
     if (user && pathname.startsWith("/admin") && !isAdmin) {
       console.log("Authenticated but not admin, redirecting away from admin area");
-      router.push("/");
+      router.push("/dashboard");
     }
   }, [user, loading, profileLoading, router, pathname, isAdmin]);
 
-  // If on login page and authenticated, redirect to home
+  // If on login page and authenticated, redirect to dashboard
   useEffect(() => {
     if (!loading && !profileLoading && user && pathname === "/login") {
-      console.log("Already authenticated, redirecting to home");
-      router.push("/");
+      console.log("Already authenticated, redirecting to dashboard");
+      router.push("/dashboard");
     }
   }, [user, loading, profileLoading, router, pathname]);
 
   // Show loading screen while checking auth or profile (except on callback, which needs to run)
   const isCallback = pathname === "/auth/callback";
-  if (!isCallback && (loading || profileLoading)) {
+  if (!isCallback && pathname !== "/" && (loading || profileLoading)) {
     return <LoadingScreen />;
   }
 
@@ -61,8 +61,8 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
     return <LoadingScreen />;
   }
 
-  // If on login page or user is authenticated, render children
-  if (pathname === "/login" || user) {
+  // If on public home, login page, or user is authenticated, render children
+  if (pathname === "/" || pathname === "/login" || user) {
     return <>{children}</>;
   }
 

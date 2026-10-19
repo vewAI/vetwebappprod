@@ -14,7 +14,13 @@ import {
 } from "@/features/cases/services/caseCompletion";
 import { requireUser } from "@/app/api/_lib/auth";
 
-const openai = new OpenAi({ apiKey: process.env.OPENAI_API_KEY });
+let openaiInstance: OpenAi | null = null;
+function getOpenAI() {
+  if (!openaiInstance) {
+    openaiInstance = new OpenAi({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return openaiInstance;
+}
 
 function normalizeIncomingMedia(raw: unknown): CaseMediaItem[] {
   const normalized = normalizeCaseMedia(raw);
@@ -218,7 +224,7 @@ export async function POST(req: Request) {
     // with the same keys. This is best-effort — failures here will not block
     // insertion.
     try {
-      const parsedFromModel = await enrichCaseWithModel(body, openai);
+      const parsedFromModel = await enrichCaseWithModel(body, getOpenAI());
       body = mergeAugmentedFields(body, parsedFromModel, {
         species: baseSpecies,
       });
@@ -236,8 +242,8 @@ export async function POST(req: Request) {
 
     if (insertedCase?.id) {
       await ensureCasePersonas(supabase, insertedCase.id, body);
-      scheduleCasePersonaPortraitGeneration(supabase, openai, insertedCase.id);
-      scheduleCaseImageGeneration(supabase, openai, insertedCase as Record<string, unknown>, { force: !insertedCase?.image_url });
+      scheduleCasePersonaPortraitGeneration(supabase, getOpenAI(), insertedCase.id);
+      scheduleCaseImageGeneration(supabase, getOpenAI(), insertedCase as Record<string, unknown>, { force: !insertedCase?.image_url });
     }
     return NextResponse.json({ success: true, data });
   } catch (err: unknown) {
@@ -305,8 +311,8 @@ export async function PUT(req: Request) {
       }
 
       try {
-        scheduleCasePersonaPortraitGeneration(supabase, openai, updatedCase.id);
-        scheduleCaseImageGeneration(supabase, openai, updatedCase as Record<string, unknown>, { force: !updatedCase?.image_url });
+        scheduleCasePersonaPortraitGeneration(supabase, getOpenAI(), updatedCase.id);
+        scheduleCaseImageGeneration(supabase, getOpenAI(), updatedCase as Record<string, unknown>, { force: !updatedCase?.image_url });
       } catch (scheduleErr) {
         console.error(`[cases PUT] Image scheduling FAILED:`, scheduleErr);
         // Don't fail the whole request for scheduling issues

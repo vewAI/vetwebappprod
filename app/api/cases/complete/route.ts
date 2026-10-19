@@ -10,7 +10,13 @@ import {
 import { orderedCaseFieldKeys } from "@/features/cases/fieldMeta";
 import { requireAdmin } from "@/app/api/_lib/auth";
 
-const openai = new OpenAi({ apiKey: process.env.OPENAI_API_KEY });
+let openaiInstance: OpenAi | null = null;
+function getOpenAI() {
+  if (!openaiInstance) {
+    openaiInstance = new OpenAi({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return openaiInstance;
+}
 
 function sanitiseUpdatePayload(
   merged: CasePayload,
@@ -118,7 +124,7 @@ export async function POST(req: Request) {
 
     let augmented: CasePayload = {};
     try {
-      augmented = await enrichCaseWithModel(modelInput, openai);
+      augmented = await enrichCaseWithModel(modelInput, getOpenAI());
     } catch (err) {
       console.warn("LLM enrichment failed for case completion:", err);
     }

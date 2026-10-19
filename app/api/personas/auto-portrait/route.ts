@@ -5,9 +5,13 @@ import { getOrGeneratePersonaPortrait } from "@/features/personas/services/perso
 import { SHARED_CASE_ID } from "@/features/personas/services/personaSeedService";
 import { requireAdmin } from "@/app/api/_lib/auth";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+let openaiInstance: OpenAI | null = null;
+function getOpenAI() {
+  if (!openaiInstance) {
+    openaiInstance = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return openaiInstance;
+}
 
 export async function POST(request: Request) {
   const auth = await requireAdmin(request);
@@ -31,7 +35,7 @@ export async function POST(request: Request) {
 
     const result = await getOrGeneratePersonaPortrait({
       supabase,
-      openai,
+      openai: getOpenAI(),
       caseId: targetCaseId,
       stageRole: roleKey,
       force: !!force,

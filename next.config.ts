@@ -56,6 +56,7 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_COMMIT_SHA: process.env.VERCEL_GIT_COMMIT_SHA ?? "local-dev",
   },
+  allowedDevOrigins: ["*.trycloudflare.com", "localhost:3000"],
   images: {
     remotePatterns,
   },

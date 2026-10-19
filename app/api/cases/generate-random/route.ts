@@ -7,9 +7,13 @@ import { consumeRateLimit } from "@/app/api/_lib/rateLimit";
 import pdf from "pdf-parse";
 import mammoth from "mammoth";
 
-const openai = new OpenAi({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+let openaiInstance: OpenAi | null = null;
+function getOpenAI() {
+  if (!openaiInstance) {
+    openaiInstance = new OpenAi({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return openaiInstance;
+}
 
 const TOPICS = [
   "Canine Parvovirus",
@@ -156,7 +160,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const completion = await openai.chat.completions.create({
+      const completion = await getOpenAI().chat.completions.create({
         model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
         messages: [{ role: "system", content: systemPrompt }],
         response_format: { type: "json_object" },
