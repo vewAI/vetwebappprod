@@ -48,22 +48,14 @@ export function AvatarSelector({ role, value, onChange, readOnly }: AvatarSelect
         const seenUrls = new Set<string>();
 
         // Fetch all case personas with the matching role that have images
-        const rolePattern = role === "nurse" ? "veterinary-nurse%" : "owner";
-        const query = role === "nurse"
-          ? supabase
-              .from("case_personas")
-              .select("id, display_name, image_url, role_key, case_id")
-              .ilike("role_key", rolePattern)
-              .not("image_url", "is", null)
-              .order("created_at", { ascending: false })
-              .limit(100)
-          : supabase
-              .from("case_personas")
-              .select("id, display_name, image_url, role_key, case_id")
-              .eq("role_key", rolePattern)
-              .not("image_url", "is", null)
-              .order("created_at", { ascending: false })
-              .limit(100);
+        const rolePattern = role === "nurse" ? "veterinary-nurse%" : "owner%";
+        const query = supabase
+          .from("case_personas")
+          .select("id, display_name, image_url, role_key, case_id")
+          .ilike("role_key", rolePattern)
+          .not("image_url", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(100);
 
         const { data: personas, error } = await query;
 
@@ -78,6 +70,29 @@ export function AvatarSelector({ role, value, onChange, readOnly }: AvatarSelect
                 label: p.display_name || (role === "nurse" ? "Nurse" : "Owner"),
                 roleKey: p.role_key,
                 personaId: `case:${p.id}`,
+              });
+            }
+          });
+        }
+
+        // Also fetch from global_personas pool (includes male and female templates)
+        const globalQuery = supabase
+          .from("global_personas")
+          .select("id, display_name, image_url, role_key")
+          .ilike("role_key", rolePattern)
+          .not("image_url", "is", null)
+          .limit(100);
+
+        const { data: globalPersonas } = await globalQuery;
+        if (globalPersonas) {
+          globalPersonas.forEach((p) => {
+            if (p.image_url && !seenUrls.has(p.image_url)) {
+              seenUrls.add(p.image_url);
+              newOptions.push({
+                url: p.image_url,
+                label: p.display_name || (role === "nurse" ? "Nurse" : "Owner"),
+                roleKey: p.role_key,
+                personaId: `global:${p.id}`,
               });
             }
           });

@@ -21,12 +21,13 @@ const MODELS: { model: string; body: Record<string, unknown> }[] = [
 // request (e.g. serverless deploys without GOOGLE_SERVICE_ACCOUNT_JSON).
 // Same key the Gemini Live voice sessions already use.
 const AI_STUDIO_MODELS: { model: string; body: Record<string, unknown> }[] = [
+  { model: "gemini-3.8-flash", body: {} },
   { model: "gemini-flash-latest", body: {} },
-  { model: "gemini-2.0-flash", body: {} },
   {
     model: "gemini-2.5-flash",
     body: { thinkingConfig: { thinkingBudget: 0 } },
   },
+  { model: "gemini-2.0-flash", body: {} },
 ];
 
 async function generateWithAiStudio(opts: {
