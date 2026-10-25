@@ -37,7 +37,67 @@ export type FetchCasesOptions = {
   category?: string; // Added category/discipline
   search?: string;
   includeUnpublished?: boolean;
+  includeArchived?: boolean;
 };
+
+export function matchesDiscipline(
+  item: { category?: string | null; species?: string | null },
+  discipline?: string
+): boolean {
+  if (!discipline || discipline === "all") return true;
+  const target = discipline.trim().toLowerCase();
+  const cat = (item.category ?? "").trim().toLowerCase();
+  const spec = (item.species ?? "").trim().toLowerCase();
+
+  // 1. Direct equality
+  if (cat === target) return true;
+
+  const isSmallAnimal = ["canine", "feline", "dog", "cat", "puppy", "kitten", "small animal"].some((s) => spec.includes(s));
+  const isEquine = ["equine", "horse", "mare", "gelding", "stallion", "foal"].some((s) => spec.includes(s));
+  const isBovine = ["bovine", "cow", "cattle", "heifer", "bull", "calf", "dairy"].some((s) => spec.includes(s));
+  const isLargeAnimal = isEquine || isBovine || ["ovine", "sheep", "caprine", "goat", "porcine", "pig", "swine", "large animal"].some((s) => spec.includes(s));
+
+  // 2. Specialty & General category cross-matching
+  if (target === "small animal surgery") {
+    return cat === "small animal surgery" || (cat.includes("surgery") && isSmallAnimal);
+  }
+  if (target === "equine surgery") {
+    return cat === "equine surgery" || (cat.includes("surgery") && isEquine);
+  }
+  if (target === "surgery") {
+    return cat.includes("surgery");
+  }
+  if (target === "small animal internal medicine") {
+    return cat === "small animal internal medicine" || (cat.includes("internal medicine") && isSmallAnimal);
+  }
+  if (target === "internal medicine") {
+    return cat.includes("internal medicine");
+  }
+  if (target === "equine infectious disease") {
+    return cat === "equine infectious disease" || (cat.includes("infectious disease") && isEquine);
+  }
+  if (target === "infectious disease") {
+    return cat.includes("infectious disease");
+  }
+  if (target === "large animal") {
+    return cat.includes("large animal") || cat.includes("food animal") || isLargeAnimal;
+  }
+  if (target === "food animal production medicine" || target === "food animal") {
+    return cat.includes("food animal") || isBovine;
+  }
+  if (target === "bovine") {
+    return cat.includes("bovine") || cat.includes("food animal") || isBovine;
+  }
+  if (target === "equine") {
+    return cat.includes("equine") || isEquine;
+  }
+  if (target === "exotic") {
+    return cat.includes("exotic") || ["exotic", "bird", "avian", "reptile"].some((s) => spec.includes(s));
+  }
+
+  // Fallback: substring matching
+  return cat.includes(target) || target.includes(cat);
+}
 
 export async function fetchCases(options: FetchCasesOptions = {}): Promise<Case[]> {
   let query = supabase.from("cases").select("*").order("created_at", { ascending: true });
@@ -46,24 +106,8 @@ export async function fetchCases(options: FetchCasesOptions = {}): Promise<Case[
     query = query.eq("is_published", true);
   }
 
-  // NOTE: previously we filtered out archived cases here. That filter caused
-  // the home and /cases pages to return no results in some deployments
-  // (archive flag handling varied across rows). Roll back the archive
-  // exclusion so callers control whether to include archived cases.
-
-  if (options.category) {
-    query = query.eq("category", options.category);
-  }
-
-  if (options.limit) {
-    query = query.limit(options.limit);
-  }
-
-  if (options.offset) {
-    const from = options.offset;
-    const to = from + (options.limit || 10) - 1;
-    query = query.range(from, to);
-  }
+  // If no smart category filtering is needed, we can let DB filter when category is not set,
+  // but if category IS set, we fetch candidates and apply specialty-aware matchesDiscipline below.
 
   if (options.difficulty) {
     query = query.eq("difficulty", options.difficulty);
@@ -81,9 +125,45 @@ export async function fetchCases(options: FetchCasesOptions = {}): Promise<Case[
     query = query.or(`title.ilike.%${options.search}%,description.ilike.%${options.search}%`);
   }
 
+  // If category is not set, we can push limit/offset down to the query.
+  // If category IS set, we need to filter matching categories first before applying limit/offset.
+  if (!options.category) {
+    if (options.limit) {
+      query = query.limit(options.limit);
+    }
+    if (options.offset) {
+      const from = options.offset;
+      const to = from + (options.limit || 10) - 1;
+      query = query.range(from, to);
+    }
+  }
+
   const { data, error } = await query;
   if (error) throw error;
-  return (data ?? []).map(mapDbCaseToCase);
+
+  let rows = data ?? [];
+
+  // Exclude archived cases unless explicitly requested (stored in settings.archived)
+  if (!options.includeArchived) {
+    rows = rows.filter((row: any) => {
+      const settings = typeof row.settings === "object" && row.settings !== null ? row.settings : {};
+      const isArchived = settings.archived === true || settings.archived === "true";
+      return !isArchived;
+    });
+  }
+
+  // Apply smart category / discipline matching
+  if (options.category) {
+    rows = rows.filter((row: any) => matchesDiscipline(row, options.category));
+    if (options.offset) {
+      rows = rows.slice(options.offset);
+    }
+    if (options.limit) {
+      rows = rows.slice(0, options.limit);
+    }
+  }
+
+  return rows.map(mapDbCaseToCase);
 }
 
 export async function fetchCaseById(id: string): Promise<Case | null> {
@@ -110,19 +190,49 @@ export async function fetchCaseById(id: string): Promise<Case | null> {
 
 export async function fetchDisciplines(): Promise<string[]> {
   try {
-    // Try to fetch from 'disciplines' table first
-    const { data, error } = await supabase.from("disciplines").select("name");
-    if (!error && data) {
-      return data.map((d) => d.name).sort();
+    const list = new Set<string>();
+
+    // 1. Fetch from 'disciplines' table
+    const { data: discData, error: discError } = await supabase.from("disciplines").select("name");
+    if (!discError && discData) {
+      for (const d of discData) {
+        if (d.name && typeof d.name === "string" && d.name.trim()) {
+          list.add(d.name.trim());
+        }
+      }
     }
 
-    // Fallback: fetch distinct categories from cases
-    const { data: cases } = await supabase.from("cases").select("category");
-    if (cases) {
-      const categories = new Set(cases.map((c) => c.category).filter(Boolean));
-      return Array.from(categories).sort() as string[];
+    // 2. Fetch distinct categories from published cases so custom/new categories are always included
+    const { data: casesData } = await supabase.from("cases").select("category").eq("is_published", true);
+    if (casesData) {
+      for (const c of casesData) {
+        if (c.category && typeof c.category === "string" && c.category.trim()) {
+          list.add(c.category.trim());
+        }
+      }
     }
-    return [];
+
+    if (list.size === 0) {
+      return [
+        "Cardiology",
+        "Dermatology",
+        "Equine",
+        "Equine Infectious Disease",
+        "Equine Surgery",
+        "Exotic",
+        "Food Animal Production Medicine",
+        "Infectious Disease",
+        "Internal Medicine",
+        "Large Animal",
+        "Neurology",
+        "Ophthalmology",
+        "Small Animal Internal Medicine",
+        "Small Animal Surgery",
+        "Surgery",
+      ];
+    }
+
+    return Array.from(list).sort((a, b) => a.localeCompare(b));
   } catch (e) {
     console.error("Failed to fetch disciplines", e);
     return [];

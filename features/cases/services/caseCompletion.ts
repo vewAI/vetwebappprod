@@ -181,6 +181,9 @@ export function applyCaseDefaults(body: CasePayload) {
   ensureField(body, "get_owner_follow_up_feedback_prompt", get_owner_follow_up_feedback_prompt_template);
   ensureField(body, "get_owner_diagnosis_prompt", get_owner_diagnosis_prompt_template);
   ensureField(body, "get_overall_feedback_prompt", get_overall_feedback_prompt_template);
+  if (body["is_published"] === undefined) {
+    body["is_published"] = true;
+  }
 }
 
 export async function enrichCaseWithModel(body: CasePayload, openai: OpenAi): Promise<CasePayload> {
