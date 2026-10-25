@@ -148,14 +148,25 @@ export default function CaseViewerPage() {
         const ownerRow = list.find((row) => row.role_key === "owner");
         const nurseRow = list.find((row) => row.role_key === "veterinary-nurse");
 
-        setOwnerPersonaConfig(extractPersonaConfig(ownerRow));
-        setNursePersonaConfig(extractPersonaConfig(nurseRow));
-        setPersonaConfigsDirty(false);
-
         // Extract nurse specialization data for read-only display
         const nurseMetadata = nurseRow?.metadata && typeof nurseRow.metadata === "object" ? (nurseRow.metadata as Record<string, unknown>) : null;
         const nurseSpec = nurseMetadata?.nurseSpecialization ?? null;
         setNurseSpecialization(nurseSpec as Record<string, unknown> | null);
+
+        const extractedNurseConfig = extractPersonaConfig(nurseRow);
+        if (!extractedNurseConfig.imageUrl && (nurseSpec as any)?.imageUrl) {
+          extractedNurseConfig.imageUrl = (nurseSpec as any).imageUrl;
+        }
+        if (!extractedNurseConfig.sex && (nurseSpec as any)?.sex) {
+          extractedNurseConfig.sex = (nurseSpec as any).sex;
+        }
+        if (!extractedNurseConfig.voiceId && (nurseSpec as any)?.voiceId) {
+          extractedNurseConfig.voiceId = (nurseSpec as any).voiceId;
+        }
+
+        setOwnerPersonaConfig(extractPersonaConfig(ownerRow));
+        setNursePersonaConfig(extractedNurseConfig);
+        setPersonaConfigsDirty(false);
 
         // Get all case personas for display
         let combined = [...list];

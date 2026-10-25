@@ -218,7 +218,13 @@ export function PersonaEditor({
         ? `Hello, I'm ${config.displayName}. I'm here with my pet today.`
         : `Good morning, I'm ${config.displayName}. How can I help you today?`;
 
-      const audio = await speakRemote(sampleText, config.voiceId);
+      const audio = await speakRemote(sampleText, config.voiceId, {
+        metadata: {
+          sex: config.sex,
+          roleKey: role === "nurse" ? "veterinary-nurse" : "owner",
+          voiceId: config.voiceId,
+        },
+      });
       // Listen for when audio ends
       audio.addEventListener("ended", () => setPreviewPlaying(false));
       audio.addEventListener("error", () => setPreviewPlaying(false));
@@ -228,7 +234,7 @@ export function PersonaEditor({
     } finally {
       setPreviewLoading(false);
     }
-  }, [config.displayName, config.voiceId, previewPlaying, role]);
+  }, [config.displayName, config.voiceId, config.sex, previewPlaying, role]);
 
   // Select avatar template
   const handleSelectTemplate = (template: AvatarTemplate) => {
@@ -255,6 +261,10 @@ export function PersonaEditor({
   // Read-only view
   if (readOnly) {
     const specData = specializationData;
+    const effectiveImageUrl = config.imageUrl || (specData as any)?.imageUrl;
+    const effectiveDisplayName = config.displayName || (specData as any)?.displayName || (role === "nurse" ? "Veterinary Nurse" : "Owner");
+    const effectiveSex = config.sex || (specData as any)?.sex;
+    const effectiveVoiceId = config.voiceId || (specData as any)?.voiceId;
     const vitalRanges = specData?.vitalReferenceRanges as Record<string, string> | undefined;
     const labRanges = specData?.labReferenceRanges as Record<string, string> | undefined;
     const pathologies = specData?.commonPathologies as string[] | undefined;
@@ -263,11 +273,11 @@ export function PersonaEditor({
     return (
       <div className="p-4 border rounded-lg bg-muted/30 space-y-3">
         <div className="flex items-start gap-4">
-          {config.imageUrl ? (
+          {effectiveImageUrl ? (
             <div className="relative h-20 w-20 overflow-hidden rounded-full border-2 border-primary/20 flex-shrink-0">
               <Image
-                src={config.imageUrl}
-                alt={config.displayName}
+                src={effectiveImageUrl}
+                alt={effectiveDisplayName}
                 fill
                 className="object-cover"
                 unoptimized
@@ -279,10 +289,10 @@ export function PersonaEditor({
             </div>
           )}
           <div className="flex-1 min-w-0">
-            <h4 className="font-medium text-lg truncate">{config.displayName}</h4>
+            <h4 className="font-medium text-lg truncate">{effectiveDisplayName}</h4>
             <div className="text-sm text-muted-foreground space-y-1 mt-1">
-              <p>Gender: <span className="capitalize">{config.sex}</span></p>
-              <p>Voice: {VOICE_PRESETS.find((v) => v.id === config.voiceId)?.label ?? config.voiceId}</p>
+              <p>Gender: <span className="capitalize">{effectiveSex}</span></p>
+              <p>Voice: {VOICE_PRESETS.find((v) => v.id === effectiveVoiceId)?.label ?? effectiveVoiceId}</p>
             </div>
           </div>
         </div>
