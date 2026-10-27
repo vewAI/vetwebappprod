@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/app/api/_lib/auth";
-import { accessCodesMatch, fetchCaseSessionRow, mapRowToCaseSession } from "@/app/api/_lib/caseSessions";
+import {
+  accessCodesMatch,
+  fetchCaseSessionRow,
+  fetchProfileYearGroup,
+  mapRowToCaseSession,
+  studentCanAccessSession,
+} from "@/app/api/_lib/caseSessions";
 import { deriveStatus } from "@/features/case-sessions/models/caseSession";
 import type { SessionAttemptRow } from "@/features/case-sessions/models/caseSession";
 import { transformAttempt } from "@/features/attempts/mappers/attempt-mappers";
@@ -23,6 +29,15 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   const session = mapRowToCaseSession(row);
+  if (auth.role === "student") {
+    const profile = await fetchProfileYearGroup(supabase, auth.user.id);
+    if (profile.error) {
+      return NextResponse.json({ error: profile.error.message }, { status: 500 });
+    }
+    if (!studentCanAccessSession(auth.role, profile.yearGroupId, session.yearGroupId)) {
+      return NextResponse.json({ error: "This session is not available for your year group" }, { status: 403 });
+    }
+  }
   if (deriveStatus(session) !== "active") {
     return NextResponse.json({ error: "Session is not active" }, { status: 403 });
   }

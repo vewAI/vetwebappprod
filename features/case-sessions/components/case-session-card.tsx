@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -16,7 +15,6 @@ import { Button } from "@/components/ui/button";
 import { Calendar, ChevronRight } from "lucide-react";
 import type { CaseSession } from "../models/caseSession";
 import { deriveStatus } from "../models/caseSession";
-import { JoinSessionDialog } from "./JoinSessionDialog";
 
 type CaseSessionCardProps = {
   session: CaseSession;
@@ -39,7 +37,6 @@ export function CaseSessionCard({
   session,
   variant = "student",
 }: CaseSessionCardProps) {
-  const [joinOpen, setJoinOpen] = useState(false);
   const status = deriveStatus(session);
   const imageUrl = session.case?.imageUrl ?? "";
   const displayImage = /^https?:\/\//.test(String(imageUrl))
@@ -49,7 +46,6 @@ export function CaseSessionCard({
   const difficulty = session.case?.difficulty;
 
   return (
-    <>
       <Card className="overflow-hidden pt-0 transition-all duration-300 hover:shadow-lg">
         <div className="relative h-48 w-full overflow-hidden bg-gray-100">
           <Image
@@ -110,49 +106,21 @@ export function CaseSessionCard({
         </CardContent>
         <CardFooter className="flex flex-col gap-2">
           {variant === "professor" ? (
-            <Button variant="sessions" className="w-full" asChild>
+            <Button variant="default" className="w-full" asChild>
               <Link href={`/professor/sessions/${session.id}`}>
                 View details
                 <ChevronRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
           ) : (
-            <>
-              <Button variant="outline" className="w-full" asChild>
-                <Link href={`/case-sessions/${session.id}`}>
-                  View details
-                  <ChevronRight className="ml-2 h-4 w-4" />
-                </Link>
-              </Button>
-              {status === "active" ? (
-                <Button
-                  variant="sessions"
-                  className="w-full"
-                  onClick={() => setJoinOpen(true)}
-                >
-                  Start Case
-                  <ChevronRight className="ml-2 h-4 w-4" />
-                </Button>
-              ) : (
-                <Button className="w-full" variant="secondary" disabled>
-                  {status === "scheduled"
-                    ? `Starts ${new Date(session.startAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
-                    : "Session ended"}
-                </Button>
-              )}
-            </>
+            <Button variant="default" className="w-full" asChild>
+              <Link href={`/case-sessions/${session.id}`}>
+                View details
+                <ChevronRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
           )}
         </CardFooter>
       </Card>
-
-      {variant === "student" && status === "active" && (
-        <JoinSessionDialog
-          open={joinOpen}
-          onOpenChange={setJoinOpen}
-          session={session}
-          caseId={session.caseId}
-        />
-      )}
-    </>
   );
 }

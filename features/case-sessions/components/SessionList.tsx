@@ -1,28 +1,68 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { listSessions } from "../services/caseSessionService";
-import type { CaseSession } from "../models/caseSession";
+import type { CaseSession, SessionStatus } from "../models/caseSession";
 import { deriveStatus } from "../models/caseSession";
-import { JoinSessionDialog } from "./JoinSessionDialog";
 import { fetchCases } from "@/features/case-selection/services/caseService";
 import type { Case } from "@/features/case-selection/models/case";
-import { Loader2, Play } from "lucide-react";
+import { getAccessToken } from "@/lib/auth-headers";
+import type { YearGroup } from "@/features/year-groups/models/yearGroup";
+import { Select } from "@/features/navigation/components/select";
+import { SortHeader } from "@/features/navigation/components/sort-header";
+import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/features/navigation/components/table";
+import { useTableSort } from "@/features/navigation/hooks/useTableSort";
 
-export function SessionList() {
-  const [status, setStatus] = useState<
-    "all" | "scheduled" | "active" | "completed"
-  >("all");
-  const [q, setQ] = useState("");
-  const [caseFilterId, setCaseFilterId] = useState("");
+type SessionSortKey = "session" | "case" | "year" | "status" | "start" | "end";
+
+function yearLabel(session: CaseSession, yearGroups: YearGroup[]) {
+  if (!session.yearGroupName) return "—";
+  const showInstitution = new Set(yearGroups.map((group) => group.institutionId)).size > 1;
+  const group = yearGroups.find((item) => item.id === session.yearGroupId);
+  if (showInstitution && group?.institutionName) {
+    return `${group.institutionName} — ${session.yearGroupName}`;
+  }
+  return session.yearGroupName;
+}
+
+const statusRank: Record<SessionStatus, number> = {
+  scheduled: 1,
+  active: 2,
+  completed: 3,
+};
+
+function formatDate(dateString: string) {
+  return new Date(dateString).toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function statusLabel(status: SessionStatus) {
+  if (status === "active") return "Active";
+  if (status === "scheduled") return "Scheduled";
+  return "Completed";
+}
+
+export function SessionList({ initialCaseId }: { initialCaseId?: string }) {
+  const [status, setStatus] = useState<"all" | SessionStatus>("all");
+  const [caseFilterId, setCaseFilterId] = useState(initialCaseId || "all");
+  const [yearFilter, setYearFilter] = useState("all");
+  const [creator, setCreator] = useState<"me" | "everyone">("me");
   const [cases, setCases] = useState<Case[]>([]);
+  const [yearGroups, setYearGroups] = useState<YearGroup[]>([]);
   const [sessions, setSessions] = useState<CaseSession[]>([]);
   const [loading, setLoading] = useState(true);
-  const [joinSession, setJoinSession] = useState<CaseSession | null>(null);
+
+  useEffect(() => {
+    if (initialCaseId) setCaseFilterId(initialCaseId);
+  }, [initialCaseId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,12 +82,32 @@ export function SessionList() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      try {
+        const token = await getAccessToken();
+        const res = await fetch("/api/year-groups", {
+          headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!cancelled) setYearGroups(body.yearGroups ?? []);
+      } catch {
+        if (!cancelled) setYearGroups([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
       setLoading(true);
       try {
         const list = await listSessions({
           status,
-          caseId: caseFilterId || undefined,
-          q: q.trim() || undefined,
+          caseId: caseFilterId === "all" ? undefined : caseFilterId,
+          mine: creator === "me",
+          yearGroupId: yearFilter === "all" ? undefined : yearFilter,
         });
         if (!cancelled) setSessions(list);
       } catch (e) {
@@ -60,118 +120,154 @@ export function SessionList() {
     return () => {
       cancelled = true;
     };
-  }, [status, caseFilterId, q]);
+  }, [status, caseFilterId, creator, yearFilter]);
+
+  const { sort, toggle, sorted } = useTableSort<CaseSession, SessionSortKey>(
+    sessions,
+    (session, key) => {
+      if (key === "session") return session.friendlyName;
+      if (key === "case") return session.case?.title ?? session.caseId;
+      if (key === "year") return yearLabel(session, yearGroups);
+      if (key === "status") return statusRank[deriveStatus(session)] ?? 0;
+      if (key === "start") return new Date(session.startAt).getTime();
+      return new Date(session.endAt).getTime();
+    },
+    { key: "start", dir: "desc" },
+  );
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap gap-3 items-end">
-        <div className="space-y-1">
-          <label className="text-sm font-medium">Status</label>
-          <select
-            className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm min-w-[140px]"
-            value={status}
-            onChange={(e) =>
-              setStatus(e.target.value as typeof status)
-            }
-          >
-            <option value="all">All</option>
-            <option value="scheduled">Scheduled</option>
-            <option value="active">Active</option>
-            <option value="completed">Completed</option>
-          </select>
-        </div>
-        <div className="space-y-1 flex-1 min-w-[200px]">
-          <label className="text-sm font-medium">Case</label>
-          <select
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            value={caseFilterId}
-            onChange={(e) => setCaseFilterId(e.target.value)}
-          >
-            <option value="">All cases</option>
-            {cases.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.title}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="space-y-1 flex-1 min-w-[200px]">
-          <label className="text-sm font-medium">Search</label>
-          <Input
-            placeholder="Session or case title…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
+    <>
+      <div className="mx-auto mb-8 grid w-full max-w-4xl grid-cols-1 gap-3 text-start sm:grid-cols-2 lg:grid-cols-4">
+        <Select
+          value={creator}
+          onChange={(value) => setCreator(value as typeof creator)}
+          selectClassName="border-brand-300 bg-brand-50 font-medium text-brand-700 focus:border-brand-500 dark:border-brand-800 dark:bg-brand-500/12 dark:text-brand-400"
+          options={[
+            { value: "me", label: "Created By Me" },
+            { value: "everyone", label: "Created By Everyone" },
+          ]}
+        />
+        <Select
+          value={status}
+          onChange={(value) => setStatus(value as typeof status)}
+          options={[
+            { value: "all", label: "All Statuses" },
+            { value: "scheduled", label: "Scheduled" },
+            { value: "active", label: "Active" },
+            { value: "completed", label: "Completed" },
+          ]}
+        />
+        <Select
+          value={caseFilterId}
+          onChange={setCaseFilterId}
+          options={[{ value: "all", label: "All Cases" }, ...cases.map((item) => ({ value: item.id, label: item.title }))]}
+        />
+        <Select
+          value={yearFilter}
+          onChange={setYearFilter}
+          options={[
+            { value: "all", label: "All Years" },
+            ...yearGroups.map((group) => ({
+              value: group.id,
+              label:
+                yearGroups.some((item) => item.institutionId !== group.institutionId) && group.institutionName
+                  ? `${group.institutionName} — ${group.name}`
+                  : group.name,
+            })),
+          ]}
+        />
+      </div>
+
+      <p className="mb-2 text-end text-sm text-muted-foreground">
+        {loading ? "Loading…" : `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"}`}
+      </p>
+
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
+        <div className="max-w-full overflow-x-auto">
+          <div className="min-w-[720px]">
+            <Table>
+              <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
+                <TableRow>
+                  <SortHeader label="Session" column="session" sort={sort} onSort={toggle} />
+                  <SortHeader label="Case" column="case" sort={sort} onSort={toggle} />
+                  <SortHeader label="Year" column="year" sort={sort} onSort={toggle} />
+                  <SortHeader label="Status" column="status" sort={sort} onSort={toggle} />
+                  <SortHeader label="Starts" column="start" sort={sort} onSort={toggle} />
+                  <SortHeader label="Ends" column="end" sort={sort} onSort={toggle} />
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="px-5 py-8 text-center text-theme-sm text-gray-500 dark:text-gray-400">
+                      Loading sessions...
+                    </TableCell>
+                  </TableRow>
+                ) : sorted.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="px-5 py-8 text-center text-theme-sm text-gray-500 dark:text-gray-400">
+                      No sessions match these filters.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  sorted.map((session) => {
+                    const st = deriveStatus(session);
+                    const imageSrc = /^https?:\/\//.test(String(session.case?.imageUrl ?? ""))
+                      ? String(session.case?.imageUrl)
+                      : "/placeholder.svg";
+                    return (
+                      <TableRow
+                        key={session.id}
+                        className="relative cursor-pointer hover:bg-brand-50 dark:hover:bg-white/[0.03]"
+                      >
+                        <TableCell className="px-5 py-4 text-start sm:px-6">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 overflow-hidden rounded-full">
+                              <Image src={imageSrc} alt="" width={40} height={40} className="h-10 w-10 object-cover" />
+                            </div>
+                            <div>
+                              <Link
+                                href={`/professor/sessions/${session.id}`}
+                                className="block text-theme-sm font-medium text-gray-800 after:absolute after:inset-0 after:z-10 dark:text-white/90"
+                              >
+                                {session.friendlyName}
+                              </Link>
+                              <span className="line-clamp-2 max-w-md text-theme-xs text-gray-500 dark:text-gray-400">
+                                {session.name}
+                              </span>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-start text-theme-sm text-gray-500 dark:text-gray-400">
+                          {session.case?.title ?? session.caseId}
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-start text-theme-sm text-gray-500 dark:text-gray-400">
+                          {yearLabel(session, yearGroups)}
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-start text-theme-sm text-gray-500 dark:text-gray-400">
+                          <Badge
+                            variant={st === "active" ? "success" : st === "scheduled" ? "warning" : "secondary"}
+                            className="capitalize"
+                          >
+                            {statusLabel(st)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-start text-theme-sm text-gray-500 dark:text-gray-400">
+                          {formatDate(session.startAt)}
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-start text-theme-sm text-gray-500 dark:text-gray-400">
+                          {formatDate(session.endAt)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       </div>
 
-      {loading ? (
-        <div className="flex items-center gap-2 text-muted-foreground py-8">
-          <Loader2 className="h-5 w-5 animate-spin" />
-          Loading sessions…
-        </div>
-      ) : sessions.length === 0 ? (
-        <p className="text-muted-foreground py-8">No sessions match your filters.</p>
-      ) : (
-        <ul className="space-y-3">
-          {sessions.map((s) => {
-            const st = deriveStatus(s);
-            return (
-              <li key={s.id}>
-                <Card>
-                  <CardContent className="py-4 flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <div className="font-semibold">{s.friendlyName}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {s.name} · Case: {s.case?.title ?? s.caseId}
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-1">
-                        {new Date(s.startAt).toLocaleString()} —{" "}
-                        {new Date(s.endAt).toLocaleString()}
-                      </div>
-                      <span
-                        className={`inline-block mt-2 text-xs px-2 py-0.5 rounded border ${
-                          st === "active"
-                            ? "border-green-600 text-green-700 bg-green-50 dark:bg-green-950"
-                            : st === "scheduled"
-                              ? "border-amber-600 text-amber-800 bg-amber-50 dark:bg-amber-950"
-                              : "border-muted-foreground/40 text-muted-foreground"
-                        }`}
-                      >
-                        {st}
-                      </span>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button variant="sessions-outline" size="sm" asChild>
-                        <Link href={`/professor/sessions/${s.id}`}>Details</Link>
-                      </Button>
-                      {st === "active" && (
-                        <Button
-                          variant="sessions"
-                          size="sm"
-                          onClick={() => setJoinSession(s)}
-                        >
-                          <Play className="mr-1 h-4 w-4" />
-                          Start attempt
-                        </Button>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      {joinSession && (
-        <JoinSessionDialog
-          open={Boolean(joinSession)}
-          onOpenChange={(open) => !open && setJoinSession(null)}
-          session={joinSession}
-          caseId={joinSession.caseId}
-        />
-      )}
-    </div>
+    </>
   );
 }

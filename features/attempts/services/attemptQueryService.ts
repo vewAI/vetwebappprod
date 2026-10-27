@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
 import { Attempt, AttemptMessage, AttemptFeedback, AttemptSummary } from "../models/attempt";
 import { transformAttempt, transformAttemptSummary, transformFeedback, transformMessage } from "../mappers/attempt-mappers";
 
@@ -13,7 +14,7 @@ export async function getUserAttempts(): Promise<AttemptSummary[]> {
     const { data, error } = await supabase
       .from("attempts")
       .select(
-        "id, case_id, title, created_at, completed_at, completion_status, last_stage_index, time_spent_seconds, cases (title, category, difficulty, image_url)"
+        "id, user_id, case_id, session_id, title, created_at, completed_at, completion_status, last_stage_index, time_spent_seconds, cases (title, category, difficulty, image_url), case_sessions (id, friendly_name)"
       )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
@@ -42,7 +43,7 @@ export async function getAttemptsByCase(caseId: string): Promise<AttemptSummary[
     const { data, error } = await supabase
       .from("attempts")
       .select(
-        "id, case_id, title, created_at, completed_at, completion_status, last_stage_index, time_spent_seconds, cases (title, category, difficulty, image_url)"
+        "id, user_id, case_id, session_id, title, created_at, completed_at, completion_status, last_stage_index, time_spent_seconds, cases (title, category, difficulty, image_url), case_sessions (id, friendly_name)"
       )
       .eq("user_id", user.id)
       .eq("case_id", caseId)
@@ -130,4 +131,18 @@ export async function getFollowupsForAttempt(attemptId: string): Promise<any[]> 
     console.error("Unexpected error fetching followups:", err);
     return [];
   }
+}
+
+/** Professor/admin: latest attempts on a case by anyone. */
+export async function getCaseAttemptsForStaff(caseId: string): Promise<AttemptSummary[]> {
+  const token = await getAccessToken();
+  if (!token) return [];
+  const headers = await buildAuthHeaders({ Accept: "application/json" }, token);
+  const res = await fetch(`/api/cases/${encodeURIComponent(caseId)}/attempts`, { headers });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || res.statusText);
+  }
+  const json = (await res.json()) as { attempts?: AttemptSummary[] };
+  return json.attempts ?? [];
 }

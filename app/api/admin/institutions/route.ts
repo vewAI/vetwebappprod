@@ -24,7 +24,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ institutions });
+  return NextResponse.json({
+    institutions: (institutions ?? []).map((row) => ({
+      ...row,
+      academic_year_end_month: Number(row.academic_year_end_month ?? 7),
+      academic_year_end_day: Number(row.academic_year_end_day ?? 31),
+    })),
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -68,9 +74,24 @@ export async function PATCH(request: NextRequest) {
   const body = await request.json();
   const id = body?.id;
   const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const monthRaw = body?.academic_year_end_month;
+  const dayRaw = body?.academic_year_end_day;
+  const hasYearEnd = monthRaw != null || dayRaw != null;
 
-  if (!id || !name) {
-    return NextResponse.json({ error: "id and name are required" }, { status: 400 });
+  if (!id || (!name && !hasYearEnd)) {
+    return NextResponse.json({ error: "id and name or year-end date are required" }, { status: 400 });
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (name) updates.name = name;
+  if (hasYearEnd) {
+    const month = Number(monthRaw);
+    const day = Number(dayRaw);
+    if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(day) || day < 1 || day > 31) {
+      return NextResponse.json({ error: "academic year end must be a valid month and day" }, { status: 400 });
+    }
+    updates.academic_year_end_month = month;
+    updates.academic_year_end_day = day;
   }
 
   const adminClient = getSupabaseAdminClient();
@@ -80,7 +101,7 @@ export async function PATCH(request: NextRequest) {
 
   const { data, error } = await adminClient
     .from("institutions")
-    .update({ name })
+    .update(updates)
     .eq("id", id)
     .select()
     .single();

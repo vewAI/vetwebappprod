@@ -29,10 +29,6 @@ const config = {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
         },
-        sessions: {
-          DEFAULT: "var(--sessions)",
-          foreground: "var(--sessions-foreground)",
-        },
         secondary: {
           DEFAULT: "hsl(var(--secondary))",
           foreground: "hsl(var(--secondary-foreground))",

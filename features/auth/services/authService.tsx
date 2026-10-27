@@ -15,6 +15,11 @@ type AuthContextType = {
   isAdmin: boolean;
   profileLoading: boolean;
   forcePasswordChange: boolean;
+  yearGroupId: string | null;
+  yearGroupName: string | null;
+  institutionId: string | null;
+  institutionName: string | null;
+  refreshProfile: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -28,6 +33,11 @@ const AuthContext = createContext<AuthContextType>({
   isAdmin: false,
   profileLoading: false,
   forcePasswordChange: false,
+  yearGroupId: null,
+  yearGroupName: null,
+  institutionId: null,
+  institutionName: null,
+  refreshProfile: async () => {},
   signIn: async () => {},
   signOut: async () => {},
 });
@@ -38,6 +48,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<string | null>(null);
   const [forcePasswordChange, setForcePasswordChange] = useState(false);
+  const [yearGroupId, setYearGroupId] = useState<string | null>(null);
+  const [yearGroupName, setYearGroupName] = useState<string | null>(null);
+  const [institutionId, setInstitutionId] = useState<string | null>(null);
+  const [institutionName, setInstitutionName] = useState<string | null>(null);
   const [profileLoading, setProfileLoading] = useState<boolean>(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const lastUserIdRef = useRef<string | null>(null);
@@ -136,6 +150,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // If we don't have a user id or an access token, skip fetching
       if (!currentUserId || !session?.access_token) {
         setRole(null);
+        setYearGroupId(null);
+        setYearGroupName(null);
+        setInstitutionId(null);
+        setInstitutionName(null);
         setProfileLoading(false);
         lastUserIdRef.current = null;
         return;
@@ -153,6 +171,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!res.ok) {
           const txt = await res.text().catch(() => "");
           setRole(null);
+          setYearGroupId(null);
+          setYearGroupName(null);
+          setInstitutionId(null);
+          setInstitutionName(null);
           setProfileLoading(false);
           return;
         }
@@ -161,6 +183,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const profile = json?.profile ?? null;
         setRole(profile?.role ?? null);
         setForcePasswordChange(profile?.force_password_change ?? false);
+        setYearGroupId(profile?.yearGroupId ?? profile?.year_group_id ?? null);
+        setYearGroupName(profile?.yearGroupName ?? null);
+        setInstitutionId(profile?.institutionId ?? profile?.institution_id ?? null);
+        setInstitutionName(profile?.institutionName ?? null);
 
         if (profile?.force_password_change) {
           router.push("/change-password");
@@ -177,6 +203,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const fallbackRole = session?.user?.app_metadata?.role ?? null;
         setRole(fallbackRole ?? null);
         setForcePasswordChange(false);
+        setYearGroupId(null);
+        setYearGroupName(null);
+        setInstitutionId(null);
+        setInstitutionName(null);
         setProfileLoading(false);
       }
     };
@@ -189,9 +219,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fetchProfile().catch((err) => {
       console.error("fetchProfile unexpected rejection:", err);
       setRole(null);
+      setYearGroupId(null);
+      setYearGroupName(null);
+      setInstitutionId(null);
+      setInstitutionName(null);
       setProfileLoading(false);
     });
   }, [session]);
+
+  const refreshProfile = async () => {
+    const currentUserId = session?.user?.id;
+    if (!currentUserId || !session?.access_token) return;
+    const res = await fetch("/api/profile", {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        Accept: "application/json",
+      },
+    });
+    if (!res.ok) return;
+    const json = await res.json();
+    const profile = json?.profile ?? null;
+    setRole(profile?.role ?? null);
+    setForcePasswordChange(profile?.force_password_change ?? false);
+    setYearGroupId(profile?.yearGroupId ?? profile?.year_group_id ?? null);
+    setYearGroupName(profile?.yearGroupName ?? null);
+    setInstitutionId(profile?.institutionId ?? profile?.institution_id ?? null);
+    setInstitutionName(profile?.institutionName ?? null);
+  };
 
   // Sign in function that can be called from any component using useAuth()
   const signIn = async (email: string, password: string) => {
@@ -230,6 +284,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAdmin: role === "admin",
         profileLoading,
         forcePasswordChange,
+        yearGroupId,
+        yearGroupName,
+        institutionId,
+        institutionName,
+        refreshProfile,
         signIn,
         signOut,
       }}

@@ -1,9 +1,5 @@
-import { redirect } from "next/navigation";
+import { StudentDashboard } from "@/features/student/components/StudentDashboard";
 
-/**
- * Redirect /student to the main dashboard.
- * This route doesn't exist - students should use the main dashboard at /.
- */
-export default function StudentRedirect() {
-  redirect("/");
+export default function StudentPage() {
+  return <StudentDashboard />;
 }

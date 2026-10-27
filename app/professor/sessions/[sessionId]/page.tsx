@@ -13,7 +13,7 @@ export default function ProfessorSessionDetailPage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto px-4 py-8 space-y-4 max-w-5xl">
+      <div className="container mx-auto space-y-4 px-4 pb-8">
         <Skeleton className="h-9 w-64" />
         <Skeleton className="h-48 w-full" />
       </div>
@@ -22,17 +22,15 @@ export default function ProfessorSessionDetailPage() {
 
   if (role !== "professor" && role !== "admin") {
     return (
-      <div className="container mx-auto px-4 py-12 text-center">
+      <div className="container mx-auto px-4 pb-8 text-center">
         <h1 className="text-xl font-bold text-destructive">Access denied</h1>
-        <p className="text-muted-foreground mt-2">
-          Only professors and admins can view session analytics.
-        </p>
+        <p className="mt-2 text-muted-foreground">Only professors and admins can view session analytics.</p>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-5xl">
+    <div className="container mx-auto px-4 pb-8">
       <ProfessorSessionDetail sessionId={sessionId} />
     </div>
   );

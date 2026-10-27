@@ -8,18 +8,13 @@ import { AttemptCard } from "@/features/attempts/components/attempt-card";
 import type { AttemptSummary } from "@/features/attempts/models/attempt";
 import { getUserAttempts } from "@/features/attempts/services/attemptQueryService";
 import { CaseCard } from "@/features/case-selection/components/case-card";
-import type { Case } from "@/features/case-selection/models/case";
-import { fetchCases } from "@/features/case-selection/services/caseService";
-import { CaseSessionCard } from "@/features/case-sessions/components/case-session-card";
-import type { CaseSession } from "@/features/case-sessions/models/caseSession";
-import { listSessions } from "@/features/case-sessions/services/caseSessionService";
 import { supabase } from "@/lib/supabase";
 import { transformAttemptSummary } from "@/features/attempts/mappers/attempt-mappers";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { professorService } from "@/features/professor/services/professorService";
 import { cn } from "@/lib/utils";
+import { YearGroupRequiredAlert } from "@/features/year-groups/components/YearGroupRequiredAlert";
 
 type Role = "student" | "professor" | "admin" | null;
 
@@ -68,17 +63,7 @@ function NotificationsBar({ notifications }: { notifications: Notification[] }) 
           className="border-none bg-muted/60 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:bg-muted hover:shadow-md dark:bg-muted/40"
         >
           <CardHeader className="pb-2">
-            <div className="flex items-center justify-between gap-2">
-              <CardTitle className="text-sm font-semibold">{item.title}</CardTitle>
-              {item.tone && (
-                <Badge
-                  variant={item.tone === "success" ? "success" : item.tone === "warning" ? "warning" : "secondary"}
-                  className="text-[10px] uppercase tracking-wide"
-                >
-                  {item.tone}
-                </Badge>
-              )}
-            </div>
+            <CardTitle className="text-sm font-semibold">{item.title}</CardTitle>
           </CardHeader>
           <CardContent className="pt-0 text-xs text-muted-foreground">{item.description}</CardContent>
         </Card>
@@ -118,30 +103,17 @@ async function getProfessorStudentAttemptsNeedingFeedback(professorId: string): 
 
 export default function HomePage() {
   const { user, role } = useAuth() as { user: any; role: Role };
-  const logoSrc =
-    process.env.NEXT_PUBLIC_BRAND_LOGO_URL ||
-    (process.env.NEXT_PUBLIC_SUPABASE_URL
-      ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/img/logo_transparent.png`
-      : "/images/logo-v.png");
   const [studentAttempts, setStudentAttempts] = useState<AttemptSummary[]>([]);
   const [professorAttempts, setProfessorAttempts] = useState<AttemptSummary[]>([]);
-  const [latestCases, setLatestCases] = useState<Case[]>([]);
-  const [activeSessions, setActiveSessions] = useState<CaseSession[]>([]);
   const [assignedCases, setAssignedCases] = useState<any[]>([]);
-  const [loadingStudentAttempts, setLoadingStudentAttempts] = useState(false);
   const [loadingProfessorAttempts, setLoadingProfessorAttempts] = useState(false);
-  const [loadingCases, setLoadingCases] = useState(false);
-  const [loadingActiveSessions, setLoadingActiveSessions] = useState(false);
   const [loadingAssignedCases, setLoadingAssignedCases] = useState(false);
 
   useEffect(() => {
     if (role === "student") {
-      setLoadingStudentAttempts(true);
-      getUserAttempts()
-        .then((attempts) => {
-          setStudentAttempts(attempts);
-        })
-        .finally(() => setLoadingStudentAttempts(false));
+      getUserAttempts().then((attempts) => {
+        setStudentAttempts(attempts);
+      });
     }
   }, [role]);
 
@@ -166,25 +138,6 @@ export default function HomePage() {
         .finally(() => setLoadingAssignedCases(false));
     }
   }, [role, user?.id]);
-
-  useEffect(() => {
-    setLoadingCases(true);
-    fetchCases({ limit: 3 })
-      .then((cases) => setLatestCases(cases))
-      .finally(() => setLoadingCases(false));
-  }, []);
-
-  useEffect(() => {
-    if (!user?.id) {
-      setActiveSessions([]);
-      return;
-    }
-    setLoadingActiveSessions(true);
-    listSessions({ status: "active" })
-      .then((sessions) => setActiveSessions(sessions.slice(0, 3)))
-      .catch(() => setActiveSessions([]))
-      .finally(() => setLoadingActiveSessions(false));
-  }, [user?.id]);
 
   const displayName = useMemo(() => {
     const email = user?.email as string | undefined;
@@ -255,41 +208,46 @@ export default function HomePage() {
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-background via-background to-muted/40 ">
-      {/* Hero */}
-      <section className="border-b border-border/60 bg-gradient-to-r from-primary/90 via-primary to-primary/80 text-primary-foreground dark:text-white">
-        <div className="container mx-auto px-4 py-10 md:py-14">
+      {/* Hero — same mint field and large V watermark as the marketing home page */}
+      <section className="relative -mx-4 -mt-4 overflow-hidden border-b border-emerald-100 bg-gradient-to-b from-[#f2fbf7] via-[#f7fdfa] to-[#eef9f4] pt-12 pb-16 md:-mx-6 md:-mt-6 md:pt-16 md:pb-20">
+        <div className="pointer-events-none absolute top-1/4 left-1/2 h-[450px] w-[700px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-300/25 blur-[140px]" />
+        <div className="pointer-events-none absolute top-[40%] left-1/2 z-0 aspect-[1024/764] w-[410px] -translate-x-1/2 -translate-y-1/2 opacity-20 select-none sm:w-[625px] md:w-[840px]">
+          <Image
+            src="/images/logo-v.png"
+            alt=""
+            fill
+            sizes="(max-width: 768px) 410px, 840px"
+            className="object-contain"
+            priority
+          />
+        </div>
+        <div className="relative z-10 container mx-auto px-4">
           <div className="mx-auto flex max-w-3xl flex-col items-center gap-6 text-center motion-safe:animate-in motion-safe:fade-in-50 motion-safe:slide-in-from-bottom-6">
-            <div className="relative h-28 w-32 md:h-32 md:w-40">
-              <div className="absolute inset-0 rounded-3xl bg-black/10 blur-2xl" />
-              <div className="relative flex h-full w-full items-center justify-center rounded-3xl border border-white/10 bg-white/10 shadow-2xl backdrop-blur-md">
-                <Image src={logoSrc} alt="VewAI logo" width={120} height={120} className="h-16 w-auto md:h-20" priority unoptimized />
-              </div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/80 bg-white/90 px-4 py-1.5 text-xs font-bold tracking-wider text-emerald-800 uppercase shadow-xs backdrop-blur-sm">
+              AI-powered veterinary communication practice
             </div>
-            <h2 className="text-2xl tracking-tight sm:text-3xl md:text-4xl">
-              Vew<span className="font-bold text-white">AI</span>
-            </h2>
-            <div className="space-y-3">
-              <h1 className="text-3xl font-semibold tracking-tight md:text-4xl lg:text-5xl">Communication Skills Training Platform</h1>
-              <p className="text-sm text-primary-foreground/90 md:text-base dark:text-white">
-                AI-powered educational simulator for veterinary students
-              </p>
-            </div>
-            <p className="max-w-2xl text-sm text-primary-foreground/80 md:text-base dark:text-white/60">
+            <h1 className="text-4xl leading-[1.15] font-extrabold tracking-tight text-slate-900 sm:text-5xl">
+              Communication Skills Training Platform
+            </h1>
+            <p className="max-w-2xl text-base leading-relaxed text-slate-700 sm:text-lg">
               Practice real-world clinical scenarios, receive instant AI feedback, and build confidence before stepping into your next OSCE or
               rotation.
             </p>
-            <div className="flex flex-wrap justify-center gap-3">
-              <Button asChild size="sm" className="rounded-full bg-primary-foreground text-primary hover:bg-white dark:text-white/90">
-                <Link href="/live">Browse all cases</Link>
-              </Button>
-              <Button
-                asChild
-                size="sm"
-                variant="sessions-outline"
-                className="rounded-full border-sessions/50 bg-sessions/10 text-sessions-foreground hover:bg-sessions/20 hover:text-sessions-foreground dark:border-sessions/40 dark:text-white"
-              >
-                <Link href="/live">Jump into training</Link>
-              </Button>
+            <div className="flex flex-wrap justify-center gap-3 pt-1">
+              {(role === "professor" || role === "admin") && (
+                <Button asChild className="rounded-xl bg-emerald-600 px-6 text-white shadow-lg shadow-emerald-600/25 hover:bg-emerald-700">
+                  <Link href="/cases">Browse all cases</Link>
+                </Button>
+              )}
+              {role === "student" && (
+                <Button
+                  asChild
+                  variant="outline"
+                  className="rounded-xl border-emerald-300 bg-white px-6 text-emerald-800 hover:border-emerald-400 hover:bg-emerald-50"
+                >
+                  <Link href="/case-sessions">Jump into training</Link>
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -298,6 +256,7 @@ export default function HomePage() {
       {/* Welcome + notifications */}
       <section className="container mx-auto px-4 py-8 md:py-10">
         <div className="space-y-4 border-b border-border/60 pb-10 motion-safe:animate-in motion-safe:fade-in-50 motion-safe:slide-in-from-bottom-4">
+          <YearGroupRequiredAlert />
           <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
             <div>
               <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">Good to see you, {displayName}.</h2>
@@ -309,7 +268,7 @@ export default function HomePage() {
               {role === "student" && (
                 <p className="mt-3 text-sm leading-relaxed text-muted-foreground/80">
                   To practice <strong>knowledge, clinical skills and communication</strong>, open the{" "}
-                  <Link href="/live" className="font-medium text-primary underline underline-offset-2 hover:text-primary/80">
+                  <Link href="/case-sessions" className="font-medium text-primary underline underline-offset-2 hover:text-primary/80">
                     Live
                   </Link>{" "}
                   menu link and choose a case — you will speak with the owner and the veterinary team just like in a real consultation.
@@ -329,7 +288,7 @@ export default function HomePage() {
             description="Your professor has assigned these cases for you to complete."
             action={
               <Button asChild variant="ghost" size="sm">
-                <Link href="/live">View all</Link>
+                <Link href="/case-sessions">View all</Link>
               </Button>
             }
           />
@@ -356,34 +315,6 @@ export default function HomePage() {
                   />
                 );
               })}
-            </div>
-          )}
-        </PageSection>
-      )}
-
-      {/* Role-specific attempts */}
-      {role === "student" && (
-        <PageSection>
-          <SectionHeader
-            title="Recent attempts"
-            description="Pick up where you left off or review your most recent simulated cases."
-            action={
-              <Button asChild variant="ghost" size="sm">
-                <Link href="/attempts">View all attempts</Link>
-              </Button>
-            }
-          />
-          {loadingStudentAttempts ? (
-            <div className="p-4 text-sm text-muted-foreground">Loading your recent attempts...</div>
-          ) : studentAttempts.length === 0 ? (
-            <Card className="border-dashed bg-muted/40 text-sm text-muted-foreground">
-              <CardContent className="py-6">You don&apos;t have any attempts yet. Start your first case from the cases library below.</CardContent>
-            </Card>
-          ) : (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {studentAttempts.slice(0, 3).map((attempt) => (
-                <AttemptCard key={attempt.id} attempt={attempt} />
-              ))}
             </div>
           )}
         </PageSection>
@@ -420,60 +351,6 @@ export default function HomePage() {
           )}
         </PageSection>
       )}
-
-      {/* Active case sessions */}
-      {user?.id && (
-        <PageSection>
-          <SectionHeader
-            title="Active case sessions"
-            description="Join a live session from your instructor while it is open."
-            action={
-              <Button asChild variant="sessions-link" size="sm">
-                <Link href="/case-sessions">View all</Link>
-              </Button>
-            }
-          />
-          {loadingActiveSessions ? (
-            <div className="p-4 text-sm text-muted-foreground">Loading active sessions...</div>
-          ) : activeSessions.length === 0 ? (
-            <Card className="border-dashed bg-muted/40 text-sm text-muted-foreground">
-              <CardContent className="py-6">No active sessions right now. When your instructor opens a session, it will appear here.</CardContent>
-            </Card>
-          ) : (
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {activeSessions.map((session) => (
-                <CaseSessionCard key={session.id} session={session} />
-              ))}
-            </div>
-          )}
-        </PageSection>
-      )}
-
-      {/* Latest cases */}
-      <PageSection>
-        <SectionHeader
-          title="Latest cases"
-          description="Explore newly added or recently updated cases to keep your skills sharp."
-          action={
-            <Button asChild variant="ghost" size="sm">
-              <Link href="/live">View all</Link>
-            </Button>
-          }
-        />
-        {loadingCases ? (
-          <div className="p-4 text-sm text-muted-foreground">Loading latest cases...</div>
-        ) : latestCases.length === 0 ? (
-          <Card className="border-dashed bg-muted/40 text-sm text-muted-foreground">
-            <CardContent className="py-6">No cases are available yet. Check back soon or contact your instructor.</CardContent>
-          </Card>
-        ) : (
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {latestCases.map((caseItem) => (
-              <CaseCard key={caseItem.id} caseItem={caseItem} />
-            ))}
-          </div>
-        )}
-      </PageSection>
     </div>
   );
 }

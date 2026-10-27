@@ -62,11 +62,25 @@ export function transformAttempt(data: DbAttempt): Attempt {
   };
 }
 
+function firstJoin<T>(value: T | T[] | null | undefined): T | null {
+  if (value == null) return null;
+  return Array.isArray(value) ? (value[0] ?? null) : value;
+}
+
 export function transformAttemptSummary(data: any): AttemptSummary {
+  const session = firstJoin(data.case_sessions);
+  const profile = firstJoin(data.profiles);
+  const studentName =
+    (typeof profile?.full_name === "string" && profile.full_name.trim()) ||
+    (typeof profile?.email === "string" && profile.email.trim()) ||
+    null;
   return {
     id: data.id ?? "",
     userId: data.user_id ?? "",
     caseId: data.case_id ?? "",
+    sessionId: data.session_id ?? null,
+    sessionName: typeof session?.friendly_name === "string" ? session.friendly_name : null,
+    studentName,
     title: data.title ?? "",
     createdAt: data.created_at ?? "",
     completedAt: data.completed_at ?? undefined,

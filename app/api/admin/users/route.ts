@@ -9,15 +9,20 @@ const createUserSchema = z.object({
   fullName: z.string().min(2, "Full name must be at least 2 characters"),
   role: z.enum(["student", "professor", "admin"]),
   institution_id: z.string().optional(),
+  year_group_id: z.string().nullable().optional(),
 });
+
+const emptyToUndefined = (value: unknown) => (value === "" || value == null ? undefined : value);
+const emptyToNull = (value: unknown) => (value === "" ? null : value);
 
 const updateUserSchema = z.object({
   userId: z.string().min(1),
   role: z.enum(["student", "professor", "admin"]).optional(),
   email: z.string().email().optional(),
-  password: z.string().min(8, "Password must be at least 8 characters").optional(),
-  fullName: z.string().min(2).optional(),
-  institution_id: z.string().nullable().optional(),
+  password: z.preprocess(emptyToUndefined, z.string().min(8, "Password must be at least 8 characters").optional()),
+  fullName: z.preprocess(emptyToUndefined, z.string().min(2).optional()),
+  institution_id: z.preprocess(emptyToNull, z.string().nullable().optional()),
+  year_group_id: z.preprocess(emptyToNull, z.string().nullable().optional()),
 });
 
 export async function GET(request: NextRequest) {
@@ -54,7 +59,7 @@ export async function GET(request: NextRequest) {
     // Use explicit foreign key to avoid ambiguity
     let profilesQuery = adminClient
       .from("profiles")
-      .select("*, institutions!institution_id(name)")
+      .select("*, institutions!institution_id(name), year_groups!year_group_id(id, name)")
       .order("created_at", { ascending: false });
     if (professorInstitutionId) profilesQuery = profilesQuery.eq("institution_id", professorInstitutionId);
     const { data, error } = await profilesQuery;
@@ -77,7 +82,13 @@ export async function GET(request: NextRequest) {
     profiles = data;
   }
 
-  return NextResponse.json({ users: profiles });
+  const users = (profiles ?? []).map((row: Record<string, unknown>) => {
+    const yearGroups = row.year_groups;
+    const yearGroup = Array.isArray(yearGroups) ? yearGroups[0] : yearGroups;
+    return { ...row, year_groups: yearGroup ?? null };
+  });
+
+  return NextResponse.json({ users });
 }
 
 export async function POST(request: NextRequest) {
@@ -106,7 +117,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: validation.error.issues[0].message }, { status: 400 });
   }
 
-  let { email, password, role, fullName, institution_id } = validation.data;
+  let { email, password, role, fullName, institution_id, year_group_id } = validation.data;
   
   // Strict Scoping for Professors
   if (auth.role === "professor") {
@@ -147,6 +158,23 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  if (year_group_id) {
+    if (!institution_id) {
+      return NextResponse.json({ error: "Year group requires an institution" }, { status: 400 });
+    }
+    const { data: yearGroup, error: yearError } = await adminClient
+      .from("year_groups")
+      .select("id, institution_id")
+      .eq("id", year_group_id)
+      .maybeSingle();
+    if (yearError) {
+      return NextResponse.json({ error: yearError.message }, { status: 500 });
+    }
+    if (!yearGroup || yearGroup.institution_id !== institution_id) {
+      return NextResponse.json({ error: "Year group is not valid for this user's institution" }, { status: 400 });
+    }
+  }
+
   // Create user in Auth
   const { data: userData, error: createError } = await adminClient.auth.admin.createUser({
     email,
@@ -169,6 +197,7 @@ export async function POST(request: NextRequest) {
   const updates: Record<string, unknown> = {};
   if (role) updates.role = role;
   if (institution_id) updates.institution_id = institution_id;
+  if (year_group_id) updates.year_group_id = year_group_id;
   // Set force_password_change to true for new users created by admins/professors
   updates.force_password_change = true;
 
@@ -209,7 +238,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: parsedUpdate.error.issues[0]?.message ?? "Invalid update payload" }, { status: 400 });
   }
 
-  const { userId, role, email, password, fullName, institution_id } = parsedUpdate.data;
+  const { userId, role, email, password, fullName, institution_id, year_group_id } = parsedUpdate.data;
   const adminClient = getSupabaseAdminClient();
   if (!adminClient) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
@@ -218,7 +247,7 @@ export async function PUT(request: NextRequest) {
   if (auth.role === "professor") {
     // Professors may edit an assigned student name only. They cannot change
     // credentials, role, or institution, even if the client sends those keys.
-    if (role !== undefined || email !== undefined || password !== undefined || institution_id !== undefined) {
+    if (role !== undefined || email !== undefined || password !== undefined || institution_id !== undefined || year_group_id !== undefined) {
       return NextResponse.json({ error: "Professors may only update an assigned student's name" }, { status: 403 });
     }
 
@@ -272,6 +301,30 @@ export async function PUT(request: NextRequest) {
   if (role) profileUpdates.role = role;
   if (email) profileUpdates.email = email;
   if (institution_id !== undefined) profileUpdates.institution_id = institution_id;
+  if (year_group_id !== undefined) {
+    if (year_group_id) {
+      const { data: yearGroup, error: yearError } = await adminClient
+        .from("year_groups")
+        .select("id, institution_id")
+        .eq("id", year_group_id)
+        .maybeSingle();
+      if (yearError) {
+        return NextResponse.json({ error: yearError.message }, { status: 500 });
+      }
+      const nextInstitutionId =
+        institution_id !== undefined
+          ? institution_id
+          : (
+              await adminClient.from("profiles").select("institution_id").eq("user_id", userId).maybeSingle()
+            ).data?.institution_id;
+      if (!yearGroup || !nextInstitutionId || yearGroup.institution_id !== nextInstitutionId) {
+        return NextResponse.json({ error: "Year group is not valid for this user's institution" }, { status: 400 });
+      }
+    }
+    profileUpdates.year_group_id = year_group_id;
+  } else if (institution_id !== undefined) {
+    profileUpdates.year_group_id = null;
+  }
 
   if (Object.keys(profileUpdates).length > 0) {
     const { error: profileError } = await adminClient

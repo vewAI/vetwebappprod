@@ -36,6 +36,7 @@ export type ListSessionsParams = {
   q?: string;
   /** When true, only sessions created by the current user */
   mine?: boolean;
+  yearGroupId?: string;
 };
 
 export async function listSessions(
@@ -46,6 +47,7 @@ export async function listSessions(
   if (params.status) sp.set("status", params.status);
   if (params.q?.trim()) sp.set("q", params.q.trim());
   if (params.mine) sp.set("mine", "true");
+  if (params.yearGroupId) sp.set("yearGroupId", params.yearGroupId);
   const q = sp.toString();
   const url = q ? `/api/case-sessions?${q}` : "/api/case-sessions";
   const res = await authFetch(url);
@@ -67,6 +69,7 @@ export type CreateSessionPayload = {
   startAt: string;
   endAt: string;
   attemptLimitPerStudent?: number | null;
+  yearGroupId: string;
 };
 
 export async function createSession(
@@ -84,6 +87,7 @@ export async function createSession(
       startAt: payload.startAt,
       endAt: payload.endAt,
       attemptLimitPerStudent: payload.attemptLimitPerStudent ?? null,
+      yearGroupId: payload.yearGroupId,
     }),
   });
   const body = await parseJson<{ session?: CaseSession; error?: string }>(res);

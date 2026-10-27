@@ -92,7 +92,7 @@ export function ProfessorSessionsSection({ refreshKey }: Props) {
           <Button variant="outline" size="sm" asChild>
             <Link href="/professor/sessions">Manage all sessions</Link>
           </Button>
-          <Button variant="sessions" size="sm" asChild>
+          <Button variant="default" size="sm" asChild>
             <Link href="/professor/sessions/new">Create session</Link>
           </Button>
         </div>
@@ -117,7 +117,7 @@ export function ProfessorSessionsSection({ refreshKey }: Props) {
             You have not created any case sessions yet.{" "}
             <Link
               href="/professor/sessions/new"
-              className="font-medium text-sessions underline-offset-4 hover:underline"
+              className="font-medium text-primary underline-offset-4 hover:underline"
             >
               Create your first session
             </Link>

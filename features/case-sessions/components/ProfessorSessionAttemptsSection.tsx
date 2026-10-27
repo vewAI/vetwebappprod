@@ -1,83 +1,89 @@
 "use client";
 
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { SessionAttemptRow } from "../models/caseSession";
-import { SessionAttemptsBarChart } from "./charts/SessionAttemptsBarChart";
-import { SessionAttemptStatusPie } from "./charts/SessionAttemptStatusPie";
+import { useMemo, useState } from "react";
+import { CaseAttemptsTable } from "@/features/attempts/components/CaseAttemptsTable";
+import type { AttemptSummary } from "@/features/attempts/models/attempt";
+import { Select } from "@/features/navigation/components/select";
+import type { CaseSession, SessionAttemptRow } from "../models/caseSession";
 
 type Props = {
+  session: CaseSession;
   attempts: SessionAttemptRow[];
 };
 
-export function ProfessorSessionAttemptsSection({ attempts }: Props) {
-  return (
-    <>
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Attempts per day</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <SessionAttemptsBarChart attempts={attempts} />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Attempt status</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <SessionAttemptStatusPie attempts={attempts} />
-          </CardContent>
-        </Card>
-      </div>
+function toAttemptSummary(row: SessionAttemptRow, session: CaseSession): AttemptSummary {
+  return {
+    id: row.id,
+    userId: row.userId,
+    caseId: row.caseId,
+    sessionId: row.sessionId,
+    sessionName: session.friendlyName,
+    studentName: row.studentEmail ?? row.studentName ?? null,
+    title: session.case?.title ?? session.friendlyName,
+    createdAt: row.createdAt,
+    completedAt: row.completedAt,
+    completionStatus: row.completionStatus,
+    lastStageIndex: 0,
+    timeSpentSeconds: row.timeSpentSeconds,
+    caseTitle: session.case?.title ?? "",
+    caseCategory: session.case?.category ?? "",
+    caseDifficulty: session.case?.difficulty ?? "",
+    caseImageUrl: session.case?.imageUrl || null,
+  };
+}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Attempts ({attempts.length})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {attempts.length === 0 ? (
-            <p className="text-muted-foreground text-sm">No attempts yet.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left">
-                    <th className="py-2 pr-4">Student</th>
-                    <th className="py-2 pr-4">Status</th>
-                    <th className="py-2 pr-4">Time (s)</th>
-                    <th className="py-2 pr-4">Created</th>
-                    <th className="py-2">Link</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {attempts.map((a) => (
-                    <tr key={a.id} className="border-b border-muted">
-                      <td className="py-2 pr-4">
-                        {a.studentName ?? a.studentEmail ?? a.userId}
-                      </td>
-                      <td className="py-2 pr-4 capitalize">
-                        {a.completionStatus.replace("_", " ")}
-                      </td>
-                      <td className="py-2 pr-4">{a.timeSpentSeconds}</td>
-                      <td className="py-2 pr-4">
-                        {new Date(a.createdAt).toLocaleString()}
-                      </td>
-                      <td className="py-2">
-                        <Button variant="link" className="h-auto p-0" asChild>
-                          <Link href={`/attempts/${a.id}`}>View</Link>
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </>
+export function ProfessorSessionAttemptsSection({ session, attempts }: Props) {
+  const [emailSearch, setEmailSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  const summaries = useMemo(
+    () => attempts.map((row) => toAttemptSummary(row, session)),
+    [attempts, session],
+  );
+
+  const filtered = useMemo(() => {
+    const query = emailSearch.trim().toLowerCase();
+    return summaries.filter((attempt) => {
+      if (query && !(attempt.studentName ?? "").toLowerCase().includes(query)) return false;
+      if (statusFilter !== "all" && attempt.completionStatus !== statusFilter) return false;
+      return true;
+    });
+  }, [summaries, emailSearch, statusFilter]);
+
+  const hasFilters = Boolean(emailSearch.trim()) || statusFilter !== "all";
+
+  return (
+    <div className="space-y-4">
+      <div className="grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
+        <input
+          type="search"
+          value={emailSearch}
+          onChange={(event) => setEmailSearch(event.target.value)}
+          placeholder="Search by email"
+          aria-label="Search by email"
+          className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-none focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-gray-500 dark:focus:border-brand-800"
+        />
+        <Select
+          value={statusFilter}
+          onChange={setStatusFilter}
+          options={[
+            { value: "all", label: "All Statuses" },
+            { value: "completed", label: "Completed" },
+            { value: "in_progress", label: "In Progress" },
+            { value: "abandoned", label: "Abandoned" },
+          ]}
+        />
+      </div>
+      <p className="text-end text-sm text-muted-foreground">
+        {filtered.length} {filtered.length === 1 ? "attempt" : "attempts"}
+      </p>
+      <CaseAttemptsTable
+        attempts={filtered}
+        showStudent
+        showSession={false}
+        studentLabel="Email"
+        emptyMessage={hasFilters ? "No attempts match these filters." : "No attempts yet for this session."}
+      />
+    </div>
   );
 }

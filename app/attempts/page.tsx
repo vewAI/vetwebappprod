@@ -1,159 +1,242 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/features/auth/services/authService";
 import { getUserAttempts } from "@/features/attempts/services/attemptService";
-import { AttemptCard } from "@/features/attempts/components/attempt-card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Loader2, Search, Filter, Home } from "lucide-react";
-import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
+import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
+import { Select } from "@/features/navigation/components/select";
+import { SortHeader } from "@/features/navigation/components/sort-header";
+import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/features/navigation/components/table";
+import { useTableSort } from "@/features/navigation/hooks/useTableSort";
 import type { AttemptSummary } from "@/features/attempts/models/attempt";
 
-// Temporary UI components until we create the actual ones
-const Select = ({ children, value, onValueChange }: { children: React.ReactNode; value: string; onValueChange: (value: string) => void }) => {
-  const options = React.Children.toArray(children).filter((child) => React.isValidElement(child) && child.type === SelectItem);
+type AttemptSortKey = "case" | "status" | "difficulty" | "date" | "time";
 
-  return (
-    <div className="relative">
-      <div className="flex items-center p-2 border rounded-md bg-background">
-        <Filter className="mr-2 h-4 w-4" />
-        <span>
-          {value === "all"
-            ? "All Statuses"
-            : value === "completed"
-              ? "Completed"
-              : value === "in_progress"
-                ? "In Progress"
-                : value === "abandoned"
-                  ? "Abandoned"
-                  : "Filter by status"}
-        </span>
-      </div>
-      <select value={value} onChange={(e) => onValueChange(e.target.value)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
-        {options}
-      </select>
-    </div>
-  );
+const difficultyRank: Record<string, number> = { Easy: 1, Medium: 2, Hard: 3 };
+const statusRank: Record<AttemptSummary["completionStatus"], number> = {
+  in_progress: 1,
+  completed: 2,
+  abandoned: 3,
 };
-const SelectItem = ({ value, children }: { value: string; children: React.ReactNode }) => <option value={value}>{children}</option>;
 
-export default function AttemptsPage() {
+function formatDate(dateString: string) {
+  return new Date(dateString).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatTimeSpent(seconds: number) {
+  if (seconds < 60) return `${seconds} sec`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes} min`;
+}
+
+function statusLabel(status: AttemptSummary["completionStatus"]) {
+  if (status === "completed") return "Completed";
+  if (status === "in_progress") return "In Progress";
+  return "Abandoned";
+}
+
+function AttemptsPageContent() {
   const { user } = useAuth();
+  const searchParams = useSearchParams();
+  const caseIdParam = searchParams.get("caseId")?.trim() || "";
   const [attempts, setAttempts] = useState<AttemptSummary[]>([]);
-  const [filteredAttempts, setFilteredAttempts] = useState<AttemptSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [caseFilter, setCaseFilter] = useState(caseIdParam || "all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [currentPage, setCurrentPage] = useState(1);
-  const attemptsPerPage = 9; // 3x3 grid on desktop
 
   useEffect(() => {
-    const loadAttemptsAndCases = async () => {
+    const loadAttempts = async () => {
       if (!user) return;
       setIsLoading(true);
       const userAttempts = await getUserAttempts();
       setAttempts(userAttempts);
-      setFilteredAttempts(userAttempts);
       setIsLoading(false);
     };
-    loadAttemptsAndCases();
+    loadAttempts();
   }, [user]);
 
   useEffect(() => {
-    // Apply filters
-    let filtered = [...attempts];
+    if (caseIdParam) setCaseFilter(caseIdParam);
+  }, [caseIdParam]);
 
-    // Apply search filter
-    if (searchQuery) {
-      filtered = filtered.filter(
-        (attempt) =>
-          attempt.title.toLowerCase().includes(searchQuery.toLowerCase()) || attempt.caseTitle.toLowerCase().includes(searchQuery.toLowerCase()),
-      );
+  const caseOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const attempt of attempts) {
+      if (!seen.has(attempt.caseId)) {
+        seen.set(attempt.caseId, attempt.caseTitle || attempt.title);
+      }
     }
+    return [...seen.entries()].map(([value, label]) => ({ value, label }));
+  }, [attempts]);
 
-    // Apply status filter
-    if (statusFilter !== "all") {
-      filtered = filtered.filter((attempt) => attempt.completionStatus === statusFilter);
-    }
+  const filteredAttempts = useMemo(() => {
+    return attempts.filter((attempt) => {
+      if (caseFilter !== "all" && attempt.caseId !== caseFilter) return false;
+      if (statusFilter !== "all" && attempt.completionStatus !== statusFilter) return false;
+      return true;
+    });
+  }, [attempts, caseFilter, statusFilter]);
 
-    setFilteredAttempts(filtered);
-    setCurrentPage(1); // Reset to first page when filters change
-  }, [attempts, searchQuery, statusFilter]);
-
-  // Pagination logic
-  const indexOfLastAttempt = currentPage * attemptsPerPage;
-  const indexOfFirstAttempt = indexOfLastAttempt - attemptsPerPage;
-  const currentAttempts = filteredAttempts.slice(indexOfFirstAttempt, indexOfLastAttempt);
-  const totalPages = Math.ceil(filteredAttempts.length / attemptsPerPage);
-
-  const paginate = (pageNumber: number) => setCurrentPage(pageNumber);
+  const { sort, toggle, sorted: sortedAttempts } = useTableSort<AttemptSummary, AttemptSortKey>(
+    filteredAttempts,
+    (attempt, key) => {
+      if (key === "case") return attempt.caseTitle;
+      if (key === "status") return statusRank[attempt.completionStatus] ?? 0;
+      if (key === "difficulty") return difficultyRank[attempt.caseDifficulty] ?? 0;
+      if (key === "date") return new Date(attempt.createdAt).getTime();
+      return attempt.timeSpentSeconds;
+    },
+    { key: "date", dir: "desc" },
+  );
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <header className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-primary md:text-4xl">My Attempts</h1>
-          <p className="mt-2 text-muted-foreground">View and manage your past case attempts</p>
+    <div className="container mx-auto px-4 pb-8">
+      <Breadcrumb items={[{ label: "Home", href: "/dashboard" }, { label: "My Attempts" }]} />
+      <header className="mb-8 text-center">
+        <h1 className="text-3xl font-bold tracking-tight text-primary md:text-4xl lg:text-5xl">My Attempts</h1>
+        <p className="mt-4 text-xl text-muted-foreground">View and manage your past case attempts</p>
+
+        <div className="mx-auto mt-6 grid w-full max-w-2xl grid-cols-1 gap-3 text-start sm:grid-cols-2">
+          <Select
+            value={caseFilter}
+            onChange={setCaseFilter}
+            options={[{ value: "all", label: "All Cases" }, ...caseOptions]}
+          />
+          <Select
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={[
+              { value: "all", label: "All Statuses" },
+              { value: "completed", label: "Completed" },
+              { value: "in_progress", label: "In Progress" },
+              { value: "abandoned", label: "Abandoned" },
+            ]}
+          />
         </div>
       </header>
-      {/* Filters */}
-      <div className="mb-6 flex flex-col sm:flex-row gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search attempts..." className="pl-9 h-full" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-        </div>
 
-        <div className="w-full sm:w-48">
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="completed">Completed</SelectItem>
-            <SelectItem value="in_progress">In Progress</SelectItem>
-            <SelectItem value="abandoned">Abandoned</SelectItem>
-          </Select>
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
+        <div className="max-w-full overflow-x-auto">
+          <div className="min-w-[720px]">
+            <Table>
+              <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
+                <TableRow>
+                  <SortHeader label="Case" column="case" sort={sort} onSort={toggle} />
+                  <SortHeader label="Status" column="status" sort={sort} onSort={toggle} />
+                  <SortHeader label="Difficulty" column="difficulty" sort={sort} onSort={toggle} />
+                  <SortHeader label="Date" column="date" sort={sort} onSort={toggle} />
+                  <SortHeader label="Time" column="time" sort={sort} onSort={toggle} />
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="px-5 py-8 text-center text-theme-sm text-gray-500 dark:text-gray-400">
+                      Loading attempts...
+                    </TableCell>
+                  </TableRow>
+                ) : sortedAttempts.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="px-5 py-8 text-center text-theme-sm text-gray-500 dark:text-gray-400">
+                      {caseFilter !== "all" || statusFilter !== "all"
+                        ? "No attempts match these filters."
+                        : "You have not attempted a case yet."}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  sortedAttempts.map((attempt) => {
+                    const imageSrc = /^https?:\/\//.test(String(attempt.caseImageUrl ?? ""))
+                      ? String(attempt.caseImageUrl)
+                      : "/placeholder.svg";
+                    const href = `/attempts/${attempt.id}`;
+                    return (
+                      <TableRow
+                        key={attempt.id}
+                        className="relative cursor-pointer hover:bg-brand-50 dark:hover:bg-white/[0.03]"
+                      >
+                        <TableCell className="px-5 py-4 text-start sm:px-6">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 overflow-hidden rounded-full">
+                              <Image src={imageSrc} alt="" width={40} height={40} className="h-10 w-10 object-cover" />
+                            </div>
+                            <div>
+                              <Link
+                                href={href}
+                                className="block text-theme-sm font-medium text-gray-800 after:absolute after:inset-0 after:z-10 dark:text-white/90"
+                              >
+                                {attempt.caseTitle}
+                              </Link>
+                              <span className="line-clamp-2 max-w-md text-theme-xs text-gray-500 dark:text-gray-400">
+                                {attempt.title}
+                              </span>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-start text-theme-sm text-gray-500 dark:text-gray-400">
+                          <Badge
+                            variant={
+                              attempt.completionStatus === "completed"
+                                ? "success"
+                                : attempt.completionStatus === "in_progress"
+                                  ? "warning"
+                                  : "destructive"
+                            }
+                            className={attempt.completionStatus === "abandoned" ? "text-white" : undefined}
+                          >
+                            {statusLabel(attempt.completionStatus)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-start text-theme-sm text-gray-500 dark:text-gray-400">
+                          <Badge
+                            variant={
+                              attempt.caseDifficulty === "Easy"
+                                ? "success"
+                                : attempt.caseDifficulty === "Medium"
+                                  ? "warning"
+                                  : "destructive"
+                            }
+                            className={attempt.caseDifficulty === "Hard" ? "text-white" : undefined}
+                          >
+                            {attempt.caseDifficulty}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-start text-theme-sm text-gray-500 dark:text-gray-400">
+                          {formatDate(attempt.createdAt)}
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-theme-sm text-gray-500 dark:text-gray-400">
+                          {formatTimeSpent(attempt.timeSpentSeconds)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       </div>
-
-      {isLoading ? (
-        <div className="flex justify-center items-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-primary mr-2" />
-          <span>Loading attempts...</span>
-        </div>
-      ) : filteredAttempts.length > 0 ? (
-        <>
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {currentAttempts.map((attempt) => {
-              return <AttemptCard key={attempt.id} attempt={attempt} />;
-            })}
-          </div>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex justify-center mt-8">
-              <nav className="flex space-x-2" aria-label="Pagination">
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                  <Button
-                    key={page}
-                    variant={currentPage === page ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => paginate(page)}
-                    className="w-10 h-10"
-                  >
-                    {page}
-                  </Button>
-                ))}
-              </nav>
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="text-center py-12 border rounded-lg">
-          <p className="text-lg mb-4">No attempts found</p>
-          <p className="text-muted-foreground mb-6">
-            {searchQuery || statusFilter !== "all" ? "Try adjusting your filters" : "Use the 'Browse Cases' button above to start a new case"}
-          </p>
-        </div>
-      )}
     </div>
+  );
+}
+
+export default function AttemptsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="container mx-auto px-4 pb-8 text-center text-muted-foreground">Loading attempts...</div>
+      }
+    >
+      <AttemptsPageContent />
+    </Suspense>
   );
 }

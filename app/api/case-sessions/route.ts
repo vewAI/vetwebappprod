@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/app/api/_lib/auth";
 import {
+  CASE_SESSION_SELECT,
+  attachCreatorNames,
+  fetchProfileYearGroup,
   mapRowToCaseSession,
   matchesSessionStatusFilter,
   normalizeAccessCode,
@@ -16,15 +19,22 @@ export async function GET(request: Request) {
   const caseId = url.searchParams.get("caseId") ?? undefined;
   const statusParam = url.searchParams.get("status") ?? "all";
   const mine = url.searchParams.get("mine") === "true";
+  const yearGroupId = url.searchParams.get("yearGroupId")?.trim() || undefined;
   const q = (url.searchParams.get("q") ?? "").trim().toLowerCase();
 
   const supabase = auth.adminSupabase ?? auth.supabase;
+  const profile = await fetchProfileYearGroup(supabase, auth.user.id);
+  if (profile.error) {
+    return NextResponse.json({ error: profile.error.message }, { status: 500 });
+  }
+
+  if (auth.role === "student" && !profile.yearGroupId) {
+    return NextResponse.json({ sessions: [] });
+  }
 
   let query = supabase
     .from("case_sessions")
-    .select(
-      "id, case_id, created_by, name, friendly_name, description, access_code, start_at, end_at, attempt_limit_per_student, created_at, updated_at, cases(id, title, species, difficulty, image_url)"
-    )
+    .select(CASE_SESSION_SELECT)
     .order("start_at", { ascending: false });
 
   if (caseId) {
@@ -33,6 +43,12 @@ export async function GET(request: Request) {
 
   if (mine) {
     query = query.eq("created_by", auth.user.id);
+  }
+
+  if (auth.role === "student") {
+    query = query.eq("year_group_id", profile.yearGroupId);
+  } else if (yearGroupId) {
+    query = query.eq("year_group_id", yearGroupId);
   }
 
   const { data, error } = await query;
@@ -65,8 +81,13 @@ export async function GET(request: Request) {
     });
   }
 
+  const sessions = await attachCreatorNames(
+    supabase,
+    rows.map(mapRowToCaseSession)
+  );
+
   return NextResponse.json({
-    sessions: rows.map(mapRowToCaseSession),
+    sessions,
   });
 }
 
@@ -97,10 +118,11 @@ export async function POST(request: Request) {
     body.attemptLimitPerStudent == null || body.attemptLimitPerStudent === ""
       ? null
       : Number(body.attemptLimitPerStudent);
+  const yearGroupId = typeof body.yearGroupId === "string" ? body.yearGroupId.trim() : "";
 
-  if (!caseId || !name || !friendlyName || !startAt || !endAt) {
+  if (!caseId || !name || !friendlyName || !startAt || !endAt || !yearGroupId) {
     return NextResponse.json(
-      { error: "caseId, name, friendlyName, startAt, and endAt are required" },
+      { error: "caseId, name, friendlyName, startAt, endAt, and yearGroupId are required" },
       { status: 400 }
     );
   }
@@ -118,9 +140,9 @@ export async function POST(request: Request) {
   }
 
   const now = new Date();
-  if (start < now) {
+  if (end <= now) {
     return NextResponse.json(
-      { error: "startAt must be in the future" },
+      { error: "endAt must be in the future" },
       { status: 400 }
     );
   }
@@ -139,6 +161,28 @@ export async function POST(request: Request) {
 
   const supabase = auth.adminSupabase ?? auth.supabase;
 
+  const { data: yearGroup, error: yearError } = await supabase
+    .from("year_groups")
+    .select("id, institution_id")
+    .eq("id", yearGroupId)
+    .maybeSingle();
+  if (yearError) {
+    return NextResponse.json({ error: yearError.message }, { status: 500 });
+  }
+  if (!yearGroup) {
+    return NextResponse.json({ error: "Year group not found" }, { status: 400 });
+  }
+
+  if (auth.role === "professor") {
+    const profile = await fetchProfileYearGroup(supabase, auth.user.id);
+    if (profile.error) {
+      return NextResponse.json({ error: profile.error.message }, { status: 500 });
+    }
+    if (!profile.institutionId || profile.institutionId !== yearGroup.institution_id) {
+      return NextResponse.json({ error: "Year group is not valid for your institution" }, { status: 400 });
+    }
+  }
+
   const { data, error } = await supabase
     .from("case_sessions")
     .insert({
@@ -151,10 +195,9 @@ export async function POST(request: Request) {
       start_at: start.toISOString(),
       end_at: end.toISOString(),
       attempt_limit_per_student: attemptLimitPerStudent,
+      year_group_id: yearGroupId,
     })
-    .select(
-      "id, case_id, created_by, name, friendly_name, description, access_code, start_at, end_at, attempt_limit_per_student, created_at, updated_at, cases(id, title, species, difficulty, image_url)"
-    )
+    .select(CASE_SESSION_SELECT)
     .single();
 
   if (error) {

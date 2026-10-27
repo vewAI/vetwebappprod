@@ -2,26 +2,17 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { fetchCases } from "@/features/case-selection/services/caseService";
 import type { Case } from "@/features/case-selection/models/case";
 import { createSession } from "../services/caseSessionService";
+import { fromDatetimeLocalValue, toDatetimeLocalValue } from "../utils/datetimeLocal";
+import { getAccessToken } from "@/lib/auth-headers";
+import { useAuth } from "@/features/auth/services/authService";
+import type { YearGroup } from "@/features/year-groups/models/yearGroup";
 import { Loader2 } from "lucide-react";
-
-function toDatetimeLocalValue(isoOrDate: Date): string {
-  const d = isoOrDate;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function fromDatetimeLocalValue(s: string): string {
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toISOString();
-}
 
 type Props = {
   initialCaseId?: string | null;
@@ -29,6 +20,7 @@ type Props = {
 
 export function CreateCaseSessionForm({ initialCaseId }: Props) {
   const router = useRouter();
+  const { role } = useAuth();
   const [search, setSearch] = useState("");
   const [caseResults, setCaseResults] = useState<Case[]>([]);
   const [selectedCaseId, setSelectedCaseId] = useState(initialCaseId ?? "");
@@ -38,13 +30,34 @@ export function CreateCaseSessionForm({ initialCaseId }: Props) {
   const [accessCode, setAccessCode] = useState("");
   const [attemptLimit, setAttemptLimit] = useState("");
   const now = new Date();
-  const defaultStart = new Date(now.getTime() + 60 * 60 * 1000);
+  const defaultStart = now;
   const defaultEnd = new Date(now.getTime() + 2 * 60 * 60 * 1000);
   const [startLocal, setStartLocal] = useState(toDatetimeLocalValue(defaultStart));
   const [endLocal, setEndLocal] = useState(toDatetimeLocalValue(defaultEnd));
+  const [yearGroups, setYearGroups] = useState<YearGroup[]>([]);
+  const [yearGroupId, setYearGroupId] = useState("");
   const [loadingCases, setLoadingCases] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getAccessToken();
+        const res = await fetch("/api/year-groups", {
+          headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!cancelled) setYearGroups(body.yearGroups ?? []);
+      } catch {
+        if (!cancelled) setYearGroups([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (initialCaseId) setSelectedCaseId(initialCaseId);
@@ -85,6 +98,10 @@ export function CreateCaseSessionForm({ initialCaseId }: Props) {
       setError("Session name and friendly name are required");
       return;
     }
+    if (!yearGroupId) {
+      setError("Select a year group");
+      return;
+    }
     const startAt = fromDatetimeLocalValue(startLocal);
     const endAt = fromDatetimeLocalValue(endLocal);
     if (!startAt || !endAt) {
@@ -112,6 +129,7 @@ export function CreateCaseSessionForm({ initialCaseId }: Props) {
         startAt,
         endAt,
         attemptLimitPerStudent,
+        yearGroupId,
       });
       router.push(`/professor/sessions/${session.id}`);
     } catch (err) {
@@ -123,12 +141,6 @@ export function CreateCaseSessionForm({ initialCaseId }: Props) {
 
   return (
     <form onSubmit={submit} className="max-w-xl space-y-6">
-      <div className="flex items-center gap-2">
-        <Button type="button" variant="ghost" size="sm" asChild>
-          <Link href="/professor/sessions">← Sessions</Link>
-        </Button>
-      </div>
-      <h1 className="text-2xl font-bold">Create case session</h1>
 
       <div className="space-y-2">
         <Label>Find case</Label>
@@ -151,6 +163,30 @@ export function CreateCaseSessionForm({ initialCaseId }: Props) {
               {c.title} ({c.species})
             </option>
           ))}
+        </select>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="year-group">Year group</Label>
+        <select
+          id="year-group"
+          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          value={yearGroupId}
+          onChange={(e) => setYearGroupId(e.target.value)}
+          required
+        >
+          <option value="">— Select year group —</option>
+          {yearGroups.map((group) => {
+            const label =
+              role === "admin" && group.institutionName
+                ? `${group.institutionName} — ${group.name}`
+                : group.name;
+            return (
+              <option key={group.id} value={group.id}>
+                {label}
+              </option>
+            );
+          })}
         </select>
       </div>
 
@@ -234,7 +270,7 @@ export function CreateCaseSessionForm({ initialCaseId }: Props) {
         </p>
       )}
 
-      <Button type="submit" variant="sessions" disabled={submitting}>
+      <Button type="submit" variant="default" disabled={submitting}>
         {submitting ? (
           <>
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />

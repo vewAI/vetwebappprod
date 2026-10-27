@@ -20,6 +20,7 @@ import { AnalysisLoadingOverlay } from "@/features/case-intake/components/Analys
 import { caseVerificationService } from "@/features/case-intake/services/caseVerificationService";
 import type { CaseVerificationResult } from "@/features/case-intake/models/caseVerification";
 import { useCaseEntryDraft } from "@/features/cases/hooks/useCaseEntryDraft";
+import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
 
 type IntakeCompletionItem = {
   fieldKey: string;
@@ -656,15 +657,43 @@ Remain collaborative, use everyday language, and avoid offering your own medical
     }
   }
 
+  const pageHeader = (
+    <>
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <Breadcrumb
+          className="mb-0"
+          items={[
+            { label: "Home", href: "/dashboard" },
+            { label: "Admin", href: "/admin" },
+            { label: "Add New Case" },
+          ]}
+        />
+        {lastAutoSave && <span className="text-xs text-muted-foreground">Draft saved {new Date(lastAutoSave).toLocaleTimeString()}</span>}
+      </div>
+      <header className="mb-8 text-center">
+        <h1 className="text-3xl font-bold tracking-tight text-primary md:text-4xl lg:text-5xl">Add New Case</h1>
+        <p className="mt-4 text-xl text-muted-foreground">Create a new patient scenario for the case library.</p>
+      </header>
+    </>
+  );
+
   if (authLoading) {
-    return <div className="max-w-2xl mx-auto p-8 text-sm text-muted-foreground">Checking permissions...</div>;
+    return (
+      <div className="container mx-auto px-4 pb-8">
+        {pageHeader}
+        <p className="text-center text-sm text-muted-foreground">Checking permissions...</p>
+      </div>
+    );
   }
 
   if (!canCreate) {
     return (
-      <div className="max-w-2xl mx-auto p-8 space-y-3">
-        <h1 className="text-2xl font-bold text-red-600">Access denied</h1>
-        <p className="text-sm text-muted-foreground">Only professors and admins can create cases.</p>
+      <div className="container mx-auto px-4 pb-8">
+        {pageHeader}
+        <div className="text-center">
+          <h2 className="text-xl font-bold text-destructive">Access denied</h2>
+          <p className="mt-2 text-muted-foreground">Only professors and admins can create cases.</p>
+        </div>
       </div>
     );
   }
@@ -761,11 +790,9 @@ Remain collaborative, use everyday language, and avoid offering your own medical
   };
 
   return (
-    <div className="max-w-3xl mx-auto p-8 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Add New Case</h1>
-        {lastAutoSave && <span className="text-xs text-muted-foreground">Draft saved {new Date(lastAutoSave).toLocaleTimeString()}</span>}
-      </div>
+    <div className="container mx-auto px-4 pb-8">
+      {pageHeader}
+      <div className="mx-auto max-w-3xl space-y-6">
 
       {draftRestored && draft.hasDraft && (
         <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
@@ -1023,7 +1050,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
               Download TXT
             </Button>
             <Button type="button" asChild variant="outline">
-              <Link href="/case-viewer">Edit Saved Case</Link>
+              <Link href={`/case-viewer?id=${encodeURIComponent(savedCaseId)}`}>Edit Saved Case</Link>
             </Button>
             <Button type="button" asChild variant="outline">
               <Link href="/admin/case-stage-manager">Edit Stages</Link>
@@ -1113,6 +1140,7 @@ Remain collaborative, use everyday language, and avoid offering your own medical
       </Dialog>
 
       {nurseForModal && <NurseIntroModal open={showNurseModal} nurse={nurseForModal} onClose={() => setShowNurseModal(false)} />}
+      </div>
     </div>
   );
 }

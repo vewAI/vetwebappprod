@@ -107,7 +107,7 @@ export function JoinSessionDialog({
           </Button>
           <Button
             type="button"
-            variant="sessions"
+            variant="default"
             onClick={() => void submit()}
             disabled={loading || (needsCode && !code.trim())}
           >

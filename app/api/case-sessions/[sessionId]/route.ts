@@ -1,13 +1,36 @@
 import { NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireUser } from "@/app/api/_lib/auth";
 import {
+  CASE_SESSION_SELECT,
   fetchCaseSessionRow,
+  fetchProfileYearGroup,
   mapRowToCaseSession,
   normalizeAccessCode,
+  studentCanAccessSession,
   type CaseSessionDbRow,
 } from "@/app/api/_lib/caseSessions";
 
 type RouteContext = { params: Promise<{ sessionId: string }> };
+
+async function resolveCreatorLabel(supabase: SupabaseClient, createdBy: string): Promise<string | undefined> {
+  const { data: byUserId } = await supabase
+    .from("profiles")
+    .select("full_name, email")
+    .eq("user_id", createdBy)
+    .maybeSingle();
+  const fromUserId = byUserId?.full_name?.trim() || byUserId?.email?.trim();
+  if (fromUserId) return fromUserId;
+
+  const { data: byId } = await supabase.from("profiles").select("full_name, email").eq("id", createdBy).maybeSingle();
+  const fromId = byId?.full_name?.trim() || byId?.email?.trim();
+  if (fromId) return fromId;
+
+  const { data: authUser } = await supabase.auth.admin.getUserById(createdBy);
+  const metaName =
+    typeof authUser.user?.user_metadata?.full_name === "string" ? authUser.user.user_metadata.full_name.trim() : "";
+  return metaName || authUser.user?.email || undefined;
+}
 
 export async function GET(request: Request, context: RouteContext) {
   const auth = await requireUser(request);
@@ -24,7 +47,19 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ session: mapRowToCaseSession(data) });
+  const session = mapRowToCaseSession(data);
+  if (auth.role === "student") {
+    const profile = await fetchProfileYearGroup(supabase, auth.user.id);
+    if (profile.error) {
+      return NextResponse.json({ error: profile.error.message }, { status: 500 });
+    }
+    if (!studentCanAccessSession(auth.role, profile.yearGroupId, session.yearGroupId)) {
+      return NextResponse.json({ error: "This session is not available for your year group" }, { status: 403 });
+    }
+  }
+  session.createdByName = await resolveCreatorLabel(auth.adminSupabase ?? supabase, data.created_by);
+
+  return NextResponse.json({ session });
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -107,9 +142,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     .from("case_sessions")
     .update(patch)
     .eq("id", sessionId)
-    .select(
-      "id, case_id, created_by, name, friendly_name, description, access_code, start_at, end_at, attempt_limit_per_student, created_at, updated_at, cases(id, title, species, difficulty, image_url)"
-    )
+    .select(CASE_SESSION_SELECT)
     .single();
 
   if (error) {

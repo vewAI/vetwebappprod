@@ -7,10 +7,10 @@ type ProfileCardProps = {
 };
 
 export function ProfileCard({ profile }: ProfileCardProps) {
-  const displayName = profile.fullName || "Not Assigned";
   const displayRole = profile.role
     ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1)
     : "";
+  const displayName = profile.fullName?.trim() || profile.email || displayRole;
 
   return (
     <Card
@@ -45,10 +45,12 @@ export function ProfileCard({ profile }: ProfileCardProps) {
       </div>
       <div className="min-w-0">
         {displayRole && <div className="text-sm">{displayRole}</div>}
-        <div className="text-sm font-semibold truncate">{displayName}</div>
-        {profile.email && (
+        {displayName && displayName !== displayRole ? (
+          <div className="text-sm font-semibold truncate">{displayName}</div>
+        ) : null}
+        {profile.email && profile.email !== displayName ? (
           <div className="text-xs truncate">{profile.email}</div>
-        )}
+        ) : null}
       </div>
     </Card>
   );

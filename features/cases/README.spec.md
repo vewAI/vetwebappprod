@@ -50,12 +50,30 @@ interface TimepointTemplate {
 - Output: updated `CaseTimepoint`
 
 ## Component Tree
+- `CaseLibrary`
+  - Title, discipline/species `Select` filters, sortable table
+  - `getCaseHref(case)` sets the row destination (`/case/{id}/instructions` on `/cases`, `/case-viewer?id=` on `/case-viewer`)
 - `TimeProgressionEditor`
   - Template selector (`select`) for stage templates
   - `Add Stage` button
   - Existing timeline list of editable `CaseTimepoint` cards
 
-## Critical Rules
+## Case Viewer
+Admins pick a case at `/case-viewer` from the same table as `/cases`, then review or edit it at `/case-viewer?id={caseId}`.
+
+### API Contract
+#### GET /api/cases?id={caseId}
+- Admin only.
+- Output: a one-item array of the matching case, including archived cases.
+- 404 when the id is missing from the database.
+
+### Critical Rules
+- Non-admins cannot view `/case-viewer`.
+- `/case-viewer` with no `id` uses the `/cases` table. Row links go to `/case-viewer?id={caseId}`.
+- With `?id=`, breadcrumb is Home > Admin > Review and Edit Cases > case id. The page title is the case title and the subtitle is the case id. The listing title is Review and Edit Cases.
+- `/cases` has no edit-case link. Rows open case instructions.
+
+## Timepoint Critical Rules
 - Must support unlimited stage/timepoint creation.
 - Template selection only pre-fills values; author can edit any field afterwards.
 - Keep current API routes; no backend migration required for MVP.

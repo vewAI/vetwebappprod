@@ -17,9 +17,12 @@ import type { Case } from "@/features/case-selection/models/case";
 
 type CaseCardProps = {
   caseItem: Case;
+  href?: string;
+  titleClassName?: string;
 };
 
-export function CaseCard({ caseItem }: CaseCardProps) {
+export function CaseCard({ caseItem, href, titleClassName }: CaseCardProps) {
+  const caseHref = href ?? `/case/${caseItem.id}/instructions`;
   const imageSrc =
     /^https?:\/\//.test(String(caseItem.imageUrl ?? ""))
       ? String(caseItem.imageUrl)
@@ -63,7 +66,7 @@ export function CaseCard({ caseItem }: CaseCardProps) {
         )}
       </div>
       <CardHeader>
-        <CardTitle>{caseItem.title}</CardTitle>
+        <CardTitle className={titleClassName}>{caseItem.title}</CardTitle>
         <CardDescription>
           {caseItem.species} - {caseItem.category}
         </CardDescription>
@@ -74,7 +77,7 @@ export function CaseCard({ caseItem }: CaseCardProps) {
         </p>
       </CardContent>
       <CardFooter>
-        <Link href={`/case/${caseItem.id}/instructions`} className="w-full">
+        <Link href={caseHref} className="w-full">
           <Button className="w-full">
             View Case
             <ChevronRight className="ml-2 h-4 w-4" />

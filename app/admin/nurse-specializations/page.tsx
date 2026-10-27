@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2, Plus, Trash2, Edit, Save, X } from "lucide-react";
 import { getAccessToken } from "@/lib/auth-headers";
+import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
 
 type Skill = {
   name: string;
@@ -160,30 +161,34 @@ export default function NurseSpecializationsPage() {
     setEditForm(emptySpec());
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Nurse Specializations</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Manage species-specific veterinary nurse personas with clinical knowledge bases.
-          </p>
-        </div>
+    <div className="container mx-auto px-4 pb-8">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <Breadcrumb
+          className="mb-0"
+          items={[
+            { label: "Home", href: "/dashboard" },
+            { label: "Admin", href: "/admin" },
+            { label: "Nurse Specializations" },
+          ]}
+        />
         <Button onClick={() => { setEditForm(emptySpec()); setCreateDialogOpen(true); }}>
           <Plus className="h-4 w-4 mr-2" /> Add Species
         </Button>
       </div>
 
-      {/* Species Cards */}
-      {specs.length === 0 ? (
+      <header className="mb-8 text-center">
+        <h1 className="text-3xl font-bold tracking-tight text-primary md:text-4xl lg:text-5xl">Nurse Specializations</h1>
+        <p className="mt-4 text-xl text-muted-foreground">
+          Manage species-specific veterinary nurse personas with clinical knowledge bases.
+        </p>
+      </header>
+
+      {loading ? (
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : specs.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           No nurse specializations found. Run the seed script or add species above.
         </div>

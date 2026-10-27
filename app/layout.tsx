@@ -4,9 +4,9 @@ import "./globals.css";
 import { AuthProvider } from "@/features/auth/services/authService";
 import { ProtectedRoute } from "@/features/auth/components/protected-route";
 import { SpeechDeviceProvider } from "@/features/speech/context/audio-device-context";
-import { FontSizeProvider } from "@/features/navigation/context/FontSizeContext";
 import MobileSpeechControls from "@/features/speech/components/mobile-speech-controls";
 import MainLayout from "@/components/layout/main-layout";
+import { ThemeProvider } from "@/features/navigation/context/ThemeContext";
 
 const geistSans = GeistSans;
 const geistMono = GeistMono;
@@ -34,8 +34,8 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full scroll-smooth scroll-pt-20">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased h-full flex flex-col`}>
-        <AuthProvider>
-          <FontSizeProvider>
+        <ThemeProvider>
+          <AuthProvider>
             <SpeechDeviceProvider>
               {process.env.NODE_ENV === "production" || process.env.NEXT_PUBLIC_ENABLE_AUTH_PROTECTION === "true" ? (
                 <ProtectedRoute>
@@ -46,8 +46,8 @@ export default function RootLayout({
                 <MainLayout>{children}</MainLayout>
               )}
             </SpeechDeviceProvider>
-          </FontSizeProvider>
-        </AuthProvider>
+          </AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

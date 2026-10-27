@@ -5,8 +5,17 @@ import { useRouter, usePathname } from "next/navigation";
 import { useEffect, ReactNode } from "react";
 import { LoadingScreen } from "@/components/ui/loading-screen";
 
+function isAdminOnlyPath(pathname: string) {
+  return pathname.startsWith("/admin") || pathname === "/case-viewer";
+}
+
+function needsYearGroup(pathname: string, role: string | null, yearGroupId: string | null) {
+  if (role !== "student" || yearGroupId) return false;
+  return pathname.startsWith("/case-sessions/");
+}
+
 export function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { user, loading, isAdmin, profileLoading } = useAuth();
+  const { user, loading, isAdmin, profileLoading, role, yearGroupId, forcePasswordChange } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -27,12 +36,20 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
       router.push("/login");
     }
 
-    // If user is authenticated but not admin and trying to access any /admin path, redirect
-    if (user && pathname.startsWith("/admin") && !isAdmin) {
+    // If user is authenticated but not admin and trying to access an admin-only path, redirect
+    if (user && isAdminOnlyPath(pathname) && !isAdmin) {
       console.log("Authenticated but not admin, redirecting away from admin area");
       router.push("/dashboard");
     }
-  }, [user, loading, profileLoading, router, pathname, isAdmin]);
+
+    if (user && !forcePasswordChange && needsYearGroup(pathname, role, yearGroupId)) {
+      router.push("/select-year-group");
+    }
+
+    if (user && role === "student" && yearGroupId && pathname === "/select-year-group") {
+      router.push("/student");
+    }
+  }, [user, loading, profileLoading, router, pathname, isAdmin, role, yearGroupId, forcePasswordChange]);
 
   // If on login page and authenticated, redirect to dashboard
   useEffect(() => {
@@ -52,12 +69,20 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
     return <>{children}</>;
   }
 
-  // If path is within the admin area, ensure user is admin
-  if (pathname.startsWith("/admin")) {
+  // If path is admin-only, ensure user is admin
+  if (isAdminOnlyPath(pathname)) {
     if (!loading && user && isAdmin) {
       return <>{children}</>;
     }
     // either still loading or not allowed
+    return <LoadingScreen />;
+  }
+
+  if (user && !forcePasswordChange && needsYearGroup(pathname, role, yearGroupId)) {
+    return <LoadingScreen />;
+  }
+
+  if (user && role === "student" && yearGroupId && pathname === "/select-year-group") {
     return <LoadingScreen />;
   }
 

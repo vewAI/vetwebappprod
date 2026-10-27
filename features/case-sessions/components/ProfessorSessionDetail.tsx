@@ -1,16 +1,19 @@
 "use client";
 
 import React, { useState } from "react";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { deriveStatus } from "../models/caseSession";
 import { useCaseSessionDetail } from "../hooks/useCaseSessionDetail";
 import { generateSessionReport } from "../services/caseSessionService";
 import { SessionCasePanel } from "./SessionCasePanel";
 import { SessionInfoPanel } from "./SessionInfoPanel";
 import { ProfessorSessionAttemptsSection } from "./ProfessorSessionAttemptsSection";
-import { JoinSessionDialog } from "./JoinSessionDialog";
-import { Loader2, Play, FileText } from "lucide-react";
+import { SessionAttemptsBarChart } from "./charts/SessionAttemptsBarChart";
+import { SessionAttemptStatusPie } from "./charts/SessionAttemptStatusPie";
+import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
+import { DefaultTabs } from "@/features/navigation/components/tabs";
+import { Loader2, FileText } from "lucide-react";
 
 type Props = {
   sessionId: string;
@@ -18,7 +21,6 @@ type Props = {
 
 export function ProfessorSessionDetail({ sessionId }: Props) {
   const { session, attempts, loading, error } = useCaseSessionDetail(sessionId);
-  const [joinOpen, setJoinOpen] = useState(false);
 
   // F6.5: AI group debrief report
   const [reportOpen, setReportOpen] = useState(false);
@@ -41,22 +43,39 @@ export function ProfessorSessionDetail({ sessionId }: Props) {
     }
   };
 
+  const [activeTab, setActiveTab] = useState<"information" | "attempts">("information");
   const completedCount = attempts.filter((a) => a.completionStatus === "completed").length;
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 py-12 text-muted-foreground">
-        <Loader2 className="h-6 w-6 animate-spin" />
-        Loading session…
-      </div>
+      <>
+        <Breadcrumb
+          items={[
+            { label: "Home", href: "/dashboard" },
+            { label: "Case Sessions", href: "/professor/sessions" },
+            { label: "Session" },
+          ]}
+        />
+        <div className="flex items-center gap-2 py-12 text-muted-foreground">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          Loading session…
+        </div>
+      </>
     );
   }
 
   if (error || !session) {
     return (
-      <div className="py-12 text-center text-destructive">
-        {error ?? "Session not found"}
-      </div>
+      <>
+        <Breadcrumb
+          items={[
+            { label: "Home", href: "/dashboard" },
+            { label: "Case Sessions", href: "/professor/sessions" },
+            { label: "Session not found" },
+          ]}
+        />
+        <div className="py-12 text-center text-destructive">{error ?? "Session not found"}</div>
+      </>
     );
   }
 
@@ -64,27 +83,23 @@ export function ProfessorSessionDetail({ sessionId }: Props) {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-wrap items-center gap-4">
-        <Button variant="ghost" size="sm" asChild>
-          <Link href="/professor/sessions">← All sessions</Link>
-        </Button>
-        {st === "active" && (
-          <Button variant="sessions" onClick={() => setJoinOpen(true)}>
-            <Play className="mr-2 h-4 w-4" />
-            Start attempt (preview)
-          </Button>
-        )}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <Button onClick={handleGenerateReport} disabled={reportLoading || completedCount === 0}>
-          {reportLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
-          AI group report {completedCount > 0 ? `(${completedCount} completed)` : ""}
-        </Button>
-        {completedCount === 0 && (
-          <p className="text-xs text-muted-foreground">Available once at least one student completes the case.</p>
-        )}
-      </div>
+      <Breadcrumb
+        items={[
+          { label: "Home", href: "/dashboard" },
+          { label: "Case Sessions", href: "/professor/sessions" },
+          { label: session.friendlyName },
+        ]}
+      />
+      <header className="mb-8 text-center">
+        <h1 className="text-3xl font-bold tracking-tight text-primary md:text-4xl lg:text-5xl">
+          {session.friendlyName}
+        </h1>
+        <p className="mt-4 text-xl text-muted-foreground">{session.case?.title ?? session.name}</p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Created {new Date(session.createdAt).toLocaleString()}
+          {session.createdByName ? ` by ${session.createdByName}` : ""}
+        </p>
+      </header>
 
       {reportOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
@@ -115,19 +130,63 @@ export function ProfessorSessionDetail({ sessionId }: Props) {
         </div>
       )}
 
-      <div className="grid gap-8 lg:grid-cols-[2fr_1fr]">
-        <SessionCasePanel session={session} />
-        <SessionInfoPanel session={session} status={st} variant="professor" />
-      </div>
+      <DefaultTabs
+        items={[
+          { id: "information", label: "Session Information" },
+          { id: "attempts", label: "Attempts", badge: attempts.length },
+        ]}
+        value={activeTab}
+        onChange={setActiveTab}
+      >
+        {activeTab === "information" && (
+          <div className="space-y-8">
+            <div className="grid gap-8 lg:grid-cols-2">
+              <SessionInfoPanel session={session} status={st} variant="professor" />
+              <SessionCasePanel
+                session={session}
+                href={`/case/${session.caseId}`}
+                titleClassName="text-xl font-semibold text-primary"
+              />
+            </div>
 
-      <ProfessorSessionAttemptsSection attempts={attempts} />
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-xl font-semibold text-primary">AI Group Report</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-wrap items-center gap-3">
+                <Button onClick={handleGenerateReport} disabled={reportLoading || completedCount === 0}>
+                  {reportLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
+                  AI group report {completedCount > 0 ? `(${completedCount} completed)` : ""}
+                </Button>
+                {completedCount === 0 && (
+                  <p className="text-xs text-muted-foreground">Available once at least one student completes the case.</p>
+                )}
+              </CardContent>
+            </Card>
 
-      <JoinSessionDialog
-        open={joinOpen}
-        onOpenChange={setJoinOpen}
-        session={session}
-        caseId={session.caseId}
-      />
+            <div className="grid gap-6 md:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-xl font-semibold text-primary">Attempts Per Day</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <SessionAttemptsBarChart attempts={attempts} />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-xl font-semibold text-primary">Attempt Status</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <SessionAttemptStatusPie attempts={attempts} />
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "attempts" && <ProfessorSessionAttemptsSection session={session} attempts={attempts} />}
+      </DefaultTabs>
     </div>
   );
 }

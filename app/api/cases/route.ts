@@ -123,7 +123,21 @@ export async function GET(req: Request) {
   }
   const { supabase } = auth;
   const url = new URL(req.url);
+  const caseId = url.searchParams.get("id")?.trim() ?? "";
   const includeArchived = url.searchParams.get("includeArchived") === "true";
+
+  if (caseId) {
+    const { data, error } = await supabase.from("cases").select("*").eq("id", caseId).limit(1);
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    const row = Array.isArray(data) && data.length > 0 ? data[0] : null;
+    if (!row) {
+      return NextResponse.json({ error: "Case not found" }, { status: 404 });
+    }
+    return NextResponse.json([row]);
+  }
+
   const { data, error } = await supabase.from("cases").select("*").order("created_at", { ascending: false }).limit(200);
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

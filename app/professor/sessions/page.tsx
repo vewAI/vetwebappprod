@@ -1,18 +1,22 @@
 "use client";
 
-import React from "react";
+import { Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/features/auth/services/authService";
 import { SessionList } from "@/features/case-sessions/components/SessionList";
+import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
 import { Skeleton } from "@/components/ui/skeleton";
 
-export default function ProfessorSessionsPage() {
+function ProfessorSessionsContent() {
   const { role, loading } = useAuth();
+  const searchParams = useSearchParams();
+  const caseId = searchParams.get("caseId")?.trim() || undefined;
 
   if (loading) {
     return (
-      <div className="container mx-auto px-4 py-8 space-y-4">
+      <div className="container mx-auto space-y-4 px-4 pb-8">
         <Skeleton className="h-9 w-48" />
         <Skeleton className="h-64 w-full" />
       </div>
@@ -21,34 +25,44 @@ export default function ProfessorSessionsPage() {
 
   if (role !== "professor" && role !== "admin") {
     return (
-      <div className="container mx-auto px-4 py-12 text-center">
+      <div className="container mx-auto px-4 pb-8 text-center">
+        <Breadcrumb items={[{ label: "Home", href: "/dashboard" }, { label: "Case Sessions" }]} />
         <h1 className="text-xl font-bold text-destructive">Access denied</h1>
-        <p className="text-muted-foreground mt-2">
-          Only professors and admins can manage sessions.
-        </p>
+        <p className="mt-2 text-muted-foreground">Only professors and admins can manage sessions.</p>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-4xl">
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
-        <div>
-          <h1 className="text-2xl font-bold">Case sessions</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Search, filter, and open session dashboards.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" asChild>
-            <Link href="/professor">Dashboard</Link>
-          </Button>
-          <Button variant="sessions" asChild>
-            <Link href="/professor/sessions/new">Create session</Link>
+    <div className="container mx-auto px-4 pb-8">
+      <Breadcrumb items={[{ label: "Home", href: "/dashboard" }, { label: "Case Sessions" }]} />
+      <header className="mb-8 text-center">
+        <h1 className="text-3xl font-bold tracking-tight text-primary md:text-4xl lg:text-5xl">Case Sessions</h1>
+        <p className="mt-4 text-xl text-muted-foreground">Filter sessions and open a session dashboard.</p>
+        <div className="mt-4">
+          <Button asChild>
+            <Link href={caseId ? `/professor/sessions/new?caseId=${encodeURIComponent(caseId)}` : "/professor/sessions/new"}>
+              Create session
+            </Link>
           </Button>
         </div>
-      </div>
-      <SessionList />
+      </header>
+      <SessionList initialCaseId={caseId} />
     </div>
+  );
+}
+
+export default function ProfessorSessionsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="container mx-auto space-y-4 px-4 pb-8">
+          <Skeleton className="h-9 w-48" />
+          <Skeleton className="h-64 w-full" />
+        </div>
+      }
+    >
+      <ProfessorSessionsContent />
+    </Suspense>
   );
 }

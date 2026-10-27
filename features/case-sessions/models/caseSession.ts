@@ -4,6 +4,7 @@ export interface CaseSession {
   id: string;
   caseId: string;
   createdBy: string;
+  createdByName?: string;
   name: string;
   friendlyName: string;
   description: string;
@@ -11,6 +12,8 @@ export interface CaseSession {
   startAt: string;
   endAt: string;
   attemptLimitPerStudent: number | null;
+  yearGroupId: string | null;
+  yearGroupName?: string | null;
   createdAt: string;
   updatedAt: string;
   case?: {
@@ -19,6 +22,8 @@ export interface CaseSession {
     species: string;
     difficulty: string;
     imageUrl: string;
+    description: string;
+    category: string;
   };
 }
 

@@ -3,11 +3,16 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { useAuth } from "@/features/auth/services/authService";
 import { deleteAttempt } from "@/features/attempts/services/attemptService";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, ChevronLeft, Clock, Calendar, Trash2 } from "lucide-react";
+import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
+import { DefaultTabs } from "@/features/navigation/components/tabs";
+import { Loader2, Clock, Calendar, Trash2, ChevronRight, Info } from "lucide-react";
+import { getSession } from "@/features/case-sessions/services/caseSessionService";
+import { deriveStatus, type CaseSession } from "@/features/case-sessions/models/caseSession";
 import { getStagesForCase } from "@/features/stages/services/stageService";
 import type {
   Attempt,
@@ -31,6 +36,7 @@ import { ProfileCard } from "@/features/profile/ProfileCard";
 export default function ViewAttemptPage() {
   const params = useParams();
   const router = useRouter();
+  const { user, role, isAdmin } = useAuth();
   const attemptId = params.id as string;
 
   const [attempt, setAttempt] = useState<Attempt | null>(null);
@@ -39,13 +45,14 @@ export default function ViewAttemptPage() {
   const [feedback, setFeedback] = useState<AttemptFeedback[]>([]);
   const [stages, setStages] = useState<Stage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("conversation");
+  const [activeTab, setActiveTab] = useState<"conversation" | "feedback">("conversation");
   const [isDeleting, setIsDeleting] = useState(false);
   const [studentProfile, setStudentProfile] = useState<SimpleProfile | null>(
     null
   );
   const [professorProfile, setProfessorProfile] =
     useState<SimpleProfile | null>(null);
+  const [session, setSession] = useState<CaseSession | null>(null);
 
   const unreadFeedbackCount =
     feedback && feedback.length > 0 && attempt
@@ -84,6 +91,16 @@ export default function ViewAttemptPage() {
         const transformedAttempt = transformAttempt(data);
         setAttempt(transformedAttempt);
         setCase(mapDbCaseToCase(data.cases));
+        let loadedSession: CaseSession | null = null;
+        if (transformedAttempt.sessionId) {
+          try {
+            loadedSession = await getSession(transformedAttempt.sessionId);
+          } catch (sessionErr) {
+            console.warn("Failed to load attempt session", sessionErr);
+            loadedSession = null;
+          }
+        }
+        setSession(loadedSession);
         setMessages((data.attempt_messages || [])?.map(transformMessage));
         setFeedback((data.attempt_feedback || [])?.map(transformFeedback));
 
@@ -102,52 +119,67 @@ export default function ViewAttemptPage() {
         })();
         setStages(caseStages);
 
-        // Load student & professor profile information (best-effort)
+        // Load student profile and the professor who started the session (best-effort)
         try {
           const userId = data.user_id as string | undefined;
+          const creatorId = loadedSession?.createdBy;
 
-          if (userId) {
-            const [{ data: studentRow }, { data: professorRel }] =
-              await Promise.all([
-                supabase
-                  .from("profiles")
-                  .select("id, user_id, email, full_name, avatar_url, role")
-                  .eq("user_id", userId)
-                  .maybeSingle(),
-                supabase
-                  .from("professor_students")
-                  .select("professor_id")
-                  .eq("student_id", userId)
-                  .maybeSingle(),
-              ]);
+          const profileSelect = "id, user_id, email, full_name, avatar_url, role";
+          const studentQuery = userId
+            ? supabase.from("profiles").select(profileSelect).eq("user_id", userId).maybeSingle()
+            : Promise.resolve({ data: null });
+          const professorQuery = creatorId
+            ? supabase.from("profiles").select(profileSelect).eq("user_id", creatorId).maybeSingle()
+            : Promise.resolve({ data: null });
 
-            if (studentRow) {
-              setStudentProfile({
-                id: studentRow.id,
-                email: studentRow.email ?? null,
-                fullName: studentRow.full_name ?? null,
-                avatarUrl: studentRow.avatar_url ?? null,
-                role: studentRow.role ?? null,
-              });
-            } else {
-              setStudentProfile(null);
-            }
+          const [{ data: studentRow }, { data: professorByUserId }] = await Promise.all([
+            studentQuery,
+            professorQuery,
+          ]);
 
-            const { data: professorRow } = await supabase
-              .from("profiles")
-              .select("id, user_id, email, full_name, avatar_url, role")
-              .eq("user_id", professorRel?.professor_id)
-              .maybeSingle();
-
-            setProfessorProfile({
-              id: professorRow?.id,
-              email: professorRow?.email ?? null,
-              fullName: professorRow?.full_name ?? null,
-              avatarUrl: professorRow?.avatar_url ?? null,
-              role: professorRow?.role ?? "professor",
+          if (studentRow) {
+            setStudentProfile({
+              id: studentRow.id,
+              email: studentRow.email ?? null,
+              fullName: studentRow.full_name ?? null,
+              avatarUrl: studentRow.avatar_url ?? null,
+              role: studentRow.role ?? null,
             });
           } else {
             setStudentProfile(null);
+          }
+
+          let professorRow = professorByUserId;
+          if (!professorRow && creatorId) {
+            const { data: professorById } = await supabase
+              .from("profiles")
+              .select(profileSelect)
+              .eq("id", creatorId)
+              .maybeSingle();
+            professorRow = professorById;
+          }
+
+          if (professorRow) {
+            setProfessorProfile({
+              id: professorRow.id,
+              email: professorRow.email ?? null,
+              fullName:
+                professorRow.full_name?.trim() ||
+                loadedSession?.createdByName ||
+                professorRow.email ||
+                null,
+              avatarUrl: professorRow.avatar_url ?? null,
+              role: professorRow.role ?? "professor",
+            });
+          } else if (creatorId) {
+            setProfessorProfile({
+              id: creatorId,
+              email: null,
+              fullName: loadedSession?.createdByName ?? null,
+              avatarUrl: null,
+              role: "professor",
+            });
+          } else {
             setProfessorProfile(null);
           }
         } catch (profileError) {
@@ -215,6 +247,7 @@ export default function ViewAttemptPage() {
   };
 
   const handleDeleteAttempt = async () => {
+    if (role !== "professor" && !isAdmin) return;
     if (
       window.confirm(
         "Are you sure you want to delete this attempt? This action cannot be undone."
@@ -234,85 +267,174 @@ export default function ViewAttemptPage() {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto px-4 py-8 flex justify-center items-center h-[70vh]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary mr-2" />
-        <span>Loading attempt...</span>
+      <div className="container mx-auto px-4 pb-8">
+        <Breadcrumb
+          items={[
+            { label: "Home", href: "/dashboard" },
+            { label: "My Attempts", href: "/attempts" },
+            { label: "Attempt" },
+          ]}
+        />
+        <div className="flex h-[70vh] items-center justify-center">
+          <Loader2 className="mr-2 h-8 w-8 animate-spin text-primary" />
+          <span>Loading attempt...</span>
+        </div>
       </div>
     );
   }
 
   if (!attempt) {
     return (
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-4 pb-8">
+        <Breadcrumb
+          items={[
+            { label: "Home", href: "/dashboard" },
+            { label: "My Attempts", href: "/attempts" },
+            { label: "Attempt not found" },
+          ]}
+        />
         <p>Attempt not found</p>
-        <Link href="/attempts">
-          <Button className="mt-4">Back to Attempts</Button>
-        </Link>
       </div>
     );
   }
 
+  const sessionStatus = session ? deriveStatus(session) : null;
+  const canDeleteAttempt = isAdmin || role === "professor";
+  const sessionEndedInProgress =
+    attempt.completionStatus === "in_progress" && sessionStatus === "completed";
+  const canContinueAttempt =
+    attempt.completionStatus === "in_progress" &&
+    user?.id === attempt.userId &&
+    !sessionEndedInProgress;
+
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="mb-6">
-        <Link href="/attempts">
-          <Button variant="outline" size="sm">
-            <ChevronLeft className="mr-2 h-4 w-4" />
-            Back to Attempts
-          </Button>
-        </Link>
+    <div className="container mx-auto px-4 pb-8">
+      <Breadcrumb
+        items={[
+          { label: "Home", href: "/dashboard" },
+          { label: "My Attempts", href: "/attempts" },
+          { label: attempt.title || "Attempt" },
+        ]}
+      />
+
+      <div className="mb-4 flex items-start justify-between">
+        <div className="">
+          <div className="text-2xl font-bold tracking-tight text-primary">
+            {attempt.title}
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Id: <span className="font-mono text-xs">{attempt.id}</span>
+          </p>
+        </div>
+        <Badge
+          className={`text-xs py-1 px-3 tracking-wide ${
+            attempt.completionStatus === "completed"
+              ? "bg-emerald-500 text-white"
+              : attempt.completionStatus === "in_progress"
+              ? "bg-amber-500 text-black"
+              : "bg-red-500 text-white"
+          }`}
+        >
+          {attempt.completionStatus === "completed"
+            ? "Completed"
+            : attempt.completionStatus === "in_progress"
+            ? "In Progress"
+            : "Abandoned"}
+        </Badge>
       </div>
+
+      {canDeleteAttempt && (
+        <div className="mb-4 flex">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleDeleteAttempt}
+            disabled={isDeleting}
+            className="flex items-center gap-2 text-destcructive"
+          >
+            {isDeleting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Deleting...
+              </>
+            ) : (
+              <>
+                <Trash2 className="h-4 w-4" />
+                Delete Attempt
+              </>
+            )}
+          </Button>
+        </div>
+      )}
 
       {/* Header cards */}
       <div className="grid grid-cols-1 md:grid-cols-[minmax(0,7fr)_minmax(0,3fr)] gap-6 mb-8">
         <div className="">
-          <div className="flex justify-between items-start mb-2">
-            <div className="">
-              <div className="text-2xl font-bold tracking-tight text-primary">
-                {attempt.title}
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Id: <span className="font-mono text-xs">{attempt.id}</span>
-              </p>
-            </div>
-            <Badge
-              className={`text-xs py-1 px-3 tracking-wide ${
-                attempt.completionStatus === "completed"
-                  ? "bg-emerald-500 text-white"
-                  : attempt.completionStatus === "in_progress"
-                  ? "bg-amber-500 text-black"
-                  : "bg-red-500 text-white"
-              }`}
-            >
-              {attempt.completionStatus === "completed"
-                ? "Completed"
-                : attempt.completionStatus === "in_progress"
-                ? "In Progress"
-                : "Abandoned"}
-            </Badge>
-          </div>
-
-          <div className="flex mb-4">
+          {canContinueAttempt && (
             <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleDeleteAttempt}
-              disabled={isDeleting}
-              className="flex items-center gap-2 text-destcructive"
+              asChild
+              size="lg"
+              className="mb-4 h-14 w-full bg-brand-100 text-base font-semibold text-brand-700 hover:bg-brand-200 dark:bg-brand-500/12 dark:text-brand-400 dark:hover:bg-brand-500/20"
             >
-              {isDeleting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Deleting...
-                </>
-              ) : (
-                <>
-                  <Trash2 className="h-4 w-4" />
-                  Delete Attempt
-                </>
-              )}
+              <Link
+                href={
+                  attempt.sessionId
+                    ? `/case/${attempt.caseId}/attempt?attempt=${attempt.id}&session=${attempt.sessionId}`
+                    : `/case/${attempt.caseId}/attempt?attempt=${attempt.id}`
+                }
+              >
+                Continue Attempt
+              </Link>
             </Button>
-          </div>
+          )}
+
+          {sessionEndedInProgress && (
+            <Card className="mb-4 w-full gap-0 border-brand-200 bg-brand-50 py-0 dark:border-brand-800 dark:bg-brand-500/12">
+              <CardContent className="flex items-start gap-2 px-4 py-2">
+                <Info className="mt-0.5 size-4 shrink-0 text-brand-700 dark:text-brand-400" aria-hidden="true" />
+                <div>
+                  <p className="text-sm font-semibold text-brand-800 dark:text-brand-300">Session ended</p>
+                  <p className="text-xs text-brand-700 dark:text-brand-400">
+                    This attempt cannot be completed as the session has now ended.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {session && (
+            <Card className="mb-6 w-full">
+              <CardHeader>
+                <CardTitle className="text-xl font-semibold text-primary">{session.friendlyName}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-muted-foreground">Status</span>
+                  <Badge
+                    variant={
+                      sessionStatus === "active" ? "success" : sessionStatus === "scheduled" ? "warning" : "secondary"
+                    }
+                    className="capitalize"
+                  >
+                    {sessionStatus === "active" ? "Active" : sessionStatus === "scheduled" ? "Scheduled" : "Completed"}
+                  </Badge>
+                </div>
+                <div className="flex items-start gap-2 text-sm text-muted-foreground">
+                  <Calendar className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    {formatDate(session.startAt)} — {formatDate(session.endAt)}
+                  </span>
+                </div>
+                <Button className="w-full" asChild>
+                  <Link href={`/case-sessions/${session.id}`}>
+                    View Session
+                    <ChevronRight className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
           {(studentProfile || professorProfile) && (
             <div className="grid gap-3 md:grid-cols-2 mb-6">
               {studentProfile && <ProfileCard profile={studentProfile} />}
@@ -370,64 +492,35 @@ export default function ViewAttemptPage() {
           </div>
         </div>
 
-        {attemptCase && (
-          <CaseCard key={attemptCase.id} caseItem={attemptCase} />
-        )}
+        <div className="space-y-6">
+          {attemptCase && <CaseCard key={attemptCase.id} caseItem={attemptCase} />}
+        </div>
       </div>
 
-      {/* Tabs + content container */}
-      <Card className="w-full bg-card border shadow-sm">
-        <CardHeader className="border-b pb-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex space-x-2 items-center">
-              <button
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  activeTab === "conversation"
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
-                }`}
-                onClick={() => setActiveTab("conversation")}
-              >
-                Conversation
-              </button>
-              <button
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${
-                  activeTab === "feedback"
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
-                }`}
-                onClick={() => setActiveTab("feedback")}
-              >
-                <span>Feedback</span>
-                {unreadFeedbackCount > 0 && (
-                  <Badge className="text-[10px] py-0.5 px-2 bg-amber-500 text-amber-950">
-                    {unreadFeedbackCount} new
-                  </Badge>
-                )}
-              </button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="pt-4">
-          {/* Conversation content */}
-          {activeTab === "conversation" && (
-            <AttemptConversationTab
-              messages={messages}
-              stages={stages}
-              createdAt={attempt.createdAt}
-            />
-          )}
+      <DefaultTabs
+        items={[
+          { id: "conversation", label: "Conversation" },
+          { id: "feedback", label: "Feedback", badge: unreadFeedbackCount > 0 ? unreadFeedbackCount : undefined },
+        ]}
+        value={activeTab}
+        onChange={setActiveTab}
+      >
+        {activeTab === "conversation" && (
+          <AttemptConversationTab
+            messages={messages}
+            stages={stages}
+            createdAt={attempt.createdAt}
+          />
+        )}
 
-          {/* Feedback content */}
-          {activeTab === "feedback" && (
-            <AttemptFeedbackTab
-              attempt={attempt}
-              feedback={feedback}
-              stages={stages}
-            />
-          )}
-        </CardContent>
-      </Card>
+        {activeTab === "feedback" && (
+          <AttemptFeedbackTab
+            attempt={attempt}
+            feedback={feedback}
+            stages={stages}
+          />
+        )}
+      </DefaultTabs>
     </div>
   );
 }

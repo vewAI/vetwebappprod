@@ -1,158 +1,36 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { CaseCard } from "@/features/case-selection/components/case-card";
+import { CaseLibrary } from "@/features/case-selection/components/case-library";
+import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
 import { useAuth } from "@/features/auth/services/authService";
-import { fetchCases, fetchDisciplines } from "@/features/case-selection/services/caseService";
-import type { Case } from "@/features/case-selection/models/case";
-import { GuidedTour } from "@/components/ui/guided-tour";
-import { HelpTip } from "@/components/ui/help-tip";
-import { caseFieldMeta } from "@/features/cases/fieldMeta";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function CasesPage() {
-  const [cases, setCases] = useState<Case[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [disciplines, setDisciplines] = useState<string[]>([]);
-  const [selectedDiscipline, setSelectedDiscipline] = useState<string>("all");
-  const [selectedSpecies, setSelectedSpecies] = useState<string>("all");
-  const { user, role } = useAuth();
-  const [hasAssignedCases, setHasAssignedCases] = useState<boolean>(false);
+  const { role, loading } = useAuth();
 
-  const tourSteps = [
-    {
-      element: "#main-title",
-      popover: {
-        title: "Welcome",
-        description: "Welcome to VewAi - Communication Skills Training Platform. Here you can practice your clinical skills.",
-      },
-    },
-    {
-      element: "#discipline-filter",
-      popover: {
-        title: "Filter Cases",
-        description: "Use this dropdown to filter cases by discipline (e.g., Internal Medicine, Surgery).",
-      },
-    },
-    {
-      element: "#case-grid",
-      popover: {
-        title: "Select a Case",
-        description: 'Browse the available cases and click "View Case" to start.',
-      },
-    },
-  ];
+  if (loading) {
+    return (
+      <div className="container mx-auto space-y-4 px-4 pb-8">
+        <Skeleton className="h-9 w-48" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
+  }
 
-  useEffect(() => {
-    async function loadData() {
-      const disc = await fetchDisciplines();
-      setDisciplines(disc);
-    }
-    loadData();
-  }, []);
-
-  // If the current user is a student, check whether they have any assigned cases
-  useEffect(() => {
-    let cancelled = false;
-    async function checkAssigned() {
-      if (!user?.id || role !== "student") return;
-      try {
-        const { professorService } = await import("@/features/professor/services/professorService");
-        const assigned = await professorService.getAssignedCasesForStudent(user.id);
-        if (!cancelled) setHasAssignedCases(Array.isArray(assigned) && assigned.length > 0);
-      } catch (err) {
-        console.warn("Failed to check assigned cases", err);
-        if (!cancelled) setHasAssignedCases(false);
-      }
-    }
-    checkAssigned();
-    return () => {
-      cancelled = true;
-    };
-  }, [user, role]);
-
-  useEffect(() => {
-    async function loadCases() {
-      setLoading(true);
-      try {
-        if (selectedDiscipline === "assigned" && user?.id && role === "student") {
-          const { professorService } = await import("@/features/professor/services/professorService");
-          const assigned = await professorService.getAssignedCasesForStudent(user.id);
-          const mapped = Array.isArray(assigned) ? assigned.map((a: any) => a.case).filter(Boolean) : [];
-          setCases(mapped as unknown as Case[]);
-        } else {
-          const result = await fetchCases({
-            category: selectedDiscipline === "all" ? undefined : selectedDiscipline,
-            species: selectedSpecies === "all" ? undefined : selectedSpecies,
-          });
-          setCases(result);
-        }
-      } catch (err) {
-        console.warn("Failed to load cases for selected filter", err);
-        setCases([]);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadCases();
-  }, [selectedDiscipline, selectedSpecies, user, role]);
+  if (role !== "professor" && role !== "admin") {
+    return (
+      <div className="container mx-auto px-4 pb-8 text-center">
+        <Breadcrumb items={[{ label: "Home", href: "/dashboard" }, { label: "Clinical Cases" }]} />
+        <h1 className="text-xl font-bold text-destructive">Access denied</h1>
+        <p className="mt-2 text-muted-foreground">Only professors and admins can manage cases.</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="absolute top-16 right-4 z-50">
-        <GuidedTour steps={tourSteps} tourId="cases-page" autoStart={true} />
-      </div>
-      <header className="mb-8 text-center">
-        <div className="flex items-center justify-center gap-2">
-          <h1 id="main-title" className="text-3xl font-bold tracking-tight text-primary md:text-4xl lg:text-5xl">
-            Clinical Cases
-          </h1>
-          <HelpTip content="Browse the library of clinical cases available to you." />
-        </div>
-        <p className="mt-4 text-xl text-muted-foreground">Explore the full library of OSCE-style veterinary cases.</p>
-
-        <div className="mt-6 flex justify-center items-center gap-2 flex-wrap">
-          <div id="discipline-filter" className="w-full max-w-xs">
-            <select
-              className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              value={selectedDiscipline}
-              onChange={(e) => setSelectedDiscipline(e.target.value)}
-            >
-              <option value="all">All Disciplines</option>
-              {hasAssignedCases && <option value="assigned">My Assignments</option>}
-              {disciplines.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="w-full max-w-xs">
-            <select
-              className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              value={selectedSpecies}
-              onChange={(e) => setSelectedSpecies(e.target.value)}
-            >
-              <option value="all">All Species</option>
-              {caseFieldMeta.species.options?.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </div>
-          <HelpTip content="Filter cases by discipline or species." />
-        </div>
-      </header>
-
-      {loading ? (
-        <div className="p-8 text-center">Loading cases...</div>
-      ) : (
-        <div id="case-grid" className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 motion-safe:animate-in motion-safe:fade-in-50">
-          {cases.map((caseItem) => (
-            <CaseCard key={caseItem.id} caseItem={caseItem} />
-          ))}
-        </div>
-      )}
+    <div className="container mx-auto px-4 pb-8">
+      <Breadcrumb items={[{ label: "Home", href: "/dashboard" }, { label: "Clinical Cases" }]} />
+      <CaseLibrary getCaseHref={(caseItem) => `/case/${caseItem.id}`} />
     </div>
   );
 }

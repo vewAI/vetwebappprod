@@ -20,6 +20,9 @@ export interface AttemptSummary {
   id: string;
   userId: string;
   caseId: string;
+  sessionId?: string | null;
+  sessionName?: string | null;
+  studentName?: string | null;
   title: string;
   createdAt: string;
   completedAt?: string;

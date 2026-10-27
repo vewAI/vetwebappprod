@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/academic-year-rollover",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}

@@ -1,21 +1,19 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
 import { useAuth } from "@/features/auth/services/authService";
 import { getAttemptsByCase } from "@/features/attempts/services/attemptService";
 import { professorService } from "@/features/professor/services/professorService";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Clock, Loader2 } from "lucide-react";
 import { fetchCaseById } from "@/features/case-selection/services/caseService";
 import type { Case } from "@/features/case-selection/models/case";
 import type { AttemptSummary } from "@/features/attempts/models/attempt";
-import { GuidedTour } from "@/components/ui/guided-tour";
-import { HelpTip } from "@/components/ui/help-tip";
-import { AttemptCard } from "@/features/attempts/components/attempt-card";
+import { CaseDetails } from "@/features/case-selection/components/CaseDetails";
+import { CaseAttemptsTable } from "@/features/attempts/components/CaseAttemptsTable";
 import { SessionsForCaseList } from "@/features/case-sessions/components/SessionsForCaseList";
+import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
 
 interface ProfessorFeedbackItem {
   id: string;
@@ -26,7 +24,7 @@ interface ProfessorFeedbackItem {
 
 export default function CaseInstructionsPage() {
   const { id } = useParams() as { id: string };
-  const { user, role } = useAuth();
+  const { user } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [attempts, setAttempts] = useState<AttemptSummary[]>([]);
   const [assignedProfessorId, setAssignedProfessorId] = useState<string | null>(null);
@@ -34,16 +32,14 @@ export default function CaseInstructionsPage() {
   const [replyText, setReplyText] = useState("");
   const [sendingReply, setSendingReply] = useState(false);
   const [caseData, setCaseData] = useState<Case | null>(null);
-  const sessionsVariant = role === "professor" || role === "admin" ? "professor" : "student";
 
-  const tourSteps = [
-    {
-      element: "#case-title",
-      popover: { title: "Case Details", description: "Review the case title, estimated time, and overview before starting." },
-    },
-    { element: "#sessions-for-case", popover: { title: "Sessions", description: "Join an active session from your instructor to start the case." } },
-    { element: "#past-attempts", popover: { title: "Past Attempts", description: "View your previous attempts and their status here." } },
-  ];
+  const recentAttempts = useMemo(
+    () =>
+      [...attempts]
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 3),
+    [attempts],
+  );
 
   useEffect(() => {
     async function loadCase() {
@@ -71,7 +67,6 @@ export default function CaseInstructionsPage() {
     loadAttempts();
   }, [id, user]);
 
-  // Check whether this student has this case assigned and load professor feedback
   useEffect(() => {
     let cancelled = false;
     async function loadAssignmentAndFeedback() {
@@ -84,13 +79,18 @@ export default function CaseInstructionsPage() {
           professor_id?: string;
           professorId?: string;
         };
-        const match = Array.isArray(assigned) ? assigned.find((a: AssignedCaseRow) => a.case_id === id || a.case?.id === id) : null;
+        const match = Array.isArray(assigned)
+          ? assigned.find((a: AssignedCaseRow) => a.case_id === id || a.case?.id === id)
+          : null;
         const profId = match ? match.professor_id || match.professorId || null : null;
         if (!cancelled) setAssignedProfessorId(profId);
         if (profId) {
-          const resp = await fetch(`/api/professor-feedback?studentId=${encodeURIComponent(user.id)}&caseId=${encodeURIComponent(id)}`, {
-            headers: { Accept: "application/json" },
-          });
+          const resp = await fetch(
+            `/api/professor-feedback?studentId=${encodeURIComponent(user.id)}&caseId=${encodeURIComponent(id)}`,
+            {
+              headers: { Accept: "application/json" },
+            },
+          );
           if (resp.ok) {
             const json = await resp.json();
             if (!cancelled) setProfessorFeedback(Array.isArray(json.feedback) ? json.feedback : []);
@@ -111,207 +111,145 @@ export default function CaseInstructionsPage() {
 
   if (!caseData) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="text-center py-12">
-          <p className="text-lg mb-4">Case not found</p>
-          <Link href="/">
-            <Button variant="outline">Back to Case Selection</Button>
-          </Link>
+      <div className="container mx-auto px-4 pb-8">
+        <Breadcrumb
+          items={[{ label: "Home", href: "/dashboard" }, { label: "Start", href: "/case-sessions" }, { label: "Case not found" }]}
+        />
+        <div className="py-12 text-center">
+          <p className="text-lg">Case not found</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex items-center justify-between mb-6">
-        <Link href="/cases" className="inline-flex items-center text-sm text-muted-foreground hover:text-primary">
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Case Selection
-        </Link>
-        <GuidedTour steps={tourSteps} tourId="case-instructions" />
-      </div>
+    <div className="container mx-auto px-4 pb-8">
+      <Breadcrumb
+        items={[
+          { label: "Home", href: "/dashboard" },
+          { label: "Start", href: "/case-sessions" },
+          { label: caseData.title },
+        ]}
+      />
 
-      <div className="grid gap-8 lg:grid-cols-[2fr_1fr]">
-        <div>
-          <div className="mb-8">
-            <div className="flex gap-3">
-              <div className="relative w-40 h-40 mb-2">
-                <Image
-                  src={caseData?.imageUrl}
-                  alt={caseData?.title}
-                  className=" border p-1"
-                  sizes="200px"
-                  priority={true}
-                  width={200}
-                  height={200}
-                />
-              </div>
-              <div>
-                <div className="flex items-center gap-2 ">
-                  <h1 id="case-title" className="block text-3xl font-bold tracking-tight text-primary md:text-4xl">
-                    {caseData.title}
-                  </h1>
-                  <HelpTip content="This is the specific case you are about to undertake." />
-                </div>
-                <p className="mb-3 text-muted-foreground font-bold">ID: {caseData.id}</p>
-                <div className="flex items-center text-sm text-muted-foreground mb-4">
-                  <Clock className="mr-1 h-4 w-4" />
-                  <span>Estimated time: {caseData.estimatedTime} minutes</span>
-                </div>
-              </div>
-            </div>
+      <div className="mb-8">
+        <CaseDetails caseData={caseData} />
 
-            <div className="prose max-w-none">
-              <h2 className="text-xl font-semibold mb-2">Case Overview</h2>
-              <p>{caseData.description}</p>
-
-              <div className="mt-4 grid grid-cols-2 gap-4">
-                <div className="rounded-md border p-3">
-                  <h3 className="text-sm font-medium">Species</h3>
-                  <p className="mt-1">{caseData.species}</p>
-                </div>
-                <div className="rounded-md border p-3">
-                  <h3 className="text-sm font-medium">Category</h3>
-                  <p className="mt-1">{caseData.category}</p>
-                </div>
-                <div className="rounded-md border p-3">
-                  <h3 className="text-sm font-medium">Difficulty</h3>
-                  <p className="mt-1">{caseData.difficulty}</p>
-                </div>
-              </div>
-
-              <h2 className="text-xl font-semibold mt-6 mb-2">Instructions</h2>
-              <p>
-                In this clinical case, you will interact with a simulated client and patient. Work through the case by taking a history, performing a
-                physical examination, and recommending diagnostic tests as appropriate.
-              </p>
-              <ul>
-                <li>Proceed through each stage of the case in order</li>
-                <li>You can save your progress at any time</li>
-                <li>Once completed, you will receive feedback on your performance</li>
-              </ul>
-            </div>
-
-            <div id="sessions-for-case" className="mt-8 space-y-3">
-              <h2 className="text-xl font-semibold text-sessions">Sessions</h2>
-
-              <SessionsForCaseList caseId={id} variant={sessionsVariant} />
-            </div>
-          </div>
+        <div className="prose mt-6 max-w-none">
+          <h2 className="mb-2 text-xl font-semibold">Instructions</h2>
+          <p>
+            In this clinical case, you will interact with a simulated client and patient. Work through the case by taking a
+            history, performing a physical examination, and recommending diagnostic tests as appropriate.
+          </p>
+          <ul>
+            <li>Proceed through each stage of the case in order</li>
+            <li>You can save your progress at any time</li>
+            <li>Once completed, you will receive feedback on your performance</li>
+          </ul>
         </div>
 
-        <div id="past-attempts">
-          <div className="bg-muted p-6 rounded-lg">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold">Your Past Attempts ({attempts.length})</h2>
-              <HelpTip content="A history of your previous sessions with this case." />
-            </div>
-
-            {isLoading ? (
-              <div className="flex justify-center items-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin text-primary mr-2" />
-                <span>Loading attempts...</span>
-              </div>
-            ) : attempts.length > 0 ? (
-              <>
-                <div className="space-y-4">
-                  {attempts.slice(0, 3).map((attempt) => (
-                    <AttemptCard key={attempt.id} attempt={attempt} />
-                  ))}
-                </div>
-                {attempts.length > 3 && (
-                  <div className="text-center mt-4">
-                    <Link href="/attempts" className="text-sm text-primary font-medium hover:underline">
-                      View All {attempts.length} Attempts
-                    </Link>
-                  </div>
-                )}
-              </>
-            ) : (
-              <p className="text-center py-4 text-muted-foreground">You haven&apos;t attempted this case yet.</p>
+        <div className="mt-8 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-xl font-semibold text-primary">Latest Attempts</h2>
+            {attempts.length > 3 && (
+              <Link
+                href={`/attempts?caseId=${encodeURIComponent(id)}`}
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                View all {attempts.length} attempts
+              </Link>
             )}
           </div>
+          <CaseAttemptsTable
+            attempts={recentAttempts}
+            loading={isLoading}
+            emptyMessage="You haven't attempted this case yet."
+            sessionHrefBase="/case-sessions"
+          />
+        </div>
 
-          {/* Professor feedback (visible if this case is assigned to the student) */}
-          {assignedProfessorId && (
-            <div className="mt-6">
-              <h3 className="text-lg font-semibold mb-2">Professor Feedback</h3>
-              {professorFeedback.length === 0 ? (
-                <div className="text-sm text-muted-foreground">No feedback yet from your professor for this case.</div>
-              ) : (
-                <div className="space-y-3">
-                  {professorFeedback.map((f) => (
-                    <div
-                      key={f.id}
-                      className={`p-3 rounded-md border ${f.sender_role === "student" ? "bg-blue-50 border-blue-200 ml-8" : "bg-background"}`}
-                    >
-                      <div className="text-xs text-muted-foreground mb-1 flex items-center gap-2">
-                        <span className="font-medium">{f.sender_role === "student" ? "You" : "Professor"}</span>
-                        <span>{new Date(f.created_at).toLocaleString()}</span>
-                      </div>
-                      <div className="text-sm whitespace-pre-wrap">{f.message}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="mt-4">
-                <label className="text-sm font-medium mb-1 block">Message your professor</label>
-                <textarea
-                  className="w-full rounded-md border px-3 py-2 text-sm"
-                  rows={4}
-                  value={replyText}
-                  onChange={(e) => setReplyText(e.target.value)}
-                  placeholder="Write a message to your professor..."
-                />
-                <div className="mt-2 flex justify-end">
-                  <Button
-                    onClick={async () => {
-                      if (!replyText.trim()) return;
-                      setSendingReply(true);
-                      try {
-                        const studentId = user?.id;
-                        if (!studentId) {
-                          console.warn("Cannot send professor message: no authenticated user.");
-                          setSendingReply(false);
-                          return;
-                        }
-
-                        const resp = await fetch("/api/professor-feedback", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            professorId: assignedProfessorId,
-                            studentId,
-                            message: replyText,
-                            caseId: id,
-                            senderRole: "student",
-                          }),
-                        });
-                        if (resp.ok) {
-                          setReplyText("");
-                          const json = await resp.json();
-                          setProfessorFeedback((prev) => [json.feedback, ...prev]);
-                        } else {
-                          console.error("Failed to send message to professor", await resp.text());
-                        }
-                      } catch (err) {
-                        console.error("Error sending professor message", err);
-                      } finally {
-                        setSendingReply(false);
-                      }
-                    }}
-                    disabled={sendingReply}
-                  >
-                    {sendingReply ? "Sending..." : "Send"}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
+        <div className="mt-8 space-y-3">
+          <h2 className="text-xl font-semibold text-primary">Sessions</h2>
+          <SessionsForCaseList caseId={id} variant="start" />
         </div>
       </div>
+
+      {assignedProfessorId && (
+        <div className="mt-6">
+          <h3 className="mb-2 text-lg font-semibold">Professor Feedback</h3>
+          {professorFeedback.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No feedback yet from your professor for this case.</div>
+          ) : (
+            <div className="space-y-3">
+              {professorFeedback.map((f) => (
+                <div
+                  key={f.id}
+                  className={`rounded-md border p-3 ${f.sender_role === "student" ? "ml-8 border-blue-200 bg-blue-50" : "bg-background"}`}
+                >
+                  <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
+                    <span className="font-medium">{f.sender_role === "student" ? "You" : "Professor"}</span>
+                    <span>{new Date(f.created_at).toLocaleString()}</span>
+                  </div>
+                  <div className="whitespace-pre-wrap text-sm">{f.message}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-4">
+            <label className="mb-1 block text-sm font-medium">Message your professor</label>
+            <textarea
+              className="w-full rounded-md border px-3 py-2 text-sm"
+              rows={4}
+              value={replyText}
+              onChange={(e) => setReplyText(e.target.value)}
+              placeholder="Write a message to your professor..."
+            />
+            <div className="mt-2 flex justify-end">
+              <Button
+                onClick={async () => {
+                  if (!replyText.trim()) return;
+                  setSendingReply(true);
+                  try {
+                    const studentId = user?.id;
+                    if (!studentId) {
+                      console.warn("Cannot send professor message: no authenticated user.");
+                      setSendingReply(false);
+                      return;
+                    }
+
+                    const resp = await fetch("/api/professor-feedback", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        professorId: assignedProfessorId,
+                        studentId,
+                        message: replyText,
+                        caseId: id,
+                        senderRole: "student",
+                      }),
+                    });
+                    if (resp.ok) {
+                      setReplyText("");
+                      const json = await resp.json();
+                      setProfessorFeedback((prev) => [json.feedback, ...prev]);
+                    } else {
+                      console.error("Failed to send message to professor", await resp.text());
+                    }
+                  } catch (err) {
+                    console.error("Error sending professor message", err);
+                  } finally {
+                    setSendingReply(false);
+                  }
+                }}
+                disabled={sendingReply}
+              >
+                {sendingReply ? "Sending..." : "Send"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
