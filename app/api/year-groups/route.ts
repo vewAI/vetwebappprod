@@ -62,7 +62,9 @@ export async function GET(request: NextRequest) {
     query = query.eq("institution_id", institutionId);
   }
 
-  let { data, error } = await query;
+  const queryResult = await query;
+  let data: any = queryResult.data;
+  let error = queryResult.error;
   if (error) {
     let fallback = db
       .from("year_groups")
@@ -100,3 +102,5 @@ export async function GET(request: NextRequest) {
     institutionId: institutionId || null,
   });
 }
+
+
