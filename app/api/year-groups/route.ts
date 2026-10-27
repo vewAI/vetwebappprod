@@ -58,7 +58,9 @@ export async function GET(request: NextRequest) {
     query = query.eq("institution_id", institutionId);
   }
 
-  let { data, error } = await query;
+  const queryResult = await query;
+  let data: any = queryResult.data;
+  let error = queryResult.error;
   if (error) {
     let fallback = db.from("year_groups").select(YEAR_GROUP_COLUMNS).order("sort_order", { ascending: true }).order("name", { ascending: true });
     if (institutionId) fallback = fallback.eq("institution_id", institutionId);
@@ -89,3 +91,5 @@ export async function GET(request: NextRequest) {
     institutionId: institutionId || null,
   });
 }
+
+
