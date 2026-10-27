@@ -70,4 +70,43 @@ describe("buildPersonaSystemInstruction", () => {
     expect(stagePromptResult.systemInstruction).not.toContain("CLASSIC ROLE-INFO LAYER (getOwnerPrompt)");
     expect(result.systemInstruction).toContain("PERSONA IDENTITY (STRICT)");
   });
+
+  it("omits diagnostic findings from clinical data during history and physical exam stages", () => {
+    const caseWithBoth: Case = {
+      ...caseItem,
+      physicalExamFindings: "Heart rate: 40 bpm\nRespiratory rate: 16 bpm",
+      diagnosticFindings: "Haematology: Normal\nBiochemistry: Elevated lactate",
+    };
+
+    const physicalResult = buildPersonaSystemInstruction({
+      caseItem: caseWithBoth,
+      stage: {
+        ...stage,
+        id: "stage-2",
+        title: "Physical Examination",
+        settings: { stage_type: "physical" },
+      },
+      personaRoleKey: "veterinary-nurse",
+    });
+
+    expect(physicalResult.systemInstruction).toContain("Physical Examination Findings:");
+    expect(physicalResult.systemInstruction).toContain("Heart rate: 40 bpm");
+    expect(physicalResult.systemInstruction).not.toContain("Diagnostic/Lab Results:");
+    expect(physicalResult.systemInstruction).not.toContain("Elevated lactate");
+    expect(physicalResult.systemInstruction).toContain("STAGE BOUNDARY - NO LABS YET");
+
+    const labResult = buildPersonaSystemInstruction({
+      caseItem: caseWithBoth,
+      stage: {
+        ...stage,
+        id: "stage-3",
+        title: "Laboratory Tests",
+        settings: { stage_type: "laboratory" },
+      },
+      personaRoleKey: "veterinary-nurse",
+    });
+
+    expect(labResult.systemInstruction).toContain("Diagnostic/Lab Results:");
+    expect(labResult.systemInstruction).toContain("Elevated lactate");
+  });
 });

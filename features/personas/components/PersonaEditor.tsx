@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,6 +76,7 @@ export function PersonaEditor({
   const [avatarTemplates, setAvatarTemplates] = useState<AvatarTemplate[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
+  const [genderFilter, setGenderFilter] = useState<"all" | "male" | "female">("all");
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [behaviorPromptOpen, setBehaviorPromptOpen] = useState(false);
@@ -90,6 +91,20 @@ export function PersonaEditor({
     sourcePersonaId: value.sourcePersonaId,
     behaviorPrompt: value.behaviorPrompt,
   };
+
+  const filteredTemplates = useMemo(() => {
+    if (genderFilter === "all") return avatarTemplates;
+    return avatarTemplates.filter((t) => (t.sex?.toLowerCase() ?? "") === genderFilter);
+  }, [avatarTemplates, genderFilter]);
+
+  const maleCount = useMemo(
+    () => avatarTemplates.filter((t) => t.sex?.toLowerCase() === "male").length,
+    [avatarTemplates]
+  );
+  const femaleCount = useMemo(
+    () => avatarTemplates.filter((t) => t.sex?.toLowerCase() === "female").length,
+    [avatarTemplates]
+  );
 
   // Filter voices by gender
   const availableVoices = VOICE_PRESETS.filter((v) => {
@@ -121,22 +136,14 @@ export function PersonaEditor({
         const seenUrls = new Set<string>();
 
         // Fetch from case_personas
-        const rolePattern = role === "nurse" ? "veterinary-nurse%" : "owner";
-        const query = role === "nurse"
-          ? supabase
-              .from("case_personas")
-              .select("id, display_name, image_url, metadata")
-              .ilike("role_key", rolePattern)
-              .not("image_url", "is", null)
-              .order("created_at", { ascending: false })
-              .limit(100)
-          : supabase
-              .from("case_personas")
-              .select("id, display_name, image_url, metadata")
-              .eq("role_key", rolePattern)
-              .not("image_url", "is", null)
-              .order("created_at", { ascending: false })
-              .limit(100);
+        const rolePattern = role === "nurse" ? "veterinary-nurse%" : "owner%";
+        const query = supabase
+          .from("case_personas")
+          .select("id, display_name, image_url, metadata")
+          .ilike("role_key", rolePattern)
+          .not("image_url", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(100);
 
         const { data: personas, error } = await query;
 
@@ -159,20 +166,13 @@ export function PersonaEditor({
           });
         }
 
-        // Also fetch from global_personas for backwards compatibility
-        const globalQuery = role === "nurse"
-          ? supabase
-              .from("global_personas")
-              .select("id, display_name, image_url, metadata")
-              .ilike("role_key", rolePattern)
-              .not("image_url", "is", null)
-              .limit(50)
-          : supabase
-              .from("global_personas")
-              .select("id, display_name, image_url, metadata")
-              .eq("role_key", rolePattern)
-              .not("image_url", "is", null)
-              .limit(50);
+        // Also fetch from global_personas (pool contains both male and female templates)
+        const globalQuery = supabase
+          .from("global_personas")
+          .select("id, display_name, image_url, metadata")
+          .ilike("role_key", rolePattern)
+          .not("image_url", "is", null)
+          .limit(100);
 
         const { data: globalPersonas } = await globalQuery;
         if (globalPersonas) {
@@ -218,7 +218,13 @@ export function PersonaEditor({
         ? `Hello, I'm ${config.displayName}. I'm here with my pet today.`
         : `Good morning, I'm ${config.displayName}. How can I help you today?`;
 
-      const audio = await speakRemote(sampleText, config.voiceId);
+      const audio = await speakRemote(sampleText, config.voiceId, {
+        metadata: {
+          sex: config.sex,
+          roleKey: role === "nurse" ? "veterinary-nurse" : "owner",
+          voiceId: config.voiceId,
+        },
+      });
       // Listen for when audio ends
       audio.addEventListener("ended", () => setPreviewPlaying(false));
       audio.addEventListener("error", () => setPreviewPlaying(false));
@@ -228,16 +234,25 @@ export function PersonaEditor({
     } finally {
       setPreviewLoading(false);
     }
-  }, [config.displayName, config.voiceId, previewPlaying, role]);
+  }, [config.displayName, config.voiceId, config.sex, previewPlaying, role]);
 
   // Select avatar template
   const handleSelectTemplate = (template: AvatarTemplate) => {
+    const templateSex = template.sex ?? config.sex;
+    let voiceId = template.voiceId;
+    const currentVoice = VOICE_PRESETS.find((v) => v.id === voiceId);
+    if (!currentVoice || (templateSex !== "neutral" && currentVoice.gender !== templateSex && currentVoice.gender !== "neutral")) {
+      const matchingVoice = VOICE_PRESETS.find((v) => v.gender === templateSex && v.accent === "british") ??
+        VOICE_PRESETS.find((v) => v.gender === templateSex);
+      voiceId = matchingVoice?.id ?? (templateSex === "male" ? "george" : "alice");
+    }
+
     onChange({
       ...config,
       imageUrl: template.imageUrl,
       displayName: template.displayName,
-      sex: template.sex ?? config.sex,
-      voiceId: template.voiceId ?? config.voiceId,
+      sex: templateSex,
+      voiceId: voiceId ?? config.voiceId,
       sourcePersonaId: template.id.startsWith("global:") ? template.id : `case:${template.id}`,
     });
     setAvatarDialogOpen(false);
@@ -246,6 +261,10 @@ export function PersonaEditor({
   // Read-only view
   if (readOnly) {
     const specData = specializationData;
+    const effectiveImageUrl = config.imageUrl || (specData as any)?.imageUrl;
+    const effectiveDisplayName = config.displayName || (specData as any)?.displayName || (role === "nurse" ? "Veterinary Nurse" : "Owner");
+    const effectiveSex = config.sex || (specData as any)?.sex;
+    const effectiveVoiceId = config.voiceId || (specData as any)?.voiceId;
     const vitalRanges = specData?.vitalReferenceRanges as Record<string, string> | undefined;
     const labRanges = specData?.labReferenceRanges as Record<string, string> | undefined;
     const pathologies = specData?.commonPathologies as string[] | undefined;
@@ -254,11 +273,11 @@ export function PersonaEditor({
     return (
       <div className="p-4 border rounded-lg bg-muted/30 space-y-3">
         <div className="flex items-start gap-4">
-          {config.imageUrl ? (
+          {effectiveImageUrl ? (
             <div className="relative h-20 w-20 overflow-hidden rounded-full border-2 border-primary/20 flex-shrink-0">
               <Image
-                src={config.imageUrl}
-                alt={config.displayName}
+                src={effectiveImageUrl}
+                alt={effectiveDisplayName}
                 fill
                 className="object-cover"
                 unoptimized
@@ -270,10 +289,10 @@ export function PersonaEditor({
             </div>
           )}
           <div className="flex-1 min-w-0">
-            <h4 className="font-medium text-lg truncate">{config.displayName}</h4>
+            <h4 className="font-medium text-lg truncate">{effectiveDisplayName}</h4>
             <div className="text-sm text-muted-foreground space-y-1 mt-1">
-              <p>Gender: <span className="capitalize">{config.sex}</span></p>
-              <p>Voice: {VOICE_PRESETS.find((v) => v.id === config.voiceId)?.label ?? config.voiceId}</p>
+              <p>Gender: <span className="capitalize">{effectiveSex}</span></p>
+              <p>Voice: {VOICE_PRESETS.find((v) => v.id === effectiveVoiceId)?.label ?? effectiveVoiceId}</p>
             </div>
           </div>
         </div>
@@ -364,48 +383,91 @@ export function PersonaEditor({
               )}
             </button>
           </DialogTrigger>
-          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
             <DialogHeader>
               <DialogTitle>Select {role === "owner" ? "Owner" : "Nurse"} Persona</DialogTitle>
             </DialogHeader>
-            <p className="text-sm text-muted-foreground mb-4">
-              Choose a persona template. You can customize the name, gender, and voice after selection.
-            </p>
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-4">
-              {loadingTemplates ? (
-                <div className="col-span-full text-center py-8 text-muted-foreground">
-                  <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
-                  Loading personas...
-                </div>
-              ) : avatarTemplates.length === 0 ? (
-                <div className="col-span-full text-center py-8 text-muted-foreground">
-                  No persona templates found. Create personas in other cases first.
-                </div>
-              ) : (
-                avatarTemplates.map((template) => (
-                  <button
-                    key={template.id}
-                    className={`relative aspect-square overflow-hidden rounded-lg border-2 transition-all hover:border-primary hover:ring-2 hover:ring-primary/20 ${
-                      config.imageUrl === template.imageUrl
-                        ? "border-primary ring-2 ring-primary ring-offset-2"
-                        : "border-muted"
-                    }`}
-                    title={`${template.displayName} (${template.sex ?? "unknown"})`}
-                    onClick={() => handleSelectTemplate(template)}
-                  >
-                    <Image
-                      src={template.imageUrl}
-                      alt={template.displayName}
-                      fill
-                      className="object-cover"
-                      unoptimized
-                    />
-                    <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent p-2">
-                      <p className="text-xs text-white truncate">{template.displayName}</p>
-                    </div>
-                  </button>
-                ))
-              )}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b">
+              <p className="text-sm text-muted-foreground">
+                Choose a persona template. You can customize the name, gender, and voice after selection.
+              </p>
+              <div className="flex items-center gap-1 bg-muted p-1 rounded-md text-xs self-start sm:self-auto shrink-0">
+                <button
+                  type="button"
+                  className={`px-3 py-1 rounded transition-colors ${
+                    genderFilter === "all"
+                      ? "bg-background font-semibold shadow-sm text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  onClick={() => setGenderFilter("all")}
+                >
+                  All ({avatarTemplates.length})
+                </button>
+                <button
+                  type="button"
+                  className={`px-3 py-1 rounded transition-colors ${
+                    genderFilter === "male"
+                      ? "bg-background font-semibold shadow-sm text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  onClick={() => setGenderFilter("male")}
+                >
+                  Male ({maleCount})
+                </button>
+                <button
+                  type="button"
+                  className={`px-3 py-1 rounded transition-colors ${
+                    genderFilter === "female"
+                      ? "bg-background font-semibold shadow-sm text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  onClick={() => setGenderFilter("female")}
+                >
+                  Female ({femaleCount})
+                </button>
+              </div>
+            </div>
+            <div className="overflow-y-auto flex-1 py-2 pr-1">
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-4">
+                {loadingTemplates ? (
+                  <div className="col-span-full text-center py-8 text-muted-foreground">
+                    <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+                    Loading personas...
+                  </div>
+                ) : filteredTemplates.length === 0 ? (
+                  <div className="col-span-full text-center py-8 text-muted-foreground">
+                    No persona templates found for this filter.
+                  </div>
+                ) : (
+                  filteredTemplates.map((template) => (
+                    <button
+                      key={template.id}
+                      type="button"
+                      className={`relative aspect-square overflow-hidden rounded-lg border-2 transition-all hover:border-primary hover:ring-2 hover:ring-primary/20 ${
+                        config.imageUrl === template.imageUrl
+                          ? "border-primary ring-2 ring-primary ring-offset-2"
+                          : "border-muted"
+                      }`}
+                      title={`${template.displayName} (${template.sex ?? "unknown"})`}
+                      onClick={() => handleSelectTemplate(template)}
+                    >
+                      <Image
+                        src={template.imageUrl}
+                        alt={template.displayName}
+                        fill
+                        className="object-cover"
+                        unoptimized
+                      />
+                      <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent p-2 text-left">
+                        <p className="text-xs text-white truncate font-medium">{template.displayName}</p>
+                        {template.sex && (
+                          <span className="text-[10px] text-gray-300 capitalize">{template.sex}</span>
+                        )}
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
             </div>
           </DialogContent>
         </Dialog>

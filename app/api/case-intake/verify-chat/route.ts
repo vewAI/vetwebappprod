@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createOpenAIClient } from "@/lib/llm/openaiClient";
+import { generateCaseIntakeChatJson } from "../_lib/llm";
 import { requireUser } from "@/app/api/_lib/auth";
 
 export async function POST(request: NextRequest) {
@@ -99,51 +99,23 @@ Return ONLY JSON (no markdown, no commentary):
         : []),
     ];
 
-    // Create validated OpenAI client for this request
-    let openai: any;
+    let parsed: any;
     try {
-      openai = await createOpenAIClient();
+      parsed = await generateCaseIntakeChatJson({
+        systemPrompt,
+        messages: Array.isArray(messages)
+          ? messages.map((m: { role: string; content: string }) => ({
+              role: m.role as "system" | "user" | "assistant",
+              content: String(m.content),
+            }))
+          : [],
+        temperature: 0.3,
+        maxOutputTokens: 2048,
+      });
     } catch (err: any) {
-      return NextResponse.json({ error: err?.message ?? String(err) }, { status: 500 });
+      console.error("[VERIFY-CHAT-API] LLM chat failed:", err);
+      return NextResponse.json({ error: err?.message ?? String(err) }, { status: 502 });
     }
-
-    let response;
-    let lastError: Error | null = null;
-
-    // Try gpt-4o-mini first, fallback to gpt-3.5-turbo if project doesn't have access
-    for (const model of ["gpt-4o-mini", "gpt-3.5-turbo"]) {
-      try {
-        response = await openai.chat.completions.create({
-          model,
-          temperature: 0.3,
-          response_format: { type: "json_object" },
-          messages: chatMessages,
-        });
-        break; // Success, exit loop
-      } catch (err) {
-        lastError = err as Error;
-        const errorMsg = lastError.message || String(lastError);
-        if (errorMsg.includes("404") || errorMsg.includes("does not have access")) {
-          // Model not available, try next one
-          continue;
-        } else {
-          // Other error, don't retry
-          throw err;
-        }
-      }
-    }
-
-    if (!response) {
-      const msg = lastError?.message || "No model available for verification chat";
-      return NextResponse.json({ error: msg }, { status: 502 });
-    }
-
-    const content = response.choices?.[0]?.message?.content;
-    if (!content) {
-      return NextResponse.json({ error: "LLM returned no content" }, { status: 502 });
-    }
-
-    const parsed = JSON.parse(content);
 
     return NextResponse.json({
       reply: String(parsed.reply ?? ""),

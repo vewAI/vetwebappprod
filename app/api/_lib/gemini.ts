@@ -21,12 +21,13 @@ const MODELS: { model: string; body: Record<string, unknown> }[] = [
 // request (e.g. serverless deploys without GOOGLE_SERVICE_ACCOUNT_JSON).
 // Same key the Gemini Live voice sessions already use.
 const AI_STUDIO_MODELS: { model: string; body: Record<string, unknown> }[] = [
+  { model: "gemini-3.8-flash", body: {} },
   { model: "gemini-flash-latest", body: {} },
-  { model: "gemini-2.0-flash", body: {} },
   {
     model: "gemini-2.5-flash",
     body: { thinkingConfig: { thinkingBudget: 0 } },
   },
+  { model: "gemini-2.0-flash", body: {} },
 ];
 
 async function generateWithAiStudio(opts: {
@@ -34,12 +35,15 @@ async function generateWithAiStudio(opts: {
   temperature: number;
   maxOutputTokens: number;
   timeoutMs: number;
+  responseMimeType?: string;
 }): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey =
+    process.env.GEMINI_API_KEY ||
+    (process.env.OPENAI_API_KEY?.startsWith("AIza") ? process.env.OPENAI_API_KEY : undefined);
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY is not configured");
   }
-  const { prompt, temperature, maxOutputTokens, timeoutMs } = opts;
+  const { prompt, temperature, maxOutputTokens, timeoutMs, responseMimeType } = opts;
 
   let lastError: Error | null = null;
   for (const candidate of AI_STUDIO_MODELS) {
@@ -61,6 +65,7 @@ async function generateWithAiStudio(opts: {
               generationConfig: {
                 temperature,
                 maxOutputTokens,
+                ...(responseMimeType ? { responseMimeType } : {}),
                 ...candidate.body,
               },
             }),
@@ -98,20 +103,24 @@ export async function generateGeminiText(opts: {
   temperature?: number;
   maxOutputTokens?: number;
   timeoutMs?: number;
+  responseMimeType?: string;
 }): Promise<string> {
   const {
     prompt,
     temperature = 0.4,
     maxOutputTokens = 2000,
     timeoutMs = 90_000,
+    responseMimeType,
   } = opts;
 
   let lastError: Error | null = null;
+  let isAuthError = false;
 
   try {
     const ai = await getVertexAISdk();
 
     for (const candidate of MODELS) {
+      if (isAuthError) break;
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
           // Backoff before retrying the same model on transient errors.
@@ -121,6 +130,7 @@ export async function generateGeminiText(opts: {
           const generationConfig = {
             temperature,
             maxOutputTokens,
+            ...(responseMimeType ? { responseMimeType } : {}),
             ...candidate.body,
             // Vertex accepts thinkingConfig inside generationConfig; the SDK's
             // typings lag the surface, hence the loose cast below.
@@ -145,6 +155,10 @@ export async function generateGeminiText(opts: {
         } catch (err) {
           lastError = err instanceof Error ? err : new Error(String(err));
           const message = lastError.message;
+          if (/Could not load the default credentials|GoogleAuthError|Unable to authenticate your request/i.test(message)) {
+            isAuthError = true;
+            break;
+          }
           const transient = /\b(429|500|502|503|504)\b|timed out|ECONNRESET|aborted/i.test(message);
           if (!transient || attempt > 0) break; // move to next model
         }
@@ -158,8 +172,11 @@ export async function generateGeminiText(opts: {
   // Vertex failed entirely (commonly GoogleAuthError when ADC / the service
   // account is not configured on the host). Fall back to the AI Studio key
   // so feedback/findings keep working instead of surfacing an auth error.
-  if (process.env.GEMINI_API_KEY) {
-    return generateWithAiStudio({ prompt, temperature, maxOutputTokens, timeoutMs });
+  const aiStudioKey =
+    process.env.GEMINI_API_KEY ||
+    (process.env.OPENAI_API_KEY?.startsWith("AIza") ? process.env.OPENAI_API_KEY : undefined);
+  if (aiStudioKey) {
+    return generateWithAiStudio({ prompt, temperature, maxOutputTokens, timeoutMs, responseMimeType });
   }
   throw lastError ?? new Error("Gemini generation failed");
 }
