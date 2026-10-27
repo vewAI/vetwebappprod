@@ -243,11 +243,18 @@ export function useSpeechOrchestration(deps: UseSpeechOrchestrationDeps) {
 
     try {
       const ttsText = deps.sanitizeForTts(text);
+      const effectiveMeta = {
+        ...(meta ?? {}),
+        metadata: {
+          ...(meta?.metadata ?? {}),
+          sex: meta?.metadata?.sex ?? gender,
+        },
+      };
       try {
-        await speakRemoteStream(ttsText, voice, meta);
+        await speakRemoteStream(ttsText, voice, effectiveMeta);
       } catch (streamErr) {
         try {
-          await speakRemote(ttsText, voice, meta);
+          await speakRemote(ttsText, voice, effectiveMeta);
         } catch (bufErr) {
           try {
             deps.setFallbackNotice("High-quality voice unavailable. Using browser fallback.");

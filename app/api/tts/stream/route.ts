@@ -80,6 +80,16 @@ export async function GET(req: Request) {
       "matilda": "XrExE9yKIg1WjnnlVkGX"
     };
 
+    const originalVoice = voice;
+    const suggestGenderFromVoice = (v: string) => {
+      const normalized = (v || "").toLowerCase();
+      const female = ["alice", "charlotte", "lily", "matilda", "shimmer", "nova"];
+      const male = ["charlie", "george", "harry", "fable", "onyx", "echo"];
+      if (female.includes(normalized)) return "female";
+      if (male.includes(normalized)) return "male";
+      return "neutral";
+    };
+
     if (elevenLabsVoices[voice]) {
       if (ELEVENLABS_KEY) {
         const voiceId = elevenLabsVoices[voice];
@@ -112,12 +122,14 @@ export async function GET(req: Request) {
         } else {
            const errText = await elevenLabsRes.text().catch(() => "");
            console.error(`[tts stream] ElevenLabs error (voice=${voice}):`, errText);
-           // Fallback to OpenAI
-           voice = "alloy";
+           // Fallback to OpenAI preserving requested gender
+           const gender = suggestGenderFromVoice(originalVoice);
+           voice = gender === "male" ? "fable" : gender === "female" ? "shimmer" : "alloy";
         }
       } else {
          console.warn(`[tts stream] ElevenLabs key missing for voice ${voice}, falling back to OpenAI`);
-         voice = "alloy";
+         const gender = suggestGenderFromVoice(originalVoice);
+         voice = gender === "male" ? "fable" : gender === "female" ? "shimmer" : "alloy";
       }
     }
 
@@ -127,14 +139,6 @@ export async function GET(req: Request) {
     const AISTUDIO_TTS_URL = process.env.AISTUDIO_TTS_URL;
     const GEMINI_KEY = process.env.GEMINI_API_KEY;
     const GEMINI_TTS_URL = process.env.GEMINI_TTS_URL;
-
-    const suggestGenderFromVoice = (v: string) => {
-      const female = ["alice", "charlotte", "lily", "matilda"];
-      const male = ["charlie", "george", "harry"];
-      if (female.includes(v)) return "female";
-      if (male.includes(v)) return "male";
-      return "neutral";
-    };
 
     // Try provider-specific TTS endpoints when configured
     let providerRes: Response | null = null;
@@ -184,17 +188,21 @@ export async function GET(req: Request) {
 
     if (!OPENAI_KEY) {
       return NextResponse.json(
-        { error: "OPENAI_API_KEY not configured" },
-        { status: 500 }
+        {
+          error: "TTS provider unavailable",
+          fallback: "browser",
+          voiceRequested: originalVoice,
+          suggestedFallbackVoiceGender: suggestGenderFromVoice(originalVoice),
+        },
+        { status: 502 }
       );
     }
 
-    // Make a server-side POST to OpenAI using gpt-4o-mini-tts and forward the body.
+    // Make a server-side POST to OpenAI using tts-1 and forward the body.
     // If the upstream call fails, return a structured response indicating the
     // client should fallback to browser voices and include a suggested gender
     // for voice selection based on the requested voice.
 
-    // Reuse the earlier suggestGenderFromVoice definition above.
     providerRes = await fetch("https://api.openai.com/v1/audio/speech", {
       method: "POST",
       headers: {
@@ -202,24 +210,18 @@ export async function GET(req: Request) {
         "Content-Type": "application/json",
         Accept: "audio/mpeg",
       },
-      body: JSON.stringify({ model: "gpt-4o-mini-tts", voice, input: text }),
+      body: JSON.stringify({ model: "tts-1", voice, input: text }),
     });
 
     if (!providerRes || !providerRes.ok) {
       const detail = providerRes ? await providerRes.text().catch(() => "") : "no response";
-      console.error(`[tts stream] gpt-4o-mini-tts error: ${detail}`);
+      console.error(`[tts stream] tts-1 error: ${detail}`);
       return NextResponse.json(
         {
           error: "TTS provider unavailable",
           fallback: "browser",
-          voiceRequested: voice,
-          suggestedFallbackVoiceGender: ((): string => {
-            const female = ["alice", "charlotte", "lily", "matilda"];
-            const male = ["charlie", "george", "harry"];
-            if (female.includes(voice)) return "female";
-            if (male.includes(voice)) return "male";
-            return "neutral";
-          })(),
+          voiceRequested: originalVoice,
+          suggestedFallbackVoiceGender: suggestGenderFromVoice(originalVoice),
           detail,
         },
         { status: 502 }

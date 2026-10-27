@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createOpenAIClient } from "@/lib/llm/openaiClient";
+import { generateCaseIntakeJson } from "../_lib/llm";
 import { requireUser } from "@/app/api/_lib/auth";
 
 const SYSTEM_PROMPT = `You are an expert veterinary clinical educator and case designer. You are reviewing a veterinary teaching case for an AI-powered clinical simulation platform where veterinary students will interact with AI personas (owner, nurse, lab technician) to practice clinical reasoning.
@@ -227,54 +227,18 @@ export async function POST(request: NextRequest) {
       userPayload._sourceText = sourceText;
     }
 
-    let response;
-    let lastError: Error | null = null;
-
-    // Create validated OpenAI client for this request
-    let openai: any;
+    let parsed: any;
     try {
-      openai = await createOpenAIClient();
+      parsed = await generateCaseIntakeJson({
+        systemPrompt: SYSTEM_PROMPT,
+        userPrompt: JSON.stringify(userPayload, null, 2),
+        temperature: 0.3,
+        maxOutputTokens: 8192,
+      });
     } catch (err: any) {
-      return NextResponse.json({ error: err?.message ?? String(err) }, { status: 500 });
+      console.error("[VERIFY-API] LLM verification failed:", err);
+      return NextResponse.json({ error: err?.message ?? String(err) }, { status: 502 });
     }
-
-    // Try gpt-4o-mini first, fallback to gpt-3.5-turbo if project doesn't have access
-    for (const model of ["gpt-4o-mini", "gpt-3.5-turbo"]) {
-      try {
-        response = await openai.chat.completions.create({
-          model,
-          temperature: 0.3,
-          response_format: { type: "json_object" },
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: JSON.stringify(userPayload, null, 2) },
-          ],
-        });
-        break; // Success, exit loop
-      } catch (err) {
-        lastError = err as Error;
-        const errorMsg = lastError.message || String(lastError);
-        if (errorMsg.includes("404") || errorMsg.includes("does not have access")) {
-          // Model not available, try next one
-          continue;
-        } else {
-          // Other error, don't retry
-          throw err;
-        }
-      }
-    }
-
-    if (!response) {
-      const msg = lastError?.message || "No model available for verification";
-      return NextResponse.json({ error: msg }, { status: 502 });
-    }
-
-    const content = response.choices?.[0]?.message?.content;
-    if (!content) {
-      return NextResponse.json({ error: "LLM returned no content" }, { status: 502 });
-    }
-
-    const parsed = JSON.parse(content);
 
     // Validate and normalize the response
     const result = {

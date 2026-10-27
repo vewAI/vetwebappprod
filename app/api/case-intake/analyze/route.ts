@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createOpenAIClient } from "@/lib/llm/openaiClient";
+import { generateCaseIntakeJson } from "../_lib/llm";
 import pdf from "pdf-parse";
 import mammoth from "mammoth";
 import { requireUser } from "@/app/api/_lib/auth";
-
-// NOTE: openai client will be created per-request after validating the
-// configured provider and API key. This prevents accidentally sending
-// a non-OpenAI key (for example a Google API key) to OpenAI and producing
-// confusing errors in logs.
 
 type CompletionItem = {
   fieldKey: string;
@@ -253,96 +248,61 @@ export async function POST(request: NextRequest) {
     // Strengthen prompt: explicitly forbid inventing species or making up
     // definitive patient attributes when they're not present in the source.
     // If a value is missing, return an empty string or mark as missing.
-    // Resolve LLM provider for this feature. If a non-OpenAI provider is
-    // configured, return a helpful error (caller can fall back to a
-    // provider-specific implementation later).
-    try {
-      const llm = await import("@/lib/llm");
-      const provider = await llm.resolveProviderForFeature("chat");
-      if (provider !== "openai") {
-        return NextResponse.json(
-          { error: `LLM provider '${provider}' is configured. This endpoint currently requires an OpenAI provider.` },
-          { status: 500 },
-        );
-      }
-    } catch (__) {
-      // If provider resolution fails, assume OpenAI (backwards compatibility)
-    }
+    const systemPrompt =
+      "You are a veterinary case structuring engine for an AI-powered clinical simulation platform. Return strict JSON only.\n\nYour job has TWO parts:\n1. EXTRACT: Pull factual data (species, condition, findings, vitals, lab values) directly from the source text.\n2. GENERATE: For ALL prompt, feedback, rubric, and persona fields you MUST generate rich, case-specific content. These fields power the AI simulation — the owner persona, nurse persona, lab technician persona, and the evaluation rubrics. Read each field's 'guide' carefully and produce content that matches.\n\nField categories:\n- Fields with 'EXTRACT' in guide → pull from source text\n- Fields with 'GENERATE' in guide → you MUST create case-specific content even if source doesn't mention it\n- Fields starting with 'get_' → these are LLM system prompts; write them as instructions to another AI\n- Fields ending in '_feedback' → these are evaluation rubrics; write them as assessment criteria\n- Fields like 'owner_background', 'owner_follow_up', 'owner_diagnosis' → character profiles and talking points\n\nFor each target field, return the value, missing flag, reason, and a suggestion in Spanish.\n\nCRITICAL RULES:\n- DO NOT INVENT species, sexes, ages, or numeric clinical values that are not explicitly present in the source text. If a value is not present, return an empty string for that draft field and mark it as missing in the completionPlan.\n- NEVER mark a prompt/feedback/persona field as missing. ALWAYS generate quality content for them.\n- For clinical data fields, only extract what the source provides. If truly absent, mark missing.\n- Content fields should be 3-10 sentences each. System prompts should be 5-10 sentences.";
 
-    // Create validated OpenAI client for this request
-    let openai: any;
-    try {
-      openai = await createOpenAIClient();
-    } catch (err: any) {
-      return NextResponse.json({ error: err?.message ?? String(err) }, { status: 500 });
-    }
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a veterinary case structuring engine for an AI-powered clinical simulation platform. Return strict JSON only.\n\nYour job has TWO parts:\n1. EXTRACT: Pull factual data (species, condition, findings, vitals, lab values) directly from the source text.\n2. GENERATE: For ALL prompt, feedback, rubric, and persona fields you MUST generate rich, case-specific content. These fields power the AI simulation — the owner persona, nurse persona, lab technician persona, and the evaluation rubrics. Read each field's 'guide' carefully and produce content that matches.\n\nField categories:\n- Fields with 'EXTRACT' in guide → pull from source text\n- Fields with 'GENERATE' in guide → you MUST create case-specific content even if source doesn't mention it\n- Fields starting with 'get_' → these are LLM system prompts; write them as instructions to another AI\n- Fields ending in '_feedback' → these are evaluation rubrics; write them as assessment criteria\n- Fields like 'owner_background', 'owner_follow_up', 'owner_diagnosis' → character profiles and talking points\n\nFor each target field, return the value, missing flag, reason, and a suggestion in Spanish.\n\nCRITICAL RULES:\n- DO NOT INVENT species, sexes, ages, or numeric clinical values that are not explicitly present in the source text. If a value is not present, return an empty string for that draft field and mark it as missing in the completionPlan.\n- NEVER mark a prompt/feedback/persona field as missing. ALWAYS generate quality content for them.\n- For clinical data fields, only extract what the source provides. If truly absent, mark missing.\n- Content fields should be 3-10 sentences each. System prompts should be 5-10 sentences.",
-        },
-        {
-          role: "user",
-          content: JSON.stringify(
+    const userPrompt = JSON.stringify(
+      {
+        task: "Extract and complete veterinary case fields from source text",
+        targetFields: TARGET_FIELDS,
+        sourceFileName,
+        sourceText: combinedInput,
+        outputSchema: {
+          draftCase: "Record<string,string>",
+          completionPlan: [
             {
-              task: "Extract and complete veterinary case fields from source text",
-              targetFields: TARGET_FIELDS,
-              sourceFileName,
-              sourceText: combinedInput,
-              outputSchema: {
-                draftCase: "Record<string,string>",
-                completionPlan: [
-                  {
-                    fieldKey: "string",
-                    label: "string",
-                    extractedValue: "string",
-                    isMissing: "boolean",
-                    missingReason: "string",
-                    aiSuggestion: "string",
-                    confidence: "number_0_to_1",
-                  },
-                ],
-                sourceSummary: "string",
-              },
-              canonicalExampleCase1: examplePayload,
-              constraints: [
-                "ZERO EMPTY FIELDS: Every key in draftCase must have a non-empty string value. The only exception is patient_name if truly not mentioned.",
-                "GENERATE ALL PROMPTS: Fields starting with 'get_' are system prompts for AI personas. ALWAYS generate them, personalized to this case. Never leave them empty or mark them missing.",
-                "GENERATE ALL RUBRICS: Fields ending in '_feedback' are evaluation rubrics. ALWAYS generate them with case-specific assessment criteria.",
-                "GENERATE PERSONA CONTENT: Fields like 'owner_background', 'owner_follow_up', 'owner_diagnosis' are character profiles. ALWAYS generate them with case-specific personality and dialogue.",
-                "EXTRACT CLINICAL DATA: For 'physical_exam_findings' and 'diagnostic_findings', extract from source with exact values and units. If not in source, mark missing.",
-                "DATA PRESERVATION IS SACRED: NEVER remove, simplify, or paraphrase clinical specifics from the source text. If the professor included breed-specific notes, unusual observations, environmental details, management nuances, or seemingly minor clinical findings, they are INTENTIONAL and CRITICAL to the case. Copy them VERBATIM into the appropriate fields. Every detail the professor bothered to include matters.",
-                "APPEND, NEVER PRUNE: When generating content for fields that already have source data, ADD to what exists rather than replacing or summarizing it. The clinical nuances that make each case unique are exactly what makes it educational.",
-                "Do not invent impossible clinical details (vitals, lab values); only mark clinical data fields as missing if truly unknown.",
-                "For select fields (species, category, difficulty, patient_sex, findings_release_strategy), use ONLY the exact allowed values listed in the guide.",
-                "Tags: generate 4-6 relevant clinical tags from the case content.",
-                "Estimated_time: simple=15, medium=25, complex=35 based on case complexity.",
-                "Each generated field should contain 3-10 substantive sentences. Do not write one-liners for prompt or feedback fields.",
-                "Personalize EVERYTHING: use the patient name, species, condition, and clinical scenario in every generated field. No generic templates.",
-              ],
+              fieldKey: "string",
+              label: "string",
+              extractedValue: "string",
+              isMissing: "boolean",
+              missingReason: "string",
+              aiSuggestion: "string",
+              confidence: "number_0_to_1",
             },
-            null,
-            2,
-          ),
+          ],
+          sourceSummary: "string",
         },
-      ],
-    });
-
-    const content = response.choices?.[0]?.message?.content;
-    if (!content) {
-      return NextResponse.json(buildFallback(combinedInput));
-    }
+        canonicalExampleCase1: examplePayload,
+        constraints: [
+          "ZERO EMPTY FIELDS: Every key in draftCase must have a non-empty string value. The only exception is patient_name if truly not mentioned.",
+          "GENERATE ALL PROMPTS: Fields starting with 'get_' are system prompts for AI personas. ALWAYS generate them, personalized to this case. Never leave them empty or mark them missing.",
+          "GENERATE ALL RUBRICS: Fields ending in '_feedback' are evaluation rubrics. ALWAYS generate them with case-specific assessment criteria.",
+          "GENERATE PERSONA CONTENT: Fields like 'owner_background', 'owner_follow_up', 'owner_diagnosis' are character profiles. ALWAYS generate them with case-specific personality and dialogue.",
+          "EXTRACT CLINICAL DATA: For 'physical_exam_findings' and 'diagnostic_findings', extract from source with exact values and units. If not in source, mark missing.",
+          "DATA PRESERVATION IS SACRED: NEVER remove, simplify, or paraphrase clinical specifics from the source text. If the professor included breed-specific notes, unusual observations, environmental details, management nuances, or seemingly minor clinical findings, they are INTENTIONAL and CRITICAL to the case. Copy them VERBATIM into the appropriate fields. Every detail the professor bothered to include matters.",
+          "APPEND, NEVER PRUNE: When generating content for fields that already have source data, ADD to what exists rather than replacing or summarizing it. The clinical nuances that make each case unique are exactly what makes it educational.",
+          "Do not invent impossible clinical details (vitals, lab values); only mark clinical data fields as missing if truly unknown.",
+          "For select fields (species, category, difficulty, patient_sex, findings_release_strategy), use ONLY the exact allowed values listed in the guide.",
+          "Tags: generate 4-6 relevant clinical tags from the case content.",
+          "Estimated_time: simple=15, medium=25, complex=35 based on case complexity.",
+          "Each generated field should contain 3-10 substantive sentences. Do not write one-liners for prompt or feedback fields.",
+          "Personalize EVERYTHING: use the patient name, species, condition, and clinical scenario in every generated field. No generic templates.",
+        ],
+      },
+      null,
+      2,
+    );
 
     let parsed: any;
     try {
-      parsed = JSON.parse(content);
-    } catch {
+      parsed = await generateCaseIntakeJson({
+        systemPrompt,
+        userPrompt,
+        temperature: 0.2,
+        maxOutputTokens: 8192,
+      });
+    } catch (llmErr) {
+      console.error("[case-intake/analyze] LLM extraction failed, using fallback:", llmErr);
       return NextResponse.json(buildFallback(combinedInput));
     }
 

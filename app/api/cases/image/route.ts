@@ -4,9 +4,15 @@ import OpenAI from "openai";
 import { generateCaseImage } from "@/features/cases/services/caseImageService";
 import { requireUser } from "@/app/api/_lib/auth";
 
-const openaiKey = process.env.OPENAI_API_KEY;
-
-const openai = openaiKey ? new OpenAI({ apiKey: openaiKey }) : null;
+function getOpenAIClient(): OpenAI | null {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key || key.startsWith("AIza")) return null;
+  try {
+    return new OpenAI({ apiKey: key });
+  } catch {
+    return null;
+  }
+}
 
 export async function PUT(req: Request) {
   const auth = await requireUser(req, { requireAdmin: true });
@@ -51,10 +57,13 @@ export async function PUT(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (!openai && !geminiKey) {
+  const geminiKey = process.env.GEMINI_API_KEY || (process.env.OPENAI_API_KEY?.startsWith("AIza") ? process.env.OPENAI_API_KEY : undefined);
+  const hasVertex = Boolean(process.env.GOOGLE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.GOOGLE_CLOUD_PROJECT);
+  const openai = getOpenAIClient();
+
+  if (!openai && !geminiKey && !hasVertex) {
     return NextResponse.json(
-      { error: "No image generation provider configured. Set OPENAI_API_KEY or GEMINI_API_KEY." },
+      { error: "No image generation provider configured. Set Google Cloud Vertex credentials, GEMINI_API_KEY, or OPENAI_API_KEY." },
       { status: 500 }
     );
   }

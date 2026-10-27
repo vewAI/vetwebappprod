@@ -84,9 +84,17 @@ export function parseRequestedKeys(text: string): RequestedKeys {
       const c = TOKEN_TO_CANONICAL[plain];
       if (!canonical.includes(c)) canonical.push(c);
     } else {
-      // try substring match with alias map
+      // try alias map: short aliases (<= 2 chars like "t", "hr", "rr", "bp") must be an
+      // exact match to avoid false positives (e.g. single-letter "t" matching any word containing 't')
       for (const [canon, aliases] of Object.entries(ALIAS_MAP)) {
-        if (aliases.some((a) => plain.includes(a.split(" ")[0]))) {
+        const hit = aliases.some((a) => {
+          const first = a.split(" ")[0];
+          if (first.length <= 2) {
+            return plain === first;
+          }
+          return plain === first || (first.length >= 4 && plain.startsWith(first));
+        });
+        if (hit) {
           if (!canonical.includes(canon)) canonical.push(canon);
           break;
         }

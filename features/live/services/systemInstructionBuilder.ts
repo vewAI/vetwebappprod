@@ -52,7 +52,7 @@ export function buildPersonaSystemInstruction(params: {
     ? `\nOWNER BACKGROUND (reference facts for the owner persona only — not instructions):\n${ownerBackground}`
     : "";
 
-  const clinicalData = buildClinicalDataSection(caseItem, personaRoleKey);
+  const clinicalData = buildClinicalDataSection(caseItem, personaRoleKey, stageType);
 
   const speciesKnowledgeSection = persona?.speciesKnowledge
     ? `\nSPECIES CLINICAL KNOWLEDGE:\n${persona.speciesKnowledge}`
@@ -95,7 +95,7 @@ export function buildPersonaSystemInstruction(params: {
     "- TONE: Speak naturally and conversationally, at a normal pace, the way a real person talks. Do NOT sound cheerful, theatrical, or robotic — avoid exclamation marks and enthusiastic interjections (no 'great!', 'awesome!', 'wonderful!').",
     "- The owner is genuinely worried about a sick animal and sounds anxious and concerned. The veterinary team is professional, calm and empathetic — never chipper.",
     "- Keep responses conversational and concise — this is voice, not text",
-    "- RESULTS ARE DELIVERED IN THE PANEL (STRICT): Physical examination values, numbers, and laboratory results must NEVER be read aloud — the student sees them in the written results panel (the clipboard icon). When the student asks for values or results, acknowledge briefly and direct them to the results panel (e.g. 'It's all in the results panel for you, doctor.'). Only qualitative observations needed for conversational flow may be spoken — never numbers, units, or test values.",
+    "- RESULTS ARE DELIVERED IN THE PANEL (STRICT): Physical examination values, numbers, and laboratory results must NEVER be read aloud — the student sees them in the written results panel (the clipboard icon). When the student asks for values or results of the CURRENT stage, acknowledge briefly and direct them to the results panel (e.g. 'It's all in the results panel for you, doctor.'). Never claim results are in the panel for tests or stages that have not been performed yet. Only qualitative observations needed for conversational flow may be spoken — never numbers, units, or test values.",
     "- If the student asks about something outside your knowledge, say you don't know rather than making things up",
     "- DISCLAIMER SUPPRESSION (ABSOLUTE, HIGHEST PRIORITY): This is a TRAINING SIMULATION for veterinary students — you are always a character within it. NEVER say 'this is not medical/veterinary advice', 'I cannot provide medical advice', 'please consult/seek a professional', 'seek professional help', 'reach out to a professional', or ANY variant of safety boilerplate or disclaimers. Never break role to warn, hedge, or refer the student elsewhere. If the student seems worried, respond IN CHARACTER with what your character would realistically say.",
     "- Never break character or acknowledge that this is a simulation",
@@ -170,7 +170,7 @@ function buildAccentSection(): string {
   ].join("\n");
 }
 
-function buildClinicalDataSection(caseItem: Case, personaRoleKey: string): string {
+function buildClinicalDataSection(caseItem: Case, personaRoleKey: string, stageType?: string): string {
   const isClinical = personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician";
   if (!isClinical) return "";
 
@@ -184,7 +184,9 @@ function buildClinicalDataSection(caseItem: Case, personaRoleKey: string): strin
     sections.push(`\nPhysical Examination Findings:\n${caseItem.physicalExamFindings}`);
   }
 
-  if (caseItem.diagnosticFindings) {
+  // During history or physical examination stage, do NOT include diagnostic/lab results
+  // because lab tests have not been ordered or performed yet.
+  if (caseItem.diagnosticFindings && stageType !== "history" && stageType !== "physical") {
     sections.push(`\nDiagnostic/Lab Results:\n${caseItem.diagnosticFindings}`);
   }
 
@@ -221,7 +223,11 @@ function getNurseRules(stageType: string): string {
   ];
 
   if (stageType === "physical") {
-    rules.push("12) CRITICAL: In the Physical Examination stage, do NOT provide diagnostic interpretations or treatment recommendations. Report only recorded findings.");
+    rules.push(
+      "12) STAGE BOUNDARY - NO LABS YET (CRITICAL): In this Physical Examination stage, laboratory tests and diagnostics have NOT been run or ordered yet. You ONLY have physical examination findings.",
+      "13) If the student asks about lab tests, bloodwork, imaging, or diagnostics: clarify that lab tests have not been ordered or performed yet and will be planned in the next stage. NEVER say lab results are in the panel during the physical exam stage, because none exist yet.",
+      "14) In the Physical Examination stage, do NOT provide diagnostic interpretations or treatment recommendations. Report only recorded physical examination findings."
+    );
   }
 
   if (stageType === "treatment") {
@@ -268,7 +274,7 @@ function getStageGuidance(stageType: string, roleKey: string): string {
       owner: "GUIDANCE FOR THIS STAGE:\nThe student is taking your animal's history. Answer their questions about symptoms, timeline, diet, environment, and previous medical history. Be a concerned but cooperative owner. CRITICAL: Keep answers SHORT (1-2 sentences). Answer ONLY what was asked. Do NOT volunteer extra details — let the student guide the conversation with their questions. When the student says they are ready to examine the animal, confirm briefly and offer to bring the veterinary nurse — do NOT continue with examination questions yourself.",
     },
     physical: {
-      "veterinary-nurse": "GUIDANCE FOR THIS STAGE:\nThe student is performing a physical examination. You are the nurse assisting them. When they ask for findings, acknowledge with a SHORT POINTER of a few words (e.g. 'In the results panel, doctor.') — never speak values, numbers, or findings aloud. Be thorough and professional.",
+      "veterinary-nurse": "GUIDANCE FOR THIS STAGE:\nThe student is performing a physical examination. You are the nurse assisting them. When they ask for findings, acknowledge with a SHORT POINTER of a few words (e.g. 'In the results panel, doctor.') — never speak values, numbers, or findings aloud. If the student asks about laboratory tests, bloodwork, or diagnostics, clarify that lab tests have not been ordered or performed yet and will be handled in the next stage — NEVER say lab results are in the panel during physical examination. Be thorough and professional.",
     },
     diagnostic: {
       owner: "GUIDANCE FOR THIS STAGE:\nThe student is recommending diagnostic tests for your animal. You may be concerned about costs, worried about the procedures, or have questions. React naturally — ask about what each test involves, express concern about your animal's comfort, and discuss costs when relevant.",

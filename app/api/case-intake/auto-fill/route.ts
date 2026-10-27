@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createOpenAIClient } from "@/lib/llm/openaiClient";
+import { generateCaseIntakeJson } from "../_lib/llm";
 import { requireUser } from "@/app/api/_lib/auth";
 
 export async function POST(request: NextRequest) {
@@ -87,49 +87,18 @@ Return a JSON object with ONLY these fields (one per empty field passed to you):
 Only include fields that are in the emptyFields list passed. Set other fields to null.
 `;
 
-    // Create validated OpenAI client for this request
-    let openai: any;
+    let parsed: any;
     try {
-      openai = await createOpenAIClient();
+      parsed = await generateCaseIntakeJson<Record<string, unknown>>({
+        systemPrompt: "You are an expert veterinary medicine educator creating simulation cases for veterinary students. Return strict JSON only.",
+        userPrompt: systemPrompt,
+        temperature: 0.7,
+        maxOutputTokens: 4096,
+      });
     } catch (err: any) {
-      return NextResponse.json({ error: err?.message ?? String(err) }, { status: 500 });
+      console.error("[AUTO-FILL-API] LLM generation failed:", err);
+      return NextResponse.json({ error: err?.message ?? String(err) }, { status: 502 });
     }
-
-    let response;
-    let lastError: Error | null = null;
-
-    // Try gpt-4o-mini first, fallback to gpt-3.5-turbo
-    for (const model of ["gpt-4o-mini", "gpt-3.5-turbo"]) {
-      try {
-        response = await openai.chat.completions.create({
-          model,
-          temperature: 0.7,
-          response_format: { type: "json_object" },
-          messages: [{ role: "user", content: systemPrompt }],
-        });
-        break;
-      } catch (err) {
-        lastError = err as Error;
-        const errorMsg = lastError.message || String(lastError);
-        if (errorMsg.includes("404") || errorMsg.includes("does not have access")) {
-          continue;
-        } else {
-          throw err;
-        }
-      }
-    }
-
-    if (!response) {
-      const msg = lastError?.message || "No model available";
-      return NextResponse.json({ error: msg }, { status: 502 });
-    }
-
-    const content = response.choices?.[0]?.message?.content;
-    if (!content) {
-      return NextResponse.json({ error: "LLM returned no content" }, { status: 502 });
-    }
-
-    const parsed = JSON.parse(content);
 
     // Build result with only the fields that were requested
     const suggestions: Record<string, string | null> = {};

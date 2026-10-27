@@ -66,9 +66,19 @@ export async function applySpecializedNurse(supabase: SupabaseClient, caseId: st
   }
 
   const metadata: Record<string, unknown> = {
+    sex: nurse.sex ?? undefined,
+    voiceId: nurse.voiceId ?? undefined,
+    identity: {
+      sex: nurse.sex ?? undefined,
+      voiceId: nurse.voiceId ?? undefined,
+    },
     nurseSpecialization: {
       id: nurse.id,
       speciesKey: nurse.speciesKey,
+      displayName: nurse.displayName,
+      imageUrl: nurse.imageUrl,
+      sex: nurse.sex,
+      voiceId: nurse.voiceId,
       skills: nurse.skills,
       labReferenceRanges: nurse.labReferenceRanges,
       vitalReferenceRanges: nurse.vitalReferenceRanges,
@@ -83,6 +93,7 @@ export async function applySpecializedNurse(supabase: SupabaseClient, caseId: st
     behavior_prompt: nurse.behaviorPrompt,
     metadata,
     image_url: nurse.imageUrl ?? null,
+    sex: nurse.sex ?? null,
     status: "ready",
     generated_by: "system",
   };

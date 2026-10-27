@@ -18,6 +18,8 @@ type NameEntry = {
   first: string;
   last: string;
   honorific?: string;
+  sex?: PersonaSex;
+  voiceId?: string;
 };
 
 type PersonaIdentityConfig = {
@@ -31,10 +33,10 @@ const DEFAULT_CONFIG: PersonaIdentityConfig = {
   sex: "female",
   voiceId: "alice", // British female (ElevenLabs)
   names: [
-    { first: "Alexandra", last: "Morgan" },
-    { first: "Victoria", last: "Lee" },
-    { first: "Charlotte", last: "Quinn" },
-    { first: "Olivia", last: "Adams" },
+    { first: "Alexandra", last: "Morgan", sex: "female", voiceId: "alice" },
+    { first: "Victoria", last: "Lee", sex: "female", voiceId: "charlotte" },
+    { first: "Charlotte", last: "Quinn", sex: "female", voiceId: "lily" },
+    { first: "Olivia", last: "Adams", sex: "female", voiceId: "matilda" },
   ],
 };
 
@@ -50,57 +52,57 @@ const ROLE_CONFIG: Record<string, PersonaIdentityConfig> = {
     sex: "female",
     voiceId: "alice", // British female (ElevenLabs)
     names: [
-      // British/UK-style names for coherence with British accent
-      { first: "Sarah", last: "Bennett" },
-      { first: "Emma", last: "Thompson" },
-      { first: "Mary", last: "Williams" },
-      { first: "Patricia", last: "Johnson" },
-      { first: "Jennifer", last: "Brown" },
-      { first: "Elizabeth", last: "Jones" },
-      { first: "Linda", last: "Miller" },
-      { first: "Barbara", last: "Davis" },
-      { first: "Susan", last: "Clarke" },
-      { first: "Jessica", last: "Wright" },
-      { first: "Karen", last: "Wilson" },
-      { first: "Nancy", last: "Hughes" },
-      { first: "Lisa", last: "Anderson" },
-      { first: "Margaret", last: "Taylor" },
-      { first: "Betty", last: "Thomas" },
-      { first: "Sandra", last: "Edwards" },
-      { first: "Ashley", last: "Moore" },
-      { first: "Dorothy", last: "Martin" },
-      { first: "Kimberly", last: "Jackson" },
-      { first: "Emily", last: "Thompson" },
-      { first: "Donna", last: "White" },
-      { first: "Michelle", last: "Roberts" },
-      { first: "Carol", last: "Lee" },
-      { first: "Amanda", last: "Harris" },
-      { first: "Melissa", last: "Cooper" },
-      { first: "Deborah", last: "Clark" },
-      { first: "Stephanie", last: "Lewis" },
-      { first: "Rebecca", last: "Robinson" },
-      { first: "Sharon", last: "Walker" },
-      { first: "Laura", last: "Hall" },
-      { first: "Cynthia", last: "Young" },
-      { first: "Kathleen", last: "Allen" },
-      { first: "Amy", last: "King" },
-      { first: "Shirley", last: "Scott" },
-      { first: "Angela", last: "Green" },
-      { first: "Helen", last: "Baker" },
-      { first: "Anna", last: "Adams" },
-      { first: "Brenda", last: "Nelson" },
-      { first: "Pamela", last: "Hill" },
-      { first: "Nicole", last: "Campbell" },
-      { first: "Samantha", last: "Mitchell" },
-      { first: "Katherine", last: "Carter" },
-      { first: "Christine", last: "Phillips" },
-      { first: "Debra", last: "Evans" },
-      { first: "Rachel", last: "Turner" },
-      { first: "Carolyn", last: "Parker" },
-      { first: "Janet", last: "Collins" },
-      { first: "Catherine", last: "Stewart" },
-      { first: "Heather", last: "Morris" },
-      { first: "Diane", last: "Murphy" },
+      // British/UK-style names with balanced representation of female and male owners
+      { first: "Sarah", last: "Bennett", sex: "female", voiceId: "alice" },
+      { first: "James", last: "Wright", sex: "male", voiceId: "george" },
+      { first: "Emma", last: "Thompson", sex: "female", voiceId: "charlotte" },
+      { first: "Oliver", last: "Taylor", sex: "male", voiceId: "charlie" },
+      { first: "Mary", last: "Williams", sex: "female", voiceId: "lily" },
+      { first: "William", last: "Hughes", sex: "male", voiceId: "harry" },
+      { first: "Patricia", last: "Johnson", sex: "female", voiceId: "matilda" },
+      { first: "Thomas", last: "Davis", sex: "male", voiceId: "fable" },
+      { first: "Jennifer", last: "Brown", sex: "female", voiceId: "alice" },
+      { first: "Alexander", last: "Clark", sex: "male", voiceId: "george" },
+      { first: "Elizabeth", last: "Jones", sex: "female", voiceId: "charlotte" },
+      { first: "Daniel", last: "Anderson", sex: "male", voiceId: "charlie" },
+      { first: "Linda", last: "Miller", sex: "female", voiceId: "lily" },
+      { first: "Michael", last: "Roberts", sex: "male", voiceId: "harry" },
+      { first: "Barbara", last: "Davis", sex: "female", voiceId: "matilda" },
+      { first: "David", last: "Campbell", sex: "male", voiceId: "fable" },
+      { first: "Susan", last: "Clarke", sex: "female", voiceId: "alice" },
+      { first: "Benjamin", last: "Green", sex: "male", voiceId: "george" },
+      { first: "Jessica", last: "Wright", sex: "female", voiceId: "charlotte" },
+      { first: "George", last: "Scott", sex: "male", voiceId: "charlie" },
+      { first: "Karen", last: "Wilson", sex: "female", voiceId: "lily" },
+      { first: "Edward", last: "Walker", sex: "male", voiceId: "harry" },
+      { first: "Nancy", last: "Hughes", sex: "female", voiceId: "matilda" },
+      { first: "Henry", last: "Robinson", sex: "male", voiceId: "george" },
+      { first: "Carol", last: "Lee", sex: "female", voiceId: "alice" },
+      { first: "Charles", last: "King", sex: "male", voiceId: "charlie" },
+      { first: "Nicole", last: "Campbell", sex: "female", voiceId: "charlotte" },
+      { first: "Richard", last: "Evans", sex: "male", voiceId: "harry" },
+      { first: "Helen", last: "Baker", sex: "female", voiceId: "lily" },
+      { first: "Arthur", last: "Young", sex: "male", voiceId: "george" },
+      { first: "Amanda", last: "Harris", sex: "female", voiceId: "matilda" },
+      { first: "Jack", last: "Mitchell", sex: "male", voiceId: "charlie" },
+      { first: "Melissa", last: "Cooper", sex: "female", voiceId: "alice" },
+      { first: "Samuel", last: "Turner", sex: "male", voiceId: "harry" },
+      { first: "Deborah", last: "Clark", sex: "female", voiceId: "charlotte" },
+      { first: "Lucas", last: "Morgan", sex: "male", voiceId: "george" },
+      { first: "Stephanie", last: "Lewis", sex: "female", voiceId: "lily" },
+      { first: "Noah", last: "Harrison", sex: "male", voiceId: "fable" },
+      { first: "Rebecca", last: "Robinson", sex: "female", voiceId: "matilda" },
+      { first: "Ethan", last: "Palmer", sex: "male", voiceId: "charlie" },
+      { first: "Sharon", last: "Walker", sex: "female", voiceId: "alice" },
+      { first: "Leo", last: "Phillips", sex: "male", voiceId: "harry" },
+      { first: "Laura", last: "Hall", sex: "female", voiceId: "charlotte" },
+      { first: "Isaac", last: "Edwards", sex: "male", voiceId: "george" },
+      { first: "Cynthia", last: "Young", sex: "female", voiceId: "lily" },
+      { first: "Liam", last: "Martin", sex: "male", voiceId: "fable" },
+      { first: "Kathleen", last: "Allen", sex: "female", voiceId: "matilda" },
+      { first: "Mason", last: "Foster", sex: "male", voiceId: "charlie" },
+      { first: "Amy", last: "King", sex: "female", voiceId: "alice" },
+      { first: "Dylan", last: "Bennett", sex: "male", voiceId: "harry" },
     ],
   },
   "lab-technician": {
@@ -229,14 +231,17 @@ export function resolvePersonaIdentity(
     ? `${honorific} ${firstName} ${lastName}`
     : `${firstName} ${lastName}`;
 
+  const sex = nameEntry.sex ?? config.sex;
+  const voiceId = nameEntry.voiceId ?? config.voiceId;
+
   return {
     firstName,
     lastName,
     fullName,
     honorific,
-    sex: config.sex,
-    pronouns: buildPronouns(config.sex),
-    voiceId: config.voiceId,
+    sex,
+    pronouns: buildPronouns(sex),
+    voiceId,
   };
 }
 
@@ -246,6 +251,8 @@ function buildOwnerIdentity(ownerName: string, caseId: string, roleKey: string):
   const backupNames = config.names.length ? config.names : DEFAULT_CONFIG.names;
   const base = `${caseId}:${roleKey}:owner`;
   const defaultEntry = pickNameEntry({ ...config, names: backupNames }, base);
+  const sex = defaultEntry.sex ?? config.sex;
+  const voiceId = defaultEntry.voiceId ?? config.voiceId;
 
   if (!cleaned) {
     return {
@@ -253,9 +260,9 @@ function buildOwnerIdentity(ownerName: string, caseId: string, roleKey: string):
       lastName: defaultEntry.last,
       fullName: `${defaultEntry.first} ${defaultEntry.last}`,
       honorific: defaultEntry.honorific ?? config.defaultHonorific,
-      sex: config.sex,
-      pronouns: buildPronouns(config.sex),
-      voiceId: config.voiceId,
+      sex,
+      pronouns: buildPronouns(sex),
+      voiceId,
     };
   }
 
@@ -270,8 +277,8 @@ function buildOwnerIdentity(ownerName: string, caseId: string, roleKey: string):
     lastName,
     fullName,
     honorific,
-    sex: config.sex,
-    pronouns: buildPronouns(config.sex),
-    voiceId: config.voiceId,
+    sex,
+    pronouns: buildPronouns(sex),
+    voiceId,
   };
 }

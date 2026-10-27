@@ -93,8 +93,15 @@ export async function speakRemote(text: string, voice?: string, meta?: TtsMeta):
     }
 
     if (bodyJson && bodyJson.fallback === "browser") {
-      // Use browser SpeechSynthesis as a fallback. Respect avatar sex if provided in meta.
-      await speakWithSpeechSynthesis(text, voice, meta);
+      // Use browser SpeechSynthesis as a fallback. Respect avatar sex if provided in meta or suggested by server.
+      const enrichedMeta: TtsMeta = {
+        ...(meta ?? {}),
+        metadata: {
+          ...(meta?.metadata ?? {}),
+          sex: meta?.metadata?.sex ?? bodyJson.suggestedFallbackVoiceGender,
+        },
+      };
+      await speakWithSpeechSynthesis(text, voice, enrichedMeta);
       // Return a real Audio element placeholder so callers get an HTMLAudioElement.
       const placeholder = new Audio();
       return placeholder;
@@ -216,11 +223,12 @@ export async function speakRemote(text: string, voice?: string, meta?: TtsMeta):
 async function speakWithSpeechSynthesis(text: string, voice?: string, meta?: TtsMeta) {
   const preferredSex = (meta && meta.metadata && (meta.metadata.sex as string)) || undefined;
   const suggestGenderFromVoice = (v?: string) => {
-    const female = ["alice", "charlotte", "lily", "matilda"];
-    const male = ["charlie", "george", "harry"];
     if (!v) return "neutral";
-    if (female.includes(v)) return "female";
-    if (male.includes(v)) return "male";
+    const normalized = v.toLowerCase();
+    const female = ["alice", "charlotte", "lily", "matilda", "shimmer", "nova"];
+    const male = ["charlie", "george", "harry", "fable", "onyx", "echo"];
+    if (female.includes(normalized)) return "female";
+    if (male.includes(normalized)) return "male";
     return "neutral";
   };
 
@@ -242,39 +250,76 @@ async function speakWithSpeechSynthesis(text: string, voice?: string, meta?: Tts
       };
     }
 
-    const pickVoice = () => {
+    const pickVoice = (): { voice: SpeechSynthesisVoice | undefined; pitch: number } => {
       voices = synth.getVoices() || [];
-      // Prefer British English voices (en-GB) first, then any English (en-*)
-      // and finally any available voice. Also respect desired gender when
-      // possible by looking for gender tokens in the voice name.
-      const genderPriority = desiredGender === "female" ? ["female", "woman", "f"] : desiredGender === "male" ? ["male", "man", "m"] : [];
-
       const normalize = (s?: string) => (s || "").toLowerCase();
+
+      const isExplicitFemale = (name: string) => {
+        const n = normalize(name);
+        return /\b(female|woman|girl|lady|zira|susan|hazel|aria|catherine|jenny|amy|emma|heera|ayumi|haruka|samantha|victoria|karen|libby|stephanie|sarah)\b/i.test(n);
+      };
+
+      const isExplicitMale = (name: string) => {
+        const n = normalize(name);
+        if (isExplicitFemale(n)) return false;
+        return /\b(male|man|boy|guy|gentleman|david|mark|george|richard|james|daniel|oliver|arthur|charles|paul|john|henry|steffan|sean|callum|ryan)\b/i.test(n);
+      };
 
       const gbVoices = voices.filter((v) => v.lang && normalize(v.lang).startsWith("en-gb"));
       const enVoices = voices.filter((v) => v.lang && normalize(v.lang).startsWith("en"));
 
-      const findByName = (list: SpeechSynthesisVoice[]) => {
-        if (!list || list.length === 0) return undefined;
-        if (genderPriority.length) {
-          const found = list.find((v) => genderPriority.some((g) => normalize(v.name).includes(g)));
-          if (found) return found;
-        }
-        // Prefer voices whose name indicates British/UK if present
-        const britishNamed = list.find((v) => normalize(v.name).includes("british") || normalize(v.name).includes("uk"));
-        if (britishNamed) return britishNamed;
-        return list[0];
-      };
+      if (desiredGender === "male") {
+        // 1. British male voice
+        const gbMale = gbVoices.find((v) => isExplicitMale(v.name));
+        if (gbMale) return { voice: gbMale, pitch: 1 };
 
-      let candidate = findByName(gbVoices) || findByName(enVoices) || findByName(voices);
-      return candidate;
+        // 2. Any English male voice (e.g. Microsoft David, Microsoft Mark)
+        const enMale = enVoices.find((v) => isExplicitMale(v.name));
+        if (enMale) return { voice: enMale, pitch: 1 };
+
+        // 3. Any language male voice
+        const anyMale = voices.find((v) => isExplicitMale(v.name));
+        if (anyMale) return { voice: anyMale, pitch: 1 };
+
+        // 4. Voice that is at least not explicitly female
+        const nonFemale = gbVoices.find((v) => !isExplicitFemale(v.name)) || enVoices.find((v) => !isExplicitFemale(v.name));
+        if (nonFemale) return { voice: nonFemale, pitch: 0.95 };
+
+        // 5. Fallback voice with lower pitch for masculine tone
+        const fallback = gbVoices[0] || enVoices[0] || voices[0];
+        return { voice: fallback, pitch: 0.85 };
+      }
+
+      if (desiredGender === "female") {
+        // 1. British female voice
+        const gbFemale = gbVoices.find((v) => isExplicitFemale(v.name));
+        if (gbFemale) return { voice: gbFemale, pitch: 1 };
+
+        // 2. Any English female voice (e.g. Microsoft Zira, Google US English)
+        const enFemale = enVoices.find((v) => isExplicitFemale(v.name));
+        if (enFemale) return { voice: enFemale, pitch: 1 };
+
+        // 3. Any language female voice
+        const anyFemale = voices.find((v) => isExplicitFemale(v.name));
+        if (anyFemale) return { voice: anyFemale, pitch: 1 };
+
+        const fallback = gbVoices[0] || enVoices[0] || voices[0];
+        return { voice: fallback, pitch: 1.1 };
+      }
+
+      // Neutral / Default: prefer British English if available
+      const britishNamed = (gbVoices.length ? gbVoices : enVoices).find((v) =>
+        normalize(v.name).includes("british") || normalize(v.name).includes("uk")
+      );
+      const chosen = britishNamed || gbVoices[0] || enVoices[0] || voices[0];
+      return { voice: chosen, pitch: 1 };
     };
 
     const utter = new SpeechSynthesisUtterance(text);
-    const chosen = pickVoice();
+    const { voice: chosen, pitch } = pickVoice();
     if (chosen) utter.voice = chosen;
     utter.rate = 1;
-    utter.pitch = 1;
+    utter.pitch = pitch;
 
     dispatchTtsStart({
       ...(meta ?? {}),

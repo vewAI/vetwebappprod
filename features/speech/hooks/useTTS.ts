@@ -39,11 +39,17 @@ export function useTTS() {
       
       if (gender) {
         const voices = window.speechSynthesis.getVoices();
-        const preferred = voices.find(v => 
-            v.name.toLowerCase().includes(gender) || 
-            (gender === 'female' && (v.name.includes('Zira') || v.name.includes('Samantha') || v.name.includes('Google US English'))) ||
-            (gender === 'male' && (v.name.includes('David') || v.name.includes('Alex')))
-        );
+        const preferred = voices.find(v => {
+          const name = v.name;
+          if (gender === 'male') {
+            if (/female/i.test(name)) return false;
+            return /\bmale\b/i.test(name) || /david|mark|george|richard|james|alex|guy|daniel/i.test(name);
+          }
+          if (gender === 'female') {
+            return /female/i.test(name) || /zira|susan|hazel|samantha|aria|jenny|google us english/i.test(name);
+          }
+          return false;
+        });
         if (preferred) u.voice = preferred;
       }
 
@@ -70,11 +76,17 @@ export function useTTS() {
 
         if (gender) {
             const voices = window.speechSynthesis.getVoices();
-            const preferred = voices.find(v => 
-                v.name.toLowerCase().includes(gender) || 
-                (gender === 'female' && (v.name.includes('Zira') || v.name.includes('Samantha') || v.name.includes('Google US English'))) ||
-                (gender === 'male' && (v.name.includes('David') || v.name.includes('Alex')))
-            );
+            const preferred = voices.find(v => {
+              const name = v.name;
+              if (gender === 'male') {
+                if (/female/i.test(name)) return false;
+                return /\bmale\b/i.test(name) || /david|mark|george|richard|james|alex|guy|daniel/i.test(name);
+              }
+              if (gender === 'female') {
+                return /female/i.test(name) || /zira|susan|hazel|samantha|aria|jenny|google us english/i.test(name);
+              }
+              return false;
+            });
             if (preferred) u.voice = preferred;
         }
 

@@ -15,7 +15,7 @@ const CASE_IMAGE_MODEL =
   "dall-e-3";
 
 const CASE_IMAGE_PROVIDER =
-  (process.env.CASE_IMAGE_PROVIDER ?? "openai").toLowerCase();
+  (process.env.CASE_IMAGE_PROVIDER ?? "gemini").toLowerCase();
 
 const ALLOWED_SIZES = new Set([
   "1024x1024",
@@ -147,44 +147,142 @@ function buildSafetyFallbackPrompt(caseData: CaseRecord): string {
   return truncatePrompt(prompt);
 }
 
-// ── Gemini Imagen via REST ──
+// ── Gemini / Vertex AI Imagen ──
 
 async function generateWithGemini(
   prompt: string,
 ): Promise<Buffer | null> {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) return null;
+  let lastError: Error | null = null;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict`;
+  // 1. Try Vertex AI Imagen via ADC (used in production on Vercel)
+  try {
+    const { getVertexAccessToken, vertexModelUrl } = await import("@/app/api/_lib/vertex");
+    const accessToken = await getVertexAccessToken();
+    const vertexModels = [
+      "imagen-3.0-generate-002",
+      "imagen-3.0-fast-generate-001",
+    ];
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "x-goog-api-key": key,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      instances: [{ prompt }],
-      parameters: {
-        sampleCount: 1,
-        aspectRatio: "1:1",
-        personGeneration: "dont_allow",
-      },
-    }),
-  });
+    for (const model of vertexModels) {
+      try {
+        const url = vertexModelUrl(model, "predict");
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            instances: [{ prompt }],
+            parameters: {
+              sampleCount: 1,
+              aspectRatio: "1:1",
+              personGeneration: "dont_allow",
+            },
+          }),
+        });
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Gemini Imagen responded ${res.status}: ${text}`);
+        if (res.ok) {
+          const data = await res.json();
+          const b64 = data?.predictions?.[0]?.bytesBase64Encoded;
+          if (b64) {
+            return Buffer.from(b64, "base64");
+          }
+        } else {
+          const text = await res.text().catch(() => "");
+          console.warn(`[case-image] Vertex AI ${model} responded ${res.status}: ${text.slice(0, 300)}`);
+          lastError = new Error(`Vertex AI ${model} responded ${res.status}: ${text.slice(0, 300)}`);
+        }
+      } catch (err: any) {
+        console.warn(`[case-image] Vertex AI ${model} request error: ${err?.message}`);
+        lastError = err;
+      }
+    }
+  } catch (vertexInitErr: any) {
+    console.warn(`[case-image] Vertex ADC setup: ${vertexInitErr?.message}`);
   }
 
-  const data = await res.json();
-  const b64 = data?.predictions?.[0]?.bytesBase64Encoded;
-  if (!b64) {
-    throw new Error("Gemini Imagen returned no image data");
+  // 2. Try Google AI Studio (using GEMINI_API_KEY or AIza key in OPENAI_API_KEY)
+  const apiKey =
+    process.env.GEMINI_API_KEY ||
+    (process.env.OPENAI_API_KEY?.startsWith("AIza") ? process.env.OPENAI_API_KEY : undefined);
+
+  if (apiKey) {
+    // 2a. Try Gemini content generation with IMAGE modality
+    const contentModels = [
+      "gemini-2.5-flash-image",
+      "gemini-3.1-flash-image",
+      "gemini-3-pro-image",
+    ];
+
+    for (const model of contentModels) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              responseModalities: ["IMAGE"],
+            },
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const parts = data?.candidates?.[0]?.content?.parts ?? [];
+          for (const part of parts) {
+            if (part.inlineData?.data) {
+              return Buffer.from(part.inlineData.data, "base64");
+            }
+          }
+        } else {
+          const text = await res.text().catch(() => "");
+          console.warn(`[case-image] AI Studio ${model} responded ${res.status}: ${text.slice(0, 300)}`);
+          lastError = new Error(`AI Studio ${model} responded ${res.status}: ${text.slice(0, 300)}`);
+        }
+      } catch (err: any) {
+        console.warn(`[case-image] AI Studio ${model} request error: ${err?.message}`);
+        lastError = err;
+      }
+    }
+
+    // 2b. Try AI Studio Imagen predict endpoint if available
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "x-goog-api-key": apiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          instances: [{ prompt }],
+          parameters: {
+            sampleCount: 1,
+            aspectRatio: "1:1",
+            personGeneration: "dont_allow",
+          },
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const b64 = data?.predictions?.[0]?.bytesBase64Encoded;
+        if (b64) {
+          return Buffer.from(b64, "base64");
+        }
+      }
+    } catch {
+      // Ignore
+    }
   }
 
-  return Buffer.from(b64, "base64");
+  if (lastError) {
+    throw lastError;
+  }
+  return null;
 }
 
 // ── OpenAI DALL-E ──
@@ -193,22 +291,34 @@ async function generateWithOpenAI(
   openai: OpenAI,
   prompt: string,
 ): Promise<Buffer | null> {
-  const response = await openai.images.generate({
-    model: CASE_IMAGE_MODEL,
-    prompt,
-    n: 1,
-    size: DEFAULT_CASE_IMAGE_SIZE as Parameters<
-      OpenAI["images"]["generate"]
-    >[0]["size"],
-    response_format: "b64_json",
-  });
+  const models = [CASE_IMAGE_MODEL, "dall-e-3", "dall-e-2"];
+  const uniqueModels = Array.from(new Set(models.filter(Boolean)));
 
-  const b64 = response.data?.[0]?.b64_json;
-  if (!b64) {
-    throw new Error("DALL-E returned no image data");
+  let lastErr: Error | null = null;
+  for (const model of uniqueModels) {
+    try {
+      const response = await openai.images.generate({
+        model,
+        prompt,
+        n: 1,
+        size: (model === "dall-e-2" ? "512x512" : DEFAULT_CASE_IMAGE_SIZE) as Parameters<
+          OpenAI["images"]["generate"]
+        >[0]["size"],
+        response_format: "b64_json",
+      });
+
+      const b64 = response.data?.[0]?.b64_json;
+      if (b64) {
+        return Buffer.from(b64, "base64");
+      }
+    } catch (err: any) {
+      lastErr = err;
+      console.warn(`[case-image] OpenAI ${model} failed:`, err?.message);
+    }
   }
 
-  return Buffer.from(b64, "base64");
+  if (lastErr) throw lastErr;
+  return null;
 }
 
 async function uploadImage(
@@ -270,19 +380,31 @@ export async function generateCaseImage(
   }
 
   const requestedProvider = options.provider ?? CASE_IMAGE_PROVIDER;
-  const providers = requestedProvider === "gemini"
-    ? ["gemini", "openai"]
-    : ["openai"];
+  const providers = requestedProvider === "openai"
+    ? ["openai", "gemini"]
+    : ["gemini", "openai"];
 
   let imageBuffer: Buffer | null = null;
+  let lastErrorMessage = "";
 
   for (const provider of providers) {
     for (const prompt of candidatePrompts) {
       try {
         if (provider === "gemini") {
           imageBuffer = await generateWithGemini(prompt);
-        } else if (openai) {
-          imageBuffer = await generateWithOpenAI(openai, prompt);
+        } else {
+          let client = openai;
+          if (!client) {
+            try {
+              const { createOpenAIClient } = await import("@/lib/llm/openaiClient");
+              client = await createOpenAIClient();
+            } catch {
+              // OpenAI client unavailable
+            }
+          }
+          if (client) {
+            imageBuffer = await generateWithOpenAI(client, prompt);
+          }
         }
 
         if (imageBuffer) break;
@@ -294,6 +416,7 @@ export async function generateCaseImage(
               : ""
             : "";
         console.warn(`[case-image] ${provider} attempt failed: ${message}`);
+        lastErrorMessage = `${provider}: ${message}`;
 
         const isSafetyRejection =
           typeof message === "string" &&
@@ -307,7 +430,9 @@ export async function generateCaseImage(
   }
 
   if (!imageBuffer) {
-    throw new Error("Case image generation failed across all providers");
+    throw new Error(
+      `Case image generation failed across all providers (${providers.join(", ")}). Last error: ${lastErrorMessage || "No image data returned"}`
+    );
   }
 
   const publicUrl = await uploadImage(supabase, caseId, imageBuffer);
@@ -326,7 +451,7 @@ export async function generateCaseImage(
 
 export function scheduleCaseImageGeneration(
   supabase: SupabaseClient,
-  openai: OpenAI,
+  openai: OpenAI | null,
   caseData: CaseRecord,
   options: GenerateOptions = {}
 ) {
