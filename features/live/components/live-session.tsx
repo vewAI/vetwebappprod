@@ -713,17 +713,18 @@ export function LiveSession({
 
   const handleConfirmAdvance = useCallback(() => {
     setShowAdvanceConfirm(false);
-    // Resume the session if it was paused by the timer expiration.
+    // Resume the session if it was paused.
     if (isPausedRef.current) {
       isPausedRef.current = false;
       setIsPaused(false);
       player.setMuted(false);
+      void mic.start();
     }
     // Advance FIRST — the case must never stall on a save error.
     const nextIndex = progress.currentStageIndex + 1;
     progress.advanceStage();
     void saveProgress(nextIndex, live.messages, timeSpentRef.current).catch(() => {});
-  }, [progress, saveProgress, live.messages, player]);
+  }, [progress, saveProgress, live.messages, player, mic]);
 
   const handleCancelAdvance = useCallback(() => {
     setShowAdvanceConfirm(false);
@@ -928,22 +929,17 @@ export function LiveSession({
       return;
     }
     timerExpiredRef.current = true;
-    if (isPausedRef.current) return; // already paused: don't re-fire
     if (autoAdvancedRef.current) return;
     autoAdvancedRef.current = true;
+
+    // Stage timer has ended: dismiss any advance prompt immediately
+    setShowAdvanceConfirm(false);
+
     if (nextStage) {
-      console.log("[Session] Stage time expired, pausing and showing advance prompt for:", nextStage.title);
-      // Pause the session: stop mic, mute avatar
-      isPausedRef.current = true;
-      setIsPaused(true);
-      mic.stop();
-      player.setMuted(true);
-      setIsTextMode(false);
-      isTextModeRef.current = false;
-      // Show the advance banner
-      setShowAdvanceConfirm(true);
+      console.log("[Session] Stage time expired, advancing automatically to:", nextStage.title);
+      handleConfirmAdvance();
     } else {
-      console.log("[Session] Case time expired, ending session");
+      console.log("[Session] Final stage time expired, ending session");
       void handleEndSession();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

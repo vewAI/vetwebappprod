@@ -49,6 +49,11 @@ Cada cambio debe documentarse cronológicamente con esta estructura:
 
 ## 🪵 Historial de Cambios
 
+### [2026-10-28] Auto-Advance Stage on Timer Expiration & Prompt Dismissal — (@Antigravity)
+- **Contexto / Problema:** Al agotarse el temporizador de una etapa, si el banner de confirmación ("Did you finish the Diagnostic Planning?") estaba visible en pantalla, la simulación se quedaba bloqueada esperando una interacción manual.
+- **Acción Realizada:** Se modificó el efecto de expiración en `features/live/components/live-session.tsx` para que, cuando el tiempo llega a cero, oculte inmediatamente el banner de confirmación (`setShowAdvanceConfirm(false)`), avance de etapa automáticamente mediante `handleConfirmAdvance()`, reactive el micrófono y reanude la simulación sin pausas forzadas.
+- **Verificación:** TypeScript check sin errores (`tsc --noEmit`), suite de tests de `features/live` superada al 100% (65/65 tests) y sincronización en ramas.
+
 ### [2026-10-28] Gemini Live Token Analytics & Single Vercel Deploy Hook — (@Antigravity)
 - **Contexto / Problema:** Se detectaron despliegues duplicados en `preview/educators` (disparados simultáneamente por la integración nativa de Vercel y el webhook de GitHub Actions), y el equipo requería capturar el consumo de tokens en Gemini Live para analítica y control de costos.
 - **Acción Realizada:**

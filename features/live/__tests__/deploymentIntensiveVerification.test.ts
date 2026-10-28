@@ -279,22 +279,16 @@ describe("Intensive Verification: Deployment 30074d4 + Feedback Fixes", () => {
   });
 
   describe("7. Stage Timer & Confirmation State Machine Logic", () => {
-    it("simulates the timer expiration and 'Stay' button behavior correctly", () => {
+    it("advances automatically when timer ends and dismisses the advance prompt", () => {
       // Logic from live-session.tsx:
       // When stageSecondsLeft === 0:
       //   timerExpiredRef.current = true
-      //   isPaused = true
-      //   showAdvanceConfirm = true
+      //   showAdvanceConfirm = false (prompt goes off immediately)
+      //   stageIndex += 1 (advances automatically)
       let stageIndex = 0;
       let isPaused = false;
       let showAdvanceConfirm = false;
       let timerExpired = false;
-
-      const onTimerExpire = () => {
-        timerExpired = true;
-        isPaused = true;
-        showAdvanceConfirm = true;
-      };
 
       const handleConfirmAdvance = () => {
         showAdvanceConfirm = false;
@@ -302,28 +296,27 @@ describe("Intensive Verification: Deployment 30074d4 + Feedback Fixes", () => {
         stageIndex += 1;
       };
 
+      const onTimerExpire = () => {
+        timerExpired = true;
+        showAdvanceConfirm = false; // prompt goes off immediately
+        handleConfirmAdvance(); // advances stage automatically
+      };
+
       const handleCancelAdvance = () => {
         showAdvanceConfirm = false;
         if (timerExpired) {
-          // If timer expired, Stay cannot keep user in stage — advance anyway!
-          isPaused = false;
-          stageIndex += 1;
+          handleConfirmAdvance();
         } else {
-          // If timer still running, resume session
           isPaused = false;
         }
       };
 
-      // Scenario A: Timer expires, student clicks Stay -> forces advance
+      // Scenario A: Prompt is showing (e.g. from intent), timer ends -> prompt goes off and stage advances
+      showAdvanceConfirm = true;
       onTimerExpire();
       expect(timerExpired).toBe(true);
-      expect(isPaused).toBe(true);
-      expect(showAdvanceConfirm).toBe(true);
-
-      handleCancelAdvance();
-      expect(showAdvanceConfirm).toBe(false);
-      expect(isPaused).toBe(false);
-      expect(stageIndex).toBe(1); // advanced to next stage!
+      expect(showAdvanceConfirm).toBe(false); // prompt went off!
+      expect(stageIndex).toBe(1); // stage advanced automatically!
 
       // Scenario B: Student clicks advance manually with time remaining, then clicks Stay
       timerExpired = false;
