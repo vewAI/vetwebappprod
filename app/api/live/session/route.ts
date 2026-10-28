@@ -12,9 +12,58 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const caseId = body?.caseId;
+    const specificAttemptId = typeof body?.attemptId === "string" ? body.attemptId.trim() : null;
+    const sessionId = typeof body?.sessionId === "string" ? body.sessionId.trim() : null;
 
     if (!caseId) {
       return NextResponse.json({ error: "caseId is required" }, { status: 400 });
+    }
+
+    if (specificAttemptId) {
+      const { data: specificAttempt } = await supabase
+        .from("attempts")
+        .select("id, last_stage_index, time_spent_seconds, session_id")
+        .eq("id", specificAttemptId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (specificAttempt) {
+        if (sessionId && !specificAttempt.session_id) {
+          await supabase
+            .from("attempts")
+            .update({ session_id: sessionId })
+            .eq("id", specificAttempt.id);
+        }
+
+        const { data: storedMessages } = await supabase
+          .from("attempt_messages")
+          .select("id, role, content, timestamp, stage_index, display_role, persona_role_key")
+          .eq("attempt_id", specificAttempt.id)
+          .order("timestamp", { ascending: true })
+          .limit(1000);
+
+        const hasMessages = Array.isArray(storedMessages) && storedMessages.length > 0;
+
+        return NextResponse.json({
+          attemptId: specificAttempt.id,
+          currentStageIndex: specificAttempt.last_stage_index ?? 0,
+          resumed: hasMessages || (specificAttempt.last_stage_index ?? 0) > 0,
+          timeSpentSeconds: specificAttempt.time_spent_seconds ?? 0,
+          messages: (storedMessages ?? []).map((message) => ({
+            id: message.id,
+            role: message.role,
+            content: message.content,
+            timestamp: message.timestamp,
+            stageIndex: message.stage_index,
+            displayRole: message.display_role ?? undefined,
+            personaRoleKey:
+              typeof (message as { persona_role_key?: string | null }).persona_role_key === "string"
+                ? (message as { persona_role_key?: string | null }).persona_role_key!
+                : undefined,
+            status: "sent",
+          })),
+        });
+      }
     }
 
     // F4.2: Prefer the atomic RPC (select+insert serialized via FOR UPDATE)
@@ -138,6 +187,7 @@ export async function POST(req: Request) {
         last_stage_index: 0,
         completion_status: "in_progress",
         time_spent_seconds: 0,
+        ...(sessionId ? { session_id: sessionId } : {}),
       })
       .select("id")
       .single();

@@ -58,7 +58,7 @@ export function JoinSessionDialog({
       onOpenChange(false);
       reset();
       router.push(
-        `/case/${encodeURIComponent(caseId)}/attempt?attempt=${encodeURIComponent(attempt.id)}&session=${encodeURIComponent(session.id)}`
+        `/live/${encodeURIComponent(caseId)}?attempt=${encodeURIComponent(attempt.id)}&session=${encodeURIComponent(session.id)}`
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to start attempt");
