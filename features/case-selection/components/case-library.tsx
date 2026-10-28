@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { Check, X } from "lucide-react";
 import { useAuth } from "@/features/auth/services/authService";
 import { fetchCases, fetchDisciplines } from "@/features/case-selection/services/caseService";
 import type { Case } from "@/features/case-selection/models/case";
@@ -13,7 +14,7 @@ import { SortHeader } from "@/features/navigation/components/sort-header";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/features/navigation/components/table";
 import { useTableSort } from "@/features/navigation/hooks/useTableSort";
 
-type CaseSortKey = "case" | "species" | "discipline" | "difficulty" | "time";
+type CaseSortKey = "case" | "species" | "discipline" | "difficulty" | "time" | "published";
 
 const difficultyRank: Record<string, number> = { Easy: 1, Medium: 2, Hard: 3 };
 
@@ -21,10 +22,14 @@ export function CaseLibrary({
   getCaseHref,
   title = "Clinical Cases",
   subtitle = "Explore the full library of OSCE-style veterinary cases.",
+  showPublished = false,
+  includeUnpublished = false,
 }: {
   getCaseHref: (caseItem: Case) => string;
   title?: string;
   subtitle?: string;
+  showPublished?: boolean;
+  includeUnpublished?: boolean;
 }) {
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,6 +81,7 @@ export function CaseLibrary({
           const result = await fetchCases({
             category: selectedDiscipline === "all" ? undefined : selectedDiscipline,
             species: selectedSpecies === "all" ? undefined : selectedSpecies,
+            includeUnpublished,
           });
           setCases(result);
         }
@@ -87,7 +93,7 @@ export function CaseLibrary({
       }
     }
     loadCases();
-  }, [selectedDiscipline, selectedSpecies, user, role]);
+  }, [selectedDiscipline, selectedSpecies, user, role, includeUnpublished]);
 
   const { sort, toggle, sorted: sortedCases } = useTableSort<Case, CaseSortKey>(
     cases,
@@ -96,6 +102,7 @@ export function CaseLibrary({
       if (key === "species") return caseItem.species;
       if (key === "discipline") return caseItem.category;
       if (key === "difficulty") return difficultyRank[caseItem.difficulty] ?? 0;
+      if (key === "published") return caseItem.isPublished ? 1 : 0;
       return caseItem.estimatedTime;
     },
     { key: "case", dir: "asc" },
@@ -130,7 +137,7 @@ export function CaseLibrary({
 
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
         <div className="max-w-full overflow-x-auto">
-          <div className="min-w-[720px]">
+          <div className={showPublished ? "min-w-[840px]" : "min-w-[720px]"}>
             <Table>
               <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
                 <TableRow>
@@ -139,18 +146,25 @@ export function CaseLibrary({
                   <SortHeader label="Discipline" column="discipline" sort={sort} onSort={toggle} />
                   <SortHeader label="Difficulty" column="difficulty" sort={sort} onSort={toggle} />
                   <SortHeader label="Time" column="time" sort={sort} onSort={toggle} />
+                  {showPublished ? <SortHeader label="Published" column="published" sort={sort} onSort={toggle} /> : null}
                 </TableRow>
               </TableHeader>
               <TableBody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="px-5 py-8 text-center text-theme-sm text-gray-500 dark:text-gray-400">
+                    <TableCell
+                      colSpan={showPublished ? 6 : 5}
+                      className="px-5 py-8 text-center text-theme-sm text-gray-500 dark:text-gray-400"
+                    >
                       Loading cases...
                     </TableCell>
                   </TableRow>
                 ) : cases.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="px-5 py-8 text-center text-theme-sm text-gray-500 dark:text-gray-400">
+                    <TableCell
+                      colSpan={showPublished ? 6 : 5}
+                      className="px-5 py-8 text-center text-theme-sm text-gray-500 dark:text-gray-400"
+                    >
                       No cases match these filters.
                     </TableCell>
                   </TableRow>
@@ -201,6 +215,15 @@ export function CaseLibrary({
                         <TableCell className="px-4 py-3 text-theme-sm text-gray-500 dark:text-gray-400">
                           {caseItem.estimatedTime} min
                         </TableCell>
+                        {showPublished ? (
+                          <TableCell className="px-4 py-3">
+                            {caseItem.isPublished ? (
+                              <Check className="size-5 text-brand-600" strokeWidth={2.5} aria-label="Published" />
+                            ) : (
+                              <X className="size-5 text-gray-400" strokeWidth={2.5} aria-label="Unpublished" />
+                            )}
+                          </TableCell>
+                        ) : null}
                       </TableRow>
                     );
                   })

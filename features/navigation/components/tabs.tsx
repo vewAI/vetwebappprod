@@ -27,7 +27,7 @@ export function DefaultTabs<T extends string>({
   className?: string;
 }) {
   return (
-    <div className={cn("rounded-xl border border-gray-200 p-6 dark:border-gray-800", className)}>
+    <div className={className}>
       <div className="border-b border-gray-200 dark:border-gray-800">
         <nav className="-mb-px flex space-x-2 overflow-x-auto" role="tablist">
           {items.map((item) => {
@@ -57,7 +57,7 @@ export function DefaultTabs<T extends string>({
           })}
         </nav>
       </div>
-      <div className="pt-4" role="tabpanel">
+      <div className="pt-8" role="tabpanel">
         {children}
       </div>
     </div>

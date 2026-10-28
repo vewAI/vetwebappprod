@@ -15,6 +15,9 @@ import { Loader2 } from "lucide-react";
 type Props = {
   caseId: string;
   variant: "start" | "manage";
+  sessions?: CaseSession[];
+  loading?: boolean;
+  emptyMessage?: string;
 };
 
 type SessionSortKey = "session" | "createdBy" | "year" | "status" | "start" | "end";
@@ -41,32 +44,42 @@ function statusLabel(status: SessionStatus) {
   return "Completed";
 }
 
-export function SessionsForCaseList({ caseId, variant }: Props) {
-  const [sessions, setSessions] = useState<CaseSession[]>([]);
-  const [loading, setLoading] = useState(true);
+export function SessionsForCaseList({
+  caseId,
+  variant,
+  sessions: sessionsProp,
+  loading: loadingProp,
+  emptyMessage,
+}: Props) {
+  const [fetchedSessions, setFetchedSessions] = useState<CaseSession[]>([]);
+  const [fetchedLoading, setFetchedLoading] = useState(sessionsProp === undefined);
   const isStart = variant === "start";
+  const isControlled = sessionsProp !== undefined;
+  const sessions = isControlled ? sessionsProp : fetchedSessions;
+  const loading = isControlled ? Boolean(loadingProp) : fetchedLoading;
 
   useEffect(() => {
+    if (isControlled) return;
     let cancelled = false;
     (async () => {
-      setLoading(true);
+      setFetchedLoading(true);
       try {
         const list = await listSessions({
           caseId,
           status: "all",
         });
-        if (!cancelled) setSessions(list);
+        if (!cancelled) setFetchedSessions(list);
       } catch (e) {
         console.error(e);
-        if (!cancelled) setSessions([]);
+        if (!cancelled) setFetchedSessions([]);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setFetchedLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [caseId]);
+  }, [caseId, isControlled]);
 
   const visibleSessions = useMemo(() => {
     const filtered = isStart
@@ -78,7 +91,7 @@ export function SessionsForCaseList({ caseId, variant }: Props) {
     const byStart = [...filtered].sort(
       (a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime(),
     );
-    return isStart ? byStart : byStart.slice(0, 3);
+    return byStart;
   }, [sessions, isStart]);
 
   const colSpan = isStart ? 4 : 6;
@@ -124,9 +137,10 @@ export function SessionsForCaseList({ caseId, variant }: Props) {
               ) : sorted.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={colSpan} className="px-5 py-8 text-center text-theme-sm text-gray-500 dark:text-gray-400">
-                    {isStart
-                      ? "No active or scheduled sessions for this case right now. Check back when your instructor opens a session."
-                      : "No sessions for this case yet. Create one to let students join during class."}
+                    {emptyMessage ??
+                      (isStart
+                        ? "No active or scheduled sessions for this case right now. Check back when your instructor opens a session."
+                        : "No sessions for this case yet. Create one to let students join during class.")}
                   </TableCell>
                 </TableRow>
               ) : (

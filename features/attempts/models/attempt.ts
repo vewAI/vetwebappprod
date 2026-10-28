@@ -22,6 +22,9 @@ export interface AttemptSummary {
   caseId: string;
   sessionId?: string | null;
   sessionName?: string | null;
+  /** Year group of the session the attempt was taken in, not the student's current year. */
+  sessionYearGroupId?: string | null;
+  sessionYearGroupName?: string | null;
   studentName?: string | null;
   title: string;
   createdAt: string;

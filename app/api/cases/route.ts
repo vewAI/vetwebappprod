@@ -284,6 +284,25 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: "id is required for update" }, { status: 400 });
     }
 
+    const bodyKeys = Object.keys(body).filter((key) => key !== "id");
+    if (bodyKeys.length === 1 && bodyKeys[0] === "is_published") {
+      const isPublished =
+        typeof body["is_published"] === "string" ? body["is_published"] === "true" : Boolean(body["is_published"]);
+      const { data, error } = await supabase
+        .from("cases")
+        .update({ is_published: isPublished })
+        .eq("id", body.id)
+        .select();
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      const updatedCase = Array.isArray(data) ? data[0] : data;
+      if (!updatedCase) {
+        return NextResponse.json({ error: `Case with id "${body.id}" not found` }, { status: 404 });
+      }
+      return NextResponse.json({ success: true, data: updatedCase });
+    }
+
     body = normalizeCaseBody(body);
 
     // Try to update the row

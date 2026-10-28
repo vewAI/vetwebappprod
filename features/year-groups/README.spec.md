@@ -72,7 +72,7 @@ Admins may assign or clear `year_group_id`. The year group must belong to the us
 
 - `InstitutionManagement` — academic year end (day + month, default 31 July) and year groups on Manage Institution, next to Domains / Default roles.
 - `InstitutionYearGroups` — create by name, delete (students become unassigned).
-- User management — year-group select filtered by the user's institution; Year column; year filter (All Years, Unassigned, or a year group).
+- User management — year-group select filtered by the user's institution; Year column; year filter (All Year Groups, Unassigned, or a year group).
 - `YearGroupRequiredAlert` — shared TailAdmin warning used on `/dashboard`, `/student`, and `/case-sessions`.
 - `/select-year-group` — student picker. Lists that institution's year groups and shows **this academic year ends on {date}**. No submit if the profile has no institution.
 - `YearGroupRequiredAlert` — TailAdmin warning on `/dashboard`, `/student`, and `/case-sessions` when a student has no year group. Link opens `/select-year-group`.

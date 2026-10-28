@@ -18,6 +18,8 @@ function toAttemptSummary(row: SessionAttemptRow, session: CaseSession): Attempt
     caseId: row.caseId,
     sessionId: row.sessionId,
     sessionName: session.friendlyName,
+    sessionYearGroupId: session.yearGroupId,
+    sessionYearGroupName: session.yearGroupName ?? null,
     studentName: row.studentEmail ?? row.studentName ?? null,
     title: session.case?.title ?? session.friendlyName,
     createdAt: row.createdAt,

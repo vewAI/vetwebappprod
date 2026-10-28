@@ -3,6 +3,25 @@ import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
 import { Attempt, AttemptMessage, AttemptFeedback, AttemptSummary } from "../models/attempt";
 import { transformAttempt, transformAttemptSummary, transformFeedback, transformMessage } from "../mappers/attempt-mappers";
 
+const ATTEMPT_SUMMARY_SELECT =
+  "id, user_id, case_id, session_id, title, created_at, completed_at, completion_status, last_stage_index, time_spent_seconds, cases (title, category, difficulty, image_url), case_sessions (id, friendly_name, year_group_id, year_groups(id, name))";
+const ATTEMPT_SUMMARY_SELECT_FALLBACK =
+  "id, user_id, case_id, session_id, title, created_at, completed_at, completion_status, last_stage_index, time_spent_seconds, cases (title, category, difficulty, image_url), case_sessions (id, friendly_name, year_group_id)";
+
+async function selectAttemptSummaries(userId: string, caseId?: string) {
+  let query = supabase.from("attempts").select(ATTEMPT_SUMMARY_SELECT).eq("user_id", userId);
+  if (caseId) query = query.eq("case_id", caseId);
+  let { data, error } = await query.order("created_at", { ascending: false }).limit(200);
+  if (error) {
+    let fallback = supabase.from("attempts").select(ATTEMPT_SUMMARY_SELECT_FALLBACK).eq("user_id", userId);
+    if (caseId) fallback = fallback.eq("case_id", caseId);
+    const retry = await fallback.order("created_at", { ascending: false }).limit(200);
+    data = retry.data;
+    error = retry.error;
+  }
+  return { data, error };
+}
+
 // Get all attempts for the current user
 export async function getUserAttempts(): Promise<AttemptSummary[]> {
   try {
@@ -11,21 +30,14 @@ export async function getUserAttempts(): Promise<AttemptSummary[]> {
     } = await supabase.auth.getUser();
     if (!user) return [];
 
-    const { data, error } = await supabase
-      .from("attempts")
-      .select(
-        "id, user_id, case_id, session_id, title, created_at, completed_at, completion_status, last_stage_index, time_spent_seconds, cases (title, category, difficulty, image_url), case_sessions (id, friendly_name)"
-      )
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(200);
+    const { data, error } = await selectAttemptSummaries(user.id);
 
     if (error) {
       console.error("Error fetching attempts:", error);
       return [];
     }
 
-    return data.map(transformAttemptSummary);
+    return (data ?? []).map(transformAttemptSummary);
   } catch (error) {
     console.error("Unexpected error fetching attempts:", error);
     return [];
@@ -40,22 +52,14 @@ export async function getAttemptsByCase(caseId: string): Promise<AttemptSummary[
     } = await supabase.auth.getUser();
     if (!user) return [];
 
-    const { data, error } = await supabase
-      .from("attempts")
-      .select(
-        "id, user_id, case_id, session_id, title, created_at, completed_at, completion_status, last_stage_index, time_spent_seconds, cases (title, category, difficulty, image_url), case_sessions (id, friendly_name)"
-      )
-      .eq("user_id", user.id)
-      .eq("case_id", caseId)
-      .order("created_at", { ascending: false })
-      .limit(200);
+    const { data, error } = await selectAttemptSummaries(user.id, caseId);
 
     if (error) {
       console.error("Error fetching attempts for case:", error);
       return [];
     }
 
-    return data.map(transformAttemptSummary);
+    return (data ?? []).map(transformAttemptSummary);
   } catch (error) {
     console.error("Unexpected error fetching attempts for case:", error);
     return [];

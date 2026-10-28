@@ -166,7 +166,7 @@ export function SessionList({ initialCaseId }: { initialCaseId?: string }) {
           value={yearFilter}
           onChange={setYearFilter}
           options={[
-            { value: "all", label: "All Years" },
+            { value: "all", label: "All Year Groups" },
             ...yearGroups.map((group) => ({
               value: group.id,
               label:

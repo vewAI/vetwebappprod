@@ -69,6 +69,7 @@ function firstJoin<T>(value: T | T[] | null | undefined): T | null {
 
 export function transformAttemptSummary(data: any): AttemptSummary {
   const session = firstJoin(data.case_sessions);
+  const yearGroup = firstJoin(session?.year_groups);
   const profile = firstJoin(data.profiles);
   const studentName =
     (typeof profile?.full_name === "string" && profile.full_name.trim()) ||
@@ -80,6 +81,8 @@ export function transformAttemptSummary(data: any): AttemptSummary {
     caseId: data.case_id ?? "",
     sessionId: data.session_id ?? null,
     sessionName: typeof session?.friendly_name === "string" ? session.friendly_name : null,
+    sessionYearGroupId: typeof session?.year_group_id === "string" ? session.year_group_id : null,
+    sessionYearGroupName: typeof yearGroup?.name === "string" ? yearGroup.name : null,
     studentName,
     title: data.title ?? "",
     createdAt: data.created_at ?? "",

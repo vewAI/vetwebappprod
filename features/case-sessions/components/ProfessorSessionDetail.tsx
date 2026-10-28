@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { deriveStatus } from "../models/caseSession";
 import { useCaseSessionDetail } from "../hooks/useCaseSessionDetail";
 import { generateSessionReport } from "../services/caseSessionService";
@@ -18,6 +17,17 @@ import { Loader2, FileText } from "lucide-react";
 type Props = {
   sessionId: string;
 };
+
+function SessionPageCard({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
+      <div className="px-6 py-5">
+        <h3 className="text-base font-medium text-primary dark:text-white/90">{title}</h3>
+      </div>
+      <div className="border-t border-gray-200 p-4 sm:p-6 dark:border-gray-800">{children}</div>
+    </div>
+  );
+}
 
 export function ProfessorSessionDetail({ sessionId }: Props) {
   const { session, attempts, loading, error } = useCaseSessionDetail(sessionId);
@@ -149,11 +159,8 @@ export function ProfessorSessionDetail({ sessionId }: Props) {
               />
             </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-xl font-semibold text-primary">AI Group Report</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-wrap items-center gap-3">
+            <SessionPageCard title="AI Group Report">
+              <div className="flex flex-wrap items-center gap-3">
                 <Button onClick={handleGenerateReport} disabled={reportLoading || completedCount === 0}>
                   {reportLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
                   AI group report {completedCount > 0 ? `(${completedCount} completed)` : ""}
@@ -161,26 +168,16 @@ export function ProfessorSessionDetail({ sessionId }: Props) {
                 {completedCount === 0 && (
                   <p className="text-xs text-muted-foreground">Available once at least one student completes the case.</p>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </SessionPageCard>
 
             <div className="grid gap-6 md:grid-cols-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-xl font-semibold text-primary">Attempts Per Day</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <SessionAttemptsBarChart attempts={attempts} />
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-xl font-semibold text-primary">Attempt Status</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <SessionAttemptStatusPie attempts={attempts} />
-                </CardContent>
-              </Card>
+              <SessionPageCard title="Attempts Per Day">
+                <SessionAttemptsBarChart attempts={attempts} />
+              </SessionPageCard>
+              <SessionPageCard title="Attempt Status">
+                <SessionAttemptStatusPie attempts={attempts} />
+              </SessionPageCard>
             </div>
           </div>
         )}

@@ -18,6 +18,7 @@ import { normalizeCaseMedia, type CaseMediaItem } from "@/features/cases/models/
 import { getActiveStagesForCase, getStagesForCase } from "@/features/stages/services/stageService";
 import { resolveChatPersonaRoleKey } from "@/features/chat/utils/persona-guardrails";
 import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
+import { WarningAlertModal } from "@/features/navigation/components/warning-alert-modal";
 import { CaseLibrary } from "@/features/case-selection/components/case-library";
 
 type CaseRecord = Record<string, unknown>;
@@ -39,6 +40,11 @@ type PersonaRow = {
 
 const knownFieldKeys = new Set<CaseFieldKey>(orderedCaseFieldKeys);
 
+function isCasePublished(record: CaseRecord | null): boolean {
+  const value = record?.["is_published"];
+  return value === true || value === "true";
+}
+
 type AxiosErrorLike = {
   isAxiosError?: boolean;
   message: string;
@@ -58,6 +64,8 @@ export default function CaseViewerClient() {
 
   const [caseRecord, setCaseRecord] = useState<CaseRecord | null>(null);
   const [editable, setEditable] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [publishModal, setPublishModal] = useState<"publish" | "unpublish" | null>(null);
   const [formState, setFormState] = useState<CaseRecord | null>(null);
   const [expandedField, setExpandedField] = useState<CaseFieldKey | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -111,62 +119,6 @@ export default function CaseViewerClient() {
     },
     [parseMedia],
   );
-
-  const isCasePublished = Boolean(
-    formState?.["is_published"] === true || formState?.["is_published"] === "true"
-  );
-
-  const handleTogglePublish = useCallback(async () => {
-    if (!formState || !caseRecord) return;
-    if (!authHeaders) {
-      alert("You must be signed in to change publication status.");
-      return;
-    }
-    const currentStatus = Boolean(
-      formState["is_published"] === true || formState["is_published"] === "true"
-    );
-    const nextStatus = !currentStatus;
-    const caseId = formatValue(formState["id"]).trim();
-    if (!caseId) return;
-
-    try {
-      setIsPublishing(true);
-      const resp = await axios.put(
-        "/api/cases",
-        {
-          ...formState,
-          id: caseId,
-          is_published: nextStatus,
-        },
-        { headers: authHeaders }
-      );
-      const respData = resp.data as { data?: unknown };
-      if (respData?.data && typeof respData.data === "object") {
-        const updated = respData.data as CaseRecord;
-        const normalizedUpdated = {
-          ...updated,
-          is_published: nextStatus,
-          media: parseMedia(updated["media"]),
-        } as CaseRecord;
-        setCaseRecord(normalizedUpdated);
-        loadCaseIntoForm(normalizedUpdated);
-      } else {
-        setFormState((prev) => (prev ? { ...prev, is_published: nextStatus } : prev));
-        setCaseRecord((prev) => (prev ? { ...prev, is_published: nextStatus } : prev));
-      }
-    } catch (err: unknown) {
-      console.error("Failed to toggle publish status", err);
-      const message =
-        axios.isAxiosError(err) && err.response?.data?.error
-          ? err.response.data.error
-          : err instanceof Error
-          ? err.message
-          : "Failed to update publication status";
-      alert(message);
-    } finally {
-      setIsPublishing(false);
-    }
-  }, [formState, caseRecord, authHeaders, loadCaseIntoForm, parseMedia]);
 
   const handleMediaChange = useCallback((items: CaseMediaItem[]) => {
     setMediaDraft(items);
@@ -362,6 +314,39 @@ export default function CaseViewerClient() {
 
   const updateField = (field: string, value: string) => {
     setFormState((prev) => (prev ? { ...prev, [field]: value } : prev));
+  };
+
+  const applyPublished = (isPublished: boolean) => {
+    setCaseRecord((prev) => (prev ? { ...prev, is_published: isPublished } : prev));
+    setFormState((prev) => (prev ? { ...prev, is_published: isPublished } : prev));
+  };
+
+  const handleConfirmPublish = async () => {
+    if (!formState || publishing || !publishModal) return;
+    const nextPublished = publishModal === "publish";
+    const id = formatValue(formState["id"]).trim();
+    if (!id) return;
+    if (!authHeaders) {
+      alert("You must be signed in to publish cases.");
+      return;
+    }
+    setPublishing(true);
+    try {
+      const resp = await axios.put(
+        "/api/cases",
+        { id, is_published: nextPublished },
+        { headers: authHeaders },
+      );
+      const respObj = resp.data as Record<string, unknown>;
+      const updated = respObj?.["data"] as CaseRecord | undefined;
+      applyPublished(updated ? isCasePublished(updated) : nextPublished);
+      setPublishModal(null);
+    } catch (err) {
+      console.error("Error updating publish status:", err);
+      alert("Error updating publish status. See console for details.");
+    } finally {
+      setPublishing(false);
+    }
   };
 
   // Save persona configurations to case_personas table
@@ -742,6 +727,8 @@ export default function CaseViewerClient() {
         <CaseLibrary
           title="Review and Edit Cases"
           subtitle="Select a case to edit"
+          showPublished
+          includeUnpublished
           getCaseHref={(caseItem) => `/case-viewer?id=${encodeURIComponent(caseItem.id)}`}
         />
       </div>
@@ -804,29 +791,33 @@ export default function CaseViewerClient() {
           </div>
         </div>
       )}
-      <div className="sticky top-20 z-30 -mx-4 mb-4 bg-background/90 backdrop-blur-sm p-4 flex justify-between items-center">
+      <div className="sticky top-20 z-30 -mx-4 mb-4 flex items-center justify-between bg-background/90 p-4 backdrop-blur-sm">
         <div className="flex items-center gap-3">
           <Badge
-            variant={isCasePublished ? "default" : "secondary"}
+            variant={isCasePublished(formState) ? "default" : "secondary"}
             className={
-              isCasePublished
+              isCasePublished(formState)
                 ? "bg-emerald-600 text-white hover:bg-emerald-700 font-medium"
                 : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 font-medium"
             }
           >
-            {isCasePublished ? "Published" : "Draft"}
+            {isCasePublished(formState) ? "Published" : "Draft"}
           </Badge>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleTogglePublish}
-            disabled={isPublishing}
-            className="text-xs font-medium"
-          >
-            {isPublishing ? "Updating..." : isCasePublished ? "Unpublish" : "Publish"}
-          </Button>
+          {isCasePublished(formState) ? (
+            <Button variant="outline" disabled={publishing} onClick={() => setPublishModal("unpublish")}>
+              Unpublish
+            </Button>
+          ) : (
+            <Button
+              className="bg-brand-500 text-white hover:bg-brand-600"
+              disabled={publishing}
+              onClick={() => setPublishModal("publish")}
+            >
+              Publish
+            </Button>
+          )}
           <Button
             variant={editable ? "ghost" : "default"}
             onClick={() => {
@@ -1029,7 +1020,7 @@ export default function CaseViewerClient() {
         {formState &&
           orderedCaseFieldKeys.map((key) => {
             const meta = caseFieldMeta[key];
-            if (meta.isSystem) return null;
+            if (meta.isSystem || key === "is_published") return null;
             const helpId = meta.help ? `${key}-help` : undefined;
             const rawValue = formState[key];
             const automation = automationState[key];
@@ -1251,6 +1242,22 @@ export default function CaseViewerClient() {
             </div>
           </div>
         )}
+
+        <WarningAlertModal
+          isOpen={publishModal !== null}
+          onClose={() => {
+            if (!publishing) setPublishModal(null);
+          }}
+          title={publishModal === "unpublish" ? "Unpublish this case?" : "Publish this case?"}
+          message={
+            publishModal === "unpublish"
+              ? "This case will be hidden from students and cannot be started in new sessions. Existing attempts are not affected. You can publish it again later."
+              : "This case will be visible to students and available in sessions. You can unpublish it later."
+          }
+          confirmLabel={publishModal === "unpublish" ? "Unpublish" : "Publish"}
+          confirming={publishing}
+          onConfirm={() => void handleConfirmPublish()}
+        />
 
         {/* Delete confirmation modal (two-step) */}
         {showDeleteModal && formState && (
