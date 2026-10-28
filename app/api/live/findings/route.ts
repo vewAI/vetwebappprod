@@ -34,6 +34,76 @@ export const DIAG_SYNONYMS: Record<string, string[]> = {
   cytology: ["cytology", "peritoneal fluid", "abdominocentesis fluid", "joint fluid", "synovial fluid"],
 };
 
+export const PANEL_ANALYTES: Record<string, Set<string>> = {
+  chem: new Set([
+    "potassium", "chloride", "calcium", "glucose", "ast", "ggt", "gldh",
+    "creatinine", "bun", "urea", "total protein", "albumin", "globulin",
+    "lactate", "bhb", "beta hydroxybutyrate", "nefa", "bicarbonate",
+    "sodium", "phosphorus", "phosphate", "magnesium", "alp", "alt",
+    "bilirubin", "ck", "cpk", "cholesterol", "triglycerides", "sdma",
+    "sdh", "ldh", "lipase", "amylase", "troponin", "blood bhb"
+  ]),
+  cbc: new Set([
+    "wbc", "rbc", "platelets", "pcv", "hct", "hematocrit", "haematocrit",
+    "haematology", "hematology", "hemoglobin", "haemoglobin", "mcv", "mch",
+    "mchc", "rdw", "reticulocytes", "neutrophils", "band neutrophils",
+    "segmented neutrophils", "lymphocytes", "monocytes", "eosinophils",
+    "basophils", "plt", "thrombocytes", "fibrinogen", "blood smear"
+  ]),
+  electrolytes: new Set([
+    "sodium", "potassium", "chloride", "bicarbonate", "calcium",
+    "phosphorus", "phosphate", "magnesium", "anion gap"
+  ]),
+  urinalysis: new Set([
+    "urine", "urine ketone bodies", "urine ph", "usg", "specific gravity",
+    "urine protein", "urine glucose", "urine bilirubin", "urine sediment",
+    "sediment", "ketones", "casts", "crystals"
+  ]),
+  ultrasound: new Set([
+    "ultrasound", "dorsal findings", "ventral findings", "abomasal position",
+    "usg", "echo", "echography", "sonogram"
+  ]),
+  xray: new Set([
+    "xray", "x ray", "radiograph", "radiographs", "radiography"
+  ]),
+};
+
+export function doesEntryBelongToPanel(entryLabel: string, panelKey: string, category = ""): boolean {
+  const normLabel = normalizeForMatch(entryLabel);
+  const normCat = normalizeForMatch(category);
+
+  if (panelKey === "chem") {
+    if (normCat.includes("chem") || normCat.includes("biochem") || normCat.includes("metabolic")) return true;
+    if (normCat.includes("bloodwork") && !PANEL_ANALYTES.cbc?.has(normLabel)) return true;
+  }
+  if (panelKey === "cbc") {
+    if (normCat.includes("cbc") || normCat.includes("haemat") || normCat.includes("hemat")) return true;
+    if (normCat.includes("bloodwork") && PANEL_ANALYTES.cbc?.has(normLabel)) return true;
+  }
+  if (panelKey === "ultrasound") {
+    if (normCat.includes("ultrasound") || normCat.includes("usg") || normCat.includes("echo") || normLabel.includes("ultrasound")) return true;
+  }
+  if (panelKey === "xray") {
+    if (normCat.includes("radiograph") || normCat.includes("xray") || normCat.includes("x ray") || normLabel.includes("radiograph") || normLabel.includes("xray")) return true;
+  }
+  if (panelKey === "urinalysis") {
+    if (normCat.includes("urine") || normCat.includes("urinalys") || normLabel.includes("urine")) return true;
+  }
+  if (panelKey === "electrolytes") {
+    if (normCat.includes("electrolyte") || normCat.includes("lyte")) return true;
+  }
+
+  const analytes = PANEL_ANALYTES[panelKey];
+  if (!analytes) return false;
+
+  for (const a of analytes) {
+    if (normLabel === a || normLabel.startsWith(a + " ") || normLabel.endsWith(" " + a)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export const GENERIC_CLINICAL_STOPWORDS = new Set([
   "normal", "abnormal", "negative", "positive", "present", "absent",
   "within", "limits", "minute", "minutes", "response", "without",
@@ -52,7 +122,7 @@ export type FindingItem = {
   source: "physical" | "diagnostic";
 };
 
-export type FindingsEntry = { label: string; value: string };
+export type FindingsEntry = { label: string; value: string; category?: string };
 
 export function normalizeForMatch(s: string): string {
   return String(s || "")
@@ -292,10 +362,138 @@ export function capitalizeLabel(label: string): string {
 }
 
 export function extractDiagPairs(diagText: string): FindingsEntry[] {
-  const text = sanitizeDiagnosticText(diagText);
-  const pairs = extractLabelledPairs(text);
-  if (pairs.length > 0) return pairs;
-  return extractFindingsEntries(text);
+  const sanitized = sanitizeDiagnosticText(diagText);
+  const entries: FindingsEntry[] = [];
+
+  // 1. Try parsing full JSON if possible
+  try {
+    const parsed = JSON.parse(sanitized);
+    if (typeof parsed === "object" && parsed !== null) {
+      function traverse(obj: Record<string, unknown>, parentKey = "") {
+        for (const [k, v] of Object.entries(obj)) {
+          if (typeof v === "object" && v !== null && !Array.isArray(v)) {
+            traverse(v as Record<string, unknown>, k);
+          } else {
+            entries.push({
+              label: k.replace(/_/g, " ").trim(),
+              value: String(v || "").trim(),
+              category: parentKey,
+            });
+          }
+        }
+      }
+      traverse(parsed);
+      if (entries.length > 0) return entries;
+    }
+  } catch {
+    // Not valid JSON, continue with regex/line parsing
+  }
+
+  // 2. Regex for JSON-like blocks with category context (e.g. "bloodwork": { ... }, "ultrasound_left_side": { ... })
+  const blockRe = /["']([a-z0-9_\- ]{2,48})["']\s*:\s*\{([^}]+)\}/gi;
+  let bMatch: RegExpExecArray | null;
+  while ((bMatch = blockRe.exec(sanitized))) {
+    const parentKey = bMatch[1].replace(/_/g, " ").trim();
+    const blockBody = bMatch[2];
+    const itemRe = /["']([a-z0-9_\- ]{2,48})["']\s*:\s*["']([^"']*)["']/gi;
+    let iMatch: RegExpExecArray | null;
+    while ((iMatch = itemRe.exec(blockBody))) {
+      entries.push({
+        label: iMatch[1].replace(/_/g, " ").trim(),
+        value: iMatch[2].trim(),
+        category: parentKey,
+      });
+    }
+  }
+
+  // Also extract flat quoted pairs not inside blocks
+  const flatItemRe = /["']([a-z0-9_\- ]{2,48})["']\s*:\s*["']([^"']*)["']/gi;
+  let fMatch: RegExpExecArray | null;
+  while ((fMatch = flatItemRe.exec(sanitized))) {
+    const label = fMatch[1].replace(/_/g, " ").trim();
+    if (!entries.some((e) => e.label.toLowerCase() === label.toLowerCase())) {
+      entries.push({
+        label,
+        value: fMatch[2].trim(),
+        category: "",
+      });
+    }
+  }
+
+  if (entries.length > 0) return entries;
+
+  // 3. Markdown / Pipe tables & Bullet lists
+  const lines = sanitized.split(/\r?\n/);
+  let currentCategory = "";
+  for (const line of lines) {
+    if (line.includes("|")) {
+      const parts = line.split("|").map((p) => p.trim()).filter(Boolean);
+      if (parts.length >= 2) {
+        if (/test|analyte|parameter/i.test(line)) {
+          continue;
+        }
+        if (/^[-:\s|]+$/.test(line)) continue; // table divider
+        if (parts.length >= 3) {
+          entries.push({
+            label: parts[1],
+            value: `${parts[2]} ${parts[3] || ""}`.trim(),
+            category: parts[0],
+          });
+        } else if (parts.length === 2) {
+          entries.push({
+            label: parts[0],
+            value: parts[1],
+            category: currentCategory,
+          });
+        }
+      }
+    } else {
+      const headerMatch = line.match(/^(?:#+\s*|[-*]\s*)?([A-Z\s]{3,25}|CBC|Biochemistry|Haematology|Urinalysis):?$/i);
+      if (headerMatch) {
+        currentCategory = headerMatch[1].trim();
+        continue;
+      }
+      const parts = line.replace(/\r?\n/g, " - ").split(/\s-\s+/);
+      for (const partRaw of parts) {
+        const part = partRaw.trim().replace(/^-\s*/, "");
+        if (!part) continue;
+        const colonIdx = part.indexOf(":");
+        if (colonIdx > 0 && colonIdx <= 48) {
+          entries.push({
+            label: part.slice(0, colonIdx).trim(),
+            value: part.slice(colonIdx + 1).trim(),
+            category: currentCategory,
+          });
+        }
+      }
+    }
+  }
+
+  return entries;
+}
+
+export function matchDiagnosticFinding(
+  entry: FindingsEntry,
+  userDiagKeys: Set<string>,
+  userText: string,
+  isAll: boolean,
+  isBloodwork: boolean
+): boolean {
+  if (isAll) return true;
+
+  const entryDiagKeys = findMatchingSynonymKeys(entry.label, DIAG_SYNONYMS);
+  const keyMatch = [...entryDiagKeys].some((k) => userDiagKeys.has(k));
+  const panelMatch = [...userDiagKeys].some((pk) => doesEntryBelongToPanel(entry.label, pk, entry.category));
+  const vocabMatch = entryMatchesUserText(entry.label, userText);
+  const bloodworkMatch =
+    isBloodwork &&
+    (entryDiagKeys.has("cbc") ||
+      entryDiagKeys.has("chem") ||
+      entryDiagKeys.has("pcv_tpp") ||
+      doesEntryBelongToPanel(entry.label, "chem", entry.category) ||
+      doesEntryBelongToPanel(entry.label, "cbc", entry.category));
+
+  return keyMatch || panelMatch || vocabMatch || bloodworkMatch;
 }
 
 // Prettify raw record keys ("respiratory_rate" -> "Respiratory Rate").
@@ -431,17 +629,7 @@ export async function POST(request: Request) {
         for (const entry of diagEntries) {
           if (isGarbageEntry(entry.label, entry.value)) continue;
 
-          let hit = false;
-          if (isAll) {
-            hit = true;
-          } else {
-            const entryDiagKeys = findMatchingSynonymKeys(entry.label, DIAG_SYNONYMS);
-            const keyMatch = [...entryDiagKeys].some((k) => userDiagKeys.has(k));
-            const vocabMatch = entryMatchesUserText(entry.label, userText);
-            const bloodworkMatch = isBloodwork && (entryDiagKeys.has("cbc") || entryDiagKeys.has("chem") || entryDiagKeys.has("pcv_tpp"));
-            hit = keyMatch || vocabMatch || bloodworkMatch;
-          }
-
+          const hit = matchDiagnosticFinding(entry, userDiagKeys, userText, isAll, isBloodwork);
           if (!hit) continue;
 
           const labelNorm = normalizeForMatch(entry.label);
