@@ -289,15 +289,11 @@ function getNurseRules(stageType: string, difficulty?: string): string {
   }
 
   if (stageType === "physical") {
-<<<<<<< HEAD
     rules.push(
-      "12) STAGE BOUNDARY - NO LABS YET (CRITICAL): In this Physical Examination stage, laboratory tests and diagnostics have NOT been run or ordered yet. You ONLY have physical examination findings.",
-      "13) If the student asks about lab tests, bloodwork, imaging, or diagnostics: clarify that lab tests have not been ordered or performed yet and will be planned in the next stage. NEVER say lab results are in the panel during the physical exam stage, because none exist yet.",
-      "14) In the Physical Examination stage, do NOT provide diagnostic interpretations or treatment recommendations. Report only recorded physical examination findings."
+      "14) STAGE BOUNDARY - NO LABS YET (CRITICAL): In this Physical Examination stage, laboratory tests and diagnostics have NOT been run or ordered yet. You ONLY have physical examination findings.",
+      "15) If the student asks about lab tests, bloodwork, imaging, or diagnostics: clarify that lab tests have not been ordered or performed yet and will be planned in the next stage. NEVER say lab results are in the panel during the physical exam stage, because none exist yet.",
+      "16) In the Physical Examination stage, do NOT speak findings, vitals, diagnostic interpretations, or treatment recommendations aloud. Direct the student to the results panel."
     );
-=======
-    rules.push("12) CRITICAL: In the Physical Examination stage, do NOT speak findings, vitals, diagnostic interpretations, or treatment recommendations aloud. Direct the student to the results panel.");
->>>>>>> fix/feedback-stage-transitions-disclaimers-costs
   }
 
   if (stageType === "treatment") {

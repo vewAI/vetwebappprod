@@ -163,14 +163,30 @@ export function LiveSession({
   // Timed stations: each stage gets a 90-second countdown. Pausing freezes
   // the countdown, the ring and the total-time accumulation. At zero the
   // stage auto-advances (the last stage ends the case).
-  const STAGE_SECONDS = 90;
-  const [stageSecondsLeft, setStageSecondsLeft] = useState(STAGE_SECONDS);
-  const stageProgress = Math.max(0, Math.min(1, stageSecondsLeft / STAGE_SECONDS));
+  // Timed stations: history collection stage gets 180 seconds; subsequent stages default to 90 seconds
+  // (unless overridden by stage.settings?.time_limit_seconds or duration_seconds).
+  const getStageDuration = useCallback((stage?: typeof currentStage): number => {
+    if (!stage) return 90;
+    const settings = stage.settings as Record<string, unknown> | undefined;
+    const explicit = Number(settings?.time_limit_seconds ?? settings?.duration_seconds);
+    if (Number.isFinite(explicit) && explicit > 0) return explicit;
+    const stageType =
+      normalizeStageType(typeof settings?.stage_type === "string" ? settings.stage_type : "") ||
+      inferStageTypeFromText(stage.title || "");
+    if (stageType === "history") return 180;
+    return 90;
+  }, []);
+
+  const [stageDuration, setStageDuration] = useState(() => getStageDuration(currentStage));
+  const [stageSecondsLeft, setStageSecondsLeft] = useState(stageDuration);
+  const stageProgress = Math.max(0, Math.min(1, stageSecondsLeft / (stageDuration || 1)));
   const countdownDisplay = formatElapsed(stageSecondsLeft);
 
   useEffect(() => {
-    setStageSecondsLeft(STAGE_SECONDS);
-  }, [progress.currentStageIndex]);
+    const dur = getStageDuration(currentStage);
+    setStageDuration(dur);
+    setStageSecondsLeft(dur);
+  }, [progress.currentStageIndex, currentStage, getStageDuration]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -1212,6 +1228,7 @@ export function LiveSession({
             isMuted={isMuted}
             showAdvanceHint={showAdvanceHint}
             elapsedTime={countdownDisplay}
+            stageSecondsLeft={stageSecondsLeft}
             stageProgress={stageProgress}
             personas={personaDefs}
             onToggleMic={handleToggleMic}

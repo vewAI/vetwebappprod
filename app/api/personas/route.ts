@@ -37,6 +37,50 @@ export async function GET(request: NextRequest) {
 
     console.log(`[personas GET] Loaded ${data?.length ?? 0} personas for caseId="${caseId}"`, 
       data?.map(p => ({ roleKey: p.role_key, displayName: p.display_name, sex: p.sex, hasMetadata: !!p.metadata })));
+
+    // Reassign older unspecialized nurses (e.g. legacy Martin Lambert or missing species specialization)
+    const nursePersona = (data ?? []).find((p) => p.role_key === "veterinary-nurse");
+    const isUnspecializedNurse =
+      !nursePersona ||
+      nursePersona.display_name === "Martin Lambert" ||
+      !(nursePersona.metadata as Record<string, unknown> | null)?.nurseSpecialization;
+
+    if (isUnspecializedNurse) {
+      try {
+        const { data: caseRow } = await supabase
+          .from("cases")
+          .select("id, species, category, title, description")
+          .eq("id", caseId)
+          .maybeSingle();
+
+        const candidateSpecies =
+          (caseRow?.species as string | null) ||
+          (caseRow?.category as string | null) ||
+          caseRow?.title ||
+          caseRow?.description;
+
+        if (candidateSpecies) {
+          const { applySpecializedNurse } = await import(
+            "@/features/personas/services/nurseSpecializationService"
+          );
+          await applySpecializedNurse(supabase, caseId, candidateSpecies);
+
+          const { data: refetched } = await supabase
+            .from("case_personas")
+            .select(
+              "id, case_id, role_key, display_name, status, image_url, prompt, behavior_prompt, metadata, generated_by, last_generated_at, updated_at, sex"
+            )
+            .eq("case_id", caseId)
+            .order("role_key", { ascending: true });
+
+          if (refetched && refetched.length > 0) {
+            return NextResponse.json({ personas: refetched });
+          }
+        }
+      } catch (autoAssignErr) {
+        console.warn("[personas GET] Auto-assigning specialized nurse failed non-blocking", autoAssignErr);
+      }
+    }
     
     return NextResponse.json({ personas: data ?? [] });
   } catch (error) {

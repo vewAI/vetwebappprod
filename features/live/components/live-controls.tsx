@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Mic, MicOff, Send, SkipForward, PhoneOff, Volume2, VolumeX, Hand, Pause, Play } from "lucide-react";
+import { Mic, MicOff, Send, SkipForward, PhoneOff, Volume2, VolumeX, Hand, Pause, Play, Clock } from "lucide-react";
 import type { LiveSessionStatus } from "../types";
 import { StageAdvanceHint } from "./stage-advance-hint";
 import { PersonaButton } from "@/features/chat/components/PersonaButton";
@@ -27,6 +27,7 @@ type LiveControlsProps = {
   isMuted: boolean;
   showAdvanceHint: boolean;
   elapsedTime?: string;
+  stageSecondsLeft?: number;
   personas: LivePersonaDef[];
   onToggleMic: () => void;
   onSelectPersona: (roleKey: LivePersonaRoleKey) => void;
@@ -52,6 +53,7 @@ export function LiveControls({
   isMuted,
   showAdvanceHint,
   elapsedTime,
+  stageSecondsLeft,
   personas,
   onToggleMic,
   onSelectPersona,
@@ -68,6 +70,7 @@ export function LiveControls({
   const isConnected = status === "connected";
   const isConnecting = status === "connecting";
   const canSendText = isConnected && isTextMode && textInput.trim().length > 0;
+  const isTimeLow = typeof stageSecondsLeft === "number" && stageSecondsLeft > 0 && stageSecondsLeft <= 20;
   const owner = personas.find((persona) => persona.roleKey === "owner");
   const nurse = personas.find((persona) => persona.roleKey === "veterinary-nurse");
   const lab = personas.find((persona) => persona.roleKey === "lab-technician");
@@ -206,7 +209,7 @@ export function LiveControls({
                 fill="none"
                 strokeWidth="3"
                 strokeLinecap="round"
-                className="stroke-yellow-400 transition-[stroke-dashoffset] duration-1000 ease-linear"
+                className={cn("transition-[stroke-dashoffset] duration-1000 ease-linear", isTimeLow ? "stroke-red-500 animate-pulse" : "stroke-yellow-400")}
                 strokeDasharray={157.08}
                 strokeDashoffset={157.08 * (1 - (stageProgress ?? 1))}
               />
