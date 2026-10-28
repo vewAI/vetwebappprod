@@ -425,7 +425,7 @@ export function LiveSession({
         // Mark this persona as already connected so the persona-switch effect
         // does NOT treat the initial connection as a handoff (that made the
         // owner answer the HANDOFF goodbye instead of the first-contact greeting).
-        switchedPersonaRoleRef.current = persona.roleKey;
+        switchedPersonaRoleRef.current = `${persona.roleKey}:${progress.currentStageIndex}`;
 
         if (!isPausedRef.current) {
           await mic.start();
@@ -509,7 +509,7 @@ export function LiveSession({
         if (cancelled) return;
         console.log("[Session] Reconnected with persona:", persona.displayName);
         await live.connect(token, persona);
-        switchedPersonaRoleRef.current = persona.roleKey;
+        switchedPersonaRoleRef.current = `${persona.roleKey}:${progress.currentStageIndex}`;
         if (!isPausedRef.current) {
           await mic.start();
         }
@@ -577,7 +577,8 @@ export function LiveSession({
 
   useEffect(() => {
     if (!persona) return;
-    if (persona.roleKey === switchedPersonaRoleRef.current) return;
+    const personaStageKey = `${persona.roleKey}:${progress.currentStageIndex}`;
+    if (personaStageKey === switchedPersonaRoleRef.current) return;
 
     if (live.status === "connected") {
       // Commit the switch only when it actually runs, so a switch requested
