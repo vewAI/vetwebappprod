@@ -37,7 +37,7 @@ export interface ProfessorDashboardStats {
 - **Response**: `ProfessorDashboardStats`.
 - **Rules**:
   - `studentCount` is all profiles with role `student` (or null role), counted with the same admin client as user-management.
-  - Total Cases card links to `/cases`. Total Active Sessions card links to `/professor/sessions`.
+  - Total Cases View all links to `/cases`. Total Active Sessions View all links to `/professor/sessions`. Total Students Enrolled View all links to `/admin/user-management` for admins.
   - `caseCount` is published cases.
   - `activeSessionCount` is sessions created by the current user whose window includes now.
   - `attemptsByDay` is one point per day for the last 30 days (zeros included) for every attempt in that window. It is not limited to `professor_students` enrollments.
@@ -49,8 +49,8 @@ export interface ProfessorDashboardStats {
 
 - `ProfessorDashboard`
   - `Breadcrumb` — Home `/dashboard`, Dashboard (current)
-  - three Unique Visitors-style metric cards (Total Cases, Total Active Sessions, Total Students Enrolled)
-  - `AttemptsPerDayChart`
+  - three TailAdmin Card with Icon metric cards (Total Cases, Total Active Sessions, Total Students Enrolled), each with a smaller brand icon left of the title and count, and a View all link
+  - TailAdmin Analytics-style Attempts Per Day chart (subtitle Last 30 days)
   - TailAdmin Top Channels cards: Top Cases (subtitle Last 30 days) and Recent Sessions (subtitle Created by you)
   - TailAdmin Sessions By Device donut: Students by year group
 
