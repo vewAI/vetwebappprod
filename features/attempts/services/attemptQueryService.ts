@@ -16,7 +16,7 @@ async function selectAttemptSummaries(userId: string, caseId?: string) {
     let fallback = supabase.from("attempts").select(ATTEMPT_SUMMARY_SELECT_FALLBACK).eq("user_id", userId);
     if (caseId) fallback = fallback.eq("case_id", caseId);
     const retry = await fallback.order("created_at", { ascending: false }).limit(200);
-    data = retry.data;
+    data = retry.data as any;
     error = retry.error;
   }
   return { data, error };

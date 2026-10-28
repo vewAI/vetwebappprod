@@ -132,9 +132,15 @@ export async function GET(request: Request) {
 
   const yearGroupIds = [...yearCounts.keys()].filter((id) => id !== "none");
   const yearNameById = new Map<string, string>();
+  type YearGroupRow = {
+    id: string;
+    name: string;
+    institution_id?: string;
+    institutions?: { name: string } | { name: string }[] | null;
+  };
+
   if (yearGroupIds.length > 0) {
-    let yearRows: { id: string; name: string; institution_id?: string; institutions?: { name: string } | { name: string }[] | null }[] | null =
-      null;
+    let yearRows: YearGroupRow[] | null = null;
     const withInstitution = await db
       .from("year_groups")
       .select("id, name, institution_id, institutions!institution_id(name)")
@@ -144,9 +150,9 @@ export async function GET(request: Request) {
       if (retry.error) {
         return NextResponse.json({ error: retry.error.message }, { status: 500 });
       }
-      yearRows = retry.data as typeof yearRows;
+      yearRows = (retry.data as unknown) as YearGroupRow[];
     } else {
-      yearRows = withInstitution.data as typeof yearRows;
+      yearRows = (withInstitution.data as unknown) as YearGroupRow[];
     }
     const institutionNames = new Set(
       (yearRows ?? []).map((group) => {

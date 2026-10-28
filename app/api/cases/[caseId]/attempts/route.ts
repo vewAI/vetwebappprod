@@ -32,7 +32,7 @@ export async function GET(request: Request, context: RouteContext) {
       .select(`${ATTEMPT_COLUMNS}, case_sessions (id, friendly_name, year_group_id)`)
       .eq("case_id", caseId)
       .order("created_at", { ascending: false });
-    data = retry.data;
+    data = retry.data as any;
     error = retry.error;
   }
 
@@ -59,7 +59,7 @@ export async function GET(request: Request, context: RouteContext) {
       const session = Array.isArray(row.case_sessions) ? row.case_sessions[0] : row.case_sessions;
       if (!session || session.year_groups) continue;
       const name = typeof session.year_group_id === "string" ? nameById.get(session.year_group_id) : undefined;
-      if (name) session.year_groups = { id: session.year_group_id, name };
+      if (name) (session as any).year_groups = [{ id: session.year_group_id, name }];
     }
   }
 
