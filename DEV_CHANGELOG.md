@@ -49,6 +49,14 @@ Cada cambio debe documentarse cronológicamente con esta estructura:
 
 ## 🪵 Historial de Cambios
 
+### [2026-10-28] Live Prompt Optimization: Persona Pruning, Grounded Findings & Stage Windowing — (@Antigravity)
+- **Contexto / Problema:** Los prompts de Gemini Live inyectaban reglas completas de todas las personas, resultados no pertinentes y acumulaban directivas de etapas anteriores, inflando el consumo de tokens y arriesgando alucinaciones clínicas.
+- **Acción Realizada:**
+  1. *Pruning por Persona:* Se desacoplaron las guías en `systemInstructionBuilder.ts` para que el dueño reciba solo contexto de cliente lego (eliminando instrucciones de enfermería y tablas de laboratorio) y la enfermera reciba solo directivas clínicas especializadas, manteniendo intacta la supresión obligatoria de disclaimers médicos (`DISCLAIMER_SUPPRESSION`).
+  2. *Grounded Findings Registry:* Se establecieron guardrails estrictos de no-alucinación donde todo hallazgo debe provenir del registro canónico de la base de datos sin inventar números ni diagnósticos.
+  3. *Ventana por Etapas:* Se vinculó el switch de persona a `${personaRoleKey}:${currentStageIndex}` en `live-session.tsx`, enviando la nueva instrucción podada en cada avance de etapa y descargando las directivas de etapas superadas.
+- **Verificación:** TypeScript check limpio (`tsc --noEmit`), suite de tests de `features/live` superada al 100% (65/65 tests) y sincronización en ramas.
+
 ### [2026-10-28] Auto-Advance Stage on Timer Expiration & Prompt Dismissal — (@Antigravity)
 - **Contexto / Problema:** Al agotarse el temporizador de una etapa, si el banner de confirmación ("Did you finish the Diagnostic Planning?") estaba visible en pantalla, la simulación se quedaba bloqueada esperando una interacción manual.
 - **Acción Realizada:** Se modificó el efecto de expiración en `features/live/components/live-session.tsx` para que, cuando el tiempo llega a cero, oculte inmediatamente el banner de confirmación (`setShowAdvanceConfirm(false)`), avance de etapa automáticamente mediante `handleConfirmAdvance()`, reactive el micrófono y reanude la simulación sin pausas forzadas.
