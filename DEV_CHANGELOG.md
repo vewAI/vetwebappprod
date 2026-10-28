@@ -49,6 +49,14 @@ Every change must be logged chronologically using this structure:
 
 ## 🪵 Changelog History
 
+### [2026-10-28 23:36 Europe/London] Bulk Reference Range Import & Multi-Parameter Parsing — (@Antigravity / Requested by Marco)
+- **Context / Problem:** In the Nurse Specializations admin interface (`/admin/nurse-specializations`), educators could only add lab and vital reference ranges one parameter at a time, making the entry of extensive clinical panels (100+ veterinary parameters across hematology, biochemistry, body fluids, urinalysis) slow and tedious.
+- **Action Taken:**
+  1. *Parser Utility (`features/personas/utils/parseReferenceRanges.ts`):* Created a multi-format clinical parser handling bracketed ranges (`+PCV: [28-44%]`), spreadsheet tables (tab-separated), colon/equals pairs, numeric ranges, trailing notes (`(hpf = high power field)`), and HTML entities (`&gt;`/`&lt;`). Includes panel/fluid section prefixing (e.g. `CSF - Glucose`, `Urinalysis - Protein`) to eliminate key collisions across different body fluids.
+  2. *Bulk Import Dialog (`features/personas/components/BulkReferenceRangesDialog.tsx`):* Created a modal with live parsing, instant preview table, unrecognized line detection, and an Import Mode toggle allowing users to choose between Merge (keeping existing parameters) and Replace all.
+  3. *Admin UI Enhancement (`app/admin/nurse-specializations/page.tsx`):* Integrated "Bulk Paste" buttons for both Lab Reference Ranges and Vital Reference Ranges, added live search filters for quick navigation, and sorted all displayed reference ranges alphabetically for clean, consistent formatting.
+- **Verification:** `npx tsc --noEmit` passed with 0 errors, `npm test -- features/personas` 100% green (8/8 tests passing, including full 196-item veterinary dataset), and `npm test -- features/live` passing (68/68 tests).
+
 ### [2026-10-28] Diagnostic Panel Matching & Nurse Altered Parameter Suppression — (@Antigravity)
 - **Context / Problem:** In `/live`, requesting panels like "biochemistry" returned 0 items because individual analytes (`potassium`, `glucose`, `calcium`, `AST`, etc.) were not mapped to panel keys, and nested JSON blocks lost category context. Additionally, the nurse verbalized and listed all altered parameters ("showing alterations in glucose, potassium..."), spoiling student diagnostic reasoning.
 - **Action Taken:**

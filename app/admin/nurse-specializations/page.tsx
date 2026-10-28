@@ -18,9 +18,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Plus, Trash2, Edit, Save, X } from "lucide-react";
+import { Loader2, Plus, Trash2, Edit, Save, X, ClipboardList, Search } from "lucide-react";
 import { getAccessToken } from "@/lib/auth-headers";
 import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
+import { BulkReferenceRangesDialog } from "@/features/personas/components/BulkReferenceRangesDialog";
 
 type Skill = {
   name: string;
@@ -373,7 +374,9 @@ function SpecCard({ spec, isEditing, editForm, setEditForm, onStartEdit, onCance
               Vital Ranges ({Object.keys(spec.vital_reference_ranges ?? {}).length})
             </summary>
             <div className="grid grid-cols-2 gap-x-6 gap-y-1 mt-2 ml-4">
-              {Object.entries(spec.vital_reference_ranges ?? {}).map(([k, v]) => (
+              {Object.entries(spec.vital_reference_ranges ?? {})
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([k, v]) => (
                 <span key={k} className="text-xs"><strong>{k}:</strong> {v}</span>
               ))}
             </div>
@@ -382,9 +385,11 @@ function SpecCard({ spec, isEditing, editForm, setEditForm, onStartEdit, onCance
             <summary className="cursor-pointer text-muted-foreground font-medium">
               Lab Reference Ranges ({Object.keys(spec.lab_reference_ranges ?? {}).length})
             </summary>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-1 mt-2 ml-4">
-              {Object.entries(spec.lab_reference_ranges ?? {}).map(([k, v]) => (
-                <span key={k} className="text-xs"><strong>{k}:</strong> {v}</span>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1 mt-2 ml-4 max-h-60 overflow-y-auto pr-2">
+              {Object.entries(spec.lab_reference_ranges ?? {})
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([k, v]) => (
+                <span key={k} className="text-xs truncate"><strong>{k}:</strong> {v}</span>
               ))}
             </div>
           </details>
@@ -425,6 +430,29 @@ function SpecEditForm({ form, setForm, isNew, newLabKey, setNewLabKey, newLabVal
   newSkillDesc: string;
   setNewSkillDesc: (v: string) => void;
 }) {
+  const [bulkModalType, setBulkModalType] = useState<"lab" | "vital" | null>(null);
+  const [labSearch, setLabSearch] = useState("");
+  const [vitalSearch, setVitalSearch] = useState("");
+
+  const handleApplyBulk = (newRanges: Record<string, string>, mode: "merge" | "replace") => {
+    if (bulkModalType === "vital") {
+      setForm({
+        ...form,
+        vital_reference_ranges:
+          mode === "replace"
+            ? newRanges
+            : { ...form.vital_reference_ranges, ...newRanges },
+      });
+    } else if (bulkModalType === "lab") {
+      setForm({
+        ...form,
+        lab_reference_ranges:
+          mode === "replace"
+            ? newRanges
+            : { ...form.lab_reference_ranges, ...newRanges },
+      });
+    }
+  };
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
@@ -482,24 +510,65 @@ function SpecEditForm({ form, setForm, isNew, newLabKey, setNewLabKey, newLabVal
 
       {/* Vital Reference Ranges */}
       <div>
-        <Label className="text-sm font-medium">Vital Reference Ranges</Label>
-        <div className="space-y-1 mt-1 mb-2">
-          {Object.entries(form.vital_reference_ranges).map(([k, v]) => (
-            <div key={k} className="flex items-center gap-2 text-xs">
-              <span className="font-medium w-40 truncate">{k}:</span>
-              <span className="flex-1">{v}</span>
-              <button className="text-destructive hover:text-destructive/80" onClick={() => {
-                const next = { ...form.vital_reference_ranges };
-                delete next[k];
-                setForm({ ...form, vital_reference_ranges: next });
-              }}><X className="h-3 w-3" /></button>
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <Label className="text-sm font-medium">Vital Reference Ranges</Label>
+            <span className="text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full">
+              {Object.keys(form.vital_reference_ranges).length}
+            </span>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setBulkModalType("vital")}
+            className="h-7 text-xs gap-1 border-dashed hover:border-solid"
+          >
+            <ClipboardList className="h-3.5 w-3.5 text-primary" /> Bulk Paste
+          </Button>
+        </div>
+
+        {Object.keys(form.vital_reference_ranges).length > 6 && (
+          <div className="relative mb-2">
+            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Filter vital ranges..."
+              value={vitalSearch}
+              onChange={(e) => setVitalSearch(e.target.value)}
+              className="h-8 pl-8 text-xs"
+            />
+          </div>
+        )}
+
+        <div className="space-y-1 mt-1 mb-2 max-h-48 overflow-y-auto divide-y divide-border/40">
+          {Object.entries(form.vital_reference_ranges)
+            .filter(([k, v]) => !vitalSearch || k.toLowerCase().includes(vitalSearch.toLowerCase()) || v.toLowerCase().includes(vitalSearch.toLowerCase()))
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([k, v]) => (
+            <div key={k} className="flex items-center gap-2 py-1 text-xs">
+              <span className="font-medium w-40 truncate" title={k}>{k}:</span>
+              <span className="flex-1 truncate" title={v}>{v}</span>
+              <button
+                type="button"
+                className="text-destructive hover:text-destructive/80 p-0.5"
+                onClick={() => {
+                  const next = { ...form.vital_reference_ranges };
+                  delete next[k];
+                  setForm({ ...form, vital_reference_ranges: next });
+                }}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
             </div>
           ))}
+          {Object.keys(form.vital_reference_ranges).length === 0 && (
+            <p className="text-xs text-muted-foreground py-2 italic">No vital ranges added yet.</p>
+          )}
         </div>
         <div className="flex gap-2">
           <Input placeholder="Parameter" value={newVitalKey} onChange={(e) => setNewVitalKey(e.target.value)} className="flex-1" />
           <Input placeholder="Normal range" value={newVitalValue} onChange={(e) => setNewVitalValue(e.target.value)} className="flex-1" />
-          <Button size="sm" onClick={() => {
+          <Button size="sm" type="button" onClick={() => {
             if (!newVitalKey.trim()) return;
             setForm({ ...form, vital_reference_ranges: { ...form.vital_reference_ranges, [newVitalKey.trim()]: newVitalValue.trim() } });
             setNewVitalKey(""); setNewVitalValue("");
@@ -509,30 +578,81 @@ function SpecEditForm({ form, setForm, isNew, newLabKey, setNewLabKey, newLabVal
 
       {/* Lab Reference Ranges */}
       <div>
-        <Label className="text-sm font-medium">Lab Reference Ranges</Label>
-        <div className="space-y-1 mt-1 mb-2 max-h-40 overflow-y-auto">
-          {Object.entries(form.lab_reference_ranges).map(([k, v]) => (
-            <div key={k} className="flex items-center gap-2 text-xs">
-              <span className="font-medium w-32 truncate">{k}:</span>
-              <span className="flex-1 truncate">{v}</span>
-              <button className="text-destructive hover:text-destructive/80" onClick={() => {
-                const next = { ...form.lab_reference_ranges };
-                delete next[k];
-                setForm({ ...form, lab_reference_ranges: next });
-              }}><X className="h-3 w-3" /></button>
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <Label className="text-sm font-medium">Lab Reference Ranges</Label>
+            <span className="text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full">
+              {Object.keys(form.lab_reference_ranges).length}
+            </span>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setBulkModalType("lab")}
+            className="h-7 text-xs gap-1 border-dashed hover:border-solid"
+          >
+            <ClipboardList className="h-3.5 w-3.5 text-primary" /> Bulk Paste
+          </Button>
+        </div>
+
+        {Object.keys(form.lab_reference_ranges).length > 6 && (
+          <div className="relative mb-2">
+            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Filter lab parameters..."
+              value={labSearch}
+              onChange={(e) => setLabSearch(e.target.value)}
+              className="h-8 pl-8 text-xs"
+            />
+          </div>
+        )}
+
+        <div className="space-y-1 mt-1 mb-2 max-h-56 overflow-y-auto divide-y divide-border/40">
+          {Object.entries(form.lab_reference_ranges)
+            .filter(([k, v]) => !labSearch || k.toLowerCase().includes(labSearch.toLowerCase()) || v.toLowerCase().includes(labSearch.toLowerCase()))
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([k, v]) => (
+            <div key={k} className="flex items-center gap-2 py-1 text-xs">
+              <span className="font-medium w-48 truncate" title={k}>{k}:</span>
+              <span className="flex-1 truncate font-mono text-[11px]" title={v}>{v}</span>
+              <button
+                type="button"
+                className="text-destructive hover:text-destructive/80 p-0.5"
+                onClick={() => {
+                  const next = { ...form.lab_reference_ranges };
+                  delete next[k];
+                  setForm({ ...form, lab_reference_ranges: next });
+                }}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
             </div>
           ))}
+          {Object.keys(form.lab_reference_ranges).length === 0 && (
+            <p className="text-xs text-muted-foreground py-2 italic">No lab reference ranges added yet.</p>
+          )}
         </div>
         <div className="flex gap-2">
           <Input placeholder="Parameter" value={newLabKey} onChange={(e) => setNewLabKey(e.target.value)} className="flex-1" />
           <Input placeholder="Normal range" value={newLabValue} onChange={(e) => setNewLabValue(e.target.value)} className="flex-1" />
-          <Button size="sm" onClick={() => {
+          <Button size="sm" type="button" onClick={() => {
             if (!newLabKey.trim()) return;
             setForm({ ...form, lab_reference_ranges: { ...form.lab_reference_ranges, [newLabKey.trim()]: newLabValue.trim() } });
             setNewLabKey(""); setNewLabValue("");
           }}>Add</Button>
         </div>
       </div>
+
+      <BulkReferenceRangesDialog
+        open={bulkModalType !== null}
+        onOpenChange={(open) => {
+          if (!open) setBulkModalType(null);
+        }}
+        title={bulkModalType === "vital" ? "Bulk Paste Vital Reference Ranges" : "Bulk Paste Lab Reference Ranges"}
+        existingCount={bulkModalType === "vital" ? Object.keys(form.vital_reference_ranges).length : Object.keys(form.lab_reference_ranges).length}
+        onApply={handleApplyBulk}
+      />
 
       {/* Common Pathologies */}
       <div>
