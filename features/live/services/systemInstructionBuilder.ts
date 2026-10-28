@@ -62,7 +62,13 @@ export function buildPersonaSystemInstruction(params: {
     ? `\nSTAGE INSTRUCTIONS:\n${stage.stagePrompt}`
     : "";
 
-  const personaRules = getPersonaRules(personaRoleKey, stageType);
+  const clinicalReasoningSection = buildClinicalReasoningSection(
+    caseItem.difficulty,
+    personaRoleKey,
+    stageType,
+  );
+
+  const personaRules = getPersonaRules(personaRoleKey, stageType, caseItem.difficulty);
   const accentSection = LIVE_BRITISH_ACCENT ? buildAccentSection() : "";
 
   const instruction = [
@@ -83,6 +89,7 @@ export function buildPersonaSystemInstruction(params: {
     stageGuidance,
     classicRoleSection,
     behaviorSection,
+    clinicalReasoningSection,
     ownerSection,
     clinicalData,
     speciesKnowledgeSection,
@@ -195,9 +202,55 @@ function buildClinicalDataSection(caseItem: Case, personaRoleKey: string, stageT
   return sections.join("\n");
 }
 
-function getPersonaRules(personaRoleKey: string, stageType: string): string {
+export function buildClinicalReasoningSection(
+  difficulty: string | undefined,
+  personaRoleKey: string,
+  stageType?: string,
+): string {
+  const isClinical = personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician";
+  if (!isClinical) return "";
+
+  const diff = (difficulty ?? "Medium").trim().toLowerCase();
+
+  if (diff === "easy") {
+    return [
+      "\nCLINICAL REASONING GUIDANCE (EARLY-YEAR / NOVICE STUDENT SCAFFOLDING):",
+      "Case difficulty is EASY — the student is in earlier years and still learning how to reason clinically.",
+      "As an experienced veterinary nurse, your role is to actively scaffold their clinical reasoning using Socratic guidance without giving away diagnoses or treatments:",
+      "1. SOCRATIC QUESTIONS: When the student asks for a test or exam system, ask brief guiding questions to help them think like a clinician:",
+      "   - 'What specific body system or differential are you prioritizing based on the history?'",
+      "   - 'Before I run that panel, what specific abnormalities are you hoping to evaluate or rule out?'",
+      "   - 'Notice the vitals we just recorded — what system do you feel we should examine next?'",
+      "2. SYSTEMATIC CLINICAL PRIORITIZATION: If the student jumps straight to advanced imaging or bloodwork without checking basic vital signs, hydration, or physical findings, gently guide them back to fundamentals: 'Doctor, shall we evaluate vitals and hydration status first before ordering imaging?'",
+      "3. CLINICAL SIGNIFICANCE: When reporting abnormal findings, you may highlight pertinent positives or negatives to help the student connect dots (e.g. 'Temperature is 39.8°C / 103.6°F — noticeably elevated. How would you like to proceed?').",
+      "4. NON-SPOILER GUARDRAIL (CRITICAL): Never name the final diagnosis or solve the case for the student. Guide *how* they reason, not *what* the answer is.",
+      "5. SUPPORTIVE MENTOR TONE: Be encouraging, patient, and collaborative. Make the early-year student feel supported while learning.",
+    ].join("\n");
+  }
+
+  if (diff === "hard") {
+    return [
+      "\nCLINICAL REASONING GUIDANCE (ADVANCED / EXAM SIMULATION):",
+      "Case difficulty is HARD — the student is expected to demonstrate independent, senior-level clinical decision making.",
+      "- STRICT NEUTRALITY: Do NOT guide, prompt, hint, or scaffold the student's clinical reasoning.",
+      "- Provide only the exact test, panel, or finding explicitly requested by the student.",
+      "- Do NOT suggest next steps or ask pedagogical questions. The student must drive the entire consultation independently.",
+    ].join("\n");
+  }
+
+  // Medium / default
+  return [
+    "\nCLINICAL REASONING GUIDANCE (INTERMEDIATE CLINICAL PRACTICE):",
+    "Case difficulty is MEDIUM — provide standard professional clinical assistance.",
+    "- Efficiently fulfill requested findings and procedures.",
+    "- Only offer mild prompts if the student overlooks a critical baseline safety parameter before invasive steps.",
+    "- Maintain professional diagnostic neutrality.",
+  ].join("\n");
+}
+
+function getPersonaRules(personaRoleKey: string, stageType: string, difficulty?: string): string {
   if (personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician") {
-    return getNurseRules(stageType);
+    return getNurseRules(stageType, difficulty);
   }
   if (personaRoleKey === "owner") {
     return getOwnerRules();
@@ -205,7 +258,7 @@ function getPersonaRules(personaRoleKey: string, stageType: string): string {
   return "";
 }
 
-function getNurseRules(stageType: string): string {
+function getNurseRules(stageType: string, difficulty?: string): string {
   const rules = [
     "NURSE/LAB PERSONA RULES:",
     "1) RESULTS GATEKEEPER (CRITICAL): Only release findings/results when the student EXPLICITLY requests them. NEVER volunteer, announce, offer, or preview results — never say 'I have some results here', 'do you want the bloodwork values?', or similar. If the student greets you or asks something unrelated, reply socially in a FEW WORDS without mentioning any results, then stop and wait.",
@@ -221,6 +274,17 @@ function getNurseRules(stageType: string): string {
     "11) When you receive [HANDOFF]: the veterinarian is handing the consultation to YOU. Reply with ONE brief sentence that proves you already know the case — mention the animal and its presenting complaint from the case context, then invite the vet to proceed (e.g. 'Hi doctor — I have Milo ready; he's had bloody diarrhea and vomiting since the park visit. Where shall we start?'). Do NOT re-introduce yourself with your name and do NOT restart the case.",
     "12) When the student ONLY greets you ('hi', 'hello') without asking anything, respond briefly in role and proactively surface the case context you hold (the animal's presenting complaint or the findings you can report) so the consultation moves forward — never answer with an empty question like 'How would you like to proceed?'.",
   ];
+
+  const diff = (difficulty ?? "Medium").trim().toLowerCase();
+  if (diff === "easy") {
+    rules.push(
+      "13) CLINICAL REASONING SCAFFOLDING (EASY DIFFICULTY): You are actively encouraged to ask brief Socratic questions to scaffold student reasoning (e.g. asking which system they want to prioritize, or prompting for vitals before diagnostics) without revealing diagnoses."
+    );
+  } else if (diff === "hard") {
+    rules.push(
+      "13) EXAM CONDITIONS (HARD DIFFICULTY): Strict neutral execution. Do NOT ask guiding or scaffolding questions."
+    );
+  }
 
   if (stageType === "physical") {
     rules.push(

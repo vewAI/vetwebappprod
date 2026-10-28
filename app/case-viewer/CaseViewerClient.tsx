@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 // ImageUploader intentionally not used here to allow manual image_url input in edit mode.
 import axios from "axios";
 import { caseFieldMeta, orderedCaseFieldKeys, type CaseFieldKey } from "@/features/cases/fieldMeta";
@@ -159,14 +160,25 @@ export default function CaseViewerClient() {
         const ownerRow = list.find((row) => row.role_key === "owner");
         const nurseRow = list.find((row) => row.role_key === "veterinary-nurse");
 
-        setOwnerPersonaConfig(extractPersonaConfig(ownerRow));
-        setNursePersonaConfig(extractPersonaConfig(nurseRow));
-        setPersonaConfigsDirty(false);
-
         // Extract nurse specialization data for read-only display
         const nurseMetadata = nurseRow?.metadata && typeof nurseRow.metadata === "object" ? (nurseRow.metadata as Record<string, unknown>) : null;
         const nurseSpec = nurseMetadata?.nurseSpecialization ?? null;
         setNurseSpecialization(nurseSpec as Record<string, unknown> | null);
+
+        const extractedNurseConfig = extractPersonaConfig(nurseRow);
+        if (!extractedNurseConfig.imageUrl && (nurseSpec as any)?.imageUrl) {
+          extractedNurseConfig.imageUrl = (nurseSpec as any).imageUrl;
+        }
+        if (!extractedNurseConfig.sex && (nurseSpec as any)?.sex) {
+          extractedNurseConfig.sex = (nurseSpec as any).sex;
+        }
+        if (!extractedNurseConfig.voiceId && (nurseSpec as any)?.voiceId) {
+          extractedNurseConfig.voiceId = (nurseSpec as any).voiceId;
+        }
+
+        setOwnerPersonaConfig(extractPersonaConfig(ownerRow));
+        setNursePersonaConfig(extractedNurseConfig);
+        setPersonaConfigsDirty(false);
 
         // Get all case personas for display
         let combined = [...list];
@@ -778,7 +790,19 @@ export default function CaseViewerClient() {
           </div>
         </div>
       )}
-      <div className="sticky top-20 z-30 -mx-4 mb-4 flex items-center justify-end bg-background/90 p-4 backdrop-blur-sm">
+      <div className="sticky top-20 z-30 -mx-4 mb-4 bg-background/90 backdrop-blur-sm p-4 flex justify-between items-center">
+        <div className="flex items-center gap-3">
+          <Badge
+            variant={isCasePublished(formState) ? "default" : "secondary"}
+            className={
+              isCasePublished(formState)
+                ? "bg-emerald-600 text-white hover:bg-emerald-700 font-medium"
+                : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 font-medium"
+            }
+          >
+            {isCasePublished(formState) ? "Published" : "Draft"}
+          </Badge>
+        </div>
         <div className="flex items-center gap-2">
           {isCasePublished(formState) ? (
             <Button variant="outline" disabled={publishing} onClick={() => setPublishModal("unpublish")}>
