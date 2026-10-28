@@ -1151,9 +1151,9 @@ export default function LandingPage() {
           </div>
 
           {/* Featured Founders Showcase: Field Photo on Left (half page), Profiles & Dropdown CVs on Right */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-start max-w-6xl mx-auto mb-16">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start max-w-6xl mx-auto mb-16">
             {/* Left Column: Authentic Photo Feature (Half page on desktop) */}
-            <div className="w-full">
+            <div className="w-full lg:col-span-5">
               <div className="rounded-3xl border border-emerald-200/90 bg-white p-3 shadow-md lg:sticky lg:top-28">
                 <div className="relative aspect-[4/3] w-full rounded-2xl overflow-hidden bg-emerald-50 shadow-inner">
                   <Image
@@ -1180,17 +1180,17 @@ export default function LandingPage() {
             </div>
 
             {/* Right Column: Co-Founder Biographies with Dropdown CVs */}
-            <div className="w-full space-y-6">
+            <div className="w-full space-y-6 lg:col-span-7">
               {/* Dr. Marco Duz Card */}
-              <div className="rounded-2xl border border-emerald-100 bg-[#f9fdfb] p-6 sm:p-7 space-y-4 shadow-sm hover:border-emerald-300 transition-all">
+              <div className="rounded-2xl border border-emerald-100 bg-[#f9fdfb] p-6 space-y-4 shadow-sm hover:border-emerald-300 transition-all">
                 <div className="flex items-start gap-4">
                   <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white font-extrabold text-lg shadow-md">
                     MD
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center justify-between gap-1">
-                      <h3 className="text-xl font-bold text-slate-900">Dr. Marco Duz</h3>
-                      <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-full border border-emerald-200">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2">
+                      <h3 className="text-lg sm:text-xl font-bold text-slate-900">Dr. Marco Duz</h3>
+                      <span className="text-[10px] sm:text-[11px] font-semibold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-full border border-emerald-200 shrink-0 whitespace-nowrap self-start sm:self-auto">
                         Co-Founder &amp; Clinical Lead
                       </span>
                     </div>
@@ -1285,15 +1285,15 @@ export default function LandingPage() {
               </div>
 
               {/* Dr. Ignacio Corradini Card */}
-              <div className="rounded-2xl border border-emerald-100 bg-[#f9fdfb] p-6 sm:p-7 space-y-4 shadow-sm hover:border-emerald-300 transition-all">
+              <div className="rounded-2xl border border-emerald-100 bg-[#f9fdfb] p-6 space-y-4 shadow-sm hover:border-emerald-300 transition-all">
                 <div className="flex items-start gap-4">
                   <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-600 to-cyan-700 text-white font-extrabold text-lg shadow-md">
                     IC
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center justify-between gap-1">
-                      <h3 className="text-xl font-bold text-slate-900">Dr. Ignacio Corradini</h3>
-                      <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-full border border-emerald-200">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2">
+                      <h3 className="text-lg sm:text-xl font-bold text-slate-900">Dr. Ignacio Corradini</h3>
+                      <span className="text-[10px] sm:text-[11px] font-semibold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-full border border-emerald-200 shrink-0 whitespace-nowrap self-start sm:self-auto">
                         Co-Founder &amp; AI Educational Strategy
                       </span>
                     </div>
