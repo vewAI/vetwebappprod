@@ -32,11 +32,7 @@ export async function GET(request: NextRequest) {
 
   let institutionId = institutionIdParam;
   if (auth.role !== "admin") {
-    let { data: profile, error: profileError } = await db
-      .from("profiles")
-      .select("institution_id")
-      .eq("user_id", auth.user.id)
-      .maybeSingle();
+    let { data: profile, error: profileError } = await db.from("profiles").select("institution_id").eq("user_id", auth.user.id).maybeSingle();
     if (profileError || !profile) {
       const byId = await db.from("profiles").select("institution_id").eq("id", auth.user.id).maybeSingle();
       profile = byId.data;
@@ -64,21 +60,14 @@ export async function GET(request: NextRequest) {
 
   let { data, error } = await query;
   if (error) {
-    let fallback = db
-      .from("year_groups")
-      .select(YEAR_GROUP_COLUMNS)
-      .order("sort_order", { ascending: true })
-      .order("name", { ascending: true });
+    let fallback = db.from("year_groups").select(YEAR_GROUP_COLUMNS).order("sort_order", { ascending: true }).order("name", { ascending: true });
     if (institutionId) fallback = fallback.eq("institution_id", institutionId);
     const retry = await fallback;
-    data = retry.data;
+    data = retry.data as any;
     error = retry.error;
   }
   if (error) {
-    return NextResponse.json(
-      { error: error.message, yearGroups: [], institutionId: institutionId || null },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: error.message, yearGroups: [], institutionId: institutionId || null }, { status: 500 });
   }
 
   let academicYearEnd: { month: number; day: number } | null = null;
