@@ -193,11 +193,45 @@ function commonPrefixLength(a: string, b: string): number {
   return i;
 }
 
+export const GENERIC_EXAM_WORDS = new Set([
+  "rate",
+  "rates",
+  "exam",
+  "examination",
+  "test",
+  "tests",
+  "check",
+  "sound",
+  "sounds",
+  "feel",
+  "area",
+  "part",
+  "side",
+  "left",
+  "right",
+  "body",
+  "sign",
+  "signs",
+  "note",
+  "with",
+  "from",
+  "have",
+  "this",
+  "that",
+  "were",
+  "been",
+  "will",
+  "would",
+  "could",
+  "should",
+  "please",
+]);
+
 // Vocabulary match: requires exact match, prefix match of >= 4 chars, or >= 5-char common stem,
-// after filtering out generic clinical stopwords.
+// after filtering out generic clinical stopwords and generic exam words.
 export function entryMatchesUserText(entryLabel: string, userText: string): boolean {
-  const labelWords = words(entryLabel);
-  const userWords = words(userText);
+  const labelWords = words(entryLabel).filter((w) => !GENERIC_EXAM_WORDS.has(w));
+  const userWords = words(userText).filter((w) => !GENERIC_EXAM_WORDS.has(w));
   if (labelWords.length === 0 || userWords.length === 0) return false;
   return labelWords.some((lw) =>
     userWords.some((uw) => {
@@ -356,6 +390,8 @@ export async function POST(request: Request) {
       /\b(would you like|do you want|shall i|which (test|one|panel|system)|should i|we can run|we have .* ready)\b/i.test(assistantText);
 
     const haystack = normalizeForMatch(assistantText);
+    // DISABLED: assistant-text-based reveal removed to prevent unrequested findings from appearing in the panel. Only student-requested findings should show.
+    /*
     if (physAllowed && haystack && !isAssistantAsking) {
       for (const entry of physEntries) {
         if (isGarbageEntry(entry.label, entry.value)) continue;
@@ -372,6 +408,7 @@ export async function POST(request: Request) {
         });
       }
     }
+    */
 
     // 3) Diagnostic/lab values: reveal ONLY the entries matching a test the
     // student explicitly requested (once the laboratory phase is reached).
@@ -425,6 +462,8 @@ export async function POST(request: Request) {
     // 4) Lab values the persona verbalized: during the laboratory phase when the
     // nurse states findings — each spoken entry lands in the panel live.
     // Ignore if the assistant is merely asking a question or offering options.
+    // DISABLED: assistant-text-based reveal removed to prevent unrequested findings from appearing in the panel. Only student-requested findings should show.
+    /*
     if (diagAllowed && diagEntries.length > 0 && haystack && !isAssistantAsking) {
       for (const entry of diagEntries) {
         if (isGarbageEntry(entry.label, entry.value)) continue;
@@ -441,6 +480,7 @@ export async function POST(request: Request) {
         });
       }
     }
+    */
 
     console.log("[live/findings]", { stageType: normalizeStageType(stageType), revealed: items.length });
     console.log(

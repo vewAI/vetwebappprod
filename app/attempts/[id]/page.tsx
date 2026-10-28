@@ -379,8 +379,8 @@ export default function ViewAttemptPage() {
               <Link
                 href={
                   attempt.sessionId
-                    ? `/case/${attempt.caseId}/attempt?attempt=${attempt.id}&session=${attempt.sessionId}`
-                    : `/case/${attempt.caseId}/attempt?attempt=${attempt.id}`
+                    ? `/live/${attempt.caseId}?attempt=${attempt.id}&session=${attempt.sessionId}`
+                    : `/live/${attempt.caseId}?attempt=${attempt.id}`
                 }
               >
                 Continue Attempt

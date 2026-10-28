@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Mic, MicOff, Send, SkipForward, PhoneOff, Volume2, VolumeX, Hand, Pause, Play } from "lucide-react";
+import { Mic, MicOff, Send, SkipForward, PhoneOff, Volume2, VolumeX, Hand, Pause, Play, Clock } from "lucide-react";
 import type { LiveSessionStatus } from "../types";
 import { StageAdvanceHint } from "./stage-advance-hint";
 import { PersonaButton } from "@/features/chat/components/PersonaButton";
@@ -27,6 +27,7 @@ type LiveControlsProps = {
   isMuted: boolean;
   showAdvanceHint: boolean;
   elapsedTime?: string;
+  stageSecondsLeft?: number;
   personas: LivePersonaDef[];
   onToggleMic: () => void;
   onSelectPersona: (roleKey: LivePersonaRoleKey) => void;
@@ -52,6 +53,7 @@ export function LiveControls({
   isMuted,
   showAdvanceHint,
   elapsedTime,
+  stageSecondsLeft,
   personas,
   onToggleMic,
   onSelectPersona,
@@ -68,6 +70,7 @@ export function LiveControls({
   const isConnected = status === "connected";
   const isConnecting = status === "connecting";
   const canSendText = isConnected && isTextMode && textInput.trim().length > 0;
+  const isTimeLow = typeof stageSecondsLeft === "number" && stageSecondsLeft > 0 && stageSecondsLeft <= 20;
   const owner = personas.find((persona) => persona.roleKey === "owner");
   const nurse = personas.find((persona) => persona.roleKey === "veterinary-nurse");
   const lab = personas.find((persona) => persona.roleKey === "lab-technician");
@@ -194,9 +197,17 @@ export function LiveControls({
       {/* Secondary controls */}
       <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
         {/* Pause with stage countdown ring: larger and always visible. The
-            ring drains as the stage's 90 seconds are consumed. */}
+            ring drains as the stage seconds are consumed. When <= 20s remain, a flashing red ring warns the user. */}
         {onTogglePause && (
-          <div className="relative flex h-14 w-14 items-center justify-center">
+          <div
+            className={cn(
+              "relative flex h-14 w-14 items-center justify-center rounded-full transition-all duration-300",
+              isTimeLow && "ring-4 ring-red-500 ring-offset-2 ring-offset-background shadow-[0_0_15px_rgba(239,68,68,0.7)] animate-pulse",
+            )}
+          >
+            {isTimeLow && (
+              <span className="pointer-events-none absolute -inset-1 rounded-full border-2 border-red-500 animate-ping opacity-75" />
+            )}
             <svg viewBox="0 0 56 56" className="pointer-events-none absolute inset-0 h-14 w-14 -rotate-90" aria-hidden="true">
               <circle cx="28" cy="28" r="25" fill="none" strokeWidth="3" className="stroke-muted" />
               <circle
@@ -204,9 +215,14 @@ export function LiveControls({
                 cy="28"
                 r="25"
                 fill="none"
-                strokeWidth="3"
+                strokeWidth={isTimeLow ? "4" : "3"}
                 strokeLinecap="round"
-                className="stroke-yellow-400 transition-[stroke-dashoffset] duration-1000 ease-linear"
+                className={cn(
+                  "transition-[stroke-dashoffset] duration-1000 ease-linear",
+                  isTimeLow
+                    ? "stroke-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.9)] animate-pulse"
+                    : "stroke-yellow-400",
+                )}
                 strokeDasharray={157.08}
                 strokeDashoffset={157.08 * (1 - (stageProgress ?? 1))}
               />
@@ -219,6 +235,8 @@ export function LiveControls({
                 "relative z-10 h-11 w-11 rounded-full",
                 isPaused
                   ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300"
+                  : isTimeLow
+                  ? "text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
                   : "text-muted-foreground hover:bg-muted",
               )}
               aria-label={isPaused ? "Resume session" : "Pause session"}
@@ -259,7 +277,16 @@ export function LiveControls({
         </Button>
 
         {elapsedTime && isConnected && (
-          <span className="text-xs tabular-nums text-muted-foreground">{elapsedTime}</span>
+          <span
+            className={cn(
+              "text-xs tabular-nums transition-colors duration-300",
+              isTimeLow
+                ? "text-red-500 font-bold animate-pulse scale-110 drop-shadow-[0_0_6px_rgba(239,68,68,0.8)]"
+                : "text-muted-foreground",
+            )}
+          >
+            {elapsedTime}
+          </span>
         )}
 
         <div className="relative">

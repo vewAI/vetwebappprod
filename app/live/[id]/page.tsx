@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Loader2, ArrowLeft } from "lucide-react";
@@ -33,6 +33,9 @@ function formatMinutes(seconds?: number): string {
 export default function LiveSessionPage() {
   const { id: caseId } = useParams() as { id: string };
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlAttemptId = searchParams?.get("attempt") ?? undefined;
+  const urlSessionId = searchParams?.get("session") ?? undefined;
   const { user } = useAuth();
 
   const [caseData, setCaseData] = useState<Case | null>(null);
@@ -115,7 +118,11 @@ export default function LiveSessionPage() {
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
-          body: JSON.stringify({ caseId }),
+          body: JSON.stringify({
+            caseId,
+            attemptId: urlAttemptId,
+            sessionId: urlSessionId,
+          }),
         };
 
         const res = await fetch("/api/live/session", opts);
@@ -134,7 +141,7 @@ export default function LiveSessionPage() {
           messages,
           timeSpentSeconds: typeof data.timeSpentSeconds === "number" ? data.timeSpentSeconds : 0,
         });
-        setResumeChoice(data.resumed ? "pending" : "decided");
+        setResumeChoice(data.resumed && !urlAttemptId ? "pending" : "decided");
       } catch (err) {
         console.error("Session init failed:", err);
         setError(err instanceof Error ? err.message : "Failed to initialize session");

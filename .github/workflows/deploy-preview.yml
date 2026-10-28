@@ -1,0 +1,42 @@
+name: Deploy Preview (Vercel)
+
+on:
+  push:
+    branches:
+      - feature/redesign
+      - preview/educators
+  workflow_dispatch:
+
+jobs:
+  trigger-preview:
+    name: Trigger Vercel Deploy Hook
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Vercel Preview Deployment
+        run: |
+          REF_NAME="${{ github.ref_name }}"
+          echo "Triggered for branch: $REF_NAME"
+
+          if [ "$REF_NAME" = "preview/educators" ]; then
+            DEPLOY_HOOK="${{ secrets.VERCEL_DEPLOY_HOOK_EDUCATORS }}"
+            if [ -z "$DEPLOY_HOOK" ]; then
+              echo "Using default deploy hook for educators..."
+              DEPLOY_HOOK="https://api.vercel.com/v1/integrations/deploy/prj_Z9wPgYcip4jMI6a6sK3v49Kx5Ug3/Lj5CUIQWQB"
+            fi
+          else
+            DEPLOY_HOOK="${{ secrets.VERCEL_DEPLOY_HOOK_REDESIGN }}"
+            if [ -z "$DEPLOY_HOOK" ]; then
+              echo "Using default deploy hook for redesign..."
+              DEPLOY_HOOK="https://api.vercel.com/v1/integrations/deploy/prj_Z9wPgYcip4jMI6a6sK3v49Kx5Ug3/EH3UpPwXtW"
+            fi
+          fi
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$DEPLOY_HOOK")
+          HTTP_BODY=$(echo "$RESPONSE" | sed '$d')
+          HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+          echo "Vercel Response: $HTTP_BODY"
+          if [ "$HTTP_STATUS" -ne 200 ] && [ "$HTTP_STATUS" -ne 201 ]; then
+            echo "Deploy hook failed with HTTP status: $HTTP_STATUS"
+            exit 1
+          fi
+          echo "Vercel Preview Deployment triggered successfully!"
