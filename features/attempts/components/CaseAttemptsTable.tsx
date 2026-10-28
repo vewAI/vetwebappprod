@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/features/n
 import { useTableSort } from "@/features/navigation/hooks/useTableSort";
 import type { AttemptSummary } from "@/features/attempts/models/attempt";
 
-type AttemptSortKey = "student" | "session" | "status" | "date" | "time";
+type AttemptSortKey = "student" | "session" | "year" | "status" | "date" | "time";
 
 const statusRank: Record<AttemptSummary["completionStatus"], number> = {
   in_progress: 1,
@@ -44,6 +44,7 @@ type Props = {
   showStudent?: boolean;
   studentLabel?: string;
   showSession?: boolean;
+  showYearGroup?: boolean;
   /** `/professor/sessions` or `/case-sessions` */
   sessionHrefBase?: "/professor/sessions" | "/case-sessions";
 };
@@ -55,6 +56,7 @@ export function CaseAttemptsTable({
   showStudent = false,
   studentLabel = "Student",
   showSession = true,
+  showYearGroup = true,
   sessionHrefBase,
 }: Props) {
   const { sort, toggle, sorted } = useTableSort<AttemptSummary, AttemptSortKey>(
@@ -62,6 +64,7 @@ export function CaseAttemptsTable({
     (attempt, key) => {
       if (key === "student") return attempt.studentName ?? "";
       if (key === "session") return attempt.sessionName ?? "";
+      if (key === "year") return attempt.sessionYearGroupName ?? "";
       if (key === "status") return statusRank[attempt.completionStatus] ?? 0;
       if (key === "date") return new Date(attempt.createdAt).getTime();
       return attempt.timeSpentSeconds;
@@ -69,17 +72,18 @@ export function CaseAttemptsTable({
     { key: "date", dir: "desc" },
   );
 
-  const colSpan = (showStudent ? 1 : 0) + (showSession ? 1 : 0) + 3;
+  const colSpan = (showStudent ? 1 : 0) + (showSession ? 1 : 0) + (showYearGroup ? 1 : 0) + 3;
 
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
       <div className="max-w-full overflow-x-auto">
-        <div className="min-w-[640px]">
+        <div className="min-w-[720px]">
           <Table>
             <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
               <TableRow>
                 {showStudent && <SortHeader label={studentLabel} column="student" sort={sort} onSort={toggle} />}
                 {showSession && <SortHeader label="Session" column="session" sort={sort} onSort={toggle} />}
+                {showYearGroup && <SortHeader label="Year" column="year" sort={sort} onSort={toggle} />}
                 <SortHeader label="Status" column="status" sort={sort} onSort={toggle} />
                 <SortHeader label="Date" column="date" sort={sort} onSort={toggle} />
                 <SortHeader label="Time" column="time" sort={sort} onSort={toggle} />
@@ -121,6 +125,11 @@ export function CaseAttemptsTable({
                           ) : (
                             "—"
                           )}
+                        </TableCell>
+                      )}
+                      {showYearGroup && (
+                        <TableCell className="px-4 py-3 text-start text-theme-sm text-gray-500 dark:text-gray-400">
+                          {attempt.sessionYearGroupName || "—"}
                         </TableCell>
                       )}
                       <TableCell className="px-5 py-4 text-start sm:px-6">

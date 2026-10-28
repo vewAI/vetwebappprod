@@ -16,6 +16,7 @@ export function Select({
   className,
   selectClassName,
   id,
+  disabled = false,
 }: {
   options: SelectOption[];
   value: string;
@@ -23,15 +24,18 @@ export function Select({
   className?: string;
   selectClassName?: string;
   id?: string;
+  disabled?: boolean;
 }) {
   return (
     <div className={cn("relative", className)}>
       <select
         id={id}
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         className={cn(
           "h-11 w-full appearance-none rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 pr-11 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:ring-3 focus:ring-brand-500/10 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:focus:border-brand-800",
+          disabled && "cursor-not-allowed bg-gray-100 text-gray-500 opacity-40 dark:bg-gray-800 dark:text-gray-400",
           selectClassName,
         )}
       >

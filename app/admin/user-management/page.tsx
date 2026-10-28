@@ -3,15 +3,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useAuth } from "@/features/auth/services/authService";
 import { getAccessToken } from "@/lib/auth-headers";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import type { Institution } from "@/features/admin/components/InstitutionManagement";
 import type { YearGroup } from "@/features/year-groups/models/yearGroup";
 import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
+import { Modal } from "@/features/navigation/components/modal";
 import { Select } from "@/features/navigation/components/select";
 import { SortHeader } from "@/features/navigation/components/sort-header";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/features/navigation/components/table";
@@ -38,6 +36,17 @@ const ROLE_OPTIONS = [
   { value: "professor", label: "Professor" },
   { value: "admin", label: "Admin" },
 ];
+
+const FIELD_INPUT_CLASS =
+  "h-11 w-full appearance-none rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-none focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800";
+
+function FieldLabel({ htmlFor, children }: { htmlFor: string; children: React.ReactNode }) {
+  return (
+    <label htmlFor={htmlFor} className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">
+      {children}
+    </label>
+  );
+}
 
 function roleBadgeVariant(role: string) {
   if (role === "admin") return "brand" as const;
@@ -170,7 +179,7 @@ export default function UserManagementPage() {
   const yearFilterOptions = useMemo(() => {
     const showInstitution = new Set(yearGroups.map((group) => group.institutionId)).size > 1;
     return [
-      { value: "all", label: "All Years" },
+      { value: "all", label: "All Year Groups" },
       { value: "unassigned", label: "Unassigned" },
       ...yearGroups.map((group) => ({
         value: group.id,
@@ -203,107 +212,126 @@ export default function UserManagementPage() {
     { key: "email", dir: "asc" },
   );
 
+  const closeUserModal = () => {
+    if (userSubmitting) return;
+    setIsUserDialogOpen(false);
+    resetUserForm();
+  };
+
+  const yearGroupOptions = [
+    { value: "", label: userForm.institution_id ? "Unassigned" : "Select an institution first" },
+    ...yearGroups
+      .filter((group) => group.institutionId === userForm.institution_id)
+      .map((group) => ({ value: group.id, label: group.name })),
+  ];
+
   const userDialog = (
-    <Dialog
-      open={isUserDialogOpen}
-      onOpenChange={(open) => {
-        setIsUserDialogOpen(open);
-        if (!open) resetUserForm();
-      }}
-    >
-      <DialogTrigger asChild>
-        <Button>Create User</Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{editingUser ? "Edit User" : "Create New User"}</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleUserSubmit} className="space-y-4">
-          <div>
-            <Label>Email</Label>
-            <Input
+    <Modal isOpen={isUserDialogOpen} onClose={closeUserModal} className="max-w-[36.5rem] p-5 lg:p-10">
+      <form onSubmit={handleUserSubmit}>
+        <h4 className="mb-2 pr-12 text-lg font-medium text-gray-800 dark:text-white/90">
+          {editingUser ? "Edit User" : "Create New User"}
+        </h4>
+        <p className="mb-6 text-sm text-gray-500 dark:text-gray-400">
+          {editingUser ? "Update this account's details." : "Add a new user account."}
+        </p>
+        <div className="grid grid-cols-1 gap-x-6 gap-y-5 sm:grid-cols-2">
+          <div className="col-span-1">
+            <FieldLabel htmlFor="user-email">Email</FieldLabel>
+            <input
+              id="user-email"
+              type="email"
+              required
               value={userForm.email}
               onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
-              required
-              type="email"
+              placeholder="name@example.com"
+              className={FIELD_INPUT_CLASS}
             />
           </div>
-          <div>
-            <Label>Password {editingUser && "(Leave blank to keep current)"}</Label>
-            <Input
-              value={userForm.password}
-              onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
-              required={!editingUser}
-              type="password"
-            />
-          </div>
-          <div>
-            <Label>Full Name</Label>
-            <Input
+          <div className="col-span-1">
+            <FieldLabel htmlFor="user-full-name">Full Name</FieldLabel>
+            <input
+              id="user-full-name"
+              type="text"
               value={userForm.fullName}
               onChange={(e) => setUserForm({ ...userForm, fullName: e.target.value })}
               placeholder="Optional"
+              className={FIELD_INPUT_CLASS}
             />
           </div>
-          <div>
-            <Label>Role</Label>
-            <select
-              className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          <div className="col-span-1">
+            <FieldLabel htmlFor="user-password">Password</FieldLabel>
+            <input
+              id="user-password"
+              type="password"
+              required={!editingUser}
+              value={userForm.password}
+              onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+              placeholder={editingUser ? "Leave blank to keep current" : "Enter a password"}
+              className={FIELD_INPUT_CLASS}
+            />
+          </div>
+          <div className="col-span-1">
+            <FieldLabel htmlFor="user-role">Role</FieldLabel>
+            <Select
+              id="user-role"
               value={userForm.role}
-              onChange={(e) =>
+              onChange={(role) =>
                 setUserForm({
                   ...userForm,
-                  role: e.target.value,
-                  year_group_id: e.target.value === "student" ? userForm.year_group_id : "",
+                  role,
+                  year_group_id: role === "student" ? userForm.year_group_id : "",
                 })
               }
-            >
-              <option value="student">Student</option>
-              <option value="professor">Professor</option>
-              <option value="admin">Admin</option>
-            </select>
+              options={[
+                { value: "student", label: "Student" },
+                { value: "professor", label: "Professor" },
+                { value: "admin", label: "Admin" },
+              ]}
+            />
           </div>
-          <div>
-            <Label>Institution</Label>
-            <select
-              className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          <div className={userForm.role === "student" ? "col-span-1" : "col-span-1 sm:col-span-2"}>
+            <FieldLabel htmlFor="user-institution">Institution</FieldLabel>
+            <Select
+              id="user-institution"
               value={userForm.institution_id}
-              onChange={(e) => setUserForm({ ...userForm, institution_id: e.target.value, year_group_id: "" })}
-            >
-              <option value="">-- None --</option>
-              {institutions.map((inst) => (
-                <option key={inst.id} value={inst.id}>
-                  {inst.name}
-                </option>
-              ))}
-            </select>
+              onChange={(institution_id) => setUserForm({ ...userForm, institution_id, year_group_id: "" })}
+              options={[
+                { value: "", label: "None" },
+                ...institutions.map((inst) => ({ value: inst.id, label: inst.name })),
+              ]}
+            />
           </div>
-          {userForm.role === "student" && (
-            <div>
-              <Label>Year group</Label>
-              <select
-                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          {userForm.role === "student" ? (
+            <div className="col-span-1">
+              <FieldLabel htmlFor="user-year-group">Year group</FieldLabel>
+              <Select
+                id="user-year-group"
                 value={userForm.year_group_id}
-                onChange={(e) => setUserForm({ ...userForm, year_group_id: e.target.value })}
+                onChange={(year_group_id) => setUserForm({ ...userForm, year_group_id })}
                 disabled={!userForm.institution_id}
-              >
-                <option value="">— Unassigned —</option>
-                {yearGroups
-                  .filter((group) => group.institutionId === userForm.institution_id)
-                  .map((group) => (
-                    <option key={group.id} value={group.id}>
-                      {group.name}
-                    </option>
-                  ))}
-              </select>
+                options={yearGroupOptions}
+              />
             </div>
-          )}
-          <Button type="submit" disabled={userSubmitting} className="w-full">
-            {userSubmitting ? "Saving..." : editingUser ? "Update User" : "Create User"}
-          </Button>
-        </form>
-      </DialogContent>
-    </Dialog>
+          ) : null}
+        </div>
+        <div className="mt-6 flex w-full items-center justify-end gap-3">
+          <button
+            type="button"
+            onClick={closeUserModal}
+            className="flex justify-center rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-gray-700 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-400 dark:ring-gray-700 dark:hover:bg-white/[0.03]"
+          >
+            Close
+          </button>
+          <button
+            type="submit"
+            disabled={userSubmitting}
+            className="flex justify-center rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white shadow-theme-xs hover:bg-brand-600 disabled:opacity-60"
+          >
+            {userSubmitting ? "Saving..." : editingUser ? "Save Changes" : "Create User"}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 
   return (
@@ -317,7 +345,14 @@ export default function UserManagementPage() {
             { label: "User Management" },
           ]}
         />
-        {userDialog}
+        <Button
+          onClick={() => {
+            resetUserForm();
+            setIsUserDialogOpen(true);
+          }}
+        >
+          Create User
+        </Button>
       </div>
 
       <header className="mb-8 text-center">
@@ -330,7 +365,7 @@ export default function UserManagementPage() {
             onChange={(e) => setEmailSearch(e.target.value)}
             placeholder="Search by email"
             aria-label="Search by email"
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-none focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-gray-500 dark:focus:border-brand-800"
+            className={FIELD_INPUT_CLASS}
           />
           <Select value={roleFilter} onChange={setRoleFilter} options={ROLE_OPTIONS} />
           <Select value={yearFilter} onChange={setYearFilter} options={yearFilterOptions} />
@@ -408,6 +443,7 @@ export default function UserManagementPage() {
           </div>
         </div>
       </div>
+      {userDialog}
     </div>
   );
 }

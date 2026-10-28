@@ -52,7 +52,9 @@ interface TimepointTemplate {
 ## Component Tree
 - `CaseLibrary`
   - Title, discipline/species `Select` filters, sortable table
-  - `getCaseHref(case)` sets the row destination (`/case/{id}/instructions` on `/cases`, `/case-viewer?id=` on `/case-viewer`)
+  - `getCaseHref(case)` sets the row destination (`/case/{id}` on `/cases`, `/case-viewer?id=` on `/case-viewer`)
+  - `showPublished` adds a Published column with a tick or a cross. `includeUnpublished` lists unpublished cases. Both are used on `/case-viewer`.
+- `CaseDashboard` — professor/admin `/case/{id}`: summary card plus Case Overview, Sessions, and Attempts tabs.
 - `TimeProgressionEditor`
   - Template selector (`select`) for stage templates
   - `Add Stage` button
@@ -69,8 +71,8 @@ Admins pick a case at `/case-viewer` from the same table as `/cases`, then revie
 
 ### Critical Rules
 - Non-admins cannot view `/case-viewer`.
-- `/case-viewer` with no `id` uses the `/cases` table. Row links go to `/case-viewer?id={caseId}`.
-- With `?id=`, breadcrumb is Home > Admin > Review and Edit Cases > case id. The page title is the case title and the subtitle is the case id. The listing title is Review and Edit Cases.
+- `/case-viewer` with no `id` uses the `/cases` table plus a Published column (tick or cross), and includes unpublished cases. Row links go to `/case-viewer?id={caseId}`.
+- With `?id=`, breadcrumb is Home > Admin > Review and Edit Cases > case id. The page title is the case title and the subtitle is the case id. The listing title is Review and Edit Cases. Admins publish or unpublish with buttons next to Edit/Archive. A warning alert modal confirms the change.
 - `/cases` has no edit-case link. Rows open case instructions.
 
 ## Timepoint Critical Rules

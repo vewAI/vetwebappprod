@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
 import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
 import { AttemptsPerDayChart } from "./charts/AttemptsPerDayChart";
+import { StudentsByYearGroupChart } from "./charts/StudentsByYearGroupChart";
+import { RankingCard } from "./RankingCard";
 import type { ProfessorDashboardStats } from "../models/dashboard";
 
 export function ProfessorDashboard() {
@@ -55,9 +57,9 @@ export function ProfessorDashboard() {
   }
 
   const cards = [
-    { label: "Students enrolled", value: stats?.studentCount ?? 0 },
-    { label: "Total cases", value: stats?.caseCount ?? 0, href: "/cases" },
-    { label: "Active sessions", value: stats?.activeSessionCount ?? 0, href: "/professor/sessions" },
+    { label: "Total Cases", value: stats?.caseCount ?? 0, href: "/cases" },
+    { label: "Total Active Sessions", value: stats?.activeSessionCount ?? 0, href: "/professor/sessions" },
+    { label: "Total Students Enrolled", value: stats?.studentCount ?? 0 },
   ];
 
   return (
@@ -70,20 +72,18 @@ export function ProfessorDashboard() {
 
       {error ? <p className="mb-6 text-center text-sm text-destructive">{error}</p> : null}
 
-      <div className="mb-8 grid gap-4 sm:grid-cols-3">
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3 md:gap-6">
         {cards.map((card) => {
           const inner = (
-            <Card className={card.href ? "h-full transition-colors hover:bg-brand-50 dark:hover:bg-white/[0.03]" : undefined}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">{card.label}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold text-brand-500">{loading ? "—" : card.value}</p>
-              </CardContent>
-            </Card>
+            <div className="h-full rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
+              <p className="text-theme-sm text-gray-500 dark:text-gray-400">{card.label}</p>
+              <div className="mt-3">
+                <h4 className="text-2xl font-bold text-brand-500 dark:text-brand-400">{loading ? "—" : card.value}</h4>
+              </div>
+            </div>
           );
           return card.href ? (
-            <Link key={card.label} href={card.href} className="block">
+            <Link key={card.label} href={card.href} className="block h-full">
               {inner}
             </Link>
           ) : (
@@ -104,6 +104,44 @@ export function ProfessorDashboard() {
           )}
         </CardContent>
       </Card>
+
+      <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
+        {loading || !stats ? (
+          ["Top Cases", "Recent Sessions", "Students by year group"].map((title) => (
+            <div
+              key={title}
+              className="rounded-2xl border border-gray-200 bg-white p-5 sm:p-6 dark:border-gray-800 dark:bg-white/[0.03]"
+            >
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">{title}</h3>
+              <p className="py-12 text-center text-sm text-muted-foreground">Loading...</p>
+            </div>
+          ))
+        ) : (
+          <>
+            <RankingCard
+              title="Top Cases"
+              subtitle="Last 30 days"
+              sourceLabel="Case"
+              valueLabel="Attempts"
+              rows={stats.topCases.map((row) => ({ ...row, href: `/case/${row.id}` }))}
+              emptyMessage="No case attempts in the last 30 days."
+              actionLabel="View All Cases"
+              actionHref="/cases"
+            />
+            <RankingCard
+              title="Recent Sessions"
+              subtitle="Created by you"
+              sourceLabel="Session"
+              valueLabel="Attempts"
+              rows={stats.topSessions.map((row) => ({ ...row, href: `/professor/sessions/${row.id}` }))}
+              emptyMessage="You have not created any sessions yet."
+              actionLabel="View All Sessions"
+              actionHref="/case-sessions"
+            />
+            <StudentsByYearGroupChart data={stats.studentsByYearGroup} />
+          </>
+        )}
+      </div>
     </div>
   );
 }

@@ -17,6 +17,7 @@ import { normalizeCaseMedia, type CaseMediaItem } from "@/features/cases/models/
 import { getActiveStagesForCase, getStagesForCase } from "@/features/stages/services/stageService";
 import { resolveChatPersonaRoleKey } from "@/features/chat/utils/persona-guardrails";
 import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
+import { WarningAlertModal } from "@/features/navigation/components/warning-alert-modal";
 import { CaseLibrary } from "@/features/case-selection/components/case-library";
 
 type CaseRecord = Record<string, unknown>;
@@ -38,6 +39,11 @@ type PersonaRow = {
 
 const knownFieldKeys = new Set<CaseFieldKey>(orderedCaseFieldKeys);
 
+function isCasePublished(record: CaseRecord | null): boolean {
+  const value = record?.["is_published"];
+  return value === true || value === "true";
+}
+
 type AxiosErrorLike = {
   isAxiosError?: boolean;
   message: string;
@@ -57,6 +63,8 @@ export default function CaseViewerClient() {
 
   const [caseRecord, setCaseRecord] = useState<CaseRecord | null>(null);
   const [editable, setEditable] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [publishModal, setPublishModal] = useState<"publish" | "unpublish" | null>(null);
   const [formState, setFormState] = useState<CaseRecord | null>(null);
   const [expandedField, setExpandedField] = useState<CaseFieldKey | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -293,6 +301,39 @@ export default function CaseViewerClient() {
 
   const updateField = (field: string, value: string) => {
     setFormState((prev) => (prev ? { ...prev, [field]: value } : prev));
+  };
+
+  const applyPublished = (isPublished: boolean) => {
+    setCaseRecord((prev) => (prev ? { ...prev, is_published: isPublished } : prev));
+    setFormState((prev) => (prev ? { ...prev, is_published: isPublished } : prev));
+  };
+
+  const handleConfirmPublish = async () => {
+    if (!formState || publishing || !publishModal) return;
+    const nextPublished = publishModal === "publish";
+    const id = formatValue(formState["id"]).trim();
+    if (!id) return;
+    if (!authHeaders) {
+      alert("You must be signed in to publish cases.");
+      return;
+    }
+    setPublishing(true);
+    try {
+      const resp = await axios.put(
+        "/api/cases",
+        { id, is_published: nextPublished },
+        { headers: authHeaders },
+      );
+      const respObj = resp.data as Record<string, unknown>;
+      const updated = respObj?.["data"] as CaseRecord | undefined;
+      applyPublished(updated ? isCasePublished(updated) : nextPublished);
+      setPublishModal(null);
+    } catch (err) {
+      console.error("Error updating publish status:", err);
+      alert("Error updating publish status. See console for details.");
+    } finally {
+      setPublishing(false);
+    }
   };
 
   // Save persona configurations to case_personas table
@@ -673,6 +714,8 @@ export default function CaseViewerClient() {
         <CaseLibrary
           title="Review and Edit Cases"
           subtitle="Select a case to edit"
+          showPublished
+          includeUnpublished
           getCaseHref={(caseItem) => `/case-viewer?id=${encodeURIComponent(caseItem.id)}`}
         />
       </div>
@@ -735,8 +778,21 @@ export default function CaseViewerClient() {
           </div>
         </div>
       )}
-      <div className="sticky top-20 z-30 -mx-4 mb-4 bg-background/90 backdrop-blur-sm p-4 flex justify-end items-center">
+      <div className="sticky top-20 z-30 -mx-4 mb-4 flex items-center justify-end bg-background/90 p-4 backdrop-blur-sm">
         <div className="flex items-center gap-2">
+          {isCasePublished(formState) ? (
+            <Button variant="outline" disabled={publishing} onClick={() => setPublishModal("unpublish")}>
+              Unpublish
+            </Button>
+          ) : (
+            <Button
+              className="bg-brand-500 text-white hover:bg-brand-600"
+              disabled={publishing}
+              onClick={() => setPublishModal("publish")}
+            >
+              Publish
+            </Button>
+          )}
           <Button
             variant={editable ? "ghost" : "default"}
             onClick={() => {
@@ -939,7 +995,7 @@ export default function CaseViewerClient() {
         {formState &&
           orderedCaseFieldKeys.map((key) => {
             const meta = caseFieldMeta[key];
-            if (meta.isSystem) return null;
+            if (meta.isSystem || key === "is_published") return null;
             const helpId = meta.help ? `${key}-help` : undefined;
             const rawValue = formState[key];
             const automation = automationState[key];
@@ -1161,6 +1217,22 @@ export default function CaseViewerClient() {
             </div>
           </div>
         )}
+
+        <WarningAlertModal
+          isOpen={publishModal !== null}
+          onClose={() => {
+            if (!publishing) setPublishModal(null);
+          }}
+          title={publishModal === "unpublish" ? "Unpublish this case?" : "Publish this case?"}
+          message={
+            publishModal === "unpublish"
+              ? "This case will be hidden from students and cannot be started in new sessions. Existing attempts are not affected. You can publish it again later."
+              : "This case will be visible to students and available in sessions. You can unpublish it later."
+          }
+          confirmLabel={publishModal === "unpublish" ? "Unpublish" : "Publish"}
+          confirming={publishing}
+          onConfirm={() => void handleConfirmPublish()}
+        />
 
         {/* Delete confirmation modal (two-step) */}
         {showDeleteModal && formState && (
