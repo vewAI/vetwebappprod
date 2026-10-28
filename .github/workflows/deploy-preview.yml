@@ -1,10 +1,8 @@
 name: Deploy Preview (Vercel)
 
+# Note: Vercel is natively connected to GitHub and automatically builds each push.
+# Kept as workflow_dispatch for manual on-demand triggers to prevent duplicate simultaneous builds.
 on:
-  push:
-    branches:
-      - feature/redesign
-      - preview/educators
   workflow_dispatch:
 
 jobs:
