@@ -49,6 +49,13 @@ Every change must be logged chronologically using this structure:
 
 ## 🪵 Changelog History
 
+### [2026-10-28] Diagnostic Panel Matching & Nurse Altered Parameter Suppression — (@Antigravity)
+- **Context / Problem:** In `/live`, requesting panels like "biochemistry" returned 0 items because individual analytes (`potassium`, `glucose`, `calcium`, `AST`, etc.) were not mapped to panel keys, and nested JSON blocks lost category context. Additionally, the nurse verbalized and listed all altered parameters ("showing alterations in glucose, potassium..."), spoiling student diagnostic reasoning.
+- **Action Taken:**
+  1. *Panel & Category-Aware Matching:* Enhanced `app/api/live/findings/route.ts` with `PANEL_ANALYTES` (`chem`, `cbc`, `electrolytes`, `urinalysis`, `ultrasound`, `xray`), added hierarchical JSON block and markdown table extraction with category preservation, and expanded physical exam synonyms in `physFinder.ts`.
+  2. *Nurse Altered Parameter Suppression:* Updated `getNurseRules` in `systemInstructionBuilder.ts` and guardrails in `roleInfoService.ts` to strictly prohibit detailing, summarizing, or enumerating altered/abnormal parameters aloud, directing students strictly to the written panel.
+- **Verification:** TypeScript compilation verified (`tsc -p ... --noEmit`), 100% of live test suite passing (68/68 tests), new test cases added in `findingsMatching.test.ts`, and synced across `preview/educators`, `preview/redesign`, and `main`.
+
 ### [2026-10-28] Live Prompt Optimization: Persona Pruning, Grounded Findings & Stage Windowing — (@Antigravity)
 - **Context / Problem:** Gemini Live prompts were injecting bloated rules for all personas, irrelevant lab results, and accumulating directives from prior stages, driving up token consumption and risking clinical hallucinations.
 - **Action Taken:**

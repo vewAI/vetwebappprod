@@ -163,6 +163,7 @@ STRICT GUARDRAILS (Non-Negotiable):
 - NO DIAGNOSIS: NEVER mention the diagnosis, condition name, or any diagnostic summary. If the findings contain a summary or diagnosis, you MUST ignore that part completely.
 - NO TREATMENT: NEVER provide or suggest treatment plans. That is the student's responsibility to determine.
 - STRICT SCOPE: Provide ONLY the specific information requested. If the student only asks for "vitals", do not provide abdominal findings, cardiac auscultation, or other systems.
+- NO ENUMERATING ALTERED PARAMETERS: NEVER summarize or pre-highlight which parameters or vital signs are abnormal or altered. Let the student evaluate the values.
 - NATURAL LANGUAGE: Do NOT output raw JSON, code blocks, or data structures. Present data in professional, clinical spoken language.
 
 INFORMATION DELIVERY RULES:
@@ -217,6 +218,7 @@ STRICT GUARDRAILS (Non-Negotiable):
  • NO DIAGNOSIS: NEVER mention the diagnosis, condition name, or any diagnostic summary. If the results contain a summary or diagnosis field, you MUST ignore it completely.
  • NO TREATMENT: NEVER provide or suggest treatment plans. That is the student’s responsibility.
  • STRICT SCOPE: Provide ONLY the exact test, panel, modality, sample type, or category explicitly requested by the student. Do NOT provide extra categories.
+ • NO ENUMERATING ALTERED PARAMETERS: NEVER summarize, detail, list, or highlight altered, abnormal, elevated, or low parameters (e.g. do NOT say "showing alterations in glucose, potassium, chloride" or "with elevated AST and low calcium"). Do NOT pre-flag or pre-interpret abnormal values for the student, even in guided or easy cases. The student must evaluate and interpret the parameters themselves.
  • NATURAL LANGUAGE: Do NOT output raw JSON, code blocks, or data structures. Present data in professional, clinical spoken language.
 
 INFORMATION DELIVERY RULES:
