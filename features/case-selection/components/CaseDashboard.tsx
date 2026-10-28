@@ -14,6 +14,7 @@ import { deriveStatus, type CaseSession } from "@/features/case-sessions/models/
 import { AttemptsPerDayChart } from "@/features/professor/components/charts/AttemptsPerDayChart";
 import type { AttemptDayCount } from "@/features/professor/models/dashboard";
 import { DefaultTabs } from "@/features/navigation/components/tabs";
+import { FilterSearch } from "@/features/navigation/components/filter-search";
 import { Select } from "@/features/navigation/components/select";
 import { useAuth } from "@/features/auth/services/authService";
 import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
@@ -30,9 +31,6 @@ type RankedRow = {
   name: string;
   count: number;
 };
-
-const SEARCH_INPUT_CLASS =
-  "h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-none focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-gray-500 dark:focus:border-brand-800";
 
 const RANK_BUTTON_CLASS =
   "flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white p-2.5 text-theme-sm font-medium text-gray-700 shadow-theme-xs hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.03]";
@@ -469,14 +467,7 @@ export function CaseDashboard({
         {activeTab === "attempts" && (
           <div className="space-y-4">
             <div className="grid w-full max-w-5xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <input
-                type="search"
-                value={studentSearch}
-                onChange={(event) => setStudentSearch(event.target.value)}
-                placeholder="Search by student"
-                aria-label="Search by student"
-                className={SEARCH_INPUT_CLASS}
-              />
+              <FilterSearch value={studentSearch} onChange={setStudentSearch} placeholder="Search by student" />
               <Select
                 value={yearFilter}
                 onChange={setYearFilter}
@@ -512,6 +503,7 @@ export function CaseDashboard({
               }
               showStudent
               sessionHrefBase="/professor/sessions"
+              from="case"
             />
           </div>
         )}

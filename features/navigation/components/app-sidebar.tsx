@@ -20,6 +20,7 @@ import {
   PlusIcon,
   UserCircleIcon,
 } from "@/features/navigation/icons";
+import { SidebarWidget } from "@/features/navigation/components/sidebar-widget";
 import { cn } from "@/lib/utils";
 
 type NavItem = {
@@ -105,6 +106,7 @@ export function AppSidebar() {
     ? [
         { name: "Cases", href: "/cases", icon: <ListIcon fontSize={24} /> },
         { name: "Case Sessions", href: "/professor/sessions", icon: <CalendarIcon fontSize={24} /> },
+        { name: "Students", href: "/professor/students", icon: <UserCircleIcon fontSize={24} /> },
       ]
     : [];
 
@@ -144,7 +146,7 @@ export function AppSidebar() {
         </div>
       ) : null}
 
-      <div className="no-scrollbar mt-6 flex flex-col overflow-y-auto duration-300 ease-linear">
+      <div className="no-scrollbar mt-6 flex min-h-0 flex-1 flex-col overflow-y-auto duration-300 ease-linear">
         <nav className="mb-6" aria-label="Main">
           <h2
             className={cn(
@@ -182,6 +184,11 @@ export function AppSidebar() {
             </div>
           ) : null}
         </nav>
+        {showLabels ? (
+          <div className="mt-auto pb-10">
+            <SidebarWidget />
+          </div>
+        ) : null}
       </div>
     </aside>
   );

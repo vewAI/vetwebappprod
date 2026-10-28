@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { attemptViewHref } from "@/features/attempts/attemptViewHref";
 import type { SessionAttemptRow } from "../models/caseSession";
 
 type Props = {
@@ -81,7 +82,7 @@ export function MySessionAttemptsList({ attempts, attemptLimit }: Props) {
                     <td className="py-2 pr-4">{new Date(attempt.createdAt).toLocaleString()}</td>
                     <td className="py-2">
                       <Button variant="link" className="h-auto p-0" asChild>
-                        <Link href={`/attempts/${attempt.id}`}>View</Link>
+                        <Link href={attemptViewHref(attempt.id, "session")}>View</Link>
                       </Button>
                     </td>
                   </tr>

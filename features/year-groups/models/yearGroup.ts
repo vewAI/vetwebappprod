@@ -14,6 +14,30 @@ export function formatAcademicYearEnd(month: number, day: number) {
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "UTC" });
 }
 
+function formatAcademicYearDate(year: number, month: number, day: number) {
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/** Inclusive start and end dates of the current academic year, after the latest cutoff. */
+export function currentAcademicYearRange(
+  month = 7,
+  day = 31,
+  now = new Date(),
+): { startLabel: string; endLabel: string } {
+  const cutoff = latestAcademicYearCutoffDate(month, day, now);
+  const [year, cutoffMonth, cutoffDay] = cutoff.split("-").map(Number);
+  const start = new Date(Date.UTC(year, cutoffMonth - 1, cutoffDay + 1));
+  return {
+    startLabel: formatAcademicYearDate(start.getUTCFullYear(), start.getUTCMonth() + 1, start.getUTCDate()),
+    endLabel: formatAcademicYearDate(year + 1, cutoffMonth, cutoffDay),
+  };
+}
+
 export function defaultAcademicYearEnd() {
   return { month: 7, day: 31 };
 }

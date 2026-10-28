@@ -165,6 +165,7 @@ export default function CaseInstructionsPage() {
             loading={isLoading}
             emptyMessage="You haven't attempted this case yet."
             sessionHrefBase="/case-sessions"
+            from="case"
           />
         </div>
 

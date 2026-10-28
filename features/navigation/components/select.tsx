@@ -9,6 +9,16 @@ export type SelectOption = {
   label: string;
 };
 
+export const ACTIVE_FILTER_CLASS =
+  "border-brand-300 bg-brand-50 font-medium text-brand-700 focus:border-brand-500 dark:border-brand-800 dark:bg-brand-500/12 dark:text-brand-400";
+
+export function filterIdleValue(options: SelectOption[]): string | null {
+  const values = new Set(options.map((option) => option.value));
+  if (values.has("all")) return "all";
+  if (values.has("anytime")) return "anytime";
+  return null;
+}
+
 export function Select({
   options,
   value,
@@ -26,6 +36,9 @@ export function Select({
   id?: string;
   disabled?: boolean;
 }) {
+  const idleValue = filterIdleValue(options);
+  const isActiveFilter = idleValue != null && value !== idleValue;
+
   return (
     <div className={cn("relative", className)}>
       <select
@@ -36,6 +49,7 @@ export function Select({
         className={cn(
           "h-11 w-full appearance-none rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 pr-11 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:ring-3 focus:ring-brand-500/10 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:focus:border-brand-800",
           disabled && "cursor-not-allowed bg-gray-100 text-gray-500 opacity-40 dark:bg-gray-800 dark:text-gray-400",
+          isActiveFilter && ACTIVE_FILTER_CLASS,
           selectClassName,
         )}
       >

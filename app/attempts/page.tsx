@@ -13,8 +13,10 @@ import { SortHeader } from "@/features/navigation/components/sort-header";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/features/navigation/components/table";
 import { useTableSort } from "@/features/navigation/hooks/useTableSort";
 import type { AttemptSummary } from "@/features/attempts/models/attempt";
+import { defaultAcademicYearEnd, isAfterAcademicYearCutoff } from "@/features/year-groups/models/yearGroup";
+import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
 
-type AttemptSortKey = "case" | "status" | "difficulty" | "date" | "time";
+type AttemptSortKey = "case" | "year" | "status" | "difficulty" | "date" | "time";
 
 const difficultyRank: Record<string, number> = { Easy: 1, Medium: 2, Hard: 3 };
 const statusRank: Record<AttemptSummary["completionStatus"], number> = {
@@ -46,13 +48,16 @@ function statusLabel(status: AttemptSummary["completionStatus"]) {
 }
 
 function AttemptsPageContent() {
-  const { user } = useAuth();
+  const { user, institutionId } = useAuth();
   const searchParams = useSearchParams();
   const caseIdParam = searchParams.get("caseId")?.trim() || "";
   const [attempts, setAttempts] = useState<AttemptSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [yearFilter, setYearFilter] = useState("all");
   const [caseFilter, setCaseFilter] = useState(caseIdParam || "all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [academicYearFilter, setAcademicYearFilter] = useState<"current" | "anytime">("current");
+  const [academicYearEnd, setAcademicYearEnd] = useState(defaultAcademicYearEnd);
 
   useEffect(() => {
     const loadAttempts = async () => {
@@ -66,8 +71,50 @@ function AttemptsPageContent() {
   }, [user]);
 
   useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getAccessToken();
+        const query = institutionId ? `?institutionId=${encodeURIComponent(institutionId)}` : "";
+        const res = await fetch(`/api/year-groups${query}`, {
+          headers: await buildAuthHeaders({ Accept: "application/json" }, token),
+        });
+        const body = (await res.json().catch(() => ({}))) as {
+          academicYearEnd?: { month: number; day: number } | null;
+        };
+        if (!cancelled && body.academicYearEnd) {
+          setAcademicYearEnd({
+            month: Number(body.academicYearEnd.month ?? 7),
+            day: Number(body.academicYearEnd.day ?? 31),
+          });
+        }
+      } catch {
+        // Keep the 31 July default.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, institutionId]);
+
+  useEffect(() => {
     if (caseIdParam) setCaseFilter(caseIdParam);
   }, [caseIdParam]);
+
+  const yearOptions = useMemo(() => {
+    const options = [{ value: "all", label: "All Year Groups" }];
+    const seen = new Map<string, string>();
+    for (const attempt of attempts) {
+      if (!attempt.sessionYearGroupId || seen.has(attempt.sessionYearGroupId)) continue;
+      seen.set(attempt.sessionYearGroupId, attempt.sessionYearGroupName || "Year group");
+    }
+    for (const [value, label] of seen) options.push({ value, label });
+    if (attempts.some((attempt) => !attempt.sessionYearGroupId)) {
+      options.push({ value: "none", label: "Unassigned" });
+    }
+    return options;
+  }, [attempts]);
 
   const caseOptions = useMemo(() => {
     const seen = new Map<string, string>();
@@ -81,16 +128,27 @@ function AttemptsPageContent() {
 
   const filteredAttempts = useMemo(() => {
     return attempts.filter((attempt) => {
+      if (yearFilter !== "all" && (attempt.sessionYearGroupId ?? "none") !== yearFilter) return false;
       if (caseFilter !== "all" && attempt.caseId !== caseFilter) return false;
       if (statusFilter !== "all" && attempt.completionStatus !== statusFilter) return false;
+      if (
+        academicYearFilter === "current" &&
+        !isAfterAcademicYearCutoff(attempt.createdAt, academicYearEnd.month, academicYearEnd.day)
+      ) {
+        return false;
+      }
       return true;
     });
-  }, [attempts, caseFilter, statusFilter]);
+  }, [attempts, yearFilter, caseFilter, statusFilter, academicYearFilter, academicYearEnd.month, academicYearEnd.day]);
+
+  const hasActiveFilters =
+    yearFilter !== "all" || caseFilter !== "all" || statusFilter !== "all" || academicYearFilter !== "anytime";
 
   const { sort, toggle, sorted: sortedAttempts } = useTableSort<AttemptSummary, AttemptSortKey>(
     filteredAttempts,
     (attempt, key) => {
       if (key === "case") return attempt.caseTitle;
+      if (key === "year") return attempt.sessionYearGroupName ?? "";
       if (key === "status") return statusRank[attempt.completionStatus] ?? 0;
       if (key === "difficulty") return difficultyRank[attempt.caseDifficulty] ?? 0;
       if (key === "date") return new Date(attempt.createdAt).getTime();
@@ -106,7 +164,8 @@ function AttemptsPageContent() {
         <h1 className="text-3xl font-bold tracking-tight text-primary md:text-4xl lg:text-5xl">My Attempts</h1>
         <p className="mt-4 text-xl text-muted-foreground">View and manage your past case attempts</p>
 
-        <div className="mx-auto mt-6 grid w-full max-w-2xl grid-cols-1 gap-3 text-start sm:grid-cols-2">
+        <div className="mx-auto mt-6 grid w-full max-w-5xl grid-cols-1 gap-3 text-start sm:grid-cols-2 lg:grid-cols-4">
+          <Select value={yearFilter} onChange={setYearFilter} options={yearOptions} />
           <Select
             value={caseFilter}
             onChange={setCaseFilter}
@@ -122,6 +181,14 @@ function AttemptsPageContent() {
               { value: "abandoned", label: "Abandoned" },
             ]}
           />
+          <Select
+            value={academicYearFilter}
+            onChange={(value) => setAcademicYearFilter(value as "current" | "anytime")}
+            options={[
+              { value: "current", label: "Current Academic Year" },
+              { value: "anytime", label: "Anytime" },
+            ]}
+          />
         </div>
       </header>
 
@@ -132,6 +199,7 @@ function AttemptsPageContent() {
               <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
                 <TableRow>
                   <SortHeader label="Case" column="case" sort={sort} onSort={toggle} />
+                  <SortHeader label="Year" column="year" sort={sort} onSort={toggle} />
                   <SortHeader label="Status" column="status" sort={sort} onSort={toggle} />
                   <SortHeader label="Difficulty" column="difficulty" sort={sort} onSort={toggle} />
                   <SortHeader label="Date" column="date" sort={sort} onSort={toggle} />
@@ -141,14 +209,14 @@ function AttemptsPageContent() {
               <TableBody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="px-5 py-8 text-center text-theme-sm text-gray-500 dark:text-gray-400">
+                    <TableCell colSpan={6} className="px-5 py-8 text-center text-theme-sm text-gray-500 dark:text-gray-400">
                       Loading attempts...
                     </TableCell>
                   </TableRow>
                 ) : sortedAttempts.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="px-5 py-8 text-center text-theme-sm text-gray-500 dark:text-gray-400">
-                      {caseFilter !== "all" || statusFilter !== "all"
+                    <TableCell colSpan={6} className="px-5 py-8 text-center text-theme-sm text-gray-500 dark:text-gray-400">
+                      {hasActiveFilters
                         ? "No attempts match these filters."
                         : "You have not attempted a case yet."}
                     </TableCell>
@@ -181,6 +249,9 @@ function AttemptsPageContent() {
                               </span>
                             </div>
                           </div>
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-start text-theme-sm text-gray-500 dark:text-gray-400">
+                          {attempt.sessionYearGroupName || "—"}
                         </TableCell>
                         <TableCell className="px-4 py-3 text-start text-theme-sm text-gray-500 dark:text-gray-400">
                           <Badge

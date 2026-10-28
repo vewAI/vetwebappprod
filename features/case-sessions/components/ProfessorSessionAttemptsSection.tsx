@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { CaseAttemptsTable } from "@/features/attempts/components/CaseAttemptsTable";
 import type { AttemptSummary } from "@/features/attempts/models/attempt";
+import { FilterSearch } from "@/features/navigation/components/filter-search";
 import { Select } from "@/features/navigation/components/select";
 import type { CaseSession, SessionAttemptRow } from "../models/caseSession";
 
@@ -57,14 +58,7 @@ export function ProfessorSessionAttemptsSection({ session, attempts }: Props) {
   return (
     <div className="space-y-4">
       <div className="grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
-        <input
-          type="search"
-          value={emailSearch}
-          onChange={(event) => setEmailSearch(event.target.value)}
-          placeholder="Search by email"
-          aria-label="Search by email"
-          className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-none focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-gray-500 dark:focus:border-brand-800"
-        />
+        <FilterSearch value={emailSearch} onChange={setEmailSearch} placeholder="Search by email" />
         <Select
           value={statusFilter}
           onChange={setStatusFilter}
@@ -85,6 +79,7 @@ export function ProfessorSessionAttemptsSection({ session, attempts }: Props) {
         showSession={false}
         studentLabel="Email"
         emptyMessage={hasFilters ? "No attempts match these filters." : "No attempts yet for this session."}
+        from="session"
       />
     </div>
   );

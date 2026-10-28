@@ -23,7 +23,7 @@ const READ_MORE_ARROW = (
 );
 
 export function ProfessorDashboard() {
-  const { role, isAdmin } = useAuth();
+  const { role } = useAuth();
   const isProfessor = role === "professor" || role === "admin";
   const [stats, setStats] = useState<ProfessorDashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -70,12 +70,7 @@ export function ProfessorDashboard() {
   const cards: { label: string; value: number; href?: string; icon: LucideIcon }[] = [
     { label: "Total Cases", value: stats?.caseCount ?? 0, href: "/cases", icon: BookOpen },
     { label: "Total Active Sessions", value: stats?.activeSessionCount ?? 0, href: "/professor/sessions", icon: Calendar },
-    {
-      label: "Total Students Enrolled",
-      value: stats?.studentCount ?? 0,
-      href: isAdmin ? "/admin/user-management" : undefined,
-      icon: Users,
-    },
+    { label: "Total Students Enrolled", value: stats?.studentCount ?? 0, href: "/professor/students", icon: Users },
   ];
 
   return (

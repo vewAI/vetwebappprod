@@ -38,7 +38,7 @@ export function Dropdown({ isOpen, onClose, children, className = "" }: Dropdown
     <div
       ref={dropdownRef}
       className={cn(
-        "absolute inset-e-0 z-40 mt-2 rounded-xl border border-gray-200 bg-white shadow-theme-lg dark:border-gray-800 dark:bg-gray-dark",
+        "absolute end-0 z-40 mt-2 rounded-xl border border-gray-200 bg-white shadow-theme-lg dark:border-gray-800 dark:bg-gray-dark",
         className,
       )}
     >

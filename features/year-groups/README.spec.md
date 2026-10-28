@@ -84,3 +84,4 @@ Admins may assign or clear `year_group_id`. The year group must belong to the us
 - Students without an institution cannot pick a year; an admin must assign an institution first.
 - `useAuth()` exposes `yearGroupId`, `yearGroupName`, `institutionId`, and `institutionName`.
 - `/dashboard`, `/student`, and `/case-sessions` show `YearGroupRequiredAlert` to students with no year group. `/case-sessions` lists no sessions until a year group is assigned.
+- The current academic year runs from the day after the latest cutoff through the next cutoff. `/dashboard` shows those dates; students also see their year group there.
