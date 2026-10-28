@@ -36,10 +36,10 @@ flowchart LR
 
 ## 📝 3-Bullet Template
 
-Every change must be logged chronologically using this structure:
+Every completed change must be logged chronologically using this structure. Use the local `Europe/London` time and name both the person who requested the work and the tool that implemented it:
 
 ```markdown
-### [YYYY-MM-DD] <Title of Change> — (@Author / AI)
+### [YYYY-MM-DD HH:MM Europe/London] <Title of Change> — (Requested by: Marco or Ignacio; Tool: Codex or Antigravity)
 - **Context / Problem:** What motivated the change or which issue was resolved.
 - **Action Taken:** Modules, components, or APIs touched and the technical approach.
 - **Verification:** Commands executed (`tsc`, `vitest`), branch, and deploy status.
@@ -93,3 +93,8 @@ Every change must be logged chronologically using this structure:
   2. Calibrated the nurse prompt in `features/role-info/services/roleInfoService.ts` to inject reflective scaffolding for Easy/Medium cases.
   3. Implemented `/api/admin/reassign-nurses` endpoint to migrate older cases to specialized nurse personas.
 - **Verification:** Component tests and intensive findings integration tests verified locally and deployed to Vercel.
+
+### [2026-10-28 22:31 Europe/London] Codex and Antigravity handoff convention — (Requested by: Marco; Tool: Codex)
+- **Context / Problem:** Educators need to switch between Codex and Antigravity while retaining a clear record of completed changes and who requested them.
+- **Action Taken:** Added root `AGENTS.md` for Codex and updated this changelog template to capture local time, requester, and tool while retaining the required three bullets.
+- **Verification:** On `preview/educators`, `npx tsc --noEmit` passed and `npm test -- features/case-sessions` passed (2 files, 9 tests). No application code changed; preview deployment follows the branch push.
