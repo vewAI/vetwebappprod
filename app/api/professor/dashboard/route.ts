@@ -35,19 +35,9 @@ export async function GET(request: Request) {
   const [studentsRes, casesRes, sessionsRes, attemptsRes, mySessionsRes, studentYearRes] = await Promise.all([
     db.from("profiles").select("user_id", { count: "exact", head: true }).or("role.eq.student,role.is.null"),
     db.from("cases").select("id", { count: "exact", head: true }).eq("is_published", true),
-    db
-      .from("case_sessions")
-      .select("id", { count: "exact", head: true })
-      .eq("created_by", professorId)
-      .lte("start_at", nowIso)
-      .gt("end_at", nowIso),
+    db.from("case_sessions").select("id", { count: "exact", head: true }).eq("created_by", professorId).lte("start_at", nowIso).gt("end_at", nowIso),
     db.from("attempts").select("created_at, case_id, session_id").gte("created_at", fromIso).limit(10000),
-    db
-      .from("case_sessions")
-      .select("id, friendly_name, created_at")
-      .eq("created_by", professorId)
-      .order("created_at", { ascending: false })
-      .limit(5),
+    db.from("case_sessions").select("id, friendly_name, created_at").eq("created_by", professorId).order("created_at", { ascending: false }).limit(5),
     db.from("profiles").select("year_group_id").or("role.eq.student,role.is.null").limit(10000),
   ]);
 
@@ -132,21 +122,24 @@ export async function GET(request: Request) {
 
   const yearGroupIds = [...yearCounts.keys()].filter((id) => id !== "none");
   const yearNameById = new Map<string, string>();
+  type YearGroupRow = {
+    id: string;
+    name: string;
+    institution_id?: string;
+    institutions?: { name: string } | { name: string }[] | null;
+  };
+
   if (yearGroupIds.length > 0) {
-    let yearRows: { id: string; name: string; institution_id?: string; institutions?: { name: string } | { name: string }[] | null }[] | null =
-      null;
-    const withInstitution = await db
-      .from("year_groups")
-      .select("id, name, institution_id, institutions!institution_id(name)")
-      .in("id", yearGroupIds);
+    let yearRows: YearGroupRow[] | null = null;
+    const withInstitution = await db.from("year_groups").select("id, name, institution_id, institutions!institution_id(name)").in("id", yearGroupIds);
     if (withInstitution.error) {
       const retry = await db.from("year_groups").select("id, name").in("id", yearGroupIds);
       if (retry.error) {
         return NextResponse.json({ error: retry.error.message }, { status: 500 });
       }
-      yearRows = retry.data as typeof yearRows;
+      yearRows = retry.data as unknown as YearGroupRow[];
     } else {
-      yearRows = withInstitution.data as typeof yearRows;
+      yearRows = withInstitution.data as unknown as YearGroupRow[];
     }
     const institutionNames = new Set(
       (yearRows ?? []).map((group) => {
@@ -157,8 +150,7 @@ export async function GET(request: Request) {
     const showInstitution = [...institutionNames].filter(Boolean).length > 1;
     for (const group of yearRows ?? []) {
       const inst = Array.isArray(group.institutions) ? group.institutions[0] : group.institutions;
-      const name =
-        showInstitution && inst?.name ? `${inst.name} — ${group.name}` : group.name;
+      const name = showInstitution && inst?.name ? `${inst.name} — ${group.name}` : group.name;
       yearNameById.set(group.id, name);
     }
   }
