@@ -825,6 +825,8 @@ export function LiveSession({
           currentStageIndex: progress.currentStageIndex,
           status: "completed",
           messages: finalMessages,
+          promptTokens: live.tokenUsage.promptTokens,
+          completionTokens: live.tokenUsage.completionTokens,
         }),
       });
     } catch {
@@ -896,7 +898,12 @@ export function LiveSession({
           "Content-Type": "application/json",
           ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         },
-        body: JSON.stringify({ attemptId, status: "completed" }),
+        body: JSON.stringify({
+          attemptId,
+          status: "completed",
+          promptTokens: live.tokenUsage.promptTokens,
+          completionTokens: live.tokenUsage.completionTokens,
+        }),
       });
     } catch {
       // reload regardless — worst case the same attempt resumes

@@ -159,6 +159,19 @@ export class GeminiLiveService {
     if (content?.interrupted) {
       this.callbacks.onEvent({ type: "interrupted" });
     }
+
+    // Token usage metadata from Gemini Live session
+    const usage = message?.usageMetadata ?? content?.usageMetadata;
+    if (usage && (usage.promptTokenCount || usage.candidatesTokenCount || usage.totalTokenCount)) {
+      this.callbacks.onEvent({
+        type: "usageMetadata",
+        data: {
+          promptTokens: Number(usage.promptTokenCount ?? 0),
+          completionTokens: Number(usage.candidatesTokenCount ?? 0),
+          totalTokens: Number(usage.totalTokenCount ?? 0),
+        },
+      });
+    }
   }
 
   sendAudio(pcmChunk: ArrayBuffer): void {

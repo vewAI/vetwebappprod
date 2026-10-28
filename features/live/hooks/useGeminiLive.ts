@@ -6,6 +6,7 @@ import type { Message } from "@/features/chat/models/chat";
 import type {
   LiveSessionStatus,
   PersonaInstruction,
+  LiveTokenUsage,
 } from "../types";
 import { appendLiveTextFragment, filterLivePersonaText } from "../utils/filterLiveResponse";
 import { isLikelyNonEnglish, translateTranscriptToEnglish, UNRECOGNIZED_VOICE_PLACEHOLDER } from "../utils/transcriptLanguage";
@@ -30,6 +31,7 @@ export type UseGeminiLiveResult = {
   /** True while the persona's generated audio is actually playing locally. */
   setModelAudioActive: (active: boolean) => void;
   setKnownPersonaNames: (names: string[]) => void;
+  tokenUsage: LiveTokenUsage;
 };
 
 export function useGeminiLive(
@@ -44,6 +46,16 @@ export function useGeminiLive(
   const [pendingInput, setPendingInput] = useState<string | null>(null);
   const [currentPersona, setCurrentPersona] = useState<PersonaInstruction | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tokenUsage, setTokenUsage] = useState<LiveTokenUsage>({
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+  });
+  const tokenUsageRef = useRef<LiveTokenUsage>({
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+  });
 
   // Synchronous mirror of `messages` so event handlers (which run outside
   // React's render cycle) can build on the latest transcript.
@@ -222,6 +234,19 @@ export function useGeminiLive(
             setStatus("connected");
             setError(null);
             break;
+          case "usageMetadata": {
+            const usage = event.data as Partial<LiveTokenUsage> | undefined;
+            if (usage) {
+              const updated: LiveTokenUsage = {
+                promptTokens: Math.max(tokenUsageRef.current.promptTokens, usage.promptTokens ?? 0),
+                completionTokens: Math.max(tokenUsageRef.current.completionTokens, usage.completionTokens ?? 0),
+                totalTokens: Math.max(tokenUsageRef.current.totalTokens, usage.totalTokens ?? 0),
+              };
+              tokenUsageRef.current = updated;
+              setTokenUsage(updated);
+            }
+            break;
+          }
           case "audioReceived":
             if (event.data instanceof ArrayBuffer) {
               // Stream audio to the player immediately for a live, low-latency
@@ -567,5 +592,6 @@ export function useGeminiLive(
     setOnInterrupted,
     setModelAudioActive,
     setKnownPersonaNames,
+    tokenUsage,
   };
 }
