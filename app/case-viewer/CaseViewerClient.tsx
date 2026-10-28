@@ -81,7 +81,6 @@ export default function CaseViewerClient() {
   const [nursePersonaConfig, setNursePersonaConfig] = useState<Partial<PersonaConfig>>({});
   const [nurseSpecialization, setNurseSpecialization] = useState<Record<string, unknown> | null>(null);
   const [personaConfigsDirty, setPersonaConfigsDirty] = useState(false);
-  const [isPublishing, setIsPublishing] = useState(false);
   const [automationState, setAutomationState] = useState<
     Record<
       string,
@@ -119,62 +118,6 @@ export default function CaseViewerClient() {
     },
     [parseMedia],
   );
-
-  const isCasePublished = Boolean(
-    formState?.["is_published"] === true || formState?.["is_published"] === "true"
-  );
-
-  const handleTogglePublish = useCallback(async () => {
-    if (!formState || !caseRecord) return;
-    if (!authHeaders) {
-      alert("You must be signed in to change publication status.");
-      return;
-    }
-    const currentStatus = Boolean(
-      formState["is_published"] === true || formState["is_published"] === "true"
-    );
-    const nextStatus = !currentStatus;
-    const caseId = formatValue(formState["id"]).trim();
-    if (!caseId) return;
-
-    try {
-      setIsPublishing(true);
-      const resp = await axios.put(
-        "/api/cases",
-        {
-          ...formState,
-          id: caseId,
-          is_published: nextStatus,
-        },
-        { headers: authHeaders }
-      );
-      const respData = resp.data as { data?: unknown };
-      if (respData?.data && typeof respData.data === "object") {
-        const updated = respData.data as CaseRecord;
-        const normalizedUpdated = {
-          ...updated,
-          is_published: nextStatus,
-          media: parseMedia(updated["media"]),
-        } as CaseRecord;
-        setCaseRecord(normalizedUpdated);
-        loadCaseIntoForm(normalizedUpdated);
-      } else {
-        setFormState((prev) => (prev ? { ...prev, is_published: nextStatus } : prev));
-        setCaseRecord((prev) => (prev ? { ...prev, is_published: nextStatus } : prev));
-      }
-    } catch (err: unknown) {
-      console.error("Failed to toggle publish status", err);
-      const message =
-        axios.isAxiosError(err) && err.response?.data?.error
-          ? err.response.data.error
-          : err instanceof Error
-          ? err.message
-          : "Failed to update publication status";
-      alert(message);
-    } finally {
-      setIsPublishing(false);
-    }
-  }, [formState, caseRecord, authHeaders, loadCaseIntoForm, parseMedia]);
 
   const handleMediaChange = useCallback((items: CaseMediaItem[]) => {
     setMediaDraft(items);
