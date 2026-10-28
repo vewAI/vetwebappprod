@@ -143,7 +143,7 @@ export function StudentDashboard() {
           size="lg"
           className="h-full min-h-[5.5rem] w-full bg-brand-500 text-base font-semibold text-white hover:bg-brand-600"
         >
-          <Link href="/case-sessions">
+          <Link href="/start">
             <Play className="size-5" aria-hidden="true" />
             Start
           </Link>

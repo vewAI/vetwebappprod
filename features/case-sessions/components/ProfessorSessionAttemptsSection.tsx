@@ -21,7 +21,8 @@ function toAttemptSummary(row: SessionAttemptRow, session: CaseSession): Attempt
     sessionName: session.friendlyName,
     sessionYearGroupId: session.yearGroupId,
     sessionYearGroupName: session.yearGroupName ?? null,
-    studentName: row.studentEmail ?? row.studentName ?? null,
+    studentName: row.studentName ?? null,
+    studentEmail: row.studentEmail ?? null,
     title: session.case?.title ?? session.friendlyName,
     createdAt: row.createdAt,
     completedAt: row.completedAt,
@@ -47,7 +48,7 @@ export function ProfessorSessionAttemptsSection({ session, attempts }: Props) {
   const filtered = useMemo(() => {
     const query = emailSearch.trim().toLowerCase();
     return summaries.filter((attempt) => {
-      if (query && !(attempt.studentName ?? "").toLowerCase().includes(query)) return false;
+      if (query && !(attempt.studentEmail ?? attempt.studentName ?? "").toLowerCase().includes(query)) return false;
       if (statusFilter !== "all" && attempt.completionStatus !== statusFilter) return false;
       return true;
     });

@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { fetchCaseById } from "@/features/case-selection/services/caseService";
 import type { Case } from "@/features/case-selection/models/case";
 import type { AttemptSummary } from "@/features/attempts/models/attempt";
-import { CaseDetails } from "@/features/case-selection/components/CaseDetails";
+import { CaseDetails, CaseSectionCard } from "@/features/case-selection/components/CaseDetails";
 import { CaseAttemptsTable } from "@/features/attempts/components/CaseAttemptsTable";
 import { SessionsForCaseList } from "@/features/case-sessions/components/SessionsForCaseList";
 import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
@@ -113,7 +113,7 @@ export default function CaseInstructionsPage() {
     return (
       <div className="container mx-auto px-4 pb-8">
         <Breadcrumb
-          items={[{ label: "Home", href: "/dashboard" }, { label: "Start", href: "/case-sessions" }, { label: "Case not found" }]}
+          items={[{ label: "Home", href: "/dashboard" }, { label: "Start", href: "/start" }, { label: "Case not found" }]}
         />
         <div className="py-12 text-center">
           <p className="text-lg">Case not found</p>
@@ -127,30 +127,29 @@ export default function CaseInstructionsPage() {
       <Breadcrumb
         items={[
           { label: "Home", href: "/dashboard" },
-          { label: "Start", href: "/case-sessions" },
+          { label: "Start", href: "/start" },
           { label: caseData.title },
         ]}
       />
 
-      <div className="mb-8">
+      <div className="space-y-6">
         <CaseDetails caseData={caseData} />
 
-        <div className="prose mt-6 max-w-none">
-          <h2 className="mb-2 text-xl font-semibold">Instructions</h2>
-          <p>
+        <CaseSectionCard title="Instructions">
+          <p className="text-sm text-gray-700 dark:text-gray-400">
             In this clinical case, you will interact with a simulated client and patient. Work through the case by taking a
             history, performing a physical examination, and recommending diagnostic tests as appropriate.
           </p>
-          <ul>
+          <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-gray-700 dark:text-gray-400">
             <li>Proceed through each stage of the case in order</li>
             <li>You can save your progress at any time</li>
             <li>Once completed, you will receive feedback on your performance</li>
           </ul>
-        </div>
+        </CaseSectionCard>
 
-        <div className="mt-8 space-y-3">
+        <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-xl font-semibold text-primary">Latest Attempts</h2>
+            <h2 className="text-xl font-semibold text-primary">My Attempts</h2>
             {attempts.length > 3 && (
               <Link
                 href={`/attempts?caseId=${encodeURIComponent(id)}`}
@@ -164,12 +163,12 @@ export default function CaseInstructionsPage() {
             attempts={recentAttempts}
             loading={isLoading}
             emptyMessage="You haven't attempted this case yet."
-            sessionHrefBase="/case-sessions"
+            sessionHrefBase="/start"
             from="case"
           />
         </div>
 
-        <div className="mt-8 space-y-3">
+        <div className="space-y-3">
           <h2 className="text-xl font-semibold text-primary">Sessions</h2>
           <SessionsForCaseList caseId={id} variant="start" />
         </div>

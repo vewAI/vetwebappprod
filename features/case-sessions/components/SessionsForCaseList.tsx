@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { listSessions } from "../services/caseSessionService";
 import type { CaseSession, SessionStatus } from "../models/caseSession";
 import { deriveStatus } from "../models/caseSession";
+import { professorSessionHref } from "../sessionViewHref";
 import { SortHeader } from "@/features/navigation/components/sort-header";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/features/navigation/components/table";
 import { useTableSort } from "@/features/navigation/hooks/useTableSort";
@@ -149,7 +150,7 @@ export function SessionsForCaseList({
                   const imageSrc = /^https?:\/\//.test(String(session.case?.imageUrl ?? ""))
                     ? String(session.case?.imageUrl)
                     : "/placeholder.svg";
-                  const href = isStart ? `/case-sessions/${session.id}` : `/professor/sessions/${session.id}`;
+                  const href = isStart ? `/start/${session.id}` : professorSessionHref(session.id, "case");
                   return (
                     <TableRow key={session.id} className="relative cursor-pointer hover:bg-brand-50 dark:hover:bg-white/[0.03]">
                       <TableCell className="px-5 py-4 text-start sm:px-6">

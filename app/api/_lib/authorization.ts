@@ -39,18 +39,9 @@ export async function authorizeAttemptAccess(
     return { allowed: true, attempt: owner };
   }
 
+  // Professors can review any student's attempt from case/session dashboards.
   if (role === "professor" && options.allowProfessorRead) {
-    const { data: assignment, error: assignmentError } = await supabase
-      .from("professor_students")
-      .select("student_id")
-      .eq("professor_id", userId)
-      .eq("student_id", owner.user_id)
-      .maybeSingle();
-
-    if (assignmentError) {
-      return { allowed: false, error: assignmentError.message };
-    }
-    if (assignment) return { allowed: true, attempt: owner };
+    return { allowed: true, attempt: owner };
   }
 
   return { allowed: false };

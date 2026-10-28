@@ -50,8 +50,8 @@ export interface ProfessorStudentRow {
   - `caseCount` is published cases.
   - `activeSessionCount` is sessions created by the current user whose window includes now.
   - `attemptsByDay` is one point per day for the last 30 days (zeros included) for every attempt in that window. It is not limited to `professor_students` enrollments.
-  - `topCases` is the top 5 cases by attempt count in that window. Names are truncated and link to `/case/{id}`. The card button is View All Cases and opens `/cases`.
-  - `topSessions` is the 5 most recently created sessions by the current user, newest first. Attempt counts in the list are from the last 30 days. Names are truncated and link to `/professor/sessions/{id}`. The card button is View All Sessions and opens `/case-sessions`.
+  - `topCases` is the top 5 cases by attempt count in that window. Names are truncated and link to `/cases/{id}`. The card button is View All Cases and opens `/cases`.
+  - `topSessions` is the 5 most recently created sessions by the current user, newest first. Attempt counts in the list are from the last 30 days. Names are truncated and link to `/professor/sessions/{id}`. The card button is View All Sessions and opens `/start`.
   - `studentsByYearGroup` is the current student count per year group, including Unassigned. Institution names are prefixed when more than one institution is present.
 
 ### GET /api/professor/students

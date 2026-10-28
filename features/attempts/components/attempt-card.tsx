@@ -8,6 +8,7 @@ import { Clock, Calendar, ChevronRight } from "lucide-react";
 import type { AttemptSummary } from "../models/attempt";
 
 import type { Case } from "@/features/case-selection/models/case";
+import { caseAttemptHref } from "@/features/case-selection/caseViewHref";
 import { cn } from "@/lib/utils";
 
 type AttemptCardProps = {
@@ -98,7 +99,7 @@ export function AttemptCard({ attempt }: AttemptCardProps) {
           <CardFooter className="flex justify-end px-0">
             <div className="flex items-center gap-2">
               {attempt.completionStatus !== "completed" ? (
-                <Link href={`/case/${attempt.caseId}/attempt?attempt=${attempt.id}`}>
+                <Link href={caseAttemptHref(attempt.caseId, { attempt: attempt.id })}>
                   <Button size="sm" variant="ghost">
                     Continue
                     <ChevronRight className="ml-1 h-4 w-4" />

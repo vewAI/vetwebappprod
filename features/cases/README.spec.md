@@ -52,9 +52,9 @@ interface TimepointTemplate {
 ## Component Tree
 - `CaseLibrary`
   - Title, discipline/species `Select` filters, sortable table
-  - `getCaseHref(case)` sets the row destination (`/case/{id}` on `/cases`, `/case-viewer?id=` on `/case-viewer`)
+  - `getCaseHref(case)` sets the row destination (`/cases/{id}` on `/cases`, `/case-viewer?id=` on `/case-viewer`)
   - `showPublished` adds a Published column with a tick or a cross. `includeUnpublished` lists unpublished cases. Both are used on `/case-viewer`.
-- `CaseDashboard` — professor/admin `/case/{id}`: summary card plus Case Overview, Sessions, and Attempts tabs.
+- `CaseDashboard` — professor/admin `/cases/{id}`: summary card plus Case Overview, Sessions, and Attempts tabs.
 - `TimeProgressionEditor`
   - Template selector (`select`) for stage templates
   - `Add Stage` button

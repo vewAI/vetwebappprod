@@ -20,17 +20,13 @@ import type {
 } from "@/features/attempts/models/attempt";
 import type { Message } from "@/features/chat/models/chat";
 import type { Stage } from "@/features/stages/types";
-import { createClient } from "@supabase/supabase-js";
-import {
-  transformAttempt,
-  transformFeedback,
-  transformMessage,
-} from "@/features/attempts/mappers/attempt-mappers";
 import { Case } from "@/features/case-selection/models/case";
 import { mapDbCaseToCase } from "@/features/case-selection/services/caseService";
 import { AttemptConversationTab } from "@/features/attempts/components/attempt-conversation-tab";
 import { AttemptFeedbackTab } from "@/features/attempts/components/attempt-feedback-tab";
 import { CaseCard } from "@/features/case-selection/components/case-card";
+import { caseAttemptHref, caseHref } from "@/features/case-selection/caseViewHref";
+import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
 
 function InfoRow({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -42,11 +38,7 @@ function InfoRow({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function sessionHref(sessionId: string, isStaff: boolean) {
-  return isStaff ? `/professor/sessions/${sessionId}` : `/case-sessions/${sessionId}`;
-}
-
-function caseHref(caseId: string, isStaff: boolean) {
-  return isStaff ? `/case/${caseId}` : `/case/${caseId}/instructions`;
+  return isStaff ? `/professor/sessions/${sessionId}` : `/start/${sessionId}`;
 }
 
 function attemptBreadcrumbItems({
@@ -73,7 +65,7 @@ function attemptBreadcrumbItems({
       { label: "Home", href: "/dashboard" },
       isStaff
         ? { label: "Case Sessions", href: "/professor/sessions" }
-        : { label: "Start", href: "/case-sessions" },
+        : { label: "Start", href: "/start" },
       {
         label: session?.friendlyName || "Session",
         href: session ? sessionHref(session.id, isStaff) : undefined,
@@ -85,7 +77,7 @@ function attemptBreadcrumbItems({
   if (from === "case") {
     return [
       { label: "Home", href: "/dashboard" },
-      isStaff ? { label: "Cases", href: "/cases" } : { label: "Start", href: "/case-sessions" },
+      isStaff ? { label: "Cases", href: "/cases" } : { label: "Start", href: "/start" },
       {
         label: attemptCase?.title || "Case",
         href: attemptCase ? caseHref(attemptCase.id, isStaff) : undefined,
@@ -141,7 +133,7 @@ export default function ViewAttemptPage() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, role, isAdmin } = useAuth();
+  const { user, role, isAdmin, loading: authLoading } = useAuth();
   const attemptId = params.id as string;
   const from = parseAttemptViewFrom(searchParams.get("from"));
   const isStaff = isAdmin || role === "professor";
@@ -174,138 +166,97 @@ export default function ViewAttemptPage() {
       : 0;
 
   useEffect(() => {
+    if (authLoading) return;
+
+    let cancelled = false;
     const loadAttempt = async () => {
       setIsLoading(true);
+      setAttempt(null);
+      setCase(null);
+      setSession(null);
+      setMessages([]);
+      setFeedback([]);
+      setStudentProfile(null);
+      setProfessorProfile(null);
 
       try {
-        const supabase = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        );
-
-        const { data, error } = await supabase
-          .from("attempts")
-          .select(`*, attempt_messages (*), attempt_feedback (*), cases (*)`)
-          .eq("id", attemptId)
-          .maybeSingle();
-
-        if (error || !data) {
-          console.error("Failed to load attempt:", error);
-          router.push("/attempts");
+        const token = await getAccessToken();
+        if (!token) {
           return;
         }
 
-        const transformedAttempt = transformAttempt(data);
-        setAttempt(transformedAttempt);
-        setCase(mapDbCaseToCase(data.cases));
+        const headers = await buildAuthHeaders({ Accept: "application/json" }, token);
+        const res = await fetch(`/api/attempts/${encodeURIComponent(attemptId)}/view`, { headers });
+        const body = (await res.json().catch(() => ({}))) as {
+          attempt?: Attempt;
+          messages?: Message[];
+          feedback?: AttemptFeedback[];
+          case?: Parameters<typeof mapDbCaseToCase>[0] | null;
+          studentProfile?: SimpleProfile | null;
+          error?: string;
+        };
+
+        if (!res.ok || !body.attempt) {
+          console.error("Failed to load attempt:", body.error || res.statusText);
+          return;
+        }
+
+        if (cancelled) return;
+
+        setAttempt(body.attempt);
+        setCase(body.case ? mapDbCaseToCase(body.case) : null);
+        setMessages(Array.isArray(body.messages) ? body.messages : []);
+        setFeedback(Array.isArray(body.feedback) ? body.feedback : []);
+        setStudentProfile(body.studentProfile ?? null);
+
         let loadedSession: CaseSession | null = null;
-        if (transformedAttempt.sessionId) {
+        if (body.attempt.sessionId) {
           try {
-            loadedSession = await getSession(transformedAttempt.sessionId);
+            loadedSession = await getSession(body.attempt.sessionId);
           } catch (sessionErr) {
             console.warn("Failed to load attempt session", sessionErr);
             loadedSession = null;
           }
         }
+        if (cancelled) return;
         setSession(loadedSession);
-        setMessages((data.attempt_messages || [])?.map(transformMessage));
-        setFeedback((data.attempt_feedback || [])?.map(transformFeedback));
 
+        if (loadedSession?.createdBy) {
+          setProfessorProfile({
+            id: loadedSession.createdBy,
+            email: null,
+            fullName: loadedSession.createdByName ?? null,
+            avatarUrl: null,
+            role: "professor",
+          });
+        }
+
+        const caseId = body.attempt.caseId;
         const caseStages = await (async () => {
           try {
             const mod = await import("@/features/stages/services/stageService");
-
             if (mod.getActiveStagesForCase) {
-              return await mod.getActiveStagesForCase(data.caseId);
+              return await mod.getActiveStagesForCase(caseId);
             }
-            return mod.getStagesForCase(data.caseId);
+            return mod.getStagesForCase(caseId);
           } catch (e) {
             console.warn("Failed to resolve active stages; falling back", e);
-            return getStagesForCase(data.caseId);
+            return getStagesForCase(caseId);
           }
         })();
-        setStages(caseStages);
-
-        // Load student profile and the professor who started the session (best-effort)
-        try {
-          const userId = data.user_id as string | undefined;
-          const creatorId = loadedSession?.createdBy;
-
-          const profileSelect = "id, user_id, email, full_name, avatar_url, role";
-          const studentQuery = userId
-            ? supabase.from("profiles").select(profileSelect).eq("user_id", userId).maybeSingle()
-            : Promise.resolve({ data: null });
-          const professorQuery = creatorId
-            ? supabase.from("profiles").select(profileSelect).eq("user_id", creatorId).maybeSingle()
-            : Promise.resolve({ data: null });
-
-          const [{ data: studentRow }, { data: professorByUserId }] = await Promise.all([
-            studentQuery,
-            professorQuery,
-          ]);
-
-          if (studentRow) {
-            setStudentProfile({
-              id: studentRow.id,
-              email: studentRow.email ?? null,
-              fullName: studentRow.full_name ?? null,
-              avatarUrl: studentRow.avatar_url ?? null,
-              role: studentRow.role ?? null,
-            });
-          } else {
-            setStudentProfile(null);
-          }
-
-          let professorRow = professorByUserId;
-          if (!professorRow && creatorId) {
-            const { data: professorById } = await supabase
-              .from("profiles")
-              .select(profileSelect)
-              .eq("id", creatorId)
-              .maybeSingle();
-            professorRow = professorById;
-          }
-
-          if (professorRow) {
-            setProfessorProfile({
-              id: professorRow.id,
-              email: professorRow.email ?? null,
-              fullName:
-                professorRow.full_name?.trim() ||
-                loadedSession?.createdByName ||
-                professorRow.email ||
-                null,
-              avatarUrl: professorRow.avatar_url ?? null,
-              role: professorRow.role ?? "professor",
-            });
-          } else if (creatorId) {
-            setProfessorProfile({
-              id: creatorId,
-              email: null,
-              fullName: loadedSession?.createdByName ?? null,
-              avatarUrl: null,
-              role: "professor",
-            });
-          } else {
-            setProfessorProfile(null);
-          }
-        } catch (profileError) {
-          console.warn(
-            "Failed to load student/professor profiles",
-            profileError
-          );
-        }
+        if (!cancelled) setStages(caseStages);
       } catch (e) {
         console.error("Failed to load attempt view", e);
-        router.push("/attempts");
-        return;
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
 
-    loadAttempt();
-  }, [attemptId, router]);
+    void loadAttempt();
+    return () => {
+      cancelled = true;
+    };
+  }, [attemptId, authLoading]);
 
   // When user opens the Feedback tab, mark feedback as read for this student
   useEffect(() => {
@@ -461,11 +412,10 @@ export default function ViewAttemptPage() {
           className="mb-6 h-14 w-full bg-brand-100 text-base font-semibold text-brand-700 hover:bg-brand-200 dark:bg-brand-500/12 dark:text-brand-400 dark:hover:bg-brand-500/20"
         >
           <Link
-            href={
-              attempt.sessionId
-                ? `/case/${attempt.caseId}/attempt?attempt=${attempt.id}&session=${attempt.sessionId}`
-                : `/case/${attempt.caseId}/attempt?attempt=${attempt.id}`
-            }
+            href={caseAttemptHref(attempt.caseId, {
+              attempt: attempt.id,
+              session: attempt.sessionId,
+            })}
           >
             Continue Attempt
           </Link>
@@ -583,7 +533,11 @@ export default function ViewAttemptPage() {
           )}
         </DetailsCard>
 
-        {attemptCase ? <CaseCard key={attemptCase.id} caseItem={attemptCase} /> : <div />}
+        {attemptCase ? (
+          <CaseCard key={attemptCase.id} caseItem={attemptCase} href={caseHref(attemptCase.id, isStaff)} />
+        ) : (
+          <div />
+        )}
       </div>
 
       <div className="rounded-2xl border border-gray-200 bg-white px-5 py-5 sm:px-6 sm:py-6 dark:border-gray-800 dark:bg-white/[0.03]">

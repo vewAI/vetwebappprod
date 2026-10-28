@@ -86,7 +86,7 @@ export function AppSidebar() {
     { name: "Home", href: "/dashboard", icon: <HomeIcon fontSize={24} />, exact: true },
     ...(isStudent ? [{ name: "Dashboard", href: "/student", icon: <GridIcon fontSize={24} />, exact: true }] : []),
     ...(isProfessor ? [{ name: "Dashboard", href: "/professor", icon: <GridIcon fontSize={24} />, exact: true }] : []),
-    { name: "Start", href: "/case-sessions", icon: <MicrophoneIcon fontSize={24} /> },
+    { name: "Start", href: "/start", icon: <MicrophoneIcon fontSize={24} /> },
     { name: "My Attempts", href: "/attempts", icon: <ListIcon fontSize={24} /> },
   ];
 
@@ -139,7 +139,7 @@ export function AppSidebar() {
       </div>
 
       {institutionName ? (
-        <div className="-mx-5 bg-brand-700 px-3 py-2 text-center">
+        <div className="-mx-5 bg-brand-500 px-3 py-2 text-center">
           <p className="truncate text-sm font-medium text-white" title={institutionName}>
             {institutionName}
           </p>

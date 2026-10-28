@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import React, { useEffect, useState, useRef } from "react";
 import type { Case } from "@/features/case-selection/models/case";
 import { fetchCaseById } from "@/features/case-selection/services/caseService";
+import { studentCaseHref } from "@/features/case-selection/caseViewHref";
 // Removed unused imports (Link, Button, ChevronLeft) to satisfy lint rules.
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -384,7 +385,7 @@ export default function CaseChatPage() {
           <strong>active session</strong>.
         </p>
         <Button asChild>
-          <Link href={`/case/${id}/instructions`}>Back to case instructions</Link>
+          <Link href={studentCaseHref(id)}>Back to case instructions</Link>
         </Button>
       </div>
     );
@@ -399,7 +400,7 @@ export default function CaseChatPage() {
           <strong>Start case</strong> on the session.
         </p>
         <Button asChild>
-          <Link href={`/case/${id}/instructions`}>Back to case instructions</Link>
+          <Link href={studentCaseHref(id)}>Back to case instructions</Link>
         </Button>
       </div>
     );

@@ -72,9 +72,8 @@ export function transformAttemptSummary(data: any): AttemptSummary {
   const yearGroup = firstJoin(session?.year_groups);
   const profile = firstJoin(data.profiles);
   const studentName =
-    (typeof profile?.full_name === "string" && profile.full_name.trim()) ||
-    (typeof profile?.email === "string" && profile.email.trim()) ||
-    null;
+    (typeof profile?.full_name === "string" && profile.full_name.trim()) || null;
+  const studentEmail = (typeof profile?.email === "string" && profile.email.trim()) || null;
   return {
     id: data.id ?? "",
     userId: data.user_id ?? "",
@@ -84,6 +83,7 @@ export function transformAttemptSummary(data: any): AttemptSummary {
     sessionYearGroupId: typeof session?.year_group_id === "string" ? session.year_group_id : null,
     sessionYearGroupName: typeof yearGroup?.name === "string" ? yearGroup.name : null,
     studentName,
+    studentEmail,
     title: data.title ?? "",
     createdAt: data.created_at ?? "",
     completedAt: data.completed_at ?? undefined,

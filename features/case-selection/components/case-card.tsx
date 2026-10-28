@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Case } from "@/features/case-selection/models/case";
+import { studentCaseHref } from "@/features/case-selection/caseViewHref";
 
 type CaseCardProps = {
   caseItem: Case;
@@ -24,7 +25,7 @@ type CaseCardProps = {
 };
 
 export function CaseCard({ caseItem, href, titleClassName, className }: CaseCardProps) {
-  const caseHref = href ?? `/case/${caseItem.id}/instructions`;
+  const caseHref = href ?? studentCaseHref(caseItem.id);
   const imageSrc =
     /^https?:\/\//.test(String(caseItem.imageUrl ?? ""))
       ? String(caseItem.imageUrl)

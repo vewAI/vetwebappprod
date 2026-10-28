@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { CaseSession } from "../models/caseSession";
 import { joinSessionCreateAttempt } from "../services/caseSessionService";
+import { caseAttemptHref } from "@/features/case-selection/caseViewHref";
 import { Loader2 } from "lucide-react";
 
 type Props = {
@@ -57,9 +58,7 @@ export function JoinSessionDialog({
       );
       onOpenChange(false);
       reset();
-      router.push(
-        `/case/${encodeURIComponent(caseId)}/attempt?attempt=${encodeURIComponent(attempt.id)}&session=${encodeURIComponent(session.id)}`
-      );
+      router.push(caseAttemptHref(caseId, { attempt: attempt.id, session: session.id }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to start attempt");
     } finally {

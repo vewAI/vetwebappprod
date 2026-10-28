@@ -230,7 +230,7 @@ export default function HomePage() {
                   variant="outline"
                   className="rounded-xl border-emerald-300 bg-white px-6 text-emerald-800 hover:border-emerald-400 hover:bg-emerald-50"
                 >
-                  <Link href="/case-sessions">Jump into training</Link>
+                  <Link href="/start">Jump into training</Link>
                 </Button>
               )}
             </div>
@@ -254,7 +254,7 @@ export default function HomePage() {
             {role === "student" && (
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground/80">
                 To practice <strong>knowledge, clinical skills and communication</strong>, open the{" "}
-                <Link href="/case-sessions" className="font-medium text-primary underline underline-offset-2 hover:text-primary/80">
+                <Link href="/start" className="font-medium text-primary underline underline-offset-2 hover:text-primary/80">
                   Live
                 </Link>{" "}
                 menu link and choose a case — you will speak with the owner and the veterinary team just like in a real consultation.
@@ -289,7 +289,7 @@ export default function HomePage() {
             description="Your professor has assigned these cases for you to complete."
             action={
               <Button asChild variant="ghost" size="sm">
-                <Link href="/case-sessions">View all</Link>
+                <Link href="/start">View all</Link>
               </Button>
             }
           />

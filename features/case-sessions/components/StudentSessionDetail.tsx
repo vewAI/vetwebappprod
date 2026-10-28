@@ -26,7 +26,7 @@ export function StudentSessionDetail({ sessionId }: Props) {
         <Breadcrumb
           items={[
             { label: "Home", href: "/dashboard" },
-            { label: "Start", href: "/case-sessions" },
+            { label: "Start", href: "/start" },
             { label: "Session" },
           ]}
         />
@@ -44,7 +44,7 @@ export function StudentSessionDetail({ sessionId }: Props) {
         <Breadcrumb
           items={[
             { label: "Home", href: "/dashboard" },
-            { label: "Start", href: "/case-sessions" },
+            { label: "Start", href: "/start" },
             { label: "Session not found" },
           ]}
         />
@@ -64,7 +64,7 @@ export function StudentSessionDetail({ sessionId }: Props) {
       <Breadcrumb
         items={[
           { label: "Home", href: "/dashboard" },
-          { label: "Start", href: "/case-sessions" },
+          { label: "Start", href: "/start" },
           { label: session.friendlyName },
         ]}
       />
