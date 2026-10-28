@@ -92,6 +92,17 @@ function buildPhysicalExamFallback(caseRow: CaseRow): string {
   return contextLines.join("\n");
 }
 
+export function buildReasoningScaffoldingInstruction(difficulty: string | undefined): string {
+  const diff = (difficulty ?? "Medium").trim().toLowerCase();
+  if (diff === "easy") {
+    return "Case difficulty is Easy (early-year student). Actively scaffold the student's clinical reasoning: you may ask gentle Socratic questions (e.g. 'What specific abnormalities are you evaluating with this test?' or 'Shall we evaluate baseline vitals first?'). Guide their clinical thought process step-by-step without giving away diagnoses or treatments directly.";
+  }
+  if (diff === "hard") {
+    return "Case difficulty is Hard (advanced / exam simulation). Strict neutral execution: report ONLY what is explicitly requested. Do NOT give hints, clinical prompts, or suggestions.";
+  }
+  return "Case difficulty is Medium (intermediate student). Provide standard professional support. Fulfill orders accurately and prompt only if critical baseline parameters are omitted.";
+}
+
 export const ROLE_PROMPT_DEFINITIONS: Record<RolePromptKey, RolePromptDefinition> = {
   getOwnerPrompt: {
     defaultTemplate: `You are roleplaying as the owner or caretaker in a veterinary consultation. Your goal is to simulate a realistic client interaction. Stay in character according to the background below.
@@ -159,7 +170,7 @@ INFORMATION DELIVERY RULES:
 - Temperature: ALWAYS report temperatures in BOTH Fahrenheit (°F) AND Celsius (°C). Formula: °F = °C × 1.8 + 32
 - Missing Data: If asked for something not in the record, state it is "unremarkable/within normal limits" based on context or look up a real normal value for the species and pathology.
 - Conciseness: Be helpful and professional, but do NOT volunteer extra categories of data not explicitly requested.
-- No Questions: Do not ask the student what they found. You are reporting, not quizzing.
+- Reasoning Guidance: {{REASONING_SCAFFOLDING_INSTRUCTION}}
 
 Release Strategy:
 {{RELEASE_STRATEGY_INSTRUCTION}}
@@ -170,6 +181,7 @@ Student request: {{STUDENT_REQUEST}}`,
       { token: "{{FINDINGS}}", description: "Physical examination findings for the case." },
       { token: "{{STUDENT_REQUEST}}", description: "Latest clinician question or request." },
       { token: "{{RELEASE_STRATEGY_INSTRUCTION}}", description: "Instruction on how to reveal findings (all at once vs on demand)." },
+      { token: "{{REASONING_SCAFFOLDING_INSTRUCTION}}", description: "Clinical reasoning scaffolding guidance based on case difficulty." },
     ],
     buildReplacements: ({ caseRow, userMessage }) => {
       const strategy = getText(caseRow, "findings_release_strategy", "on_demand");
@@ -191,6 +203,7 @@ When asked to 'double-check' or confirm a previous statement, DO NOT invent or c
         FINDINGS: getText(caseRow, "physical_exam_findings", buildPhysicalExamFallback(caseRow)),
         STUDENT_REQUEST: userMessage,
         RELEASE_STRATEGY_INSTRUCTION: instruction,
+        REASONING_SCAFFOLDING_INSTRUCTION: buildReasoningScaffoldingInstruction(getText(caseRow, "difficulty", "Medium")),
       };
     },
   },
@@ -208,6 +221,7 @@ STRICT GUARDRAILS (Non-Negotiable):
 
 INFORMATION DELIVERY RULES:
  • Role Hierarchy: You PROVIDE information from the records. You do NOT ask the student for findings.
+ • Reasoning Guidance: {{REASONING_SCAFFOLDING_INSTRUCTION}}
  • Conciseness: Be helpful and professional, but do NOT volunteer extra categories of data not explicitly requested.
  • Missing Data: If asked for something not in the record, state it is “not available” or “within normal limits” based on context. Do NOT invent values.
  • Pending Data: If a requested result exists in the case but is not yet available at the current stage, say it is “pending” or “not yet available.”
@@ -253,6 +267,7 @@ Student request: {{STUDENT_REQUEST}}`,
       { token: "{{DIAGNOSTIC_RESULTS}}", description: "Laboratory and diagnostic findings for the case." },
       { token: "{{STUDENT_REQUEST}}", description: "Latest clinician question or request." },
       { token: "{{RELEASE_STRATEGY_INSTRUCTION}}", description: "Instruction on how to reveal findings (all at once vs on demand)." },
+      { token: "{{REASONING_SCAFFOLDING_INSTRUCTION}}", description: "Clinical reasoning scaffolding guidance based on case difficulty." },
     ],
     buildReplacements: ({ caseRow, userMessage }) => {
       const strategy = getText(caseRow, "findings_release_strategy", "on_demand");
@@ -274,6 +289,7 @@ If asked to re-check or confirm previous output, DO NOT fabricate or alter resul
         DIAGNOSTIC_RESULTS: getText(caseRow, "diagnostic_findings", "No diagnostic tests have been performed yet."),
         STUDENT_REQUEST: userMessage,
         RELEASE_STRATEGY_INSTRUCTION: instruction,
+        REASONING_SCAFFOLDING_INSTRUCTION: buildReasoningScaffoldingInstruction(getText(caseRow, "difficulty", "Medium")),
       };
     },
   },
@@ -377,15 +393,18 @@ INFORMATION DELIVERY RULES:
   - "Should I prepare the IV fluids now?"
   - "Do you want me to monitor any specific parameters?"
 - Missing Information: If the student hasn't specified something critical, prompt them professionally.
+- Reasoning Guidance: {{REASONING_SCAFFOLDING_INSTRUCTION}}
 
 Student instructions: {{STUDENT_REQUEST}}`,
     placeholderDocs: [
       { token: "{{CASE_TITLE}}", description: "Case title or patient identifier." },
       { token: "{{STUDENT_REQUEST}}", description: "Latest clinician instructions." },
+      { token: "{{REASONING_SCAFFOLDING_INSTRUCTION}}", description: "Clinical reasoning guidance based on case difficulty." },
     ],
     buildReplacements: ({ caseRow, userMessage }) => ({
       CASE_TITLE: getCaseTitle(caseRow),
       STUDENT_REQUEST: userMessage,
+      REASONING_SCAFFOLDING_INSTRUCTION: buildReasoningScaffoldingInstruction(getText(caseRow, "difficulty", "Medium")),
     }),
   },
 };

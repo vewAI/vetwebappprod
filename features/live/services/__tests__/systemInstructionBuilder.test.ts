@@ -109,4 +109,56 @@ describe("buildPersonaSystemInstruction", () => {
     expect(labResult.systemInstruction).toContain("Diagnostic/Lab Results:");
     expect(labResult.systemInstruction).toContain("Elevated lactate");
   });
+
+  describe("difficulty-based clinical reasoning guidance for veterinary nurse", () => {
+    it("scaffolds student reasoning with Socratic cues when difficulty is Easy", () => {
+      const easyResult = buildPersonaSystemInstruction({
+        caseItem: { ...caseItem, difficulty: "Easy" },
+        stage: { ...stage, settings: { stage_type: "physical" } },
+        personaRoleKey: "veterinary-nurse",
+      });
+
+      expect(easyResult.systemInstruction).toContain("CLINICAL REASONING GUIDANCE (EARLY-YEAR / NOVICE STUDENT SCAFFOLDING)");
+      expect(easyResult.systemInstruction).toContain("SOCRATIC QUESTIONS");
+      expect(easyResult.systemInstruction).toContain("What specific body system or differential are you prioritizing");
+      expect(easyResult.systemInstruction).toContain("NON-SPOILER GUARDRAIL");
+      expect(easyResult.systemInstruction).toContain("CLINICAL REASONING SCAFFOLDING (EASY DIFFICULTY)");
+    });
+
+    it("provides standard professional assistance when difficulty is Medium", () => {
+      const mediumResult = buildPersonaSystemInstruction({
+        caseItem: { ...caseItem, difficulty: "Medium" },
+        stage: { ...stage, settings: { stage_type: "physical" } },
+        personaRoleKey: "veterinary-nurse",
+      });
+
+      expect(mediumResult.systemInstruction).toContain("CLINICAL REASONING GUIDANCE (INTERMEDIATE CLINICAL PRACTICE)");
+      expect(mediumResult.systemInstruction).toContain("standard professional clinical assistance");
+      expect(mediumResult.systemInstruction).not.toContain("EARLY-YEAR / NOVICE");
+    });
+
+    it("enforces strict exam neutrality and no hints when difficulty is Hard", () => {
+      const hardResult = buildPersonaSystemInstruction({
+        caseItem: { ...caseItem, difficulty: "Hard" },
+        stage: { ...stage, settings: { stage_type: "physical" } },
+        personaRoleKey: "veterinary-nurse",
+      });
+
+      expect(hardResult.systemInstruction).toContain("CLINICAL REASONING GUIDANCE (ADVANCED / EXAM SIMULATION)");
+      expect(hardResult.systemInstruction).toContain("STRICT NEUTRALITY");
+      expect(hardResult.systemInstruction).toContain("EXAM CONDITIONS (HARD DIFFICULTY)");
+      expect(hardResult.systemInstruction).not.toContain("SOCRATIC QUESTIONS");
+    });
+
+    it("does not include nurse clinical reasoning guidance for non-clinical roles (owner)", () => {
+      const ownerResult = buildPersonaSystemInstruction({
+        caseItem: { ...caseItem, difficulty: "Easy" },
+        stage: { ...stage, settings: { stage_type: "history" } },
+        personaRoleKey: "owner",
+      });
+
+      expect(ownerResult.systemInstruction).not.toContain("CLINICAL REASONING GUIDANCE");
+      expect(ownerResult.systemInstruction).not.toContain("SOCRATIC QUESTIONS");
+    });
+  });
 });

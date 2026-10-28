@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 // ImageUploader intentionally not used here to allow manual image_url input in edit mode.
 import axios from "axios";
 import { caseFieldMeta, orderedCaseFieldKeys, type CaseFieldKey } from "@/features/cases/fieldMeta";
@@ -72,6 +73,7 @@ export default function CaseViewerClient() {
   const [nursePersonaConfig, setNursePersonaConfig] = useState<Partial<PersonaConfig>>({});
   const [nurseSpecialization, setNurseSpecialization] = useState<Record<string, unknown> | null>(null);
   const [personaConfigsDirty, setPersonaConfigsDirty] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
   const [automationState, setAutomationState] = useState<
     Record<
       string,
@@ -109,6 +111,62 @@ export default function CaseViewerClient() {
     },
     [parseMedia],
   );
+
+  const isCasePublished = Boolean(
+    formState?.["is_published"] === true || formState?.["is_published"] === "true"
+  );
+
+  const handleTogglePublish = useCallback(async () => {
+    if (!formState || !caseRecord) return;
+    if (!authHeaders) {
+      alert("You must be signed in to change publication status.");
+      return;
+    }
+    const currentStatus = Boolean(
+      formState["is_published"] === true || formState["is_published"] === "true"
+    );
+    const nextStatus = !currentStatus;
+    const caseId = formatValue(formState["id"]).trim();
+    if (!caseId) return;
+
+    try {
+      setIsPublishing(true);
+      const resp = await axios.put(
+        "/api/cases",
+        {
+          ...formState,
+          id: caseId,
+          is_published: nextStatus,
+        },
+        { headers: authHeaders }
+      );
+      const respData = resp.data as { data?: unknown };
+      if (respData?.data && typeof respData.data === "object") {
+        const updated = respData.data as CaseRecord;
+        const normalizedUpdated = {
+          ...updated,
+          is_published: nextStatus,
+          media: parseMedia(updated["media"]),
+        } as CaseRecord;
+        setCaseRecord(normalizedUpdated);
+        loadCaseIntoForm(normalizedUpdated);
+      } else {
+        setFormState((prev) => (prev ? { ...prev, is_published: nextStatus } : prev));
+        setCaseRecord((prev) => (prev ? { ...prev, is_published: nextStatus } : prev));
+      }
+    } catch (err: unknown) {
+      console.error("Failed to toggle publish status", err);
+      const message =
+        axios.isAxiosError(err) && err.response?.data?.error
+          ? err.response.data.error
+          : err instanceof Error
+          ? err.message
+          : "Failed to update publication status";
+      alert(message);
+    } finally {
+      setIsPublishing(false);
+    }
+  }, [formState, caseRecord, authHeaders, loadCaseIntoForm, parseMedia]);
 
   const handleMediaChange = useCallback((items: CaseMediaItem[]) => {
     setMediaDraft(items);
@@ -151,14 +209,25 @@ export default function CaseViewerClient() {
         const ownerRow = list.find((row) => row.role_key === "owner");
         const nurseRow = list.find((row) => row.role_key === "veterinary-nurse");
 
-        setOwnerPersonaConfig(extractPersonaConfig(ownerRow));
-        setNursePersonaConfig(extractPersonaConfig(nurseRow));
-        setPersonaConfigsDirty(false);
-
         // Extract nurse specialization data for read-only display
         const nurseMetadata = nurseRow?.metadata && typeof nurseRow.metadata === "object" ? (nurseRow.metadata as Record<string, unknown>) : null;
         const nurseSpec = nurseMetadata?.nurseSpecialization ?? null;
         setNurseSpecialization(nurseSpec as Record<string, unknown> | null);
+
+        const extractedNurseConfig = extractPersonaConfig(nurseRow);
+        if (!extractedNurseConfig.imageUrl && (nurseSpec as any)?.imageUrl) {
+          extractedNurseConfig.imageUrl = (nurseSpec as any).imageUrl;
+        }
+        if (!extractedNurseConfig.sex && (nurseSpec as any)?.sex) {
+          extractedNurseConfig.sex = (nurseSpec as any).sex;
+        }
+        if (!extractedNurseConfig.voiceId && (nurseSpec as any)?.voiceId) {
+          extractedNurseConfig.voiceId = (nurseSpec as any).voiceId;
+        }
+
+        setOwnerPersonaConfig(extractPersonaConfig(ownerRow));
+        setNursePersonaConfig(extractedNurseConfig);
+        setPersonaConfigsDirty(false);
 
         // Get all case personas for display
         let combined = [...list];
@@ -735,8 +804,29 @@ export default function CaseViewerClient() {
           </div>
         </div>
       )}
-      <div className="sticky top-20 z-30 -mx-4 mb-4 bg-background/90 backdrop-blur-sm p-4 flex justify-end items-center">
+      <div className="sticky top-20 z-30 -mx-4 mb-4 bg-background/90 backdrop-blur-sm p-4 flex justify-between items-center">
+        <div className="flex items-center gap-3">
+          <Badge
+            variant={isCasePublished ? "default" : "secondary"}
+            className={
+              isCasePublished
+                ? "bg-emerald-600 text-white hover:bg-emerald-700 font-medium"
+                : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 font-medium"
+            }
+          >
+            {isCasePublished ? "Published" : "Draft"}
+          </Badge>
+        </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleTogglePublish}
+            disabled={isPublishing}
+            className="text-xs font-medium"
+          >
+            {isPublishing ? "Updating..." : isCasePublished ? "Unpublish" : "Publish"}
+          </Button>
           <Button
             variant={editable ? "ghost" : "default"}
             onClick={() => {
