@@ -7,6 +7,7 @@ import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { CASE_SEEDS, type CaseSeed } from "@/data/cases/case-seed-data";
 import type { Stage } from "@/features/stages/types";
 import { resolvePersonaRoleKey } from "@/features/personas/services/personaImageService";
+import { formatBundledTestsForPrompt } from "@/features/personas/utils/bundledTests";
 
 type CaseRow = Record<string, unknown> | null;
 
@@ -251,9 +252,7 @@ CLARIFICATION RULES:
  • “Which sample do you want the cytology from?”
  • Do NOT ask for clarification if the request is already specific enough.
 
-STANDARD TEST PROFILES (use these when specific tests are requested):
- • If asked for “Haematology” or “CBC”: Report ONLY: RBC, HCT, haemoglobin, WBC, neutrophils, band neutrophils, lymphocytes, monocytes, basophils, eosinophils, and PLT. If a parameter is missing, report it as “within normal limits”.
- • If asked for “Biochemistry” or “Chemistry panel”: Report ONLY: glucose, creatinine, ALP, AST, CK, GGT, Urea, bilirubin, total protein, albumin, globulin, Sodium, Chloride, Potassium, and Calcium. If a parameter is missing, report it as “within normal limits”.
+{{STANDARD_BUNDLES_INSTRUCTION}}
 
 OUTPUT STYLE:
  • Present each requested test as its own clearly separated result section.
@@ -270,6 +269,7 @@ Student request: {{STUDENT_REQUEST}}`,
       { token: "{{STUDENT_REQUEST}}", description: "Latest clinician question or request." },
       { token: "{{RELEASE_STRATEGY_INSTRUCTION}}", description: "Instruction on how to reveal findings (all at once vs on demand)." },
       { token: "{{REASONING_SCAFFOLDING_INSTRUCTION}}", description: "Clinical reasoning scaffolding guidance based on case difficulty." },
+      { token: "{{STANDARD_BUNDLES_INSTRUCTION}}", description: "Standard bundled test profiles for the species." },
     ],
     buildReplacements: ({ caseRow, userMessage }) => {
       const strategy = getText(caseRow, "findings_release_strategy", "on_demand");
@@ -292,6 +292,10 @@ If asked to re-check or confirm previous output, DO NOT fabricate or alter resul
         STUDENT_REQUEST: userMessage,
         RELEASE_STRATEGY_INSTRUCTION: instruction,
         REASONING_SCAFFOLDING_INSTRUCTION: buildReasoningScaffoldingInstruction(getText(caseRow, "difficulty", "Medium")),
+        STANDARD_BUNDLES_INSTRUCTION: formatBundledTestsForPrompt(
+          (caseRow?.metadata as any)?.bundled_tests ?? null,
+          typeof caseRow?.species === "string" ? caseRow.species : undefined
+        ),
       };
     },
   },

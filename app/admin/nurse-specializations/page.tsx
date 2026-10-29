@@ -18,10 +18,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Plus, Trash2, Edit, Save, X, ClipboardList, Search } from "lucide-react";
+import { Loader2, Plus, Trash2, Edit, Save, X, ClipboardList, Search, Layers } from "lucide-react";
 import { getAccessToken } from "@/lib/auth-headers";
 import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
 import { BulkReferenceRangesDialog } from "@/features/personas/components/BulkReferenceRangesDialog";
+import { BundledTestsEditor } from "@/features/personas/components/BundledTestsEditor";
+import {
+  getDefaultBundledTests,
+  STANDARD_BUNDLE_DEFINITIONS,
+  type BundledTestsMap,
+} from "@/features/personas/utils/bundledTests";
 
 type Skill = {
   name: string;
@@ -41,6 +47,7 @@ type Specialization = {
   lab_reference_ranges: Record<string, string>;
   vital_reference_ranges: Record<string, string>;
   common_pathologies: string[];
+  bundled_tests?: BundledTestsMap;
   metadata?: Record<string, unknown>;
 };
 
@@ -64,6 +71,8 @@ const emptySpec = (): Specialization => ({
   lab_reference_ranges: {},
   vital_reference_ranges: {},
   common_pathologies: [],
+  bundled_tests: getDefaultBundledTests(),
+  metadata: { bundled_tests: getDefaultBundledTests() },
 });
 
 export default function NurseSpecializationsPage() {
@@ -91,7 +100,14 @@ export default function NurseSpecializationsPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        setSpecs(data.specializations ?? []);
+        const loaded = (data.specializations ?? []).map((s: any) => ({
+          ...s,
+          bundled_tests:
+            s.bundled_tests ??
+            (s.metadata?.bundled_tests as BundledTestsMap | undefined) ??
+            getDefaultBundledTests(),
+        }));
+        setSpecs(loaded);
       } else {
         console.error("Failed to fetch specializations:", res.status);
       }
@@ -109,6 +125,20 @@ export default function NurseSpecializationsPage() {
   const handleSave = async (spec: Specialization) => {
     setSaving(true);
     try {
+      const activeBundles =
+        spec.bundled_tests ??
+        (spec.metadata?.bundled_tests as BundledTestsMap | undefined) ??
+        getDefaultBundledTests();
+
+      const specToSave = {
+        ...spec,
+        bundled_tests: activeBundles,
+        metadata: {
+          ...(spec.metadata ?? {}),
+          bundled_tests: activeBundles,
+        },
+      };
+
       const token = await getAccessToken().catch(() => null);
       const res = await fetch("/api/admin/nurse-specializations", {
         method: "POST",
@@ -116,7 +146,7 @@ export default function NurseSpecializationsPage() {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify(spec),
+        body: JSON.stringify(specToSave),
       });
       if (res.ok) {
         await fetchSpecs();
@@ -154,7 +184,13 @@ export default function NurseSpecializationsPage() {
 
   const startEdit = (spec: Specialization) => {
     setEditingId(spec.species_key);
-    setEditForm({ ...spec });
+    setEditForm({
+      ...spec,
+      bundled_tests:
+        spec.bundled_tests ??
+        (spec.metadata?.bundled_tests as BundledTestsMap | undefined) ??
+        getDefaultBundledTests(),
+    });
   };
 
   const cancelEdit = () => {
@@ -312,6 +348,9 @@ function SpecCard({ spec, isEditing, editForm, setEditForm, onStartEdit, onCance
           <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
             {Object.keys(spec.lab_reference_ranges ?? {}).length} lab refs
           </span>
+          <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
+            {Object.keys(spec.bundled_tests ?? (spec.metadata?.bundled_tests as BundledTestsMap | undefined) ?? getDefaultBundledTests()).length} bundles
+          </span>
         </div>
         <div className="flex gap-2">
           {isEditing ? (
@@ -391,6 +430,29 @@ function SpecCard({ spec, isEditing, editForm, setEditForm, onStartEdit, onCance
                 .map(([k, v]) => (
                 <span key={k} className="text-xs truncate"><strong>{k}:</strong> {v}</span>
               ))}
+            </div>
+          </details>
+          <details className="text-sm">
+            <summary className="cursor-pointer text-muted-foreground font-medium">
+              Bundled Tests &amp; Profiles ({Object.keys(spec.bundled_tests ?? (spec.metadata?.bundled_tests as BundledTestsMap | undefined) ?? getDefaultBundledTests()).length} panels)
+            </summary>
+            <div className="space-y-2 mt-2 ml-4 max-h-64 overflow-y-auto pr-2">
+              {Object.entries(spec.bundled_tests ?? (spec.metadata?.bundled_tests as BundledTestsMap | undefined) ?? getDefaultBundledTests()).map(([bundleId, tests]) => {
+                const def = STANDARD_BUNDLE_DEFINITIONS.find((d) => d.id === bundleId);
+                const label = def?.label ?? bundleId.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+                return (
+                  <div key={bundleId} className="border-l-2 border-primary/40 pl-2.5 py-0.5">
+                    <span className="text-xs font-semibold text-foreground">{label} ({tests.length}):</span>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {tests.map((t, idx) => (
+                        <span key={idx} className="text-[11px] bg-muted/80 text-foreground px-1.5 py-0.5 rounded border border-border/40 font-normal">
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </details>
           <details className="text-sm">
@@ -652,6 +714,26 @@ function SpecEditForm({ form, setForm, isNew, newLabKey, setNewLabKey, newLabVal
         title={bulkModalType === "vital" ? "Bulk Paste Vital Reference Ranges" : "Bulk Paste Lab Reference Ranges"}
         existingCount={bulkModalType === "vital" ? Object.keys(form.vital_reference_ranges).length : Object.keys(form.lab_reference_ranges).length}
         onApply={handleApplyBulk}
+      />
+
+      {/* Bundled Tests & Panels */}
+      <BundledTestsEditor
+        bundles={
+          form.bundled_tests ??
+          (form.metadata?.bundled_tests as BundledTestsMap | undefined) ??
+          getDefaultBundledTests()
+        }
+        onChange={(updated) => {
+          setForm({
+            ...form,
+            bundled_tests: updated,
+            metadata: {
+              ...(form.metadata ?? {}),
+              bundled_tests: updated,
+            },
+          });
+        }}
+        availableLabKeys={Object.keys(form.lab_reference_ranges ?? {})}
       />
 
       {/* Common Pathologies */}

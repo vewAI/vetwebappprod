@@ -49,6 +49,14 @@ Every change must be logged chronologically using this structure:
 
 ## 🪵 Changelog History
 
+### [2026-10-29 01:28 Europe/London] Synchronized Bundled Tests & Diagnostic Profiles — (@Antigravity / Requested by Marco)
+- **Context / Problem:** Diagnostic panel memberships (what tests belong to "Haematology", "Biochemistry", "Blood Gas", "Coagulation", "Urinalysis", body fluid cytologies) were hardcoded in disparate places (`PANEL_ANALYTES` in findings matching and static text in `roleInfoService.ts`), meaning educators had no way to view, customize, or define species-specific test bundles, leading to drift between the Nurse AI voice and the student's written results.
+- **Action Taken:**
+  1. *Single Source of Truth (`features/personas/utils/bundledTests.ts`):* Defined 12 standard veterinary clinical bundles (Haematology, Biochemistry, ABG, VBG, Coagulation, Urinalysis, Peritoneal, TW, BAL, CSF, Pleural, Synovial) and built prompt formatting + normalized analyte extraction helpers.
+  2. *Nurse Admin UI & Persistence (`app/admin/nurse-specializations/page.tsx` & `BundledTestsEditor.tsx`):* Added interactive "Bundled Tests & Profiles" management with quick-add from reference ranges, badge pills, add/remove test inputs, custom bundle creation, and auto-persistence to `metadata.bundled_tests` (no DB schema migrations needed).
+  3. *End-to-End Synchronization (`roleInfoService.ts`, `speciesKnowledgeFormatter.ts`, & `app/api/live/findings/route.ts`):* Replaced hardcoded profile strings with dynamic nurse bundle injection and expanded findings panel matching so changes made in the nurse specialization tab immediately sync to both the nurse's verbal guidance and the student's results clipboard.
+- **Verification:** `npx tsc --noEmit` passed with 0 errors, full personas test suite passing (12/12 tests green in `bundledTests.test.ts` and `parseReferenceRanges.test.ts`), `features/role-info` suite green (8/8 tests), and `features/live` suite green (68/68 tests).
+
 ### [2026-10-28 23:36 Europe/London] Bulk Reference Range Import & Multi-Parameter Parsing — (@Antigravity / Requested by Marco)
 - **Context / Problem:** In the Nurse Specializations admin interface (`/admin/nurse-specializations`), educators could only add lab and vital reference ranges one parameter at a time, making the entry of extensive clinical panels (100+ veterinary parameters across hematology, biochemistry, body fluids, urinalysis) slow and tedious.
 - **Action Taken:**
