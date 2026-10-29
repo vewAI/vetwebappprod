@@ -4,17 +4,19 @@ import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useAuth } from "@/features/auth/services/authService";
-import { AttemptCard } from "@/features/attempts/components/attempt-card";
 import type { AttemptSummary } from "@/features/attempts/models/attempt";
 import { getUserAttempts } from "@/features/attempts/services/attemptQueryService";
 import { CaseCard } from "@/features/case-selection/components/case-card";
-import { supabase } from "@/lib/supabase";
-import { transformAttemptSummary } from "@/features/attempts/mappers/attempt-mappers";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { professorService } from "@/features/professor/services/professorService";
 import { cn } from "@/lib/utils";
 import { YearGroupRequiredAlert } from "@/features/year-groups/components/YearGroupRequiredAlert";
+import {
+  currentAcademicYearRange,
+  defaultAcademicYearEnd,
+} from "@/features/year-groups/models/yearGroup";
+import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
+import { Info } from "lucide-react";
 
 type Role = "student" | "professor" | "admin" | null;
 
@@ -52,62 +54,40 @@ type Notification = {
   tone?: "info" | "success" | "warning";
 };
 
+/** Adapted from TailAdmin React Rounded Ribbon (MIT). https://react-demo.tailadmin.com/ribbons */
 function NotificationsBar({ notifications }: { notifications: Notification[] }) {
   if (!notifications.length) return null;
 
   return (
     <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
       {notifications.map((item) => (
-        <Card
+        <div
           key={item.id}
-          className="border-none bg-muted/60 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:bg-muted hover:shadow-md dark:bg-muted/40"
+          className="relative overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]"
         >
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">{item.title}</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0 text-xs text-muted-foreground">{item.description}</CardContent>
-        </Card>
+          <span className="absolute -left-px mt-3 inline-block rounded-r-full bg-brand-500 px-4 py-1.5 text-sm font-medium text-white">
+            {item.title}
+          </span>
+          <div className="p-5 pt-16">
+            <p className="text-sm text-gray-500 dark:text-gray-400">{item.description}</p>
+          </div>
+        </div>
       ))}
     </div>
   );
 }
 
-async function getProfessorStudentAttemptsNeedingFeedback(professorId: string): Promise<AttemptSummary[]> {
-  const { data: relations, error: relError } = await supabase.from("professor_students").select("student_id").eq("professor_id", professorId);
-
-  if (relError || !relations || relations.length === 0) {
-    return [];
-  }
-
-  const studentIds = relations.map((r) => r.student_id);
-
-  const { data, error } = await supabase
-    .from("attempts")
-    .select(
-      "id, user_id, case_id, title, created_at, completed_at, completion_status, last_stage_index, time_spent_seconds, feedback_read_at, overall_feedback, professor_feedback, cases (title, category, difficulty, image_url)",
-    )
-    .in("user_id", studentIds)
-    .eq("completion_status", "completed")
-    .is("overall_feedback", null)
-    .is("professor_feedback", null)
-    .order("created_at", { ascending: false })
-    .limit(3);
-
-  if (error || !data) {
-    console.warn("Failed to load professor attempts requiring feedback", error);
-    return [];
-  }
-
-  return data.map(transformAttemptSummary);
-}
-
 export default function HomePage() {
-  const { user, role } = useAuth() as { user: any; role: Role };
+  const { user, role, yearGroupName, institutionId } = useAuth() as {
+    user: any;
+    role: Role;
+    yearGroupName: string | null;
+    institutionId: string | null;
+  };
   const [studentAttempts, setStudentAttempts] = useState<AttemptSummary[]>([]);
-  const [professorAttempts, setProfessorAttempts] = useState<AttemptSummary[]>([]);
   const [assignedCases, setAssignedCases] = useState<any[]>([]);
-  const [loadingProfessorAttempts, setLoadingProfessorAttempts] = useState(false);
   const [loadingAssignedCases, setLoadingAssignedCases] = useState(false);
+  const [academicYearEnd, setAcademicYearEnd] = useState(defaultAcademicYearEnd());
 
   useEffect(() => {
     if (role === "student") {
@@ -118,15 +98,32 @@ export default function HomePage() {
   }, [role]);
 
   useEffect(() => {
-    if (role === "professor" && user?.id) {
-      setLoadingProfessorAttempts(true);
-      getProfessorStudentAttemptsNeedingFeedback(user.id)
-        .then((attempts) => {
-          setProfessorAttempts(attempts);
-        })
-        .finally(() => setLoadingProfessorAttempts(false));
-    }
-  }, [role, user?.id]);
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getAccessToken();
+        const query = institutionId ? `?institutionId=${encodeURIComponent(institutionId)}` : "";
+        const res = await fetch(`/api/year-groups${query}`, {
+          headers: await buildAuthHeaders({ Accept: "application/json" }, token),
+        });
+        const body = (await res.json().catch(() => ({}))) as {
+          academicYearEnd?: { month: number; day: number } | null;
+        };
+        if (!cancelled && body.academicYearEnd) {
+          setAcademicYearEnd({
+            month: Number(body.academicYearEnd.month ?? 7),
+            day: Number(body.academicYearEnd.day ?? 31),
+          });
+        }
+      } catch {
+        // Keep the 31 July default.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, institutionId]);
 
   useEffect(() => {
     if (role === "student" && user?.id) {
@@ -144,6 +141,8 @@ export default function HomePage() {
     if (!email) return "there";
     return email.split("@")[0];
   }, [user]);
+
+  const academicYear = currentAcademicYearRange(academicYearEnd.month, academicYearEnd.day);
 
   const notifications: Notification[] = useMemo(() => {
     const items: Notification[] = [];
@@ -180,20 +179,6 @@ export default function HomePage() {
       }
     }
 
-    if (role === "professor") {
-      const awaitingFeedback = professorAttempts.length;
-      if (awaitingFeedback > 0) {
-        items.push({
-          id: "professor-awaiting-feedback",
-          title: "Student attempts awaiting feedback",
-          description: `You have ${awaitingFeedback} recent completed attempt${
-            awaitingFeedback > 1 ? "s" : ""
-          } from your students that don't yet have feedback recorded.`,
-          tone: "warning",
-        });
-      }
-    }
-
     if (!items.length) {
       items.push({
         id: "all-clear",
@@ -204,10 +189,10 @@ export default function HomePage() {
     }
 
     return items;
-  }, [role, studentAttempts, professorAttempts, assignedCases]);
+  }, [role, studentAttempts, assignedCases]);
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-background via-background to-muted/40 ">
+    <div className="min-h-[calc(100vh-4rem)]">
       {/* Hero — same mint field and large V watermark as the marketing home page */}
       <section className="relative -mx-4 -mt-4 overflow-hidden border-b border-emerald-100 bg-gradient-to-b from-[#f2fbf7] via-[#f7fdfa] to-[#eef9f4] pt-12 pb-16 md:-mx-6 md:-mt-6 md:pt-16 md:pb-20">
         <div className="pointer-events-none absolute top-1/4 left-1/2 h-[450px] w-[700px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-300/25 blur-[140px]" />
@@ -245,7 +230,7 @@ export default function HomePage() {
                   variant="outline"
                   className="rounded-xl border-emerald-300 bg-white px-6 text-emerald-800 hover:border-emerald-400 hover:bg-emerald-50"
                 >
-                  <Link href="/case-sessions">Jump into training</Link>
+                  <Link href="/start">Jump into training</Link>
                 </Button>
               )}
             </div>
@@ -257,23 +242,39 @@ export default function HomePage() {
       <section className="container mx-auto px-4 py-8 md:py-10">
         <div className="space-y-4 border-b border-border/60 pb-10 motion-safe:animate-in motion-safe:fade-in-50 motion-safe:slide-in-from-bottom-4">
           <YearGroupRequiredAlert />
-          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-            <div>
-              <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">Good to see you, {displayName}.</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {role === "professor"
-                  ? "Review your students' progress and assign new cases."
-                  : "Continue your training journey or start a new simulated case."}
+          <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6">
+            <h2 className="text-2xl font-semibold tracking-tight text-primary md:text-3xl">
+              Good to see you, {displayName}.
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {role === "professor"
+                ? "Review your students' progress and assign new cases."
+                : "Continue your training journey or start a new simulated case."}
+            </p>
+            {role === "student" && (
+              <p className="mt-3 text-sm leading-relaxed text-muted-foreground/80">
+                To practice <strong>knowledge, clinical skills and communication</strong>, open the{" "}
+                <Link href="/start" className="font-medium text-primary underline underline-offset-2 hover:text-primary/80">
+                  Live
+                </Link>{" "}
+                menu link and choose a case — you will speak with the owner and the veterinary team just like in a real consultation.
               </p>
-              {role === "student" && (
-                <p className="mt-3 text-sm leading-relaxed text-muted-foreground/80">
-                  To practice <strong>knowledge, clinical skills and communication</strong>, open the{" "}
-                  <Link href="/case-sessions" className="font-medium text-primary underline underline-offset-2 hover:text-primary/80">
-                    Live
-                  </Link>{" "}
-                  menu link and choose a case — you will speak with the owner and the veterinary team just like in a real consultation.
+            )}
+            <div className="mt-4 flex items-start gap-2 rounded-lg border border-brand-200 bg-brand-50 px-4 py-3 dark:border-brand-800 dark:bg-brand-500/12">
+              <Info className="mt-0.5 size-4 shrink-0 text-brand-700 dark:text-brand-400" aria-hidden="true" />
+              <div>
+                <p className="text-sm font-semibold text-brand-800 dark:text-brand-300">Current academic year</p>
+                <p className="text-sm text-brand-700 dark:text-brand-400">
+                  {academicYear.startLabel} – {academicYear.endLabel}
                 </p>
-              )}
+                {role === "student" ? (
+                  <p className="mt-1 text-sm text-brand-700 dark:text-brand-400">
+                    {yearGroupName
+                      ? `You are currently in ${yearGroupName}.`
+                      : "You have not been assigned a year group."}
+                  </p>
+                ) : null}
+              </div>
             </div>
           </div>
           <NotificationsBar notifications={notifications} />
@@ -288,7 +289,7 @@ export default function HomePage() {
             description="Your professor has assigned these cases for you to complete."
             action={
               <Button asChild variant="ghost" size="sm">
-                <Link href="/case-sessions">View all</Link>
+                <Link href="/start">View all</Link>
               </Button>
             }
           />
@@ -315,38 +316,6 @@ export default function HomePage() {
                   />
                 );
               })}
-            </div>
-          )}
-        </PageSection>
-      )}
-
-      {role === "professor" && (
-        <PageSection>
-          <SectionHeader
-            title="Attempts awaiting feedback"
-            description="Support your students with timely feedback on their completed attempts."
-            action={
-              <div className="flex gap-2">
-                <Button asChild variant="outline" size="sm">
-                  <Link href="/case-entry">Add New Case</Link>
-                </Button>
-                <Button asChild variant="ghost" size="sm">
-                  <Link href="/professor">Open professor dashboard</Link>
-                </Button>
-              </div>
-            }
-          />
-          {loadingProfessorAttempts ? (
-            <div className="p-4 text-sm text-muted-foreground">Loading student attempts...</div>
-          ) : professorAttempts.length === 0 ? (
-            <Card className="border-dashed bg-muted/40 text-sm text-muted-foreground">
-              <CardContent className="py-6">There are no completed attempts from your students waiting for feedback right now.</CardContent>
-            </Card>
-          ) : (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {professorAttempts.map((attempt) => (
-                <AttemptCard key={attempt.id} attempt={attempt} />
-              ))}
             </div>
           )}
         </PageSection>

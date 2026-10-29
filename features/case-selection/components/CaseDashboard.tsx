@@ -1,19 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
-import { Clock, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { CaseAttemptsTable } from "@/features/attempts/components/CaseAttemptsTable";
+import { CaseDescriptionAndDetails, CaseHeroCard } from "@/features/case-selection/components/CaseDetails";
 import type { AttemptSummary } from "@/features/attempts/models/attempt";
 import { SessionsForCaseList } from "@/features/case-sessions/components/SessionsForCaseList";
 import { listSessions } from "@/features/case-sessions/services/caseSessionService";
 import { deriveStatus, type CaseSession } from "@/features/case-sessions/models/caseSession";
+import { AttemptsByYearGroupChart } from "@/features/case-selection/components/AttemptsByYearGroupChart";
+import { CaseTimeSpentChart } from "@/features/case-selection/components/CaseTimeSpentChart";
 import { AttemptsPerDayChart } from "@/features/professor/components/charts/AttemptsPerDayChart";
 import type { AttemptDayCount } from "@/features/professor/models/dashboard";
 import { DefaultTabs } from "@/features/navigation/components/tabs";
+import { FilterSearch } from "@/features/navigation/components/filter-search";
 import { Select } from "@/features/navigation/components/select";
 import { useAuth } from "@/features/auth/services/authService";
 import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
@@ -30,9 +32,6 @@ type RankedRow = {
   name: string;
   count: number;
 };
-
-const SEARCH_INPUT_CLASS =
-  "h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-none focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-gray-500 dark:focus:border-brand-800";
 
 const RANK_BUTTON_CLASS =
   "flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white p-2.5 text-theme-sm font-medium text-gray-700 shadow-theme-xs hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.03]";
@@ -60,17 +59,6 @@ function rankCounts(entries: Iterable<{ id: string; name: string }>, limit = 5):
   return [...map.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)).slice(0, limit);
 }
 
-function MetricCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
-      <p className="text-theme-sm text-gray-500 dark:text-gray-400">{label}</p>
-      <div className="mt-3">
-        <h4 className="text-2xl font-bold text-gray-800 dark:text-white/90">{value || "—"}</h4>
-      </div>
-    </div>
-  );
-}
-
 function RankingCard({
   title,
   sourceLabel,
@@ -89,9 +77,9 @@ function RankingCard({
   onAction: () => void;
 }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-4 md:p-6 dark:border-gray-800 dark:bg-white/[0.03]">
+    <div className="flex h-full flex-col rounded-2xl border border-gray-200 bg-white p-4 md:p-6 dark:border-gray-800 dark:bg-white/[0.03]">
       <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">{title}</h3>
-      <div className="my-6">
+      <div className="my-6 flex-1">
         <div className="flex items-center justify-between border-b border-gray-100 pb-4 dark:border-gray-800">
           <span className="text-theme-xs text-gray-400">{sourceLabel}</span>
           <span className="text-end text-theme-xs text-gray-400">{valueLabel}</span>
@@ -110,45 +98,10 @@ function RankingCard({
           ))
         )}
       </div>
-      <button type="button" className={RANK_BUTTON_CLASS} onClick={onAction}>
+      <button type="button" className={`${RANK_BUTTON_CLASS} mt-auto`} onClick={onAction}>
         {actionLabel}
         <ChevronRight className="size-5 rtl:rotate-180" />
       </button>
-    </div>
-  );
-}
-
-function CaseHeroCard({ caseData }: { caseData: Case }) {
-  const imageSrc = /^https?:\/\//.test(String(caseData.imageUrl ?? ""))
-    ? String(caseData.imageUrl)
-    : "/placeholder.svg";
-
-  return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6">
-      <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
-        <div className="relative h-32 w-32 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 sm:h-40 sm:w-40 dark:border-gray-800">
-          <Image src={imageSrc} alt={caseData.title} fill className="object-cover" sizes="160px" priority />
-        </div>
-        <div className="min-w-0">
-          <h1 className="text-2xl font-bold tracking-tight text-primary sm:text-3xl">{caseData.title}</h1>
-          <p className="mt-1 text-sm font-medium text-gray-500 dark:text-gray-400">ID: {caseData.id}</p>
-          <div className="mt-3 flex items-center text-sm text-gray-500 dark:text-gray-400">
-            <Clock className="mr-1 h-4 w-4" />
-            <span>Estimated time: {caseData.estimatedTime} minutes</span>
-          </div>
-          <div className="mt-3 flex items-center gap-2 text-sm">
-            <Checkbox
-              checked={Boolean(caseData.isPublished)}
-              disabled
-              aria-readonly="true"
-              className="size-5 disabled:cursor-default disabled:opacity-100 data-[state=checked]:border-brand-500 data-[state=checked]:bg-brand-500"
-            />
-            <span className={caseData.isPublished ? "font-medium text-brand-700 dark:text-brand-400" : "text-muted-foreground"}>
-              {caseData.isPublished ? "Published" : "Unpublished"}
-            </span>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
@@ -251,20 +204,6 @@ export function CaseDashboard({
     [attempts, sessionsById],
   );
 
-  const topYearGroups = useMemo(
-    () =>
-      rankCounts(
-        attempts.map((attempt) => {
-          const session = attempt.sessionId ? sessionsById.get(attempt.sessionId) : undefined;
-          if (!session?.yearGroupId) {
-            return { id: "none", name: "Unassigned" };
-          }
-          return { id: session.yearGroupId, name: session.yearGroupName ?? "Year group" };
-        }),
-      ),
-    [attempts, sessionsById],
-  );
-
   const sessionYearOptions = useMemo(() => {
     const options = [{ value: "all", label: "All Year Groups" }];
     const seen = new Set<string>();
@@ -317,7 +256,13 @@ export function CaseDashboard({
   const filteredAttempts = useMemo(() => {
     const query = studentSearch.trim().toLowerCase();
     return attempts.filter((attempt) => {
-      if (query && !(attempt.studentName ?? "").toLowerCase().includes(query)) return false;
+      if (
+        query &&
+        !(attempt.studentEmail ?? "").toLowerCase().includes(query) &&
+        !(attempt.studentName ?? "").toLowerCase().includes(query)
+      ) {
+        return false;
+      }
       if (statusFilter !== "all" && attempt.completionStatus !== statusFilter) return false;
       if (yearFilter !== "all") {
         const session = attempt.sessionId ? sessionsById.get(attempt.sessionId) : undefined;
@@ -371,16 +316,7 @@ export function CaseDashboard({
       >
         {activeTab === "overview" && (
           <div className="space-y-6">
-            <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6">
-              <h3 className="mb-3 text-lg font-semibold text-gray-800 dark:text-white/90">Description</h3>
-              <p className="text-theme-sm text-gray-600 dark:text-gray-400">{caseData.description || "No description."}</p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 md:gap-6">
-              <MetricCard label="Species" value={caseData.species} />
-              <MetricCard label="Category" value={caseData.category} />
-              <MetricCard label="Difficulty" value={caseData.difficulty} />
-            </div>
+            <CaseDescriptionAndDetails caseData={caseData} />
 
             <div className="rounded-2xl border border-gray-200 bg-white px-5 pt-5 pb-5 sm:px-6 sm:pt-6 dark:border-gray-800 dark:bg-white/[0.03]">
               <div className="mb-4">
@@ -396,7 +332,7 @@ export function CaseDashboard({
               )}
             </div>
 
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
               <RankingCard
                 title="Top Sessions"
                 sourceLabel="Session"
@@ -406,14 +342,16 @@ export function CaseDashboard({
                 actionLabel="View Sessions"
                 onAction={() => setActiveTab("sessions")}
               />
-              <RankingCard
-                title="Top Year Groups"
-                sourceLabel="Year group"
-                valueLabel="Attempts"
-                rows={topYearGroups}
-                emptyMessage="No year group attempts yet."
-                actionLabel="View Attempts"
-                onAction={() => setActiveTab("attempts")}
+              <AttemptsByYearGroupChart
+                attempts={attempts}
+                sessions={sessions}
+                loading={attemptsLoading}
+                academicYearEnd={academicYearEnd}
+              />
+              <CaseTimeSpentChart
+                attempts={attempts}
+                loading={attemptsLoading}
+                academicYearEnd={academicYearEnd}
               />
             </div>
           </div>
@@ -469,14 +407,7 @@ export function CaseDashboard({
         {activeTab === "attempts" && (
           <div className="space-y-4">
             <div className="grid w-full max-w-5xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <input
-                type="search"
-                value={studentSearch}
-                onChange={(event) => setStudentSearch(event.target.value)}
-                placeholder="Search by student"
-                aria-label="Search by student"
-                className={SEARCH_INPUT_CLASS}
-              />
+              <FilterSearch value={studentSearch} onChange={setStudentSearch} placeholder="Search by email" />
               <Select
                 value={yearFilter}
                 onChange={setYearFilter}
@@ -511,7 +442,9 @@ export function CaseDashboard({
                 attempts.length === 0 ? "No attempts on this case yet." : "No attempts match these filters."
               }
               showStudent
+              studentLabel="Email"
               sessionHrefBase="/professor/sessions"
+              from="case"
             />
           </div>
         )}

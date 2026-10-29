@@ -64,6 +64,45 @@ const nextConfig: NextConfig = {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },
   serverExternalPackages: ["pdfkit", "fontkit", "restructure"],
+  async redirects() {
+    return [
+      {
+        source: "/case/:id/instructions",
+        destination: "/start/case/:id",
+        permanent: true,
+      },
+      {
+        source: "/case/:id/attempt",
+        destination: "/live/:id",
+        permanent: true,
+      },
+      {
+        source: "/start/case/:id/attempt",
+        destination: "/live/:id",
+        permanent: true,
+      },
+      {
+        source: "/case-sessions/case/:id/attempt",
+        destination: "/live/:id",
+        permanent: true,
+      },
+      {
+        source: "/case-sessions",
+        destination: "/start",
+        permanent: true,
+      },
+      {
+        source: "/case-sessions/:path*",
+        destination: "/start/:path*",
+        permanent: true,
+      },
+      {
+        source: "/case/:id",
+        destination: "/cases/:id",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

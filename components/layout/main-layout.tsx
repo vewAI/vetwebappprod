@@ -8,7 +8,9 @@ const NO_SHELL_PATHS = ["/", "/login", "/auth/callback", "/setup-passkey"];
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? "";
-  const caseInProgress = /^\/case\/[^/]+\/attempt(\/|$)/.test(pathname);
+  const caseInProgress =
+    /^\/start\/case\/[^/]+\/attempt(\/|$)/.test(pathname) ||
+    /^\/case\/[^/]+\/attempt(\/|$)/.test(pathname);
   const liveSessionInProgress = /^\/live\/[^/]+(\/|$)/.test(pathname);
   const hideShell = NO_SHELL_PATHS.includes(pathname);
 

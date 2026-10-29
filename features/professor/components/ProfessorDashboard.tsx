@@ -10,6 +10,7 @@ import { AttemptsPerDayChart } from "./charts/AttemptsPerDayChart";
 import { StudentsByYearGroupChart } from "./charts/StudentsByYearGroupChart";
 import { RankingCard } from "./RankingCard";
 import type { ProfessorDashboardStats } from "../models/dashboard";
+import { professorCaseHref } from "@/features/case-selection/caseViewHref";
 
 const READ_MORE_ARROW = (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
@@ -23,7 +24,7 @@ const READ_MORE_ARROW = (
 );
 
 export function ProfessorDashboard() {
-  const { role, isAdmin } = useAuth();
+  const { role } = useAuth();
   const isProfessor = role === "professor" || role === "admin";
   const [stats, setStats] = useState<ProfessorDashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -70,12 +71,7 @@ export function ProfessorDashboard() {
   const cards: { label: string; value: number; href?: string; icon: LucideIcon }[] = [
     { label: "Total Cases", value: stats?.caseCount ?? 0, href: "/cases", icon: BookOpen },
     { label: "Total Active Sessions", value: stats?.activeSessionCount ?? 0, href: "/professor/sessions", icon: Calendar },
-    {
-      label: "Total Students Enrolled",
-      value: stats?.studentCount ?? 0,
-      href: isAdmin ? "/admin/user-management" : undefined,
-      icon: Users,
-    },
+    { label: "Total Students Enrolled", value: stats?.studentCount ?? 0, href: "/professor/students", icon: Users },
   ];
 
   return (
@@ -149,7 +145,7 @@ export function ProfessorDashboard() {
               subtitle="Last 30 days"
               sourceLabel="Case"
               valueLabel="Attempts"
-              rows={stats.topCases.map((row) => ({ ...row, href: `/case/${row.id}` }))}
+              rows={stats.topCases.map((row) => ({ ...row, href: professorCaseHref(row.id) }))}
               emptyMessage="No case attempts in the last 30 days."
               actionLabel="View All Cases"
               actionHref="/cases"
@@ -162,7 +158,7 @@ export function ProfessorDashboard() {
               rows={stats.topSessions.map((row) => ({ ...row, href: `/professor/sessions/${row.id}` }))}
               emptyMessage="You have not created any sessions yet."
               actionLabel="View All Sessions"
-              actionHref="/case-sessions"
+              actionHref="/start"
             />
             <StudentsByYearGroupChart data={stats.studentsByYearGroup} />
           </>

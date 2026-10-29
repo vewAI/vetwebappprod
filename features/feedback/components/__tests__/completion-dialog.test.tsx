@@ -55,6 +55,6 @@ describe("CompletionDialog", () => {
       restartButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(pushMock).toHaveBeenCalledWith("/case/case-5/instructions");
+    expect(pushMock).toHaveBeenCalledWith("/start/case/case-5");
   });
 });

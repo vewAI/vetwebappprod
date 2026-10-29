@@ -1,12 +1,12 @@
 "use client";
 
-import React from "react";
+import React, { Suspense } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/features/auth/services/authService";
 import { ProfessorSessionDetail } from "@/features/case-sessions/components/ProfessorSessionDetail";
 import { Skeleton } from "@/components/ui/skeleton";
 
-export default function ProfessorSessionDetailPage() {
+function ProfessorSessionDetailContent() {
   const params = useParams();
   const sessionId = params.sessionId as string;
   const { role, loading } = useAuth();
@@ -33,5 +33,20 @@ export default function ProfessorSessionDetailPage() {
     <div className="container mx-auto px-4 pb-8">
       <ProfessorSessionDetail sessionId={sessionId} />
     </div>
+  );
+}
+
+export default function ProfessorSessionDetailPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="container mx-auto space-y-4 px-4 pb-8">
+          <Skeleton className="h-9 w-64" />
+          <Skeleton className="h-48 w-full" />
+        </div>
+      }
+    >
+      <ProfessorSessionDetailContent />
+    </Suspense>
   );
 }

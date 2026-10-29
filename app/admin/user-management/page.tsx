@@ -10,6 +10,7 @@ import type { Institution } from "@/features/admin/components/InstitutionManagem
 import type { YearGroup } from "@/features/year-groups/models/yearGroup";
 import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
 import { Modal } from "@/features/navigation/components/modal";
+import { FilterSearch } from "@/features/navigation/components/filter-search";
 import { Select } from "@/features/navigation/components/select";
 import { SortHeader } from "@/features/navigation/components/sort-header";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/features/navigation/components/table";
@@ -359,14 +360,7 @@ export default function UserManagementPage() {
         <h1 className="text-3xl font-bold tracking-tight text-primary md:text-4xl lg:text-5xl">User Management</h1>
         <p className="mt-4 text-xl text-muted-foreground">Create, edit, and manage user accounts.</p>
         <div className="mx-auto mt-6 grid w-full max-w-3xl grid-cols-1 gap-3 text-start sm:grid-cols-3">
-          <input
-            type="search"
-            value={emailSearch}
-            onChange={(e) => setEmailSearch(e.target.value)}
-            placeholder="Search by email"
-            aria-label="Search by email"
-            className={FIELD_INPUT_CLASS}
-          />
+          <FilterSearch value={emailSearch} onChange={setEmailSearch} placeholder="Search by email" />
           <Select value={roleFilter} onChange={setRoleFilter} options={ROLE_OPTIONS} />
           <Select value={yearFilter} onChange={setYearFilter} options={yearFilterOptions} />
         </div>

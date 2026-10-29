@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { fetchCases } from "@/features/case-selection/services/caseService";
 import type { Case } from "@/features/case-selection/models/case";
 import { createSession } from "../services/caseSessionService";
+import { professorSessionHref } from "../sessionViewHref";
 import { fromDatetimeLocalValue, toDatetimeLocalValue } from "../utils/datetimeLocal";
 import { getAccessToken } from "@/lib/auth-headers";
 import { useAuth } from "@/features/auth/services/authService";
@@ -131,7 +132,7 @@ export function CreateCaseSessionForm({ initialCaseId }: Props) {
         attemptLimitPerStudent,
         yearGroupId,
       });
-      router.push(`/professor/sessions/${session.id}`);
+      router.push(professorSessionHref(session.id, initialCaseId ? "case" : undefined));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create session");
     } finally {

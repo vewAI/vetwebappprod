@@ -5,9 +5,11 @@ import { Badge } from "@/components/ui/badge";
 import { SortHeader } from "@/features/navigation/components/sort-header";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/features/navigation/components/table";
 import { useTableSort } from "@/features/navigation/hooks/useTableSort";
+import { attemptViewHref, type AttemptViewFrom } from "@/features/attempts/attemptViewHref";
+import { professorSessionHref } from "@/features/case-sessions/sessionViewHref";
 import type { AttemptSummary } from "@/features/attempts/models/attempt";
 
-type AttemptSortKey = "student" | "session" | "year" | "status" | "date" | "time";
+type AttemptSortKey = "student" | "case" | "session" | "year" | "status" | "date" | "time";
 
 const statusRank: Record<AttemptSummary["completionStatus"], number> = {
   in_progress: 1,
@@ -43,10 +45,12 @@ type Props = {
   emptyMessage: string;
   showStudent?: boolean;
   studentLabel?: string;
+  showCase?: boolean;
   showSession?: boolean;
   showYearGroup?: boolean;
-  /** `/professor/sessions` or `/case-sessions` */
-  sessionHrefBase?: "/professor/sessions" | "/case-sessions";
+  /** `/professor/sessions` or `/start` */
+  sessionHrefBase?: "/professor/sessions" | "/start";
+  from?: AttemptViewFrom;
 };
 
 export function CaseAttemptsTable({
@@ -54,15 +58,18 @@ export function CaseAttemptsTable({
   loading = false,
   emptyMessage,
   showStudent = false,
-  studentLabel = "Student",
+  studentLabel = "Email",
+  showCase = false,
   showSession = true,
   showYearGroup = true,
   sessionHrefBase,
+  from,
 }: Props) {
   const { sort, toggle, sorted } = useTableSort<AttemptSummary, AttemptSortKey>(
     attempts,
     (attempt, key) => {
-      if (key === "student") return attempt.studentName ?? "";
+      if (key === "student") return attempt.studentEmail ?? attempt.studentName ?? "";
+      if (key === "case") return attempt.caseTitle || attempt.title;
       if (key === "session") return attempt.sessionName ?? "";
       if (key === "year") return attempt.sessionYearGroupName ?? "";
       if (key === "status") return statusRank[attempt.completionStatus] ?? 0;
@@ -72,7 +79,7 @@ export function CaseAttemptsTable({
     { key: "date", dir: "desc" },
   );
 
-  const colSpan = (showStudent ? 1 : 0) + (showSession ? 1 : 0) + (showYearGroup ? 1 : 0) + 3;
+  const colSpan = (showStudent ? 1 : 0) + (showCase ? 1 : 0) + (showSession ? 1 : 0) + (showYearGroup ? 1 : 0) + 4;
 
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
@@ -82,11 +89,15 @@ export function CaseAttemptsTable({
             <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
               <TableRow>
                 {showStudent && <SortHeader label={studentLabel} column="student" sort={sort} onSort={toggle} />}
+                {showCase && <SortHeader label="Case" column="case" sort={sort} onSort={toggle} />}
                 {showSession && <SortHeader label="Session" column="session" sort={sort} onSort={toggle} />}
                 {showYearGroup && <SortHeader label="Year" column="year" sort={sort} onSort={toggle} />}
                 <SortHeader label="Status" column="status" sort={sort} onSort={toggle} />
                 <SortHeader label="Date" column="date" sort={sort} onSort={toggle} />
                 <SortHeader label="Time" column="time" sort={sort} onSort={toggle} />
+                <TableCell isHeader className="px-4 py-3 text-end text-theme-xs font-medium text-gray-500 dark:text-gray-400">
+                  View
+                </TableCell>
               </TableRow>
             </TableHeader>
             <TableBody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
@@ -104,20 +115,35 @@ export function CaseAttemptsTable({
                 </TableRow>
               ) : (
                 sorted.map((attempt) => {
-                  const href = `/attempts/${attempt.id}`;
+                  const href = attemptViewHref(attempt.id, from);
                   const sessionHref =
                     showSession && attempt.sessionId && sessionHrefBase
-                      ? `${sessionHrefBase}/${attempt.sessionId}`
+                      ? sessionHrefBase === "/professor/sessions"
+                        ? professorSessionHref(attempt.sessionId, from === "case" ? "case" : undefined)
+                        : `${sessionHrefBase}/${attempt.sessionId}`
                       : null;
+                  const email = attempt.studentEmail?.trim() || "";
+                  const studentHref = showStudent && attempt.userId ? `/professor/students/${attempt.userId}` : null;
                   return (
-                    <TableRow key={attempt.id} className="relative cursor-pointer hover:bg-brand-50 dark:hover:bg-white/[0.03]">
+                    <TableRow key={attempt.id} className="hover:bg-brand-50 dark:hover:bg-white/[0.03]">
                       {showStudent && (
-                        <TableCell className="px-5 py-4 text-start text-theme-sm text-gray-800 sm:px-6 dark:text-white/90">
-                          {attempt.studentName || "—"}
+                        <TableCell className="px-5 py-4 text-start text-theme-sm sm:px-6">
+                          {studentHref ? (
+                            <Link href={studentHref} className="font-medium text-primary hover:underline">
+                              {email || "Student"}
+                            </Link>
+                          ) : (
+                            <span className="text-gray-800 dark:text-white/90">{email || "—"}</span>
+                          )}
+                        </TableCell>
+                      )}
+                      {showCase && (
+                        <TableCell className="px-5 py-4 text-start text-theme-sm font-medium text-gray-800 sm:px-6 dark:text-white/90">
+                          {attempt.caseTitle || attempt.title || "—"}
                         </TableCell>
                       )}
                       {showSession && (
-                        <TableCell className="relative z-20 px-4 py-3 text-start text-theme-sm text-gray-500 dark:text-gray-400">
+                        <TableCell className="px-4 py-3 text-start text-theme-sm text-gray-500 dark:text-gray-400">
                           {sessionHref ? (
                             <Link href={sessionHref} className="font-medium text-primary hover:underline">
                               {attempt.sessionName || "Session"}
@@ -133,26 +159,29 @@ export function CaseAttemptsTable({
                         </TableCell>
                       )}
                       <TableCell className="px-5 py-4 text-start sm:px-6">
-                        <Link href={href} className="after:absolute after:inset-0 after:z-10">
-                          <Badge
-                            variant={
-                              attempt.completionStatus === "completed"
-                                ? "success"
-                                : attempt.completionStatus === "in_progress"
-                                  ? "warning"
-                                  : "destructive"
-                            }
-                            className={attempt.completionStatus === "abandoned" ? "text-white" : undefined}
-                          >
-                            {statusLabel(attempt.completionStatus)}
-                          </Badge>
-                        </Link>
+                        <Badge
+                          variant={
+                            attempt.completionStatus === "completed"
+                              ? "success"
+                              : attempt.completionStatus === "in_progress"
+                                ? "warning"
+                                : "destructive"
+                          }
+                          className={attempt.completionStatus === "abandoned" ? "text-white" : undefined}
+                        >
+                          {statusLabel(attempt.completionStatus)}
+                        </Badge>
                       </TableCell>
                       <TableCell className="px-4 py-3 text-start text-theme-sm text-gray-500 dark:text-gray-400">
                         {formatAttemptDate(attempt.createdAt)}
                       </TableCell>
                       <TableCell className="px-4 py-3 text-theme-sm text-gray-500 dark:text-gray-400">
                         {formatTimeSpent(attempt.timeSpentSeconds)}
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-end">
+                        <Link href={href} className="font-medium text-primary hover:underline">
+                          View
+                        </Link>
                       </TableCell>
                     </TableRow>
                   );

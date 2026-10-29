@@ -114,7 +114,7 @@ export function CaseSessionCard({
             </Button>
           ) : (
             <Button variant="default" className="w-full" asChild>
-              <Link href={`/case-sessions/${session.id}`}>
+              <Link href={`/start/${session.id}`}>
                 View details
                 <ChevronRight className="ml-2 h-4 w-4" />
               </Link>

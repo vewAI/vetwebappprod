@@ -13,16 +13,19 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChevronRight } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { Case } from "@/features/case-selection/models/case";
+import { studentCaseHref } from "@/features/case-selection/caseViewHref";
 
 type CaseCardProps = {
   caseItem: Case;
   href?: string;
   titleClassName?: string;
+  className?: string;
 };
 
-export function CaseCard({ caseItem, href, titleClassName }: CaseCardProps) {
-  const caseHref = href ?? `/case/${caseItem.id}/instructions`;
+export function CaseCard({ caseItem, href, titleClassName, className }: CaseCardProps) {
+  const caseHref = href ?? studentCaseHref(caseItem.id);
   const imageSrc =
     /^https?:\/\//.test(String(caseItem.imageUrl ?? ""))
       ? String(caseItem.imageUrl)
@@ -30,7 +33,7 @@ export function CaseCard({ caseItem, href, titleClassName }: CaseCardProps) {
 
   return (
     <Card
-      className="group pt-0 overflow-hidden transition-all duration-300 hover:shadow-lg"
+      className={cn("group h-full pt-0 overflow-hidden transition-all duration-300 hover:shadow-lg", className)}
       tabIndex={0}
     >
       <div className="relative h-48 w-full overflow-hidden bg-gray-100">
@@ -71,12 +74,12 @@ export function CaseCard({ caseItem, href, titleClassName }: CaseCardProps) {
           {caseItem.species} - {caseItem.category}
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex-1">
         <p className="line-clamp-2 text-sm text-muted-foreground">
           {caseItem.description}
         </p>
       </CardContent>
-      <CardFooter>
+      <CardFooter className="mt-auto">
         <Link href={caseHref} className="w-full">
           <Button className="w-full">
             View Case

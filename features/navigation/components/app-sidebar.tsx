@@ -20,6 +20,7 @@ import {
   PlusIcon,
   UserCircleIcon,
 } from "@/features/navigation/icons";
+import { SidebarWidget } from "@/features/navigation/components/sidebar-widget";
 import { cn } from "@/lib/utils";
 
 type NavItem = {
@@ -85,7 +86,7 @@ export function AppSidebar() {
     { name: "Home", href: "/dashboard", icon: <HomeIcon fontSize={24} />, exact: true },
     ...(isStudent ? [{ name: "Dashboard", href: "/student", icon: <GridIcon fontSize={24} />, exact: true }] : []),
     ...(isProfessor ? [{ name: "Dashboard", href: "/professor", icon: <GridIcon fontSize={24} />, exact: true }] : []),
-    { name: "Start", href: "/case-sessions", icon: <MicrophoneIcon fontSize={24} /> },
+    { name: "Start", href: "/start", icon: <MicrophoneIcon fontSize={24} /> },
     { name: "My Attempts", href: "/attempts", icon: <ListIcon fontSize={24} /> },
   ];
 
@@ -105,6 +106,7 @@ export function AppSidebar() {
     ? [
         { name: "Cases", href: "/cases", icon: <ListIcon fontSize={24} /> },
         { name: "Case Sessions", href: "/professor/sessions", icon: <CalendarIcon fontSize={24} /> },
+        { name: "Students", href: "/professor/students", icon: <UserCircleIcon fontSize={24} /> },
       ]
     : [];
 
@@ -137,14 +139,14 @@ export function AppSidebar() {
       </div>
 
       {institutionName ? (
-        <div className="-mx-5 bg-brand-700 px-3 py-2 text-center">
+        <div className="-mx-5 bg-brand-500 px-3 py-2 text-center">
           <p className="truncate text-sm font-medium text-white" title={institutionName}>
             {institutionName}
           </p>
         </div>
       ) : null}
 
-      <div className="no-scrollbar mt-6 flex flex-col overflow-y-auto duration-300 ease-linear">
+      <div className="no-scrollbar mt-6 flex min-h-0 flex-1 flex-col overflow-y-auto duration-300 ease-linear">
         <nav className="mb-6" aria-label="Main">
           <h2
             className={cn(
@@ -182,6 +184,11 @@ export function AppSidebar() {
             </div>
           ) : null}
         </nav>
+        {showLabels ? (
+          <div className="mt-auto pb-10">
+            <SidebarWidget />
+          </div>
+        ) : null}
       </div>
     </aside>
   );

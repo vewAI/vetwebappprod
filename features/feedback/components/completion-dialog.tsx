@@ -6,6 +6,7 @@ import { Loader2, Award, X, Home, RefreshCw, Download, FileText, MessageSquareTe
 import { useRouter } from "next/navigation"
 import { buildAuthHeaders } from "@/lib/auth-headers"
 import { ChatMessage } from "@/features/chat/components/chat-message"
+import { studentCaseHref } from "@/features/case-selection/caseViewHref"
 import type { Message } from "@/features/chat/models/chat"
 
 interface CompletionDialogProps {
@@ -34,7 +35,7 @@ export function CompletionDialog({
   }
 
   const handleRestartCase = () => {
-    router.push(`/case/${caseId}/instructions`)
+    router.push(studentCaseHref(caseId))
   }
 
   if (!isOpen) return null
