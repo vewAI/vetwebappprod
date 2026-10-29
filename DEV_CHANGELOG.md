@@ -36,10 +36,10 @@ flowchart LR
 
 ## 📝 3-Bullet Template
 
-Every change must be logged chronologically using this structure:
+Every completed change must be logged chronologically using this structure. Use the local `Europe/London` time and name both the person who requested the work and the tool that implemented it:
 
 ```markdown
-### [YYYY-MM-DD] <Title of Change> — (@Author / AI)
+### [YYYY-MM-DD HH:MM Europe/London] <Title of Change> — (Requested by: Marco or Ignacio; Tool: Codex or Antigravity)
 - **Context / Problem:** What motivated the change or which issue was resolved.
 - **Action Taken:** Modules, components, or APIs touched and the technical approach.
 - **Verification:** Commands executed (`tsc`, `vitest`), branch, and deploy status.
@@ -48,6 +48,22 @@ Every change must be logged chronologically using this structure:
 ---
 
 ## 🪵 Changelog History
+
+### [2026-10-29 01:28 Europe/London] Synchronized Bundled Tests & Diagnostic Profiles — (@Antigravity / Requested by Marco)
+- **Context / Problem:** Diagnostic panel memberships (what tests belong to "Haematology", "Biochemistry", "Blood Gas", "Coagulation", "Urinalysis", body fluid cytologies) were hardcoded in disparate places (`PANEL_ANALYTES` in findings matching and static text in `roleInfoService.ts`), meaning educators had no way to view, customize, or define species-specific test bundles, leading to drift between the Nurse AI voice and the student's written results.
+- **Action Taken:**
+  1. *Single Source of Truth (`features/personas/utils/bundledTests.ts`):* Defined 12 standard veterinary clinical bundles (Haematology, Biochemistry, ABG, VBG, Coagulation, Urinalysis, Peritoneal, TW, BAL, CSF, Pleural, Synovial) and built prompt formatting + normalized analyte extraction helpers.
+  2. *Nurse Admin UI & Persistence (`app/admin/nurse-specializations/page.tsx` & `BundledTestsEditor.tsx`):* Added interactive "Bundled Tests & Profiles" management with quick-add from reference ranges, badge pills, add/remove test inputs, custom bundle creation, and auto-persistence to `metadata.bundled_tests` (no DB schema migrations needed).
+  3. *End-to-End Synchronization (`roleInfoService.ts`, `speciesKnowledgeFormatter.ts`, & `app/api/live/findings/route.ts`):* Replaced hardcoded profile strings with dynamic nurse bundle injection and expanded findings panel matching so changes made in the nurse specialization tab immediately sync to both the nurse's verbal guidance and the student's results clipboard.
+- **Verification:** `npx tsc --noEmit` passed with 0 errors, full personas test suite passing (12/12 tests green in `bundledTests.test.ts` and `parseReferenceRanges.test.ts`), `features/role-info` suite green (8/8 tests), and `features/live` suite green (68/68 tests).
+
+### [2026-10-28 23:36 Europe/London] Bulk Reference Range Import & Multi-Parameter Parsing — (@Antigravity / Requested by Marco)
+- **Context / Problem:** In the Nurse Specializations admin interface (`/admin/nurse-specializations`), educators could only add lab and vital reference ranges one parameter at a time, making the entry of extensive clinical panels (100+ veterinary parameters across hematology, biochemistry, body fluids, urinalysis) slow and tedious.
+- **Action Taken:**
+  1. *Parser Utility (`features/personas/utils/parseReferenceRanges.ts`):* Created a multi-format clinical parser handling bracketed ranges (`+PCV: [28-44%]`), spreadsheet tables (tab-separated), colon/equals pairs, numeric ranges, trailing notes (`(hpf = high power field)`), and HTML entities (`&gt;`/`&lt;`). Includes panel/fluid section prefixing (e.g. `CSF - Glucose`, `Urinalysis - Protein`) to eliminate key collisions across different body fluids.
+  2. *Bulk Import Dialog (`features/personas/components/BulkReferenceRangesDialog.tsx`):* Created a modal with live parsing, instant preview table, unrecognized line detection, and an Import Mode toggle allowing users to choose between Merge (keeping existing parameters) and Replace all.
+  3. *Admin UI Enhancement (`app/admin/nurse-specializations/page.tsx`):* Integrated "Bulk Paste" buttons for both Lab Reference Ranges and Vital Reference Ranges, added live search filters for quick navigation, and sorted all displayed reference ranges alphabetically for clean, consistent formatting.
+- **Verification:** `npx tsc --noEmit` passed with 0 errors, `npm test -- features/personas` 100% green (8/8 tests passing, including full 196-item veterinary dataset), and `npm test -- features/live` passing (68/68 tests).
 
 ### [2026-10-28] Diagnostic Panel Matching & Nurse Altered Parameter Suppression — (@Antigravity)
 - **Context / Problem:** In `/live`, requesting panels like "biochemistry" returned 0 items because individual analytes (`potassium`, `glucose`, `calcium`, `AST`, etc.) were not mapped to panel keys, and nested JSON blocks lost category context. Additionally, the nurse verbalized and listed all altered parameters ("showing alterations in glucose, potassium..."), spoiling student diagnostic reasoning.
@@ -93,3 +109,13 @@ Every change must be logged chronologically using this structure:
   2. Calibrated the nurse prompt in `features/role-info/services/roleInfoService.ts` to inject reflective scaffolding for Easy/Medium cases.
   3. Implemented `/api/admin/reassign-nurses` endpoint to migrate older cases to specialized nurse personas.
 - **Verification:** Component tests and intensive findings integration tests verified locally and deployed to Vercel.
+
+### [2026-10-28 22:31 Europe/London] Codex and Antigravity handoff convention — (Requested by: Marco; Tool: Codex)
+- **Context / Problem:** Educators need to switch between Codex and Antigravity while retaining a clear record of completed changes and who requested them.
+- **Action Taken:** Added root `AGENTS.md` for Codex and updated this changelog template to capture local time, requester, and tool while retaining the required three bullets.
+- **Verification:** On `preview/educators`, `npx tsc --noEmit` passed and `npm test -- features/case-sessions` passed (2 files, 9 tests). No application code changed; preview deployment follows the branch push.
+
+### [2026-10-29 02:01 Europe/London] Live nurse findings and labelled student controls — (Requested by: Marco; Tool: Codex)
+- **Context / Problem:** Specialised nurses could say requested physical or laboratory findings were in the panel while the live session skipped the findings lookup; the Result Panel and Clinical Notes controls were icon-only, and a shared chat instruction contradicted the live panel workflow.
+- **Action Taken:** Removed the overbroad stage-intent skip in `features/live/components/live-session.tsx`, added physical-parameter group matching in `features/chat/services/physFinder.ts`, aligned live-only nurse instructions in `features/live/services/systemInstructionBuilder.ts`, and made the Result Panel and Clinical Notes buttons labelled and responsive in `features/live/components/test-results-panel.tsx` and `live-session.tsx`. Updated the related live tests.
+- **Verification:** `npx tsc --noEmit` passed; `npm test -- features/live` passed (70 tests); full `npm test` passed (202 tests). Findings tests confirm requested vitals and bloodwork appear while unrequested or out-of-stage data remain hidden. Live validation with Sarah remains to be done in the preview.

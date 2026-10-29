@@ -1,11 +1,14 @@
 "use client";
 
 import React, { useState, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { deriveStatus } from "../models/caseSession";
 import { useCaseSessionDetail } from "../hooks/useCaseSessionDetail";
 import { generateSessionReport } from "../services/caseSessionService";
+import { parseSessionViewFrom, professorSessionBreadcrumbItems } from "../sessionViewHref";
 import { SessionCasePanel } from "./SessionCasePanel";
+import { professorCaseHref } from "@/features/case-selection/caseViewHref";
 import { SessionInfoPanel } from "./SessionInfoPanel";
 import { ProfessorSessionAttemptsSection } from "./ProfessorSessionAttemptsSection";
 import { SessionAttemptsBarChart } from "./charts/SessionAttemptsBarChart";
@@ -30,6 +33,8 @@ function SessionPageCard({ title, children }: { title: string; children: ReactNo
 }
 
 export function ProfessorSessionDetail({ sessionId }: Props) {
+  const searchParams = useSearchParams();
+  const from = parseSessionViewFrom(searchParams.get("from"));
   const { session, attempts, loading, error } = useCaseSessionDetail(sessionId);
 
   // F6.5: AI group debrief report
@@ -60,11 +65,12 @@ export function ProfessorSessionDetail({ sessionId }: Props) {
     return (
       <>
         <Breadcrumb
-          items={[
-            { label: "Home", href: "/dashboard" },
-            { label: "Case Sessions", href: "/professor/sessions" },
-            { label: "Session" },
-          ]}
+          items={professorSessionBreadcrumbItems({
+            from,
+            currentLabel: "Session",
+            caseId: session?.caseId,
+            caseTitle: session?.case?.title,
+          })}
         />
         <div className="flex items-center gap-2 py-12 text-muted-foreground">
           <Loader2 className="h-6 w-6 animate-spin" />
@@ -78,11 +84,12 @@ export function ProfessorSessionDetail({ sessionId }: Props) {
     return (
       <>
         <Breadcrumb
-          items={[
-            { label: "Home", href: "/dashboard" },
-            { label: "Case Sessions", href: "/professor/sessions" },
-            { label: "Session not found" },
-          ]}
+          items={professorSessionBreadcrumbItems({
+            from,
+            currentLabel: "Session not found",
+            caseId: session?.caseId,
+            caseTitle: session?.case?.title,
+          })}
         />
         <div className="py-12 text-center text-destructive">{error ?? "Session not found"}</div>
       </>
@@ -94,11 +101,12 @@ export function ProfessorSessionDetail({ sessionId }: Props) {
   return (
     <div className="space-y-8">
       <Breadcrumb
-        items={[
-          { label: "Home", href: "/dashboard" },
-          { label: "Case Sessions", href: "/professor/sessions" },
-          { label: session.friendlyName },
-        ]}
+        items={professorSessionBreadcrumbItems({
+          from,
+          currentLabel: session.friendlyName,
+          caseId: session.caseId,
+          caseTitle: session.case?.title,
+        })}
       />
       <header className="mb-8 text-center">
         <h1 className="text-3xl font-bold tracking-tight text-primary md:text-4xl lg:text-5xl">
@@ -154,7 +162,7 @@ export function ProfessorSessionDetail({ sessionId }: Props) {
               <SessionInfoPanel session={session} status={st} variant="professor" />
               <SessionCasePanel
                 session={session}
-                href={`/case/${session.caseId}`}
+                href={professorCaseHref(session.caseId)}
                 titleClassName="text-xl font-semibold text-primary"
               />
             </div>

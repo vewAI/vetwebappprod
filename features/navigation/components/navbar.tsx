@@ -88,7 +88,7 @@ export function Navbar() {
               <span>Live</span>
             </Link>
             <Link
-              href="/case-sessions"
+              href="/start"
               className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground hover:text-primary transition-colors"
             >
               <CalendarDays className="size-4" />
@@ -223,7 +223,7 @@ export function Navbar() {
               <span>Live</span>
             </Link>
             <Link
-              href="/case-sessions"
+              href="/start"
               className="flex items-center gap-2 rounded-md px-3 py-2 text-base font-medium text-foreground hover:bg-accent hover:text-accent-foreground"
               onClick={() => setIsMenuOpen(false)}
             >

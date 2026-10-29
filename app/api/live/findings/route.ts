@@ -3,6 +3,10 @@ import { parseRequestedKeys, PHYS_SYNONYMS } from "@/features/chat/services/phys
 import { normalizeStageType } from "@/features/live/utils/normalizeStageType";
 import { requireUser } from "@/app/api/_lib/auth";
 import { consumeRateLimit } from "@/app/api/_lib/rateLimit";
+import {
+  getPanelAnalytesFromBundles,
+  getDefaultBundledTests,
+} from "@/features/personas/utils/bundledTests";
 
 // Diagnostic/lab synonym groups — specific test modalities and panels.
 // Generic "labs" is intentionally excluded so asking "what labs do we have?"
@@ -31,11 +35,26 @@ export const DIAG_SYNONYMS: Record<string, string[]> = {
   electrolytes: ["electrolytes", "lytes", "sodium", "potassium", "chloride"],
   blood_gas: ["blood gas", "abg", "vbg", "venous blood gas", "arterial blood gas"],
   coagulation: ["coagulation", "coag", "pt", "aptt", "clotting"],
-  cytology: ["cytology", "peritoneal fluid", "abdominocentesis fluid", "joint fluid", "synovial fluid"],
+  cytology: [
+    "cytology",
+    "peritoneal fluid",
+    "abdominocentesis fluid",
+    "joint fluid",
+    "synovial fluid",
+    "tracheal wash",
+    "bronchoalveolar",
+    "bal",
+    "tw",
+    "csf",
+    "cerebrospinal",
+  ],
 };
+
+const DEFAULT_BUNDLE_SETS = getPanelAnalytesFromBundles(getDefaultBundledTests());
 
 export const PANEL_ANALYTES: Record<string, Set<string>> = {
   chem: new Set([
+    ...Array.from(DEFAULT_BUNDLE_SETS.biochemistry ?? []),
     "potassium", "chloride", "calcium", "glucose", "ast", "ggt", "gldh",
     "creatinine", "bun", "urea", "total protein", "albumin", "globulin",
     "lactate", "bhb", "beta hydroxybutyrate", "nefa", "bicarbonate",
@@ -44,6 +63,7 @@ export const PANEL_ANALYTES: Record<string, Set<string>> = {
     "sdh", "ldh", "lipase", "amylase", "troponin", "blood bhb"
   ]),
   cbc: new Set([
+    ...Array.from(DEFAULT_BUNDLE_SETS.haematology ?? []),
     "wbc", "rbc", "platelets", "pcv", "hct", "hematocrit", "haematocrit",
     "haematology", "hematology", "hemoglobin", "haemoglobin", "mcv", "mch",
     "mchc", "rdw", "reticulocytes", "neutrophils", "band neutrophils",
@@ -54,10 +74,23 @@ export const PANEL_ANALYTES: Record<string, Set<string>> = {
     "sodium", "potassium", "chloride", "bicarbonate", "calcium",
     "phosphorus", "phosphate", "magnesium", "anion gap"
   ]),
+  coagulation: new Set([
+    ...Array.from(DEFAULT_BUNDLE_SETS.coagulation ?? []),
+    "coagulation", "coag", "pt", "aptt", "act", "clotting"
+  ]),
   urinalysis: new Set([
+    ...Array.from(DEFAULT_BUNDLE_SETS.urinalysis ?? []),
     "urine", "urine ketone bodies", "urine ph", "usg", "specific gravity",
     "urine protein", "urine glucose", "urine bilirubin", "urine sediment",
     "sediment", "ketones", "casts", "crystals"
+  ]),
+  cytology: new Set([
+    ...Array.from(DEFAULT_BUNDLE_SETS.peritoneal_fluid ?? []),
+    ...Array.from(DEFAULT_BUNDLE_SETS.tracheal_wash ?? []),
+    ...Array.from(DEFAULT_BUNDLE_SETS.bronchoalveolar_lavage ?? []),
+    ...Array.from(DEFAULT_BUNDLE_SETS.cerebrospinal_fluid ?? []),
+    ...Array.from(DEFAULT_BUNDLE_SETS.pleural_fluid ?? []),
+    ...Array.from(DEFAULT_BUNDLE_SETS.synovial_fluid ?? []),
   ]),
   ultrasound: new Set([
     "ultrasound", "dorsal findings", "ventral findings", "abomasal position",
@@ -68,9 +101,26 @@ export const PANEL_ANALYTES: Record<string, Set<string>> = {
   ]),
 };
 
-export function doesEntryBelongToPanel(entryLabel: string, panelKey: string, category = ""): boolean {
+export function doesEntryBelongToPanel(
+  entryLabel: string,
+  panelKey: string,
+  category = "",
+  customBundles?: Record<string, string[]> | null
+): boolean {
   const normLabel = normalizeForMatch(entryLabel);
   const normCat = normalizeForMatch(category);
+
+  if (customBundles && Object.keys(customBundles).length > 0) {
+    const customSets = getPanelAnalytesFromBundles(customBundles);
+    const customSet = customSets[panelKey];
+    if (customSet) {
+      for (const a of customSet) {
+        if (normLabel === a || normLabel.startsWith(a + " ") || normLabel.endsWith(" " + a)) {
+          return true;
+        }
+      }
+    }
+  }
 
   if (panelKey === "chem") {
     if (normCat.includes("chem") || normCat.includes("biochem") || normCat.includes("metabolic")) return true;
@@ -79,6 +129,12 @@ export function doesEntryBelongToPanel(entryLabel: string, panelKey: string, cat
   if (panelKey === "cbc") {
     if (normCat.includes("cbc") || normCat.includes("haemat") || normCat.includes("hemat")) return true;
     if (normCat.includes("bloodwork") && PANEL_ANALYTES.cbc?.has(normLabel)) return true;
+  }
+  if (panelKey === "coagulation") {
+    if (normCat.includes("coag") || normCat.includes("clotting") || normLabel.includes("coag")) return true;
+  }
+  if (panelKey === "cytology") {
+    if (normCat.includes("fluid") || normCat.includes("cytology") || normCat.includes("wash") || normCat.includes("csf")) return true;
   }
   if (panelKey === "ultrasound") {
     if (normCat.includes("ultrasound") || normCat.includes("usg") || normCat.includes("echo") || normLabel.includes("ultrasound")) return true;

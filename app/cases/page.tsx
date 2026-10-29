@@ -1,6 +1,7 @@
 "use client";
 
 import { CaseLibrary } from "@/features/case-selection/components/case-library";
+import { professorCaseHref } from "@/features/case-selection/caseViewHref";
 import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
 import { useAuth } from "@/features/auth/services/authService";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -30,7 +31,7 @@ export default function CasesPage() {
   return (
     <div className="container mx-auto px-4 pb-8">
       <Breadcrumb items={[{ label: "Home", href: "/dashboard" }, { label: "Clinical Cases" }]} />
-      <CaseLibrary getCaseHref={(caseItem) => `/case/${caseItem.id}`} />
+      <CaseLibrary getCaseHref={(caseItem) => professorCaseHref(caseItem.id)} />
     </div>
   );
 }

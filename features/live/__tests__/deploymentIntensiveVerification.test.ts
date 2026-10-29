@@ -131,10 +131,12 @@ describe("Intensive Verification: Deployment 30074d4 + Feedback Fixes", () => {
 
       // Must have strict prohibition rules
       expect(nurseInstruction).toContain("NEVER SPEAK EXAM FINDINGS, VITALS, OR LAB VALUES ALOUD (ABSOLUTE & STRICT)");
-      expect(nurseInstruction).toContain("The student sees all findings visually in the test results panel on their screen");
-      expect(nurseInstruction).toContain("ONLY confirm in ONE brief phrase that the findings are in their panel");
+      expect(nurseInstruction).toContain("Recorded findings appear visually in the Result Panel");
+      expect(nurseInstruction).toContain("never claim it is in the panel");
       expect(nurseInstruction).toContain("NEVER speak, recite, describe, or summarize the numbers, measurements, or findings out loud");
       expect(nurseInstruction).toContain("do NOT speak findings, vitals, diagnostic interpretations, or treatment recommendations aloud");
+      expect(nurseInstruction).not.toContain("there is no separate panel");
+      expect(nurseInstruction).not.toContain("respond with the recorded results for that item");
 
       // Clinical data section header must explicitly forbid speaking values
       expect(nurseInstruction).toContain("CLINICAL DATA (reference for your situational awareness only — NEVER READ, RECITE, OR SPEAK THESE VALUES ALOUD");
@@ -151,7 +153,7 @@ describe("Intensive Verification: Deployment 30074d4 + Feedback Fixes", () => {
       }).systemInstruction;
 
       expect(labInstruction).toContain("NEVER SPEAK EXAM FINDINGS, VITALS, OR LAB VALUES ALOUD (ABSOLUTE & STRICT)");
-      expect(labInstruction).toContain("The results are delivered as WRITTEN TEXT in the results panel");
+      expect(labInstruction).toContain("Recorded results are delivered as WRITTEN TEXT in the Result Panel");
       expect(labInstruction).toContain("NEVER speak values aloud");
     });
   });
@@ -233,6 +235,47 @@ describe("Intensive Verification: Deployment 30074d4 + Feedback Fixes", () => {
       // Unrequested parameters should NOT be revealed
       expect(labels).not.toContain("respiratory rate");
       expect(labels).not.toContain("muscle palpation");
+    });
+
+    it("shows recorded physical parameters when requested as a group", async () => {
+      const request = new Request("http://localhost/api/live/findings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          caseId: "case-equine-lameness",
+          userText: "Could I have the physical parameters?",
+          stageType: "physical",
+        }),
+      });
+
+      const res = await findingsPost(request);
+      const json = await res.json();
+      const labels = json.items.map((it: { label: string }) => it.label.toLowerCase());
+
+      expect(labels).toContain("temperature");
+      expect(labels).toContain("heart rate");
+      expect(labels).toContain("respiratory rate");
+      expect(labels).not.toContain("muscle palpation");
+    });
+
+    it("shows recorded blood results after a laboratory-stage request", async () => {
+      const request = new Request("http://localhost/api/live/findings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          caseId: "case-equine-lameness",
+          userText: "Can we run blood work?",
+          stageType: "laboratory",
+        }),
+      });
+
+      const res = await findingsPost(request);
+      const json = await res.json();
+      const labels = json.items.map((it: { label: string }) => it.label.toLowerCase());
+
+      expect(labels).toContain("cbc");
+      expect(labels).toContain("ck");
+      expect(labels).toContain("ast");
     });
 
     it("does NOT reveal findings when the nurse mentions them in assistantText but student did NOT ask", async () => {

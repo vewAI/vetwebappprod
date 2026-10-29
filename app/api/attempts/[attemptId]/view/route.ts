@@ -23,8 +23,7 @@ export async function GET(
     return NextResponse.json({ error: "attemptId required" }, { status: 400 });
 
   try {
-    // Load attempt using admin client only after an object-level ownership or
-    // professor-assignment check. This prevents arbitrary attempt ID access.
+    // Load attempt with the admin client only after an ownership or staff check.
     const adminClient = adminSupabase ?? getSupabaseAdminClient();
     if (!adminClient)
       return NextResponse.json(
@@ -48,7 +47,7 @@ export async function GET(
     const { data: attemptRow, error } = await adminClient
       .from("attempts")
       .select(
-        `*, attempt_messages (*), attempt_feedback (*), cases (id, title)`
+        `*, attempt_messages (*), attempt_feedback (*), cases (*)`
       )
       .eq("id", attemptId)
       .maybeSingle();
@@ -56,11 +55,38 @@ export async function GET(
     if (error || !attemptRow)
       return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
 
-    // Return attempt
+    const caseRow = Array.isArray(attemptRow.cases) ? attemptRow.cases[0] : attemptRow.cases;
+    const userId = typeof attemptRow.user_id === "string" ? attemptRow.user_id : null;
+    let studentProfile = null;
+    if (userId) {
+      const profileSelect = "id, user_id, email, full_name, avatar_url, role";
+      const { data: byUserId } = await adminClient
+        .from("profiles")
+        .select(profileSelect)
+        .eq("user_id", userId)
+        .maybeSingle();
+      const studentRow =
+        byUserId ??
+        (
+          await adminClient.from("profiles").select(profileSelect).eq("id", userId).maybeSingle()
+        ).data;
+      if (studentRow) {
+        studentProfile = {
+          id: studentRow.id,
+          email: studentRow.email ?? null,
+          fullName: studentRow.full_name ?? null,
+          avatarUrl: studentRow.avatar_url ?? null,
+          role: studentRow.role ?? null,
+        };
+      }
+    }
+
     return NextResponse.json({
       attempt: transformAttempt(attemptRow),
-      messages: attemptRow?.attempt_messages?.map(transformMessage),
-      feedback: attemptRow?.attempt_feedback?.map(transformFeedback),
+      messages: attemptRow?.attempt_messages?.map(transformMessage) ?? [],
+      feedback: attemptRow?.attempt_feedback?.map(transformFeedback) ?? [],
+      case: caseRow ?? null,
+      studentProfile,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

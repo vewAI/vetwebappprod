@@ -26,6 +26,7 @@ export interface AttemptSummary {
   sessionYearGroupId?: string | null;
   sessionYearGroupName?: string | null;
   studentName?: string | null;
+  studentEmail?: string | null;
   title: string;
   createdAt: string;
   completedAt?: string;

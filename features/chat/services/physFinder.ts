@@ -99,6 +99,9 @@ function splitTokens(input: string): string[] {
 export function parseRequestedKeys(text: string): RequestedKeys {
   const tokens = splitTokens(text || "");
   const canonical: string[] = [];
+  if (/\b(?:physical|vital) (?:parameters|signs)\b/i.test(text)) {
+    canonical.push(...GROUP_MAP.vitals);
+  }
   for (const tok of tokens) {
     // Trim unit-like suffixes such as mmhg or /min
     const plain = tok.replace(/mmhg$/i, "").replace(/\/.*/g, "");

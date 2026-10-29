@@ -22,7 +22,7 @@ Attempts are loaded with `getUserAttempts()`. The profile card uses the signed-i
   - `Breadcrumb` — Home `/dashboard`, Dashboard (current)
   - `YearGroupRequiredAlert` — shown when no year group is assigned
   - profile card — user icon, email, created date, assigned year group
-  - Start button — icon plus Start, opens `/case-sessions`
+  - Start button — icon plus Start, opens `/start`
   - `AttemptsPerMonthChart` — last 12 months, zeros included
   - Active Attempts table — latest 3 in-progress attempts, View opens `/attempts/{id}`
 

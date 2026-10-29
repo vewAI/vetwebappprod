@@ -8,6 +8,7 @@ import { fetchCaseById } from "@/features/case-selection/services/caseService";
 import type { Case } from "@/features/case-selection/models/case";
 import type { AttemptSummary } from "@/features/attempts/models/attempt";
 import { CaseDashboard } from "@/features/case-selection/components/CaseDashboard";
+import { studentCaseHref } from "@/features/case-selection/caseViewHref";
 import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
 
 export default function ManageCasePage() {
@@ -23,7 +24,7 @@ export default function ManageCasePage() {
   useEffect(() => {
     if (authLoading) return;
     if (!isStaff) {
-      router.replace(`/case/${id}/instructions`);
+      router.replace(studentCaseHref(id));
     }
   }, [authLoading, isStaff, id, router]);
 
