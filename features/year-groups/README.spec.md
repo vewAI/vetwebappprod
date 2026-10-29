@@ -76,7 +76,7 @@ Admins may assign or clear `year_group_id`. The year group must belong to the us
 - `YearGroupRequiredAlert` — shared TailAdmin warning used on `/dashboard`, `/student`, and `/start`.
 - `/select-year-group` — student picker. Lists that institution's year groups and shows **this academic year ends on {date}**. No submit if the profile has no institution.
 - `YearGroupRequiredAlert` — TailAdmin warning on `/dashboard`, `/student`, and `/start` when a student has no year group. Link opens `/select-year-group`.
-- `ProtectedRoute` — if `role === "student"` and `year_group_id` is null, nested `/start/[sessionId]` redirects to `/select-year-group`. `/student` and `/start` stay open and show the warning instead. Password change takes precedence. Professors and admins skip the gate. Students who already have a year cannot change it on the picker.
+- `ProtectedRoute` — if `role === "student"` and `year_group_id` is null, nested `/start/[sessionId]` and `/live/[id]` redirect to `/select-year-group`. `/student` and `/start` stay open and show the warning instead. Password change takes precedence. Professors and admins skip the gate. Students who already have a year cannot change it on the picker.
 
 ## Critical Rules
 

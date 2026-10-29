@@ -53,7 +53,7 @@ describe("buildPersonaSystemInstruction", () => {
       },
     });
 
-    expect(result.systemInstruction).toContain("SHARED CLASSIC CHAT GUIDELINES");
+    expect(result.systemInstruction).toContain("LIVE SESSION GUIDELINES");
     expect(result.systemInstruction).toContain("CLASSIC ROLE-INFO LAYER (getOwnerPrompt)");
     expect(result.systemInstruction).toContain("You are worried but cooperative");
 

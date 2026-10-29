@@ -14,7 +14,7 @@ export function caseAttemptHref(
   caseId: string,
   params?: { attempt?: string | null; session?: string | null },
 ) {
-  const path = `${studentCaseHref(caseId)}/attempt`;
+  const path = `/live/${encodeURIComponent(caseId)}`;
   const search = new URLSearchParams();
   if (params?.attempt) search.set("attempt", params.attempt);
   if (params?.session) search.set("session", params.session);

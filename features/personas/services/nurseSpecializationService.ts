@@ -29,6 +29,7 @@ export async function getNurseForSpecies(supabase: SupabaseClient, species?: str
     labReferenceRanges: data.lab_reference_ranges ?? null,
     vitalReferenceRanges: data.vital_reference_ranges ?? null,
     commonPathologies: data.common_pathologies ?? null,
+    bundledTests: data.bundled_tests ?? (data.metadata?.bundled_tests as Record<string, string[]> | undefined) ?? null,
     metadata: data.metadata ?? null,
     createdAt: data.created_at ?? undefined,
     updatedAt: data.updated_at ?? undefined,
@@ -50,7 +51,7 @@ export async function applySpecializedNurse(supabase: SupabaseClient, caseId: st
   // Check existing persona for the case
   const { data: existing, error: fetchError } = await supabase
     .from("case_personas")
-    .select("generated_by, id")
+    .select("generated_by, id, display_name, metadata")
     .eq("case_id", caseId)
     .eq("role_key", "veterinary-nurse")
     .maybeSingle();
@@ -60,8 +61,10 @@ export async function applySpecializedNurse(supabase: SupabaseClient, caseId: st
     // continue with upsert (best-effort)
   }
 
-  if (existing && existing.generated_by === "manual") {
-    // Respect manual edits
+  // Respect truly manual edits by professors, but NOT the old generic Martin Lambert placeholder
+  // and NOT personas missing species specialization metadata
+  const hasSpecialization = Boolean((existing?.metadata as Record<string, unknown> | null)?.nurseSpecialization);
+  if (existing && existing.generated_by === "manual" && existing.display_name !== "Martin Lambert" && hasSpecialization) {
     return;
   }
 

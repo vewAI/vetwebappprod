@@ -35,26 +35,17 @@ export async function GET(request: Request, context: RouteContext) {
   }
 
   if (auth.role !== "admin") {
-    const { data: professorProfile } = await adminClient
-      .from("profiles")
-      .select("institution_id")
-      .eq("user_id", auth.user.id)
-      .maybeSingle();
+    const { data: professorProfile } = await adminClient.from("profiles").select("institution_id").eq("user_id", auth.user.id).maybeSingle();
     if (!professorProfile?.institution_id || professorProfile.institution_id !== profile.institution_id) {
       return NextResponse.json({ error: "Student not found" }, { status: 404 });
     }
   }
 
-  const yearGroupsJoin = (profile as { year_groups?: { id?: string; name?: string } | { id?: string; name?: string }[] | null })
-    .year_groups;
+  const yearGroupsJoin = (profile as { year_groups?: { id?: string; name?: string } | { id?: string; name?: string }[] | null }).year_groups;
   const yearGroup = Array.isArray(yearGroupsJoin) ? yearGroupsJoin[0] : yearGroupsJoin;
   let yearGroupName = typeof yearGroup?.name === "string" ? yearGroup.name : null;
   if (!yearGroupName && typeof profile.year_group_id === "string") {
-    const { data: yearGroupRow } = await adminClient
-      .from("year_groups")
-      .select("name")
-      .eq("id", profile.year_group_id)
-      .maybeSingle();
+    const { data: yearGroupRow } = await adminClient.from("year_groups").select("name").eq("id", profile.year_group_id).maybeSingle();
     yearGroupName = yearGroupRow?.name ?? null;
   }
 
@@ -87,29 +78,20 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json({ error: attemptError.message }, { status: 500 });
   }
 
-  const rows = attemptRows ?? [];
-  const yearGroupIds = [
+  const attempts: AttemptSummary[] = (attemptRows ?? []).map(transformAttemptSummary);
+  const missingYearGroupIds = [
     ...new Set(
-      rows
-        .map((row) => {
-          const session = Array.isArray(row.case_sessions) ? row.case_sessions[0] : row.case_sessions;
-          return typeof session?.year_group_id === "string" ? session.year_group_id : null;
-        })
-        .filter((id): id is string => Boolean(id)),
+      attempts.map((attempt) => (!attempt.sessionYearGroupName ? attempt.sessionYearGroupId : null)).filter((id): id is string => Boolean(id)),
     ),
   ];
-  if (yearGroupIds.length > 0) {
-    const { data: yearGroups } = await adminClient.from("year_groups").select("id, name").in("id", yearGroupIds);
-    const nameById = new Map((yearGroups ?? []).map((group) => [group.id as string, group.name as string]));
-    for (const row of rows) {
-      const session = Array.isArray(row.case_sessions) ? row.case_sessions[0] : row.case_sessions;
-      if (!session || session.year_groups) continue;
-      const name = typeof session.year_group_id === "string" ? nameById.get(session.year_group_id) : undefined;
-      if (name) (session as any).year_groups = { id: session.year_group_id, name };
+  if (missingYearGroupIds.length > 0) {
+    const { data: yearGroups } = await adminClient.from("year_groups").select("id, name").in("id", missingYearGroupIds);
+    const nameById = new Map((yearGroups ?? []).map((group) => [String(group.id), String(group.name)]));
+    for (const attempt of attempts) {
+      if (attempt.sessionYearGroupName || !attempt.sessionYearGroupId) continue;
+      attempt.sessionYearGroupName = nameById.get(attempt.sessionYearGroupId) ?? null;
     }
   }
-
-  const attempts: AttemptSummary[] = rows.map(transformAttemptSummary);
 
   const student: ProfessorStudentDetail = {
     userId: String(profile.user_id),

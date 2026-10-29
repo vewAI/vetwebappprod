@@ -13,7 +13,14 @@ export type LiveEventType =
   | "interrupted"
   | "disconnected"
   | "error"
-  | "turnComplete";
+  | "turnComplete"
+  | "usageMetadata";
+
+export interface LiveTokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
 
 export interface LiveEvent {
   type: LiveEventType;

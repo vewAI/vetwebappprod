@@ -67,17 +67,17 @@ const defaultOwnerBackground = (title: string) =>
 const defaultHistoryFeedback = `You are an experienced veterinary educator providing feedback on the student's history-taking. Highlight what they did well, the gaps that remain, and offer 2-3 concrete follow-up questions they should still ask.`;
 
 const defaultFollowUp = (title: string) =>
-  `You are the owner of ${title}. You want to understand which diagnostic tests are necessary, why they matter, how much they cost, and what to expect for your animal.`;
+  `You are the owner of ${title}. You want to understand which diagnostic tests are necessary, why they matter, and what to expect for your animal.`;
 
-const defaultFollowUpFeedback = `Provide structured feedback on how the student prioritised diagnostics, explained costs/benefits, and addressed biosecurity or home-care considerations.`;
+const defaultFollowUpFeedback = `Provide structured feedback on how the student prioritised diagnostics, explained benefits, and addressed biosecurity or home-care considerations.`;
 
 const defaultPhysicalExamFeedback = `Evaluate the student's physical examination strategy. Did they request a systematic exam covering all relevant body systems? Did they ask for specific vital signs and pertinent findings rather than vague "anything abnormal?" requests? Flag any major systems they omitted and suggest what they should have asked for next time.`;
 
 const defaultDiagnosticFeedback = `Assess how the student interpreted and acted on diagnostic results. Did they request results one at a time with clear rationale? Did they connect findings to clinical decisions? Flag if they requested irrelevant tests or failed to act on abnormal results.`;
 
-const defaultTreatmentPlanFeedback = `Review the student's treatment plan for completeness and clinical reasoning. Did they specify drug names, doses, routes, and frequency? Did they address monitoring, follow-up, and client instructions? Did they consider cost and practicality for the owner? Flag any gaps in the plan.`;
+const defaultTreatmentPlanFeedback = `Review the student's treatment plan for completeness and clinical reasoning. Did they specify drug names, doses, routes, and frequency? Did they address monitoring, follow-up, and client instructions? Did they consider practicality for the owner? Flag any gaps in the plan.`;
 
-const defaultDiagnosisFeedback = `Evaluate how the student communicated the diagnosis and treatment plan to the owner. Did they use plain language? Did they check for understanding? Did they address the owner's concerns about prognosis, cost, and next steps? Did they provide clear follow-up instructions?`;
+const defaultDiagnosisFeedback = `Evaluate how the student communicated the diagnosis and treatment plan to the owner. Did they use plain language? Did they check for understanding? Did they address the owner's concerns about prognosis and next steps? Did they provide clear follow-up instructions?`;
 
 const defaultDiagnosisPrompt = (title: string) =>
   `You are the owner receiving a diagnosis and discharge plan for ${title}. Ask practical questions about monitoring, medication, prognosis, and when to seek help.`;
@@ -160,7 +160,7 @@ Assess the student's performance across the full consultation journey:
 4. EXPLANATION & PLANNING (Diagnostic Reasoning Communication)
    - When presenting findings or diagnostics, did they explain the REASONING?
    - Did they prioritize tests by logic, not just list them?
-   - Did they discuss cost, logistics, and timeline with the owner?
+   - Did they discuss logistics and timeline with the owner?
    - Did they check the owner's understanding?
    - Did they explore the owner's preferences or constraints?
 
@@ -174,7 +174,7 @@ Assess the student's performance across the full consultation journey:
 
 LIVESTOCK/HERD HEALTH CONSIDERATIONS (if applicable)
 - Did the student address biosecurity or isolation?
-- Did they discuss cost-effectiveness for herd management contexts?
+- Did they discuss effectiveness for herd management contexts?
 - If a farm case: Did they consider practical constraints (labor, facilities)?
 
 ---
@@ -211,7 +211,7 @@ const defaultOverallFeedbackCaseFocus = `CASE-SPECIFIC EVALUATION FOCUS
 Judge the student on:
 - HISTORY GATHERING: Did they collect the history domains implied by the scenario (signalment, exposure risks, progression, owner constraints)? Was questioning systematic and exploratory?
 - PHYSICAL EXAMINATION: Did they complete or clearly outline an appropriate exam strategy? Did they communicate findings accessibly to the owner?
-- DIAGNOSTIC REASONING & COMMUNICATION: Did they recommend diagnostics aligned with case goals AND explain the rationale, cost, and logistics in plain language the owner understood?
+- DIAGNOSTIC REASONING & COMMUNICATION: Did they recommend diagnostics aligned with case goals AND explain the rationale and logistics in plain language the owner understood?
 - CLIENT COMMUNICATION: Did they communicate management, isolation/biosecurity, or follow-up instructions suitable for the species and setting? Did they check for understanding?
 - LIVESTOCK/HERD-SPECIFIC (if applicable): Did they address cost-effectiveness, practical farm constraints, and biosecurity in context? Did they prioritize by urgency and feasibility?
 
@@ -292,7 +292,7 @@ Stay true to the owner personality, collaborate willingly, and avoid offering di
       "owner_follow_up",
       defaultFollowUp(title)
     );
-    return `You are the owner discussing next steps after the initial examination. Start slightly anxious, ask about logistics, cost, and comfort for your animal, and become more cooperative once the clinician explains their plan.\n\nGuidance:\n${followUp}\n\nStudent's explanation/question: ${studentQuestion}`;
+    return `You are the owner discussing next steps after the initial examination. Start slightly anxious, ask about logistics and comfort for your animal, and become more cooperative once the clinician explains their plan.\n\nGuidance:\n${followUp}\n\nStudent's explanation/question: ${studentQuestion}`;
   },
   getOwnerFollowUpFeedbackPrompt: (
     caseRow: Record<string, unknown> | null,
@@ -339,7 +339,7 @@ Stay true to the owner personality, collaborate willingly, and avoid offering di
       "owner_diagnosis",
       defaultDiagnosisPrompt(title)
     );
-    return `You are receiving the diagnosis and treatment plan for ${title}. Ask about timelines, monitoring, costs, and long-term prognosis.\n\nOwner profile:\n${ownerDx}\n\nStudent explanation: ${studentQuestion}`;
+    return `You are receiving the diagnosis and treatment plan for ${title}. Ask about timelines, monitoring, and long-term prognosis.\n\nOwner profile:\n${ownerDx}\n\nStudent explanation: ${studentQuestion}`;
   },
   getOverallFeedbackPrompt: (
     caseRow: Record<string, unknown> | null,

@@ -43,10 +43,10 @@ const STUDENT_GUIDANCE: Record<string, StageGuidance> = {
   diagnostics: {
     title: "Diagnostic Planning",
     whatToDo:
-      "Explain to the owner which diagnostic tests you want to run and why. Discuss costs, logistics, and what each test will reveal.",
+      "Explain to the owner which diagnostic tests you want to run and why. Discuss logistics and what each test will reveal.",
     tips: [
       "Explain your reasoning for each test you're recommending",
-      "Discuss approximate costs and timelines with the owner",
+      "Discuss timelines with the owner",
       "Prioritize tests based on clinical suspicion",
       "Address the owner's concerns about the animal's comfort during testing",
     ],
@@ -83,7 +83,7 @@ const STUDENT_GUIDANCE: Record<string, StageGuidance> = {
       "Discuss the prognosis — best case, worst case, and most likely outcome",
       "Give a realistic timeline for recovery and what milestones to watch for",
       "Provide clear home care instructions and warning signs that require urgent return",
-      "Address costs, follow-up visits, and long-term management honestly",
+      "Address follow-up visits and long-term management honestly",
     ],
   },
 };

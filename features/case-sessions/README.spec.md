@@ -126,5 +126,5 @@ Status is **never** stored; `deriveStatus({ startAt, endAt }, now)` returns `sch
 - `/professor/sessions/[sessionId]` has TailAdmin tabs with badge: Session Information then Attempts. The Attempts tab badge is the number of attempts. Session Information has the session panel, case card (View Case opens `/cases/{id}`), AI group report, and the attempts-per-day and attempt-status charts at the bottom. Session, AI group report, and chart cards use the TailAdmin Billing Info header (`text-base font-medium`, padded bar, divider). Attempts shows all session attempts in the standard attempts table (email, status, date, time) with search by email, a status filter, and a result count top right above the table. Attempt rows open `/attempts/{id}?from=session`.
 - Client calls use `fetch` + `buildAuthHeaders` + `getAccessToken` (no axios).
 - Access code compare: trim, case-insensitive; `null`/empty stored access = open.
-- Non-admin users cannot start `/start/case/[id]/attempt` without `?attempt=` or `?session=`; new attempts for students go through POST `.../attempts` only.
+- Non-admin users cannot start `/live/[id]` without `?attempt=` or `?session=`; new attempts for students go through POST `.../attempts` only. `/start/case/[id]/attempt` and `/case/[id]/attempt` redirect to `/live/[id]`.
 - Admins may still open attempt page without session for dev.

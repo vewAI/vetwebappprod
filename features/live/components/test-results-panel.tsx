@@ -24,7 +24,7 @@ export function TestResultsPanel({ findings }: TestResultsPanelProps) {
   const prevCountRef = useRef(0);
   const glowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Auto-open AND flash the icon whenever a new result is revealed.
+  // Auto-open and highlight the button whenever a new result is revealed.
   useEffect(() => {
     if (findings.length > prevCountRef.current) {
       setIsOpen(true);
@@ -58,15 +58,15 @@ export function TestResultsPanel({ findings }: TestResultsPanelProps) {
     <div className="relative" ref={panelRef}>
       <Button
         variant="ghost"
-        size="icon"
         onClick={() => setIsOpen((prev) => !prev)}
         className={cn(
-          "h-9 w-9 rounded-full",
+          "h-10 gap-2 px-3",
           glow && "ring-2 ring-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.7)] animate-pulse"
         )}
-        title="Test results"
+        title="Result Panel"
       >
         <ClipboardList className="h-4 w-4" />
+        <span>Result Panel</span>
         {findings.length > 0 && (
           <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-500 px-1 text-[10px] font-semibold text-white">
             {findings.length}
@@ -78,7 +78,7 @@ export function TestResultsPanel({ findings }: TestResultsPanelProps) {
         <div className="absolute right-0 bottom-10 w-[28rem] max-w-[92vw] rounded-md border bg-popover shadow-md z-20 p-3 animate-in fade-in zoom-in-95 duration-150">
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Test results
+              Result Panel
             </p>
             <Button
               variant="ghost"

@@ -1,4 +1,5 @@
 import type { NurseSpecialization } from "@/features/personas/models/nurseSpecialization";
+import { formatBundledTestsForPrompt, type BundledTestsMap } from "@/features/personas/utils/bundledTests";
 
 /**
  * Formats species-specific clinical knowledge from a nurse specialization
@@ -19,6 +20,11 @@ export function formatSpeciesKnowledgePrompt(specialization: Partial<NurseSpecia
       .map(([k, v]) => `- ${k}: ${v}`)
       .join("\n");
     sections.push(`LAB REFERENCE RANGES (${specialization.speciesKey ?? "unknown species"}):\n${lines}`);
+  }
+
+  const bundled = (specialization.metadata?.bundled_tests ?? (specialization as any).bundled_tests ?? specialization.bundledTests) as BundledTestsMap | undefined;
+  if (bundled && Object.keys(bundled).length > 0) {
+    sections.push(formatBundledTestsForPrompt(bundled, specialization.speciesKey));
   }
 
   if (specialization.commonPathologies && specialization.commonPathologies.length > 0) {

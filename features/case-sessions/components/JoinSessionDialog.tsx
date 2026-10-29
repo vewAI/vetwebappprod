@@ -2,14 +2,7 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,12 +18,7 @@ type Props = {
   caseId: string;
 };
 
-export function JoinSessionDialog({
-  open,
-  onOpenChange,
-  session,
-  caseId,
-}: Props) {
+export function JoinSessionDialog({ open, onOpenChange, session, caseId }: Props) {
   const router = useRouter();
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
@@ -52,10 +40,7 @@ export function JoinSessionDialog({
     setError(null);
     setLoading(true);
     try {
-      const attempt = await joinSessionCreateAttempt(
-        session.id,
-        needsCode ? code : undefined
-      );
+      const attempt = await joinSessionCreateAttempt(session.id, needsCode ? code : undefined);
       onOpenChange(false);
       reset();
       router.push(caseAttemptHref(caseId, { attempt: attempt.id, session: session.id }));
@@ -73,21 +58,13 @@ export function JoinSessionDialog({
           <DialogTitle>Start case attempt</DialogTitle>
           <DialogDescription>
             {session.friendlyName} — {session.name}
-            {needsCode
-              ? " Enter the access code from your instructor to continue."
-              : " Confirm to begin a new attempt for this session."}
+            {needsCode ? " Enter the access code from your instructor to continue." : " Confirm to begin a new attempt for this session."}
           </DialogDescription>
         </DialogHeader>
         {needsCode && (
           <div className="grid gap-2 py-2">
             <Label htmlFor="access-code">Access code</Label>
-            <Input
-              id="access-code"
-              autoComplete="off"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder="Enter code"
-            />
+            <Input id="access-code" autoComplete="off" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Enter code" />
           </div>
         )}
         {error && (
@@ -96,20 +73,10 @@ export function JoinSessionDialog({
           </p>
         )}
         <DialogFooter className="gap-2 sm:gap-0">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => handleOpenChange(false)}
-            disabled={loading}
-          >
+          <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} disabled={loading}>
             Cancel
           </Button>
-          <Button
-            type="button"
-            variant="default"
-            onClick={() => void submit()}
-            disabled={loading || (needsCode && !code.trim())}
-          >
+          <Button type="button" variant="default" onClick={() => void submit()} disabled={loading || (needsCode && !code.trim())}>
             {loading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

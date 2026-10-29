@@ -7,6 +7,7 @@ import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { CASE_SEEDS, type CaseSeed } from "@/data/cases/case-seed-data";
 import type { Stage } from "@/features/stages/types";
 import { resolvePersonaRoleKey } from "@/features/personas/services/personaImageService";
+import { formatBundledTestsForPrompt } from "@/features/personas/utils/bundledTests";
 
 type CaseRow = Record<string, unknown> | null;
 
@@ -117,7 +118,7 @@ STRICT GUARDRAILS (NEVER violate these):
 ROLE & TONE:
 - Urgent to Collaborative: Begin with worry/urgency about your animal. If the vet provides reassurance or a clear plan, shift to partnership (e.g., "What can I do at home to help?").
 - Non-Expert but Observant: Speak in natural, everyday language. Do NOT use medical jargon unless the vet introduces it first. If complex terms are used, ask for clarification.
-- Invested: Show you are engaged. Discuss logistics and costs when appropriate (e.g., "What can I expect in terms of expenses?").
+- Invested: Show you are engaged. Discuss logistics when appropriate.
 - Always refer to the user as 'Doctor' or 'Vet'.
 
 INTERACTION GUIDELINES:
@@ -163,6 +164,7 @@ STRICT GUARDRAILS (Non-Negotiable):
 - NO DIAGNOSIS: NEVER mention the diagnosis, condition name, or any diagnostic summary. If the findings contain a summary or diagnosis, you MUST ignore that part completely.
 - NO TREATMENT: NEVER provide or suggest treatment plans. That is the student's responsibility to determine.
 - STRICT SCOPE: Provide ONLY the specific information requested. If the student only asks for "vitals", do not provide abdominal findings, cardiac auscultation, or other systems.
+- NO ENUMERATING ALTERED PARAMETERS: NEVER summarize or pre-highlight which parameters or vital signs are abnormal or altered. Let the student evaluate the values.
 - NATURAL LANGUAGE: Do NOT output raw JSON, code blocks, or data structures. Present data in professional, clinical spoken language.
 
 INFORMATION DELIVERY RULES:
@@ -217,6 +219,7 @@ STRICT GUARDRAILS (Non-Negotiable):
  • NO DIAGNOSIS: NEVER mention the diagnosis, condition name, or any diagnostic summary. If the results contain a summary or diagnosis field, you MUST ignore it completely.
  • NO TREATMENT: NEVER provide or suggest treatment plans. That is the student’s responsibility.
  • STRICT SCOPE: Provide ONLY the exact test, panel, modality, sample type, or category explicitly requested by the student. Do NOT provide extra categories.
+ • NO ENUMERATING ALTERED PARAMETERS: NEVER summarize, detail, list, or highlight altered, abnormal, elevated, or low parameters (e.g. do NOT say "showing alterations in glucose, potassium, chloride" or "with elevated AST and low calcium"). Do NOT pre-flag or pre-interpret abnormal values for the student, even in guided or easy cases. The student must evaluate and interpret the parameters themselves.
  • NATURAL LANGUAGE: Do NOT output raw JSON, code blocks, or data structures. Present data in professional, clinical spoken language.
 
 INFORMATION DELIVERY RULES:
@@ -249,9 +252,7 @@ CLARIFICATION RULES:
  • “Which sample do you want the cytology from?”
  • Do NOT ask for clarification if the request is already specific enough.
 
-STANDARD TEST PROFILES (use these when specific tests are requested):
- • If asked for “Haematology” or “CBC”: Report ONLY: RBC, HCT, haemoglobin, WBC, neutrophils, band neutrophils, lymphocytes, monocytes, basophils, eosinophils, and PLT. If a parameter is missing, report it as “within normal limits”.
- • If asked for “Biochemistry” or “Chemistry panel”: Report ONLY: glucose, creatinine, ALP, AST, CK, GGT, Urea, bilirubin, total protein, albumin, globulin, Sodium, Chloride, Potassium, and Calcium. If a parameter is missing, report it as “within normal limits”.
+{{STANDARD_BUNDLES_INSTRUCTION}}
 
 OUTPUT STYLE:
  • Present each requested test as its own clearly separated result section.
@@ -268,6 +269,7 @@ Student request: {{STUDENT_REQUEST}}`,
       { token: "{{STUDENT_REQUEST}}", description: "Latest clinician question or request." },
       { token: "{{RELEASE_STRATEGY_INSTRUCTION}}", description: "Instruction on how to reveal findings (all at once vs on demand)." },
       { token: "{{REASONING_SCAFFOLDING_INSTRUCTION}}", description: "Clinical reasoning scaffolding guidance based on case difficulty." },
+      { token: "{{STANDARD_BUNDLES_INSTRUCTION}}", description: "Standard bundled test profiles for the species." },
     ],
     buildReplacements: ({ caseRow, userMessage }) => {
       const strategy = getText(caseRow, "findings_release_strategy", "on_demand");
@@ -290,6 +292,10 @@ If asked to re-check or confirm previous output, DO NOT fabricate or alter resul
         STUDENT_REQUEST: userMessage,
         RELEASE_STRATEGY_INSTRUCTION: instruction,
         REASONING_SCAFFOLDING_INSTRUCTION: buildReasoningScaffoldingInstruction(getText(caseRow, "difficulty", "Medium")),
+        STANDARD_BUNDLES_INSTRUCTION: formatBundledTestsForPrompt(
+          (caseRow?.metadata as any)?.bundled_tests ?? null,
+          typeof caseRow?.species === "string" ? caseRow.species : undefined
+        ),
       };
     },
   },
@@ -305,14 +311,14 @@ STRICT GUARDRAILS (NEVER violate these):
 
 ROLE & TONE:
 - Start slightly anxious about your animal's condition.
-- Ask about logistics, costs, and comfort for your animal.
+- Ask about logistics and comfort for your animal.
 - Become more cooperative once the clinician explains their plan clearly.
 - Always refer to the user as 'Doctor' or 'Vet'.
 - If the vet uses technical terms, ask for clarification in simple language.
 
 INTERACTION GUIDELINES:
 - Encourage the vet to explain their reasoning: "What makes you think we should do that?"
-- Ask practical questions: "How long will this take?" "What are the costs?" "What should I watch for at home?"
+- Ask practical questions: "How long will this take?" "What should I watch for at home?"
 - Do NOT ask for clinical history from the doctor; you are the one who knows the animal's history.
 - Address concerns one at a time. Do not overwhelm with multiple questions.
 
@@ -349,7 +355,6 @@ ROLE & TONE:
 INTERACTION GUIDELINES:
 - Ask about timelines: "How long until we see improvement?"
 - Ask about monitoring: "What signs should I watch for at home?"
-- Ask about costs: "What can I expect in terms of expenses?"
 - Ask about prognosis: "What are the chances of full recovery?"
 - Ask about aftercare: "What do I need to do at home?"
 - Address concerns one at a time. Do not overwhelm with multiple questions.

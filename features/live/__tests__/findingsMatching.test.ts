@@ -8,6 +8,7 @@ import {
   isAvailabilityInquiry,
   isGeneralBloodworkRequest,
   labelSpokenIn,
+  matchDiagnosticFinding,
   stageAllowsReveal,
 } from "@/app/api/live/findings/route";
 import { parseRequestedKeys } from "@/features/chat/services/physFinder";
@@ -147,6 +148,79 @@ Abdominal radiographs: Gas distension of the large colon with ventral displaceme
       expect(matchedLabels).toContain("PCV/TPP");
       expect(matchedLabels).not.toContain("Urinalysis");
       expect(matchedLabels).not.toContain("Abdominal radiographs");
+    });
+
+    it("matches all biochemistry analytes when student asks 'Tell me biochemistry.'", () => {
+      const case4DiagText = `{
+        "blood_BHB" or "beta-hydroxybutyrate": "3.5 mmol/L",
+        "urine_ketone_bodies": "++ (moderate ketonuria)",
+        "bloodwork": {
+          "potassium": "3.2 mmol/L (low)",
+          "chloride": "90 mmol/L (low-normal)",
+          "calcium": "2.1 mmol/L (low)",
+          "haematology": "mild neutrophilia otherwise normal",
+          "glucose": "normal",
+          "AST": "elevated",
+          "PCV": "51%"
+        },
+        "ultrasound_left_side": {
+          "dorsal_findings": "Gas cap",
+          "ventral_findings": "Echogenic ingesta"
+        }
+      }`;
+
+      const entries = extractDiagPairs(case4DiagText);
+      const userText = "Tell me biochemistry.";
+      const userKeys = findMatchingSynonymKeys(userText, DIAG_SYNONYMS);
+      const isBloodwork = isGeneralBloodworkRequest(userText);
+      const isAll = isAllLabsRequest(userText);
+
+      const matched = entries.filter((e) => matchDiagnosticFinding(e, userKeys, userText, isAll, isBloodwork));
+      const labels = matched.map((m) => m.label.toLowerCase());
+
+      expect(labels).toContain("potassium");
+      expect(labels).toContain("chloride");
+      expect(labels).toContain("calcium");
+      expect(labels).toContain("glucose");
+      expect(labels).toContain("ast");
+      expect(labels).toContain("beta-hydroxybutyrate");
+      expect(labels).not.toContain("dorsal findings");
+      expect(labels).not.toContain("urine ketone bodies");
+    });
+
+    it("matches only calcium when student asks 'Check calcium'", () => {
+      const case4DiagText = `{
+        "bloodwork": {
+          "potassium": "3.2 mmol/L (low)",
+          "calcium": "2.1 mmol/L (low)",
+          "glucose": "normal"
+        }
+      }`;
+      const entries = extractDiagPairs(case4DiagText);
+      const userText = "Check calcium";
+      const userKeys = findMatchingSynonymKeys(userText, DIAG_SYNONYMS);
+      const isBloodwork = isGeneralBloodworkRequest(userText);
+      const isAll = isAllLabsRequest(userText);
+
+      const matched = entries.filter((e) => matchDiagnosticFinding(e, userKeys, userText, isAll, isBloodwork));
+      expect(matched.map((m) => m.label)).toEqual(["calcium"]);
+    });
+
+    it("matches ultrasound findings when student asks for ultrasound", () => {
+      const case4DiagText = `{
+        "ultrasound_left_side": {
+          "dorsal_findings": "Gas cap with reverberation artefacts",
+          "ventral_findings": "Echogenic ingesta with abomasal folds"
+        }
+      }`;
+      const entries = extractDiagPairs(case4DiagText);
+      const userText = "Can we do an ultrasound?";
+      const userKeys = findMatchingSynonymKeys(userText, DIAG_SYNONYMS);
+      const isBloodwork = isGeneralBloodworkRequest(userText);
+      const isAll = isAllLabsRequest(userText);
+
+      const matched = entries.filter((e) => matchDiagnosticFinding(e, userKeys, userText, isAll, isBloodwork));
+      expect(matched.map((m) => m.label)).toEqual(["dorsal findings", "ventral findings"]);
     });
   });
 

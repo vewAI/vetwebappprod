@@ -1,9 +1,8 @@
 name: Deploy Preview (Vercel)
 
+# Note: Vercel is natively connected to GitHub and automatically builds each push.
+# Kept as workflow_dispatch for manual on-demand triggers to prevent duplicate simultaneous builds.
 on:
-  push:
-    branches:
-      - feature/redesign
   workflow_dispatch:
 
 jobs:
@@ -13,11 +12,23 @@ jobs:
     steps:
       - name: Trigger Vercel Preview Deployment
         run: |
-          DEPLOY_HOOK="${{ secrets.VERCEL_DEPLOY_HOOK_REDESIGN }}"
-          if [ -z "$DEPLOY_HOOK" ]; then
-            echo "Using default project deploy hook..."
-            DEPLOY_HOOK="https://api.vercel.com/v1/integrations/deploy/prj_Z9wPgYcip4jMI6a6sK3v49Kx5Ug3/EH3UpPwXtW"
+          REF_NAME="${{ github.ref_name }}"
+          echo "Triggered for branch: $REF_NAME"
+
+          if [ "$REF_NAME" = "preview/educators" ]; then
+            DEPLOY_HOOK="${{ secrets.VERCEL_DEPLOY_HOOK_EDUCATORS }}"
+            if [ -z "$DEPLOY_HOOK" ]; then
+              echo "Using default deploy hook for educators..."
+              DEPLOY_HOOK="https://api.vercel.com/v1/integrations/deploy/prj_Z9wPgYcip4jMI6a6sK3v49Kx5Ug3/Lj5CUIQWQB"
+            fi
+          else
+            DEPLOY_HOOK="${{ secrets.VERCEL_DEPLOY_HOOK_REDESIGN }}"
+            if [ -z "$DEPLOY_HOOK" ]; then
+              echo "Using default deploy hook for redesign..."
+              DEPLOY_HOOK="https://api.vercel.com/v1/integrations/deploy/prj_Z9wPgYcip4jMI6a6sK3v49Kx5Ug3/EH3UpPwXtW"
+            fi
           fi
+
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$DEPLOY_HOOK")
           HTTP_BODY=$(echo "$RESPONSE" | sed '$d')
           HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)

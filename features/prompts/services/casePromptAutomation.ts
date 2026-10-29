@@ -847,7 +847,7 @@ function generateOwnerFollowUp(ctx: GenerationContext): string {
     condition ? `${persona.ownerName} wants to understand how proposed diagnostics relate to ${condition.toLowerCase()}.` : undefined,
     `Conversation goals:`,
     `- Ask why each diagnostic or treatment step is necessary.`,
-    `- Query costs, logistics, and patient comfort.`,
+    `- Query logistics and patient comfort.`,
     `- Raise practical concerns about implementing the plan in ${persona.setting}.`,
     `- Become cooperative once the learner explains the rationale clearly.`
   );
@@ -858,7 +858,7 @@ function generateOwnerFollowUpFeedback(ctx: GenerationContext): string {
   return join(
     `When scoring the follow-up discussion, evaluate whether the learner:`,
     `- Linked each diagnostic recommendation to the suspected ${condition || "clinical focus"}.`,
-    `- Explained purpose, cost, and logistics in language ${persona.ownerName} could relay to others.`,
+    `- Explained purpose and logistics in language ${persona.ownerName} could relay to others.`,
     `- Addressed biosecurity or home-care considerations relevant to ${persona.setting}.`,
     `- Invited and handled ${persona.ownerName}'s questions respectfully.`,
     `Offer two specific action items that would elevate the conversation.`
@@ -930,7 +930,7 @@ function generateOwnerFollowUpPrompt(ctx: GenerationContext): string {
   return join(
     `You are ${persona.ownerName} discussing next diagnostic or management steps for ${persona.animalName}.`,
     condition ? `Seek justification for each recommendation tied to ${condition}.` : undefined,
-    `Ask about cost, practicality, and the impact on day-to-day routines in ${persona.setting}.`,
+    `Ask about practicality and the impact on day-to-day routines in ${persona.setting}.`,
     `Acknowledge thorough explanations and shift toward planning once reassured.`
   );
 }
@@ -942,7 +942,7 @@ function generateOwnerFollowUpFeedbackPrompt(ctx: GenerationContext): string {
     `- Prioritised diagnostics relevant to the suspected ${condition || "condition"}.`,
     `- Explained isolation, safety, or monitoring requirements in terms ${persona.ownerName} can execute.`,
     `- Balanced empathy with clear next steps and checked for understanding.`,
-    `- Invited financial or logistical questions and responded constructively.`
+    `- Invited logistical questions and responded constructively.`
   );
 }
 

@@ -163,14 +163,30 @@ export function LiveSession({
   // Timed stations: each stage gets a 90-second countdown. Pausing freezes
   // the countdown, the ring and the total-time accumulation. At zero the
   // stage auto-advances (the last stage ends the case).
-  const STAGE_SECONDS = 90;
-  const [stageSecondsLeft, setStageSecondsLeft] = useState(STAGE_SECONDS);
-  const stageProgress = Math.max(0, Math.min(1, stageSecondsLeft / STAGE_SECONDS));
+  // Timed stations: history collection stage gets 180 seconds; subsequent stages default to 90 seconds
+  // (unless overridden by stage.settings?.time_limit_seconds or duration_seconds).
+  const getStageDuration = useCallback((stage?: typeof currentStage): number => {
+    if (!stage) return 90;
+    const settings = stage.settings as Record<string, unknown> | undefined;
+    const explicit = Number(settings?.time_limit_seconds ?? settings?.duration_seconds);
+    if (Number.isFinite(explicit) && explicit > 0) return explicit;
+    const stageType =
+      normalizeStageType(typeof settings?.stage_type === "string" ? settings.stage_type : "") ||
+      inferStageTypeFromText(stage.title || "");
+    if (stageType === "history") return 180;
+    return 90;
+  }, []);
+
+  const [stageDuration, setStageDuration] = useState(() => getStageDuration(currentStage));
+  const [stageSecondsLeft, setStageSecondsLeft] = useState(stageDuration);
+  const stageProgress = Math.max(0, Math.min(1, stageSecondsLeft / (stageDuration || 1)));
   const countdownDisplay = formatElapsed(stageSecondsLeft);
 
   useEffect(() => {
-    setStageSecondsLeft(STAGE_SECONDS);
-  }, [progress.currentStageIndex]);
+    const dur = getStageDuration(currentStage);
+    setStageDuration(dur);
+    setStageSecondsLeft(dur);
+  }, [progress.currentStageIndex, currentStage, getStageDuration]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -237,14 +253,6 @@ export function LiveSession({
       normalizeStageType(currentStageRaw) ||
       inferStageTypeFromText(`${currentStage?.title ?? ""} ${currentStage?.description ?? ""}`);
     if (normalizedCurrentStageType === "history") {
-      findingsSignatureRef.current = signature;
-      return;
-    }
-
-    // Stage-transition phrases ("let's do the physical examination") advance
-    // the stage — they are NOT findings requests, so they never reveal.
-    const intentText = lastUser?.content ?? "";
-    if (intentText && Object.values(STAGE_INTENT_PATTERNS).some((p) => p.test(intentText))) {
       findingsSignatureRef.current = signature;
       return;
     }
@@ -409,7 +417,7 @@ export function LiveSession({
         // Mark this persona as already connected so the persona-switch effect
         // does NOT treat the initial connection as a handoff (that made the
         // owner answer the HANDOFF goodbye instead of the first-contact greeting).
-        switchedPersonaRoleRef.current = persona.roleKey;
+        switchedPersonaRoleRef.current = `${persona.roleKey}:${progress.currentStageIndex}`;
 
         if (!isPausedRef.current) {
           await mic.start();
@@ -493,7 +501,7 @@ export function LiveSession({
         if (cancelled) return;
         console.log("[Session] Reconnected with persona:", persona.displayName);
         await live.connect(token, persona);
-        switchedPersonaRoleRef.current = persona.roleKey;
+        switchedPersonaRoleRef.current = `${persona.roleKey}:${progress.currentStageIndex}`;
         if (!isPausedRef.current) {
           await mic.start();
         }
@@ -561,7 +569,8 @@ export function LiveSession({
 
   useEffect(() => {
     if (!persona) return;
-    if (persona.roleKey === switchedPersonaRoleRef.current) return;
+    const personaStageKey = `${persona.roleKey}:${progress.currentStageIndex}`;
+    if (personaStageKey === switchedPersonaRoleRef.current) return;
 
     if (live.status === "connected") {
       // Commit the switch only when it actually runs, so a switch requested
@@ -697,23 +706,46 @@ export function LiveSession({
 
   const handleConfirmAdvance = useCallback(() => {
     setShowAdvanceConfirm(false);
+    // Resume the session if it was paused.
+    if (isPausedRef.current) {
+      isPausedRef.current = false;
+      setIsPaused(false);
+      player.setMuted(false);
+      void mic.start();
+    }
     // Advance FIRST — the case must never stall on a save error.
     const nextIndex = progress.currentStageIndex + 1;
     progress.advanceStage();
     void saveProgress(nextIndex, live.messages, timeSpentRef.current).catch(() => {});
-  }, [progress, saveProgress, live.messages]);
+  }, [progress, saveProgress, live.messages, player, mic]);
 
   const handleCancelAdvance = useCallback(() => {
     setShowAdvanceConfirm(false);
-  }, []);
+    if (timerExpiredRef.current && nextStage) {
+      // Timer has expired — "Stay" is not possible, force advance.
+      console.log("[Session] Stay clicked but timer expired — advancing anyway");
+      if (isPausedRef.current) {
+        isPausedRef.current = false;
+        setIsPaused(false);
+        player.setMuted(false);
+      }
+      progress.advanceStage();
+      void saveProgress(progress.currentStageIndex, live.messages, timeSpentRef.current).catch(() => {});
+    } else {
+      // Timer still running — resume the session if it was paused by the banner.
+      if (isPausedRef.current) {
+        isPausedRef.current = false;
+        setIsPaused(false);
+        void mic.start();
+        player.setMuted(false);
+      }
+    }
+  }, [nextStage, progress, saveProgress, live.messages, mic, player]);
 
-  // Stage-intent auto-advance: when the student explicitly tells the persona
-  // they want to move to the NEXT stage (e.g. "let's do the physical
-  // examination"), advance immediately, bring the incoming persona into
-  // focus, and let them open the conversation.
-  // The signature is primed with the INITIAL transcript's last user message:
-  // resumed history is acknowledged without acting on it, while the first
-  // NEW message of any session is always evaluated.
+  // MANUAL-ONLY STAGE TRANSITIONS: NLP intent detection still runs for
+  // orientation hints and logging, but no longer auto-advances.
+  // Instead, when intent is detected, show the confirmation banner so the
+  // student must explicitly click to advance.
   const initialLastUser = initialMessages.filter((m) => m.role === "user").slice(-1)[0];
   const intentProcessedSigRef = useRef<string>(
     initialLastUser ? `${initialLastUser.id}:${initialLastUser.content.length}` : ""
@@ -723,22 +755,19 @@ export function LiveSession({
     const userMsgs = live.messages.filter((m) => m.role === "user");
     const last = userMsgs[userMsgs.length - 1];
     if (!last) return;
-    // Interim entries GROW in place with a stable id — re-evaluate on every
-    // content change, not just the first time an id is seen.
     const signature = `${last.id}:${last.content.length}`;
     if (intentProcessedSigRef.current === signature) return;
     intentProcessedSigRef.current = signature;
 
     const settings = nextStage.settings as Record<string, unknown> | undefined;
-    // settings.stage_type is authoritative; infer from the title only when missing.
     const stageType =
       normalizeStageType(typeof settings?.stage_type === "string" ? settings.stage_type : "") ||
       inferStageTypeFromText(`${nextStage.title ?? ""} ${nextStage.description ?? ""}`);
 
-    // Generic explicit request: "next stage" always advances.
+    // Generic explicit request: "next stage" — show confirmation banner.
     if (/\b(?:the )?next (?:stage|phase)\b|\bsiguient(?:e|es) (?:etapa|fase|paso)\b/i.test(last.content)) {
-      console.log("[Session] Generic next-stage request detected ->", last.content);
-      handleConfirmAdvance();
+      console.log("[Session] Generic next-stage request detected (manual mode) ->", last.content);
+      setShowAdvanceConfirm(true);
       return;
     }
 
@@ -759,6 +788,7 @@ export function LiveSession({
         text: last.content.slice(0, 80),
       })
     );
+    // Stage-specific intent detected: show confirmation banner instead of auto-advancing.
     if (pattern && matched) {
       setShowAdvanceConfirm(true);
     }
@@ -789,6 +819,8 @@ export function LiveSession({
           currentStageIndex: progress.currentStageIndex,
           status: "completed",
           messages: finalMessages,
+          promptTokens: live.tokenUsage.promptTokens,
+          completionTokens: live.tokenUsage.completionTokens,
         }),
       });
     } catch {
@@ -860,7 +892,12 @@ export function LiveSession({
           "Content-Type": "application/json",
           ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         },
-        body: JSON.stringify({ attemptId, status: "completed" }),
+        body: JSON.stringify({
+          attemptId,
+          status: "completed",
+          promptTokens: live.tokenUsage.promptTokens,
+          completionTokens: live.tokenUsage.completionTokens,
+        }),
       });
     } catch {
       // reload regardless — worst case the same attempt resumes
@@ -868,24 +905,34 @@ export function LiveSession({
     window.location.reload();
   }, [mic, live, attemptId]);
 
-  // Timed stations: when the countdown reaches zero, advance automatically
-  // ONCE per zero-crossing (the flag resets when the next stage's countdown
-  // restarts at 90). In the LAST stage, ending the countdown ends the case.
+  // Timed stations: when the countdown reaches zero, show the confirmation
+  // banner AND pause the session. The student must click a button to continue:
+  //   - "Advance" → proceeds to the next stage
+  //   - "Stay" → if time has expired, auto-advances immediately since the
+  //     stage time limit has been reached
+  // In the LAST stage, ending the countdown still ends the case (OSCE time limit).
   const autoAdvancedRef = useRef(false);
   const autoEndedRef = useRef(false);
+  // Track whether the timer expired so handleCancelAdvance knows to force-advance.
+  const timerExpiredRef = useRef(false);
   useEffect(() => {
     if (stageSecondsLeft > 0) {
       autoAdvancedRef.current = false;
+      timerExpiredRef.current = false;
       return;
     }
-    if (isPausedRef.current) return; // paused: clock frozen, no auto-advance
+    timerExpiredRef.current = true;
     if (autoAdvancedRef.current) return;
     autoAdvancedRef.current = true;
+
+    // Stage timer has ended: dismiss any advance prompt immediately
+    setShowAdvanceConfirm(false);
+
     if (nextStage) {
-      console.log("[Session] Stage time expired, auto-advancing to:", nextStage.title);
+      console.log("[Session] Stage time expired, advancing automatically to:", nextStage.title);
       handleConfirmAdvance();
     } else {
-      console.log("[Session] Case time expired, ending session");
+      console.log("[Session] Final stage time expired, ending session");
       void handleEndSession();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1110,7 +1157,7 @@ export function LiveSession({
         {/* Bottom: Controls */}
         <div className="relative flex-shrink-0">
           {/* Top-right action buttons */}
-          <div className="absolute right-4 top-2 z-10 flex gap-1">
+          <div className="relative z-10 flex flex-wrap justify-end gap-1 px-4 py-1">
             {/* P3.6: Export button */}
             <div className="relative">
               <Button
@@ -1158,12 +1205,12 @@ export function LiveSession({
             {/* P2.4: Notepad toggle */}
             <Button
               variant="ghost"
-              size="icon"
               onClick={() => setShowNotepad((prev) => !prev)}
-              className="h-9 w-9 rounded-full"
+              className="h-10 gap-2 px-3"
               title="Clinical Notes"
             >
               <FileText className="h-4 w-4" />
+              <span>Clinical Notes</span>
             </Button>
           </div>
 
@@ -1177,6 +1224,7 @@ export function LiveSession({
             isMuted={isMuted}
             showAdvanceHint={showAdvanceHint}
             elapsedTime={countdownDisplay}
+            stageSecondsLeft={stageSecondsLeft}
             stageProgress={stageProgress}
             personas={personaDefs}
             onToggleMic={handleToggleMic}

@@ -14,10 +14,7 @@ import { Loader2, Trash2, ChevronRight, Info } from "lucide-react";
 import { getSession } from "@/features/case-sessions/services/caseSessionService";
 import { deriveStatus, type CaseSession } from "@/features/case-sessions/models/caseSession";
 import { getStagesForCase } from "@/features/stages/services/stageService";
-import type {
-  Attempt,
-  AttemptFeedback,
-} from "@/features/attempts/models/attempt";
+import type { Attempt, AttemptFeedback } from "@/features/attempts/models/attempt";
 import type { Message } from "@/features/chat/models/chat";
 import type { Stage } from "@/features/stages/types";
 import { Case } from "@/features/case-selection/models/case";
@@ -63,9 +60,7 @@ function attemptBreadcrumbItems({
   if (from === "session") {
     return [
       { label: "Home", href: "/dashboard" },
-      isStaff
-        ? { label: "Case Sessions", href: "/professor/sessions" }
-        : { label: "Start", href: "/start" },
+      isStaff ? { label: "Case Sessions", href: "/professor/sessions" } : { label: "Start", href: "/start" },
       {
         label: session?.friendlyName || "Session",
         href: session ? sessionHref(session.id, isStaff) : undefined,
@@ -100,22 +95,10 @@ function attemptBreadcrumbItems({
     ];
   }
 
-  return [
-    { label: "Home", href: "/dashboard" },
-    { label: "My Attempts", href: "/attempts" },
-    current,
-  ];
+  return [{ label: "Home", href: "/dashboard" }, { label: "My Attempts", href: "/attempts" }, current];
 }
 
-function DetailsCard({
-  title,
-  children,
-  footer,
-}: {
-  title: string;
-  children: ReactNode;
-  footer?: ReactNode;
-}) {
+function DetailsCard({ title, children, footer }: { title: string; children: ReactNode; footer?: ReactNode }) {
   return (
     <div className="flex h-full flex-col rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
       <div className="px-6 py-5">
@@ -146,11 +129,8 @@ export default function ViewAttemptPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"conversation" | "feedback">("conversation");
   const [isDeleting, setIsDeleting] = useState(false);
-  const [studentProfile, setStudentProfile] = useState<SimpleProfile | null>(
-    null
-  );
-  const [professorProfile, setProfessorProfile] =
-    useState<SimpleProfile | null>(null);
+  const [studentProfile, setStudentProfile] = useState<SimpleProfile | null>(null);
+  const [professorProfile, setProfessorProfile] = useState<SimpleProfile | null>(null);
   const [session, setSession] = useState<CaseSession | null>(null);
 
   const unreadFeedbackCount =
@@ -267,13 +247,10 @@ export default function ViewAttemptPage() {
     // mark as read (best-effort)
     (async () => {
       try {
-        const res = await fetch(
-          `/api/attempts/${attempt.id}/feedback/mark-read`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-          }
-        );
+        const res = await fetch(`/api/attempts/${attempt.id}/feedback/mark-read`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
         if (res.ok) {
           // locally reflect change to avoid extra fetch
           setAttempt({ ...attempt, feedbackReadAt: new Date().toISOString() });
@@ -306,11 +283,7 @@ export default function ViewAttemptPage() {
 
   const handleDeleteAttempt = async () => {
     if (role !== "professor" && !isAdmin) return;
-    if (
-      window.confirm(
-        "Are you sure you want to delete this attempt? This action cannot be undone."
-      )
-    ) {
+    if (window.confirm("Are you sure you want to delete this attempt? This action cannot be undone.")) {
       setIsDeleting(true);
       const success = await deleteAttempt(attemptId);
 
@@ -366,21 +339,11 @@ export default function ViewAttemptPage() {
 
   const sessionStatus = session ? deriveStatus(session) : null;
   const canDeleteAttempt = isStaff;
-  const sessionEndedInProgress =
-    attempt.completionStatus === "in_progress" && sessionStatus === "completed";
-  const canContinueAttempt =
-    attempt.completionStatus === "in_progress" &&
-    user?.id === attempt.userId &&
-    !sessionEndedInProgress;
+  const sessionEndedInProgress = attempt.completionStatus === "in_progress" && sessionStatus === "completed";
+  const canContinueAttempt = attempt.completionStatus === "in_progress" && user?.id === attempt.userId && !sessionEndedInProgress;
   const studentEmail = studentProfile?.email?.trim() || null;
-  const studentLabel = isStaff
-    ? studentEmail || studentProfile?.fullName?.trim() || "—"
-    : studentProfile?.fullName?.trim() || studentEmail || "—";
-  const professorLabel =
-    professorProfile?.fullName?.trim() ||
-    professorProfile?.email ||
-    session?.createdByName ||
-    "—";
+  const studentLabel = isStaff ? studentEmail || studentProfile?.fullName?.trim() || "—" : studentProfile?.fullName?.trim() || studentEmail || "—";
+  const professorLabel = professorProfile?.fullName?.trim() || professorProfile?.email || session?.createdByName || "—";
 
   return (
     <div className="container mx-auto px-4 pb-8">
@@ -397,9 +360,7 @@ export default function ViewAttemptPage() {
       />
 
       <header className="mb-8 text-center">
-        <h1 className="text-3xl font-bold tracking-tight text-primary md:text-4xl lg:text-5xl">
-          {attempt.title || "Attempt"}
-        </h1>
+        <h1 className="text-3xl font-bold tracking-tight text-primary md:text-4xl lg:text-5xl">{attempt.title || "Attempt"}</h1>
         <p className="mt-4 text-xl text-muted-foreground">
           Id: <span className="font-mono text-base">{attempt.id}</span>
         </p>
@@ -427,12 +388,7 @@ export default function ViewAttemptPage() {
           title="Attempt Details"
           footer={
             canDeleteAttempt ? (
-              <Button
-                variant="outline"
-                onClick={handleDeleteAttempt}
-                disabled={isDeleting}
-                className="w-full"
-              >
+              <Button variant="outline" onClick={handleDeleteAttempt} disabled={isDeleting} className="w-full">
                 {isDeleting ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -451,10 +407,7 @@ export default function ViewAttemptPage() {
           <ul className="divide-y divide-gray-100 dark:divide-gray-800">
             <InfoRow label="Student">
               {isStaff && attempt.userId ? (
-                <Link
-                  href={`/professor/students/${attempt.userId}`}
-                  className="text-primary hover:underline"
-                >
+                <Link href={`/professor/students/${attempt.userId}`} className="text-primary hover:underline">
                   {studentLabel}
                 </Link>
               ) : (
@@ -464,19 +417,11 @@ export default function ViewAttemptPage() {
             <InfoRow label="Status">
               <Badge
                 variant={
-                  attempt.completionStatus === "completed"
-                    ? "success"
-                    : attempt.completionStatus === "in_progress"
-                      ? "warning"
-                      : "destructive"
+                  attempt.completionStatus === "completed" ? "success" : attempt.completionStatus === "in_progress" ? "warning" : "destructive"
                 }
                 className={attempt.completionStatus === "abandoned" ? "text-white" : undefined}
               >
-                {attempt.completionStatus === "completed"
-                  ? "Completed"
-                  : attempt.completionStatus === "in_progress"
-                    ? "In Progress"
-                    : "Abandoned"}
+                {attempt.completionStatus === "completed" ? "Completed" : attempt.completionStatus === "in_progress" ? "In Progress" : "Abandoned"}
               </Badge>
             </InfoRow>
             <InfoRow label="Started">{formatDate(attempt.createdAt)}</InfoRow>
@@ -504,9 +449,7 @@ export default function ViewAttemptPage() {
                 <InfoRow label="Name">{session.friendlyName}</InfoRow>
                 <InfoRow label="Status">
                   <Badge
-                    variant={
-                      sessionStatus === "active" ? "success" : sessionStatus === "scheduled" ? "warning" : "secondary"
-                    }
+                    variant={sessionStatus === "active" ? "success" : sessionStatus === "scheduled" ? "warning" : "secondary"}
                     className="capitalize"
                   >
                     {sessionStatus === "active" ? "Active" : sessionStatus === "scheduled" ? "Scheduled" : "Completed"}
@@ -521,9 +464,7 @@ export default function ViewAttemptPage() {
                   <Info className="mt-0.5 size-4 shrink-0 text-brand-700 dark:text-brand-400" aria-hidden="true" />
                   <div>
                     <p className="text-sm font-semibold text-brand-800 dark:text-brand-300">Session ended</p>
-                    <p className="text-xs text-brand-700 dark:text-brand-400">
-                      This attempt cannot be completed as the session has now ended.
-                    </p>
+                    <p className="text-xs text-brand-700 dark:text-brand-400">This attempt cannot be completed as the session has now ended.</p>
                   </div>
                 </div>
               ) : null}
@@ -533,11 +474,7 @@ export default function ViewAttemptPage() {
           )}
         </DetailsCard>
 
-        {attemptCase ? (
-          <CaseCard key={attemptCase.id} caseItem={attemptCase} href={caseHref(attemptCase.id, isStaff)} />
-        ) : (
-          <div />
-        )}
+        {attemptCase ? <CaseCard key={attemptCase.id} caseItem={attemptCase} href={caseHref(attemptCase.id, isStaff)} /> : <div />}
       </div>
 
       <div className="rounded-2xl border border-gray-200 bg-white px-5 py-5 sm:px-6 sm:py-6 dark:border-gray-800 dark:bg-white/[0.03]">
@@ -549,21 +486,9 @@ export default function ViewAttemptPage() {
           value={activeTab}
           onChange={setActiveTab}
         >
-          {activeTab === "conversation" && (
-            <AttemptConversationTab
-              messages={messages}
-              stages={stages}
-              createdAt={attempt.createdAt}
-            />
-          )}
+          {activeTab === "conversation" && <AttemptConversationTab messages={messages} stages={stages} createdAt={attempt.createdAt} />}
 
-          {activeTab === "feedback" && (
-            <AttemptFeedbackTab
-              attempt={attempt}
-              feedback={feedback}
-              stages={stages}
-            />
-          )}
+          {activeTab === "feedback" && <AttemptFeedbackTab attempt={attempt} feedback={feedback} stages={stages} />}
         </DefaultTabs>
       </div>
     </div>

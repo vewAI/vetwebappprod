@@ -73,7 +73,17 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/case/:id/attempt",
-        destination: "/start/case/:id/attempt",
+        destination: "/live/:id",
+        permanent: true,
+      },
+      {
+        source: "/start/case/:id/attempt",
+        destination: "/live/:id",
+        permanent: true,
+      },
+      {
+        source: "/case-sessions/case/:id/attempt",
+        destination: "/live/:id",
         permanent: true,
       },
       {

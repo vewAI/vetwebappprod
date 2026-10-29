@@ -11,7 +11,7 @@ function isAdminOnlyPath(pathname: string) {
 
 function needsYearGroup(pathname: string, role: string | null, yearGroupId: string | null) {
   if (role !== "student" || yearGroupId) return false;
-  return pathname.startsWith("/start/");
+  return pathname.startsWith("/start/") || pathname.startsWith("/live/");
 }
 
 export function ProtectedRoute({ children }: { children: ReactNode }) {
