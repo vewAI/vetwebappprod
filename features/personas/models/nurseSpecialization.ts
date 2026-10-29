@@ -18,6 +18,7 @@ export interface NurseSpecialization {
   labReferenceRanges?: Record<string, string> | null;
   vitalReferenceRanges?: Record<string, string> | null;
   commonPathologies?: string[] | null;
+  bundledTests?: Record<string, string[]> | null;
   metadata?: Record<string, unknown> | null;
   createdAt?: string;
   updatedAt?: string;

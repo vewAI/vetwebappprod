@@ -29,6 +29,7 @@ export async function getNurseForSpecies(supabase: SupabaseClient, species?: str
     labReferenceRanges: data.lab_reference_ranges ?? null,
     vitalReferenceRanges: data.vital_reference_ranges ?? null,
     commonPathologies: data.common_pathologies ?? null,
+    bundledTests: data.bundled_tests ?? (data.metadata?.bundled_tests as Record<string, string[]> | undefined) ?? null,
     metadata: data.metadata ?? null,
     createdAt: data.created_at ?? undefined,
     updatedAt: data.updated_at ?? undefined,
