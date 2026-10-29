@@ -94,10 +94,10 @@ export async function PUT(request: NextRequest, context: RouteContext) {
   for (let i = 0; i < stages.length; i += 1) {
     const stage = stages[i] as Record<string, unknown>;
     if (typeof stage.title !== "string" || stage.title.trim().length === 0) {
-      return NextResponse.json({ error: `Stage ${i}: title is required` }, { status: 400 });
+      return NextResponse.json({ error: `Stage ${i + 1}: title is required` }, { status: 400 });
     }
     if (typeof stage.persona_role_key !== "string" || stage.persona_role_key.trim().length === 0) {
-      return NextResponse.json({ error: `Stage ${i}: persona_role_key is required` }, { status: 400 });
+      return NextResponse.json({ error: `Stage ${i + 1}: persona_role_key is required` }, { status: 400 });
     }
     const settings = stage.settings as Record<string, unknown> | undefined;
     if (stage.is_active !== false && settings?.stage_type === "recheck_transition") {
@@ -107,11 +107,11 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         (following.settings as Record<string, unknown> | undefined)?.stage_type !== "recheck_transition");
       if (typeof stage.transition_message !== "string" || !stage.transition_message.trim() ||
           !hasPreviousEncounter || !hasNextEncounter) {
-        return NextResponse.json({ error: `Stage ${i}: recheck transition needs a message between two active encounters` }, { status: 400 });
+        return NextResponse.json({ error: `Stage ${i + 1}: recheck transition needs a message between two active encounters` }, { status: 400 });
       }
       if (settings.recheck_outcomes !== undefined) {
         const outcomeError = validateRecheckOutcomes(settings.recheck_outcomes);
-        if (outcomeError) return NextResponse.json({ error: `Stage ${i}: ${outcomeError}` }, { status: 400 });
+        if (outcomeError) return NextResponse.json({ error: `Stage ${i + 1}: ${outcomeError}` }, { status: 400 });
       }
     }
   }

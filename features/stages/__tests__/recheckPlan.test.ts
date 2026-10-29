@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { publicStageSettings, validateRecheckOutcomes, type RecheckOutcome } from "../recheckPlan";
+import { newRecheckOutcome, publicStageSettings, validateRecheckOutcomes, type RecheckOutcome } from "../recheckPlan";
 
 const outcome = (id: string, overrides: Partial<RecheckOutcome> = {}): RecheckOutcome => ({
   id,
@@ -13,6 +13,12 @@ const outcome = (id: string, overrides: Partial<RecheckOutcome> = {}): RecheckOu
 });
 
 describe("recheck authoring plan", () => {
+  it("creates a new outcome with valid starter findings", () => {
+    const created = newRecheckOutcome();
+    expect(created.ownerReport).toBeTruthy();
+    expect(validateRecheckOutcomes([created])).toBeNull();
+  });
+
   it("accepts one fixed outcome without a trigger", () => {
     expect(validateRecheckOutcomes([outcome("one", { trigger: "" })])).toBeNull();
   });

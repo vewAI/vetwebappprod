@@ -21,7 +21,7 @@ export function newRecheckOutcome(title = "Outcome 1"): RecheckOutcome {
     id: crypto.randomUUID(),
     title,
     trigger: "",
-    ownerReport: "",
+    ownerReport: "The patient returns for follow-up evaluation. The owner reports on clinical progress since the initial visit.",
     examination: "",
     repeatTests: "",
     feedbackFocus: "",

@@ -7,6 +7,8 @@ import { buildAuthHeaders } from "@/lib/auth-headers";
 import type { Case } from "@/features/case-selection/models/case";
 import { RecheckPlanEditor } from "@/features/stages/components/RecheckPlanEditor";
 import { newRecheckOutcome, validateRecheckOutcomes } from "@/features/stages/recheckPlan";
+import { Check, Loader2, AlertCircle, Plus, ArrowUp, ArrowDown, Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type EditableStage = {
   id?: string;
@@ -38,6 +40,7 @@ type StageTypeDefinition = {
   defaultRoleLabel: string;
   defaultRoleInfoKey: string;
   defaultFeedbackPromptKey: string;
+  defaultTransitionMessage?: string;
 };
 
 const STAGE_TYPES: StageTypeDefinition[] = [
@@ -131,6 +134,7 @@ const STAGE_TYPES: StageTypeDefinition[] = [
     defaultRoleLabel: "Recheck notice",
     defaultRoleInfoKey: "",
     defaultFeedbackPromptKey: "",
+    defaultTransitionMessage: "Four days after the initial consultation, the horse returns for a recheck. Meet the owner, ask how the horse has been, and carry out your recheck assessment.",
   },
   {
     id: "custom",
@@ -250,6 +254,54 @@ function getOptionLabel(options: Array<{ value: string; label: string }>, value:
   return options.find((option) => option.value === value)?.label ?? (value || "Not set");
 }
 
+function hasPreviousEncounter(index: number, stages: EditableStage[]): boolean {
+  return stages.slice(0, index).some(
+    (previous) => previous.is_active && detectStageType(previous) !== "recheck_transition"
+  );
+}
+
+function hasNextEncounter(index: number, stages: EditableStage[]): boolean {
+  return stages.slice(index + 1).some(
+    (following) => following.is_active && detectStageType(following) !== "recheck_transition"
+  );
+}
+
+function getStageValidationError(
+  stage: EditableStage,
+  index: number,
+  stages: EditableStage[]
+): string | null {
+  if (!stage.title.trim()) {
+    return `Stage ${index + 1}: Title is required`;
+  }
+  if (!stage.persona_role_key.trim()) {
+    return `Stage ${index + 1}: Who answers in this stage is required`;
+  }
+  if (stage.is_active && detectStageType(stage) === "recheck_transition") {
+    if (!stage.transition_message.trim()) {
+      return `Stage ${index + 1} (Recheck transition): Please enter a transition notice message for students before the recheck`;
+    }
+    const hasPrev = hasPreviousEncounter(index, stages);
+    const hasNext = hasNextEncounter(index, stages);
+    if (!hasPrev && !hasNext) {
+      return `Stage ${index + 1} (Recheck transition): Must be placed between two active encounters`;
+    }
+    if (!hasPrev) {
+      return `Stage ${index + 1} (Recheck transition): Must follow an initial consultation stage`;
+    }
+    if (!hasNext) {
+      return `Stage ${index + 1} (Recheck transition): Must be followed by an active encounter stage (e.g. Recheck Exam or Consultation)`;
+    }
+    if (stage.settings.recheck_outcomes !== undefined) {
+      const outcomeError = validateRecheckOutcomes(stage.settings.recheck_outcomes);
+      if (outcomeError) {
+        return `Stage ${index + 1}: ${outcomeError}`;
+      }
+    }
+  }
+  return null;
+}
+
 export default function CaseStageManagerPage() {
   const [requestedCaseId, setRequestedCaseId] = useState<string>("");
   const [cases, setCases] = useState<Case[]>([]);
@@ -259,6 +311,8 @@ export default function CaseStageManagerPage() {
   const [savedSnapshot, setSavedSnapshot] = useState<string>("[]");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [invalidStageIndex, setInvalidStageIndex] = useState<number | null>(null);
   const [error, setError] = useState<string>("");
 
   useEffect(() => {
@@ -292,6 +346,7 @@ export default function CaseStageManagerPage() {
     if (!caseId) return;
     setLoading(true);
     setError("");
+    setInvalidStageIndex(null);
     try {
       const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/stages`, {
         cache: "no-store",
@@ -324,10 +379,18 @@ export default function CaseStageManagerPage() {
 
   useEffect(() => {
     if (!selectedCaseId) return;
+    setSaveStatus("idle");
+    setInvalidStageIndex(null);
     void loadStages(selectedCaseId);
   }, [selectedCaseId]);
 
   const isDirty = useMemo(() => JSON.stringify(stages) !== savedSnapshot, [stages, savedSnapshot]);
+
+  const clearSaveStatusOnEdit = () => {
+    if (saveStatus !== "idle") setSaveStatus("idle");
+    if (error) setError("");
+    if (invalidStageIndex !== null) setInvalidStageIndex(null);
+  };
 
   const selectedCaseTitle = useMemo(
     () => cases.find((caseItem) => caseItem.id === selectedCaseId)?.title || selectedCaseId,
@@ -344,14 +407,26 @@ export default function CaseStageManagerPage() {
   }, [stages]);
 
   const updateStage = (index: number, partial: Partial<EditableStage>) => {
+    clearSaveStatusOnEdit();
     setStages((prev) => prev.map((stage, idx) => (idx === index ? { ...stage, ...partial } : stage)));
   };
 
   const applyStageType = (index: number, typeId: StageTypeId) => {
     const typeDef = STAGE_TYPE_BY_ID[typeId];
+    clearSaveStatusOnEdit();
     setStages((prev) =>
       prev.map((stage, idx) => {
         if (idx !== index) return stage;
+        const transitionMessage =
+          typeId === "recheck_transition"
+            ? (stage.transition_message.trim() ? stage.transition_message : (typeDef.defaultTransitionMessage ?? ""))
+            : stage.transition_message;
+        const defaultOutcomes =
+          typeId === "recheck_transition" &&
+          (!stage.settings?.recheck_outcomes ||
+            (Array.isArray(stage.settings.recheck_outcomes) && stage.settings.recheck_outcomes.length === 0))
+            ? [newRecheckOutcome()]
+            : stage.settings?.recheck_outcomes;
         return {
           ...stage,
           title: typeDef.defaultTitle,
@@ -360,15 +435,14 @@ export default function CaseStageManagerPage() {
           role_label: typeDef.defaultRoleLabel,
           role_info_key: typeDef.defaultRoleInfoKey,
           feedback_prompt_key: typeDef.defaultFeedbackPromptKey,
+          transition_message: transitionMessage,
           stage_prompt: typeId === "recheck_transition" ? "" : stage.stage_prompt,
           min_user_turns: typeId === "recheck_transition" ? 0 : stage.min_user_turns,
           min_assistant_turns: typeId === "recheck_transition" ? 0 : stage.min_assistant_turns,
           settings: {
             ...(stage.settings ?? {}),
             stage_type: typeId,
-            ...(typeId === "recheck_transition" && !stage.settings?.recheck_outcomes
-              ? { recheck_outcomes: [newRecheckOutcome()] }
-              : {}),
+            ...(defaultOutcomes ? { recheck_outcomes: defaultOutcomes } : {}),
           },
         };
       }),
@@ -378,6 +452,7 @@ export default function CaseStageManagerPage() {
   const moveStage = (index: number, direction: -1 | 1) => {
     const target = index + direction;
     if (target < 0 || target >= stages.length) return;
+    clearSaveStatusOnEdit();
     setStages((prev) => {
       const next = [...prev];
       const [item] = next.splice(index, 1);
@@ -387,36 +462,73 @@ export default function CaseStageManagerPage() {
   };
 
   const deleteStage = (index: number) => {
+    clearSaveStatusOnEdit();
     setStages((prev) => prev.filter((_, idx) => idx !== index));
   };
 
   const addStage = () => {
+    clearSaveStatusOnEdit();
     setStages((prev) => [...prev, createBlankStage()]);
+  };
+
+  const insertStageAfter = (index: number) => {
+    clearSaveStatusOnEdit();
+    const blank = createBlankStage();
+    setStages((prev) => {
+      const next = [...prev];
+      next.splice(index + 1, 0, blank);
+      return next;
+    });
+  };
+
+  const addFollowUpStageAfter = (index: number) => {
+    clearSaveStatusOnEdit();
+    const followUpStage: EditableStage = {
+      title: "Recheck Examination",
+      description: "Ask for follow-up examination findings and reassess clinical status.",
+      persona_role_key: "veterinary-nurse",
+      role_label: "Veterinary Nurse",
+      role_info_key: "getPhysicalExamPrompt",
+      feedback_prompt_key: "getPhysicalExamFeedbackPrompt",
+      stage_prompt: "",
+      transition_message: "",
+      is_active: true,
+      min_user_turns: 0,
+      min_assistant_turns: 0,
+      settings: { stage_type: "physical" },
+    };
+    setStages((prev) => {
+      const next = [...prev];
+      next.splice(index + 1, 0, followUpStage);
+      return next;
+    });
   };
 
   const saveStages = async () => {
     if (!selectedCaseId) return;
-    const invalidRecheckIndex = stages.findIndex((stage, index) =>
-      stage.is_active && detectStageType(stage) === "recheck_transition" &&
-      (!stage.transition_message.trim() ||
-        !stages.slice(0, index).some((previous) => previous.is_active && detectStageType(previous) !== "recheck_transition") ||
-        !stages.slice(index + 1).some((following) => following.is_active && detectStageType(following) !== "recheck_transition"))
-    );
-    if (invalidRecheckIndex !== -1) {
-      setError(`Stage ${invalidRecheckIndex + 1}: add a recheck message and place this stage between two active encounters.`);
-      return;
+
+    for (let index = 0; index < stages.length; index++) {
+      const stage = stages[index];
+      const stageError = getStageValidationError(stage, index, stages);
+      if (stageError) {
+        setError(stageError);
+        setSaveStatus("error");
+        setInvalidStageIndex(index);
+        if (typeof document !== "undefined") {
+          const el = document.getElementById(`stage-card-${index}`);
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }
+        return;
+      }
     }
-    const invalidOutcomeIndex = stages.findIndex((stage) =>
-      stage.is_active && detectStageType(stage) === "recheck_transition" &&
-      stage.settings.recheck_outcomes !== undefined &&
-      validateRecheckOutcomes(stage.settings.recheck_outcomes) !== null
-    );
-    if (invalidOutcomeIndex !== -1) {
-      setError(`Stage ${invalidOutcomeIndex + 1}: ${validateRecheckOutcomes(stages[invalidOutcomeIndex].settings.recheck_outcomes)}.`);
-      return;
-    }
+
     setSaving(true);
+    setSaveStatus("saving");
     setError("");
+    setInvalidStageIndex(null);
+
     try {
       const payload = {
         stages: stages.map((stage) => ({
@@ -447,8 +559,10 @@ export default function CaseStageManagerPage() {
       }
 
       await loadStages(selectedCaseId);
+      setSaveStatus("saved");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      setSaveStatus("error");
     } finally {
       setSaving(false);
     }
@@ -457,7 +571,9 @@ export default function CaseStageManagerPage() {
   const seedFromDefaults = async () => {
     if (!selectedCaseId) return;
     setSaving(true);
+    setSaveStatus("saving");
     setError("");
+    setInvalidStageIndex(null);
     try {
       const response = await fetch(`/api/cases/${encodeURIComponent(selectedCaseId)}/stages/seed`, {
         method: "POST",
@@ -468,8 +584,10 @@ export default function CaseStageManagerPage() {
         throw new Error(payload?.error ?? `Failed to seed stages (${response.status})`);
       }
       await loadStages(selectedCaseId);
+      setSaveStatus("saved");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      setSaveStatus("error");
     } finally {
       setSaving(false);
     }
@@ -563,18 +681,31 @@ export default function CaseStageManagerPage() {
           {stages.map((stage, index) => (
             <div
               key={`${stage.id ?? "new"}-${index}`}
-              className={`rounded-2xl border p-4 md:p-5 space-y-4 shadow-sm ${STAGE_TYPE_BY_ID[detectStageType(stage)].cardClassName} ${
-                stage.is_active ? "" : "opacity-70"
-              }`}
+              id={`stage-card-${index}`}
+              className={cn(
+                `rounded-2xl border p-4 md:p-5 space-y-4 shadow-sm transition-all duration-200 ${
+                  STAGE_TYPE_BY_ID[detectStageType(stage)].cardClassName
+                } ${stage.is_active ? "" : "opacity-70"}`,
+                invalidStageIndex === index ? "ring-2 ring-red-500 border-red-500 shadow-md" : ""
+              )}
             >
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="space-y-1">
                   <div className="text-sm text-muted-foreground">Stage {index + 1}</div>
                   <div className="text-lg font-semibold leading-tight">{stage.title || `Stage ${index + 1}`}</div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => insertStageAfter(index)}
+                    title="Insert a new stage directly after this one"
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1" /> Insert Below
+                  </Button>
                   <Button type="button" variant="outline" size="sm" onClick={() => moveStage(index, -1)} disabled={index === 0}>
-                    Up
+                    <ArrowUp className="w-3.5 h-3.5 mr-1" /> Up
                   </Button>
                   <Button
                     type="button"
@@ -583,13 +714,64 @@ export default function CaseStageManagerPage() {
                     onClick={() => moveStage(index, 1)}
                     disabled={index === stages.length - 1}
                   >
-                    Down
+                    <ArrowDown className="w-3.5 h-3.5 mr-1" /> Down
                   </Button>
                   <Button type="button" variant="destructive" size="sm" onClick={() => deleteStage(index)}>
-                    Delete
+                    <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete
                   </Button>
                 </div>
               </div>
+
+              {invalidStageIndex === index && error && (
+                <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/60 dark:text-red-200 flex items-start gap-2 shadow-sm">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
+                  <div className="space-y-1">
+                    <div className="font-semibold">Stage requires attention</div>
+                    <div>{error}</div>
+                  </div>
+                </div>
+              )}
+
+              {detectStageType(stage) === "recheck_transition" && stage.is_active && (!hasPreviousEncounter(index, stages) || !hasNextEncounter(index, stages)) && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200 space-y-2">
+                  <div className="flex items-start gap-2 font-medium">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                    <span>
+                      {!hasPreviousEncounter(index, stages) && !hasNextEncounter(index, stages)
+                        ? "A recheck transition must be placed between two encounters (initial consultation and subsequent recheck encounter)."
+                        : !hasPreviousEncounter(index, stages)
+                        ? "A recheck transition must follow an initial consultation stage."
+                        : "A recheck transition is an intermission notice and must be followed by an encounter stage (e.g. Recheck Examination or Follow-up Consultation)."}
+                    </span>
+                  </div>
+                  {!hasNextEncounter(index, stages) && (
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="bg-white hover:bg-amber-100 text-amber-900 border-amber-300 dark:bg-slate-900 dark:text-amber-100 dark:border-amber-700 shadow-xs"
+                        onClick={() => addFollowUpStageAfter(index)}
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1" />
+                        Add Following Encounter Stage (e.g. Recheck Exam)
+                      </Button>
+                      {index > 0 && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="bg-white hover:bg-amber-100 text-amber-900 border-amber-300 dark:bg-slate-900 dark:text-amber-100 dark:border-amber-700 shadow-xs"
+                          onClick={() => moveStage(index, -1)}
+                        >
+                          <ArrowUp className="w-3.5 h-3.5 mr-1" />
+                          Move Up Before Final Stage
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
                 <label className="text-sm">
@@ -753,18 +935,64 @@ export default function CaseStageManagerPage() {
             </div>
           ))}
 
-          <div className="sticky bottom-3 rounded-xl border bg-background/95 p-3 shadow-lg backdrop-blur">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant="outline" onClick={addStage}>
-              Add Stage
-              </Button>
-              <Button type="button" variant="outline" onClick={seedFromDefaults} disabled={saving || !selectedCaseId}>
-              Seed From Defaults
-              </Button>
-              <Button type="button" onClick={saveStages} disabled={!isDirty || saving || !selectedCaseId}>
-                {saving ? "Saving..." : "Save Changes"}
-              </Button>
-              {isDirty && <span className="self-center text-sm text-muted-foreground">Unsaved changes</span>}
+          <div className="sticky bottom-3 rounded-xl border border-slate-300 bg-background/95 p-3 shadow-xl backdrop-blur dark:border-slate-700">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={addStage}>
+                  <Plus className="w-4 h-4 mr-1" /> Add Stage
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={seedFromDefaults} disabled={saving || !selectedCaseId}>
+                  Seed From Defaults
+                </Button>
+                <Button
+                  type="button"
+                  onClick={saveStages}
+                  disabled={(!isDirty && saveStatus !== "saved") || saving || !selectedCaseId}
+                  className={cn(
+                    "min-w-36 transition-all duration-200 font-semibold shadow-sm",
+                    saveStatus === "saved" && !isDirty
+                      ? "!bg-emerald-600 hover:!bg-emerald-700 !text-white border-emerald-600 shadow-md ring-2 ring-emerald-400/40 cursor-default"
+                      : saveStatus === "error"
+                      ? "bg-red-600 hover:bg-red-700 text-white shadow-md ring-2 ring-red-400/40"
+                      : isDirty
+                      ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md ring-2 ring-primary/20"
+                      : "bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-400 cursor-not-allowed"
+                  )}
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : saveStatus === "saved" && !isDirty ? (
+                    <>
+                      <Check className="w-4 h-4 mr-2" />
+                      Saved
+                    </>
+                  ) : (
+                    "Save Changes"
+                  )}
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {saveStatus === "saved" && !isDirty && (
+                  <span className="flex items-center gap-1.5 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                    <Check className="w-4 h-4" /> All changes saved
+                  </span>
+                )}
+                {isDirty && (
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-amber-600 dark:text-amber-400">
+                    <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" /> Unsaved changes
+                  </span>
+                )}
+                {error && (
+                  <div className="flex items-center gap-1.5 text-xs md:text-sm font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-900 rounded-md px-3 py-1.5 max-w-md lg:max-w-xl">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
+                    <span className="truncate">{error}</span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

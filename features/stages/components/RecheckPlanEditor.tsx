@@ -55,12 +55,21 @@ export function RecheckPlanEditor({ settings, onChange }: Props) {
         className={`rounded-t-lg border px-3 py-2 text-sm ${outcome.id === selectedId ? "border-orange-500 bg-orange-100 font-semibold dark:bg-orange-950" : "bg-slate-50 dark:bg-slate-800"}`}
       >{outcome.title || `Outcome ${index + 1}`}</button>)}
       <Button type="button" variant="outline" size="sm" onClick={() => addOutcome()} disabled={outcomes.length >= 20}>Add outcome</Button>
-      {outcomes.length === 1 && !outcomes[0].ownerReport && !outcomes[0].examination && !outcomes[0].repeatTests &&
+      {outcomes.length === 1 && (
         <Button type="button" variant="outline" size="sm" onClick={() => {
-          const presets = ["Expected response", "Limited improvement", "Deterioration"].map((title) => newRecheckOutcome(title));
+          const presets = [
+            { title: "Expected response", trigger: "Standard treatment given as planned", report: "Noticeable clinical improvement reported by owner." },
+            { title: "Limited improvement", trigger: "Treatment administered with incomplete response", report: "Mild persistent signs; owner reports partial improvement." },
+            { title: "Deterioration", trigger: "Treatment ineffective or complications arose", report: "Worsening clinical signs reported by owner." },
+          ].map((preset) => ({
+            ...newRecheckOutcome(preset.title),
+            trigger: preset.trigger,
+            ownerReport: preset.report,
+          }));
           setOutcomes(presets);
           setActiveId(presets[0].id);
-        }}>Use three starting outcomes</Button>}
+        }}>Use three starting outcomes</Button>
+      )}
     </div>
     {selected ? <div role="tabpanel" className="space-y-3">
       <div className="flex flex-wrap items-end gap-2">
