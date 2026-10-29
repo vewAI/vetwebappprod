@@ -257,14 +257,6 @@ export function LiveSession({
       return;
     }
 
-    // Stage-transition phrases ("let's do the physical examination") advance
-    // the stage — they are NOT findings requests, so they never reveal.
-    const intentText = lastUser?.content ?? "";
-    if (intentText && Object.values(STAGE_INTENT_PATTERNS).some((p) => p.test(intentText))) {
-      findingsSignatureRef.current = signature;
-      return;
-    }
-
     if (findingsTimerRef.current) clearTimeout(findingsTimerRef.current);
     findingsTimerRef.current = setTimeout(async () => {
       findingsSignatureRef.current = signature;
@@ -1165,7 +1157,7 @@ export function LiveSession({
         {/* Bottom: Controls */}
         <div className="relative flex-shrink-0">
           {/* Top-right action buttons */}
-          <div className="absolute right-4 top-2 z-10 flex gap-1">
+          <div className="relative z-10 flex flex-wrap justify-end gap-1 px-4 py-1">
             {/* P3.6: Export button */}
             <div className="relative">
               <Button
@@ -1213,12 +1205,12 @@ export function LiveSession({
             {/* P2.4: Notepad toggle */}
             <Button
               variant="ghost"
-              size="icon"
               onClick={() => setShowNotepad((prev) => !prev)}
-              className="h-9 w-9 rounded-full"
+              className="h-10 gap-2 px-3"
               title="Clinical Notes"
             >
               <FileText className="h-4 w-4" />
+              <span>Clinical Notes</span>
             </Button>
           </div>
 
