@@ -35,26 +35,17 @@ export async function GET(request: Request, context: RouteContext) {
   }
 
   if (auth.role !== "admin") {
-    const { data: professorProfile } = await adminClient
-      .from("profiles")
-      .select("institution_id")
-      .eq("user_id", auth.user.id)
-      .maybeSingle();
+    const { data: professorProfile } = await adminClient.from("profiles").select("institution_id").eq("user_id", auth.user.id).maybeSingle();
     if (!professorProfile?.institution_id || professorProfile.institution_id !== profile.institution_id) {
       return NextResponse.json({ error: "Student not found" }, { status: 404 });
     }
   }
 
-  const yearGroupsJoin = (profile as { year_groups?: { id?: string; name?: string } | { id?: string; name?: string }[] | null })
-    .year_groups;
+  const yearGroupsJoin = (profile as { year_groups?: { id?: string; name?: string } | { id?: string; name?: string }[] | null }).year_groups;
   const yearGroup = Array.isArray(yearGroupsJoin) ? yearGroupsJoin[0] : yearGroupsJoin;
   let yearGroupName = typeof yearGroup?.name === "string" ? yearGroup.name : null;
   if (!yearGroupName && typeof profile.year_group_id === "string") {
-    const { data: yearGroupRow } = await adminClient
-      .from("year_groups")
-      .select("name")
-      .eq("id", profile.year_group_id)
-      .maybeSingle();
+    const { data: yearGroupRow } = await adminClient.from("year_groups").select("name").eq("id", profile.year_group_id).maybeSingle();
     yearGroupName = yearGroupRow?.name ?? null;
   }
 
@@ -90,9 +81,7 @@ export async function GET(request: Request, context: RouteContext) {
   const attempts: AttemptSummary[] = (attemptRows ?? []).map(transformAttemptSummary);
   const missingYearGroupIds = [
     ...new Set(
-      attempts
-        .map((attempt) => (!attempt.sessionYearGroupName ? attempt.sessionYearGroupId : null))
-        .filter((id): id is string => Boolean(id)),
+      attempts.map((attempt) => (!attempt.sessionYearGroupName ? attempt.sessionYearGroupId : null)).filter((id): id is string => Boolean(id)),
     ),
   ];
   if (missingYearGroupIds.length > 0) {
