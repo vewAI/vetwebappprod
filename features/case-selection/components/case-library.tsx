@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/features/n
 import { useTableSort } from "@/features/navigation/hooks/useTableSort";
 import { buildAuthHeaders } from "@/lib/auth-headers";
 
-type CaseSortKey = "case" | "species" | "discipline" | "difficulty" | "time" | "published" | "author" | "created";
+type CaseSortKey = "case" | "species" | "discipline" | "difficulty" | "time" | "published" | "author" | "authorCredit" | "created";
 
 const difficultyRank: Record<string, number> = { Easy: 1, Medium: 2, Hard: 3 };
 const caseDateFormatter = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "Europe/London" });
@@ -134,6 +134,7 @@ export function CaseLibrary({
       if (key === "difficulty") return difficultyRank[caseItem.difficulty] ?? 0;
       if (key === "published") return caseItem.isPublished ? 1 : 0;
       if (key === "author") return caseItem.creatorName ?? "";
+      if (key === "authorCredit") return `${caseItem.authorName ?? ""} ${caseItem.institutionName ?? ""}`;
       if (key === "created") return caseItem.createdAt ?? "";
       return caseItem.estimatedTime;
     },
@@ -169,7 +170,7 @@ export function CaseLibrary({
 
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
         <div className="max-w-full overflow-x-auto">
-          <div className={showAuthorship ? "min-w-[1100px]" : showPublished ? "min-w-[840px]" : "min-w-[720px]"}>
+          <div className={showAuthorship ? "min-w-[1300px]" : showPublished ? "min-w-[840px]" : "min-w-[720px]"}>
             <Table>
               <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
                 <TableRow>
@@ -179,6 +180,7 @@ export function CaseLibrary({
                   <SortHeader label="Difficulty" column="difficulty" sort={sort} onSort={toggle} />
                   <SortHeader label="Time" column="time" sort={sort} onSort={toggle} />
                   {showAuthorship ? <SortHeader label="Created by" column="author" sort={sort} onSort={toggle} /> : null}
+                  {showAuthorship ? <SortHeader label="Author / Institution" column="authorCredit" sort={sort} onSort={toggle} /> : null}
                   {showAuthorship ? <SortHeader label="Date created" column="created" sort={sort} onSort={toggle} /> : null}
                   {showPublished ? <SortHeader label="Published" column="published" sort={sort} onSort={toggle} /> : null}
                 </TableRow>
@@ -187,7 +189,7 @@ export function CaseLibrary({
                 {loading ? (
                   <TableRow>
                     <TableCell
-                      colSpan={5 + (showPublished ? 1 : 0) + (showAuthorship ? 2 : 0)}
+                      colSpan={5 + (showPublished ? 1 : 0) + (showAuthorship ? 3 : 0)}
                       className="px-5 py-8 text-center text-theme-sm text-gray-500 dark:text-gray-400"
                     >
                       Loading cases...
@@ -196,7 +198,7 @@ export function CaseLibrary({
                 ) : cases.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={5 + (showPublished ? 1 : 0) + (showAuthorship ? 2 : 0)}
+                      colSpan={5 + (showPublished ? 1 : 0) + (showAuthorship ? 3 : 0)}
                       className="px-5 py-8 text-center text-theme-sm text-gray-500 dark:text-gray-400"
                     >
                       No cases match these filters.
@@ -252,6 +254,11 @@ export function CaseLibrary({
                         {showAuthorship ? (
                           <TableCell className="px-4 py-3 text-theme-sm text-gray-500 dark:text-gray-400">
                             {caseItem.creatorName ?? "Unknown"}
+                          </TableCell>
+                        ) : null}
+                        {showAuthorship ? (
+                          <TableCell className="px-4 py-3 text-theme-sm text-gray-500 dark:text-gray-400">
+                            {caseItem.authorName || "Unknown"} / {caseItem.institutionName || "Unknown"}
                           </TableCell>
                         ) : null}
                         {showAuthorship ? (

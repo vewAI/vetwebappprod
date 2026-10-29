@@ -85,6 +85,7 @@ interface CaseIntakeSaveResult {
 
 ## Critical Rules
 - Access control must enforce creator role as `admin` or `professor` in both UI and API.
+- Extract the clinical case author and institution only when explicitly stated in the uploaded source. Show them as editable case identity fields and save them separately from the authenticated creator account.
 - Student users must not see creation entry points.
 - Route is shared: both roles use `/case-entry`.
 - LLM output must be machine-parseable JSON with fixed keys matching case fields.

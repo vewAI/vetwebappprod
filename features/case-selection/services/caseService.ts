@@ -1,7 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import type { Case } from "../models/case";
 import { normalizeCaseMedia } from "@/features/cases/models/caseMedia";
-import { getCaseCreatorUserId } from "@/features/cases/utils/caseAuthorship";
+import { getCaseAuthorDetails, getCaseCreatorUserId } from "@/features/cases/utils/caseAuthorship";
 
 // Use shared singleton Supabase client to avoid multiple GoTrue instances
 
@@ -284,6 +284,7 @@ export function mapDbCaseToCase(dbCase: DbCase): Case {
     isPublished: dbCase.is_published ?? false,
     createdAt: dbCase.created_at ?? undefined,
     creatorUserId: getCaseCreatorUserId(dbCase.settings) ?? undefined,
+    ...getCaseAuthorDetails(dbCase.settings, dbCase.details),
     media: normalizeCaseMedia(dbCase.media),
     ownerBackground: dbCase.owner_background ?? undefined,
     physicalExamFindings: dbCase.physical_exam_findings ?? undefined,

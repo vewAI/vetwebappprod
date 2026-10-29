@@ -63,6 +63,7 @@ interface TimepointTemplate {
 ## Case Viewer
 Admins pick a case at `/case-viewer` from the same table as `/cases`, then review or edit it at `/case-viewer?id={caseId}`.
 The admin-only list adds sortable **Created by** and **Date created** columns. New cases record the authenticated creator's user ID in `cases.settings.createdByUserId`; an admin-only lookup resolves the name from `profiles.full_name` or email. Existing cases without trustworthy creator metadata show **Unknown**. The date comes from `cases.created_at` and is displayed in Europe/London time. Editing a case must preserve its original creator and creation date.
+Clinical **Author / Institution** is separate from the account that uploaded a case. It appears in the admin review list and case information, and can be edited there. New cases store the two fields in `cases.settings.authorName` and `institutionName`; intake extracts only explicit credits from the source. Older cases display explicit attribution found in their saved case history, including the template's “Author name and institution” entry. Missing credit remains Unknown until an editor supplies it.
 
 ### API Contract
 #### GET /api/cases?id={caseId}

@@ -16,6 +16,8 @@ export type Case = {
     createdAt?: string
     creatorUserId?: string
     creatorName?: string
+    authorName?: string
+    institutionName?: string
     media?: CaseMediaItem[]
     ownerBackground?: string
     physicalExamFindings?: string

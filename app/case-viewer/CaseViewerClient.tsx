@@ -20,6 +20,7 @@ import { resolveChatPersonaRoleKey } from "@/features/chat/utils/persona-guardra
 import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
 import { WarningAlertModal } from "@/features/navigation/components/warning-alert-modal";
 import { CaseLibrary } from "@/features/case-selection/components/case-library";
+import { getCaseAuthorDetails } from "@/features/cases/utils/caseAuthorship";
 
 type CaseRecord = Record<string, unknown>;
 
@@ -113,7 +114,8 @@ export default function CaseViewerClient() {
         return;
       }
       const media = parseMedia((record as Record<string, unknown>)["media"]);
-      setFormState({ ...record, media });
+      const author = getCaseAuthorDetails(record["settings"], record["details"]);
+      setFormState({ ...record, media, author_name: author.authorName, author_institution: author.institutionName });
       setMediaDraft(media);
     },
     [parseMedia],
@@ -1017,10 +1019,14 @@ export default function CaseViewerClient() {
         </div>
       )}
       <form className="space-y-4">
+        <div className="rounded-lg border border-border bg-muted/20 p-4">
+          <div className="text-sm font-medium">Author / Institution</div>
+          <div className="mt-1 text-sm">{formatValue(formState?.["author_name"]).trim() || "Unknown"} / {formatValue(formState?.["author_institution"]).trim() || "Unknown"}</div>
+        </div>
         {formState &&
           orderedCaseFieldKeys.map((key) => {
             const meta = caseFieldMeta[key];
-            if (meta.isSystem || key === "is_published") return null;
+            if (meta.isSystem || key === "is_published" || (!editable && (key === "author_name" || key === "author_institution"))) return null;
             const helpId = meta.help ? `${key}-help` : undefined;
             const rawValue = formState[key];
             const automation = automationState[key];

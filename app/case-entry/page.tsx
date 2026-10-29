@@ -72,6 +72,8 @@ function normalizeTargetField(field: string): string {
 const IDENTITY_FIELDS: ReadonlySet<string> = new Set([
   "id",
   "title",
+  "author_name",
+  "author_institution",
   "species",
   "condition",
   "category",

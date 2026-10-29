@@ -23,6 +23,8 @@ const TARGET_FIELDS: Array<{ key: string; label: string; guide: string }> = [
     guide:
       "A descriptive, learner-friendly title, e.g. 'Catalina the Cob Mare: Fever and Nasal Discharge'. Include patient name and chief complaint.",
   },
+  { key: "author_name", label: "Author", guide: "EXTRACT the named clinical case author from an explicit Author field in the source. Leave blank if absent; never use the patient owner or a cited paper author." },
+  { key: "author_institution", label: "Institution", guide: "EXTRACT the case author's explicitly stated university or organisation. Leave blank if absent; do not infer it from location or email." },
   {
     key: "description",
     label: "Learner-facing summary",
@@ -274,7 +276,7 @@ export async function POST(request: NextRequest) {
         },
         canonicalExampleCase1: examplePayload,
         constraints: [
-          "ZERO EMPTY FIELDS: Every key in draftCase must have a non-empty string value. The only exception is patient_name if truly not mentioned.",
+          "Do not invent author_name or author_institution. Leave either blank and mark missing when the source does not explicitly provide it.",
           "GENERATE ALL PROMPTS: Fields starting with 'get_' are system prompts for AI personas. ALWAYS generate them, personalized to this case. Never leave them empty or mark them missing.",
           "GENERATE ALL RUBRICS: Fields ending in '_feedback' are evaluation rubrics. ALWAYS generate them with case-specific assessment criteria.",
           "GENERATE PERSONA CONTENT: Fields like 'owner_background', 'owner_follow_up', 'owner_diagnosis' are character profiles. ALWAYS generate them with case-specific personality and dialogue.",

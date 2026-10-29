@@ -1,6 +1,8 @@
 export type CaseFieldKey =
   | "id"
   | "title"
+  | "author_name"
+  | "author_institution"
   | "description"
   | "species"
   | "patient_name"
@@ -68,6 +70,18 @@ const metaList: CaseFieldMeta[] = [
     label: "Case title",
     placeholder: "Catalina the Cob Mare: Fever and Nasal Discharge",
     help: "Displayed to learners on the case list and case header. Keep it descriptive and learner friendly.",
+  },
+  {
+    key: "author_name",
+    label: "Author",
+    placeholder: "Name of the clinical case author",
+    help: "The person who wrote or clinically authored this case. This may differ from the account that uploaded it.",
+  },
+  {
+    key: "author_institution",
+    label: "Institution",
+    placeholder: "University or organisation",
+    help: "The institution the case author wants credited for this case.",
   },
   {
     key: "description",

@@ -13,7 +13,7 @@ import {
   scrubConflictingSpeciesStrings,
 } from "@/features/cases/services/caseCompletion";
 import { requireUser } from "@/app/api/_lib/auth";
-import { prepareCaseSettings } from "@/features/cases/utils/caseAuthorship";
+import { moveCaseAuthorFields, prepareCaseSettings } from "@/features/cases/utils/caseAuthorship";
 
 let openaiInstance: OpenAi | null = null;
 function getOpenAI() {
@@ -40,7 +40,7 @@ function normalizeIncomingMedia(raw: unknown): CaseMediaItem[] {
 }
 
 function normalizeCaseBody(body: Record<string, unknown>): Record<string, unknown> {
-  const next = { ...body };
+  const next = moveCaseAuthorFields(body);
 
   // Remove temporary UI-only fields that aren't database columns
   delete next["_ownerPersonaConfig"];
@@ -233,6 +233,7 @@ export async function POST(req: Request) {
     const baseSpecies = typeof body["species"] === "string" ? body["species"] : null;
     scrubConflictingSpeciesStrings(body, baseSpecies);
     applyCaseDefaults(body);
+    const submittedSettings = body["settings"];
 
     // Attempt to enrich and expand case fields by asking the LLM to complete
     // any missing or terse fields. The model is asked to return a JSON object
@@ -243,6 +244,9 @@ export async function POST(req: Request) {
       body = mergeAugmentedFields(body, parsedFromModel, {
         species: baseSpecies,
       });
+      body = moveCaseAuthorFields(body);
+      if (submittedSettings) body["settings"] = submittedSettings;
+      else delete body["settings"];
     } catch (llmErr) {
       console.warn("LLM enrichment failed for new case:", llmErr);
     }
