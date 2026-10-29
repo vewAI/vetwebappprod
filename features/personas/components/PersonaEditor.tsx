@@ -25,7 +25,8 @@ import { VOICE_PRESETS, type VoicePreset } from "@/features/speech/services/voic
 import { speakRemote, stopActiveTtsPlayback } from "@/features/speech/services/ttsService";
 import { Play, Square, Loader2, User, Mic, Pencil, ChevronDown, ChevronRight, Expand } from "lucide-react";
 import type { PersonaSex } from "@/features/personas/models/persona";
-import { bundleLabel, bundlesForTest, type BundledTestsMap } from "@/features/personas/utils/bundledTests";
+import type { BundledTestsMap } from "@/features/personas/utils/bundledTests";
+import { LabReferenceRangesTable } from "@/features/personas/components/LabReferenceRangesTable";
 
 // Avatar templates fetched from existing case_personas
 type AvatarTemplate = {
@@ -329,19 +330,8 @@ export function PersonaEditor({
                 <summary className="cursor-pointer text-muted-foreground font-medium text-xs">
                   Lab Reference Ranges ({Object.keys(labRanges).length})
                 </summary>
-                <div className="mt-1 ml-2 max-h-32 space-y-0.5 overflow-y-auto">
-                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 text-xs font-medium text-muted-foreground">
-                    <span>Parameter</span><span>Reference range</span><span>Bundle</span>
-                  </div>
-                  {Object.entries(labRanges).map(([k, v]) => (
-                    <div key={k} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 text-xs">
-                      <strong className="truncate" title={k}>{k}</strong>
-                      <span className="truncate" title={v}>{v}</span>
-                      <span className="truncate" title={bundlesForTest(bundles, k).map(bundleLabel).join(", ")}>
-                        {bundlesForTest(bundles, k).map(bundleLabel).join(", ") || "—"}
-                      </span>
-                    </div>
-                  ))}
+                <div className="mt-1 ml-2">
+                  <LabReferenceRangesTable ranges={labRanges} bundles={bundles} maxHeightClassName="max-h-32" />
                 </div>
               </details>
             )}

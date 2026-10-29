@@ -23,13 +23,9 @@ import { getAccessToken } from "@/lib/auth-headers";
 import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
 import { BulkReferenceRangesDialog } from "@/features/personas/components/BulkReferenceRangesDialog";
 import { BundledTestsEditor } from "@/features/personas/components/BundledTestsEditor";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { LabReferenceRangesTable } from "@/features/personas/components/LabReferenceRangesTable";
 import {
-  bundleLabel,
-  bundlesForTest,
   getDefaultBundledTests,
-  setTestBundleMembership,
   STANDARD_BUNDLE_DEFINITIONS,
   type BundledTestsMap,
 } from "@/features/personas/utils/bundledTests";
@@ -443,21 +439,8 @@ function SpecCard({ spec, isEditing, editForm, setEditForm, onStartEdit, onCance
             <summary className="cursor-pointer text-muted-foreground font-medium">
               Lab Reference Ranges ({Object.keys(spec.lab_reference_ranges ?? {}).length})
             </summary>
-            <div className="mt-2 ml-4 max-h-60 space-y-1 overflow-y-auto pr-2">
-              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 text-xs font-medium text-muted-foreground">
-                <span>Parameter</span><span>Reference range</span><span>Bundle</span>
-              </div>
-              {Object.entries(spec.lab_reference_ranges ?? {})
-                .sort(([a], [b]) => a.localeCompare(b))
-                .map(([k, v]) => (
-                <div key={k} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 text-xs">
-                  <strong className="truncate" title={k}>{k}</strong>
-                  <span className="truncate" title={v}>{v}</span>
-                  <span className="truncate" title={bundlesForTest(spec.bundled_tests ?? {}, k).map(bundleLabel).join(", ")}>
-                    {bundlesForTest(spec.bundled_tests ?? {}, k).map(bundleLabel).join(", ") || "—"}
-                  </span>
-                </div>
-              ))}
+            <div className="mt-2 ml-4">
+              <LabReferenceRangesTable ranges={spec.lab_reference_ranges ?? {}} bundles={spec.bundled_tests ?? {}} maxHeightClassName="max-h-60" />
             </div>
           </details>
           <details className="text-sm">
@@ -700,55 +683,18 @@ function SpecEditForm({ form, setForm, isNew, newLabKey, setNewLabKey, newLabVal
           </div>
         )}
 
-        <div className="space-y-1 mt-1 mb-2 max-h-56 overflow-y-auto divide-y divide-border/40">
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 py-1 text-xs font-medium text-muted-foreground">
-            <span>Parameter</span><span>Reference range</span><span>Bundle</span><span className="sr-only">Remove</span>
-          </div>
-          {Object.entries(form.lab_reference_ranges)
-            .filter(([k, v]) => !labSearch || k.toLowerCase().includes(labSearch.toLowerCase()) || v.toLowerCase().includes(labSearch.toLowerCase()))
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([k, v]) => (
-            <div key={k} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2 py-1 text-xs">
-              <span className="font-medium truncate" title={k}>{k}</span>
-              <span className="truncate font-mono text-[11px]" title={v}>{v}</span>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button type="button" variant="outline" size="sm" className="h-7 min-w-0 justify-start truncate text-xs font-normal" title={bundlesForTest(activeBundles, k).map(bundleLabel).join(", ") || "No bundle"}>
-                    <span className="truncate">{bundlesForTest(activeBundles, k).map(bundleLabel).join(", ") || "None"}</span>
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="start" className="max-h-64 w-64 space-y-2 overflow-y-auto">
-                  {Object.keys(activeBundles).map((bundleId) => (
-                    <label key={bundleId} className="flex cursor-pointer items-center gap-2 text-xs">
-                      <Checkbox
-                        checked={activeBundles[bundleId].includes(k)}
-                        onCheckedChange={(checked) => {
-                          const updated = setTestBundleMembership(activeBundles, k, bundleId, checked === true);
-                          setForm({ ...form, bundled_tests: updated, metadata: { ...(form.metadata ?? {}), bundled_tests: updated } });
-                        }}
-                      />
-                      <span>{bundleLabel(bundleId)}</span>
-                    </label>
-                  ))}
-                  {Object.keys(activeBundles).length === 0 && <span className="text-xs text-muted-foreground">Create a bundle below first.</span>}
-                </PopoverContent>
-              </Popover>
-              <button
-                type="button"
-                className="text-destructive hover:text-destructive/80 p-0.5"
-                onClick={() => {
-                  const next = { ...form.lab_reference_ranges };
-                  delete next[k];
-                  setForm({ ...form, lab_reference_ranges: next });
-                }}
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
-          {Object.keys(form.lab_reference_ranges).length === 0 && (
-            <p className="text-xs text-muted-foreground py-2 italic">No lab reference ranges added yet.</p>
-          )}
+        <div className="mb-2">
+          <LabReferenceRangesTable
+            ranges={form.lab_reference_ranges}
+            bundles={activeBundles}
+            filter={labSearch}
+            onBundleChange={(updated) => setForm({ ...form, bundled_tests: updated, metadata: { ...(form.metadata ?? {}), bundled_tests: updated } })}
+            onRemove={(name) => {
+              const next = { ...form.lab_reference_ranges };
+              delete next[name];
+              setForm({ ...form, lab_reference_ranges: next });
+            }}
+          />
         </div>
         <div className="flex gap-2">
           <Input placeholder="Parameter" value={newLabKey} onChange={(e) => setNewLabKey(e.target.value)} className="flex-1" />

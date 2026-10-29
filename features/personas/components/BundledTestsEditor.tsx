@@ -5,12 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
+  bundleLabel,
+  bundlesForTest,
   STANDARD_BUNDLE_DEFINITIONS,
   getDefaultBundledTests,
   type BundledTestsMap,
 } from "../utils/bundledTests";
-import { Plus, X, RotateCcw, Layers, Search, Sparkles } from "lucide-react";
+import { Plus, X, RotateCcw, Layers, Search } from "lucide-react";
 
 export interface BundledTestsEditorProps {
   bundles: BundledTestsMap;
@@ -32,6 +35,12 @@ export function BundledTestsEditor({
   const [newBundleName, setNewBundleName] = useState("");
   const [showNewBundleInput, setShowNewBundleInput] = useState(false);
   const [labSearch, setLabSearch] = useState("");
+  const [selectedLabKeys, setSelectedLabKeys] = useState<string[]>([]);
+
+  const selectBundle = (key: string) => {
+    setSelectedKey(key);
+    setSelectedLabKeys([]);
+  };
 
   const currentDef = STANDARD_BUNDLE_DEFINITIONS.find((d) => d.id === selectedKey);
   const currentLabel =
@@ -57,12 +66,19 @@ export function BundledTestsEditor({
     setNewTestInput("");
   };
 
+  const handleAddSelectedTests = () => {
+    const selected = selectedLabKeys.filter((key) => availableLabKeys.includes(key) && !currentTests.includes(key));
+    if (selected.length === 0) return;
+    onChange({ ...activeBundles, [selectedKey]: [...currentTests, ...selected] });
+    setSelectedLabKeys([]);
+  };
+
   const handleCreateBundle = () => {
     const trimmed = newBundleName.trim();
     if (!trimmed) return;
     const newKey = trimmed.toLowerCase().replace(/[\s\-]+/g, "_");
     if (activeBundles[newKey]) {
-      setSelectedKey(newKey);
+      selectBundle(newKey);
       setNewBundleName("");
       setShowNewBundleInput(false);
       return;
@@ -71,7 +87,7 @@ export function BundledTestsEditor({
       ...activeBundles,
       [newKey]: [],
     });
-    setSelectedKey(newKey);
+    selectBundle(newKey);
     setNewBundleName("");
     setShowNewBundleInput(false);
   };
@@ -83,7 +99,7 @@ export function BundledTestsEditor({
     onChange(updated);
     const remaining = Object.keys(updated);
     if (remaining.length > 0) {
-      setSelectedKey(remaining[0]);
+      selectBundle(remaining[0]);
     }
   };
 
@@ -97,14 +113,14 @@ export function BundledTestsEditor({
     }
     const defaults = getDefaultBundledTests();
     onChange(defaults);
-    setSelectedKey("haematology");
+    selectBundle("haematology");
   };
 
   // Filter available lab keys that are not already in current bundle
   const unaddedLabKeys = availableLabKeys
     .filter((k) => !currentTests.includes(k))
     .filter((k) => !labSearch || k.toLowerCase().includes(labSearch.toLowerCase()))
-    .slice(0, 10);
+    .sort((a, b) => a.localeCompare(b));
 
   return (
     <div className="space-y-3 border rounded-lg p-3 bg-muted/20">
@@ -180,7 +196,7 @@ export function BundledTestsEditor({
             <button
               key={key}
               type="button"
-              onClick={() => setSelectedKey(key)}
+              onClick={() => selectBundle(key)}
               className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
                 isSelected
                   ? "bg-primary text-primary-foreground shadow-xs"
@@ -250,69 +266,69 @@ export function BundledTestsEditor({
           )}
         </div>
 
-        {/* Add parameter input */}
-        <div className="flex gap-2">
-          <Input
-            placeholder={`Add test to ${currentLabel} (e.g. Fibrinogen)`}
-            value={newTestInput}
-            onChange={(e) => setNewTestInput(e.target.value)}
-            className="h-8 text-xs flex-1"
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                handleAddTest(newTestInput);
-              }
-            }}
-          />
-          <Button
-            size="sm"
-            type="button"
-            onClick={() => handleAddTest(newTestInput)}
-            disabled={!newTestInput.trim()}
-            className="h-8 text-xs"
-          >
-            <Plus className="h-3 w-3 mr-1" /> Add
-          </Button>
-        </div>
-
-        {/* Quick add from nurse's existing lab reference ranges */}
+        {/* Select tests already entered in the nurse's lab reference ranges. */}
         {availableLabKeys.length > 0 && (
-          <details className="text-xs pt-1">
-            <summary className="cursor-pointer text-muted-foreground hover:text-foreground font-medium flex items-center gap-1">
-              <Sparkles className="h-3 w-3 text-amber-500" />
-              Quick-add from nurse&apos;s reference ranges ({availableLabKeys.length} available)
-            </summary>
-            <div className="mt-2 space-y-2 pl-2">
+          <div className="space-y-2 border-t pt-3">
+            <Label className="text-xs font-medium">Select tests from lab reference ranges</Label>
+            <div className="space-y-2">
               <div className="relative">
                 <Search className="absolute left-2 top-2 h-3 w-3 text-muted-foreground" />
                 <Input
-                  placeholder="Filter parameters..."
+                  placeholder="Search tests to add..."
                   value={labSearch}
                   onChange={(e) => setLabSearch(e.target.value)}
                   className="h-7 pl-7 text-[11px]"
                 />
               </div>
-              <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
-                {unaddedLabKeys.map((k) => (
-                  <button
-                    key={k}
-                    type="button"
-                    onClick={() => handleAddTest(k)}
-                    className="text-[11px] bg-muted/60 hover:bg-primary hover:text-primary-foreground px-2 py-0.5 rounded border transition-colors truncate max-w-[200px]"
-                    title={`Click to add ${k}`}
-                  >
-                    + {k}
-                  </button>
+              <div className="max-h-40 space-y-1 overflow-y-auto rounded border p-2">
+                <div className="grid grid-cols-[16px_minmax(0,1fr)_minmax(0,1fr)] gap-2 px-1 text-[11px] font-medium text-muted-foreground">
+                  <span /><span>Test</span><span>Already in</span>
+                </div>
+                {unaddedLabKeys.map((key) => (
+                  <label key={key} className="grid cursor-pointer grid-cols-[16px_minmax(0,1fr)_minmax(0,1fr)] items-start gap-2 rounded px-1 py-0.5 text-xs hover:bg-muted/60">
+                    <Checkbox
+                      checked={selectedLabKeys.includes(key)}
+                      onCheckedChange={(checked) => setSelectedLabKeys((selected) => checked === true
+                        ? selected.includes(key) ? selected : [...selected, key]
+                        : selected.filter((item) => item !== key))}
+                    />
+                    <span className="min-w-0 break-words">{key}</span>
+                    <span className="min-w-0 break-words text-muted-foreground">{bundlesForTest(activeBundles, key).map(bundleLabel).join(", ") || "None"}</span>
+                  </label>
                 ))}
                 {unaddedLabKeys.length === 0 && (
-                  <span className="text-[11px] text-muted-foreground italic">
-                    All matching reference ranges are already in this bundle.
+                  <span className="text-xs italic text-muted-foreground">
+                    No matching unassigned tests.
                   </span>
                 )}
               </div>
+              <Button type="button" size="sm" onClick={handleAddSelectedTests} disabled={selectedLabKeys.length === 0}>
+                <Plus className="mr-1 h-3 w-3" /> Add selected tests ({selectedLabKeys.length})
+              </Button>
             </div>
-          </details>
+          </div>
         )}
+
+        <details className="border-t pt-2 text-xs">
+          <summary className="cursor-pointer text-muted-foreground">Add a test that is not in the lab reference ranges</summary>
+          <div className="mt-2 flex gap-2">
+            <Input
+              placeholder={`Test name for ${currentLabel}`}
+              value={newTestInput}
+              onChange={(e) => setNewTestInput(e.target.value)}
+              className="h-8 flex-1 text-xs"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleAddTest(newTestInput);
+                }
+              }}
+            />
+            <Button size="sm" type="button" onClick={() => handleAddTest(newTestInput)} disabled={!newTestInput.trim()} className="h-8 text-xs">
+              <Plus className="mr-1 h-3 w-3" /> Add
+            </Button>
+          </div>
+        </details>
       </div>
     </div>
   );
