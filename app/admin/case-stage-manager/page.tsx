@@ -22,7 +22,7 @@ type EditableStage = {
   settings: Record<string, unknown>;
 };
 
-type StageTypeId = "history" | "physical" | "diagnostic" | "laboratory" | "treatment" | "communication" | "custom";
+type StageTypeId = "history" | "physical" | "diagnostic" | "laboratory" | "treatment" | "communication" | "recheck_transition" | "custom";
 
 type StageTypeDefinition = {
   id: StageTypeId;
@@ -115,6 +115,19 @@ const STAGE_TYPES: StageTypeDefinition[] = [
     defaultPersonaRoleKey: "owner",
     defaultRoleLabel: "Client (Horse Owner)",
     defaultRoleInfoKey: "getOwnerDiagnosisPrompt",
+    defaultFeedbackPromptKey: "",
+  },
+  {
+    id: "recheck_transition",
+    label: "Recheck transition",
+    summary: "Show a written time jump before the next owner or nurse encounter.",
+    chipClassName: "border-orange-500/70 bg-orange-100 text-orange-950 dark:border-orange-700 dark:bg-orange-900/35 dark:text-orange-100",
+    cardClassName: "border-orange-400/70 bg-orange-50/65 dark:border-orange-700/70 dark:bg-orange-950/25",
+    defaultTitle: "Recheck transition",
+    defaultDescription: "",
+    defaultPersonaRoleKey: "owner",
+    defaultRoleLabel: "Recheck notice",
+    defaultRoleInfoKey: "",
     defaultFeedbackPromptKey: "",
   },
   {
@@ -345,6 +358,9 @@ export default function CaseStageManagerPage() {
           role_label: typeDef.defaultRoleLabel,
           role_info_key: typeDef.defaultRoleInfoKey,
           feedback_prompt_key: typeDef.defaultFeedbackPromptKey,
+          stage_prompt: typeId === "recheck_transition" ? "" : stage.stage_prompt,
+          min_user_turns: typeId === "recheck_transition" ? 0 : stage.min_user_turns,
+          min_assistant_turns: typeId === "recheck_transition" ? 0 : stage.min_assistant_turns,
           settings: {
             ...(stage.settings ?? {}),
             stage_type: typeId,
@@ -375,6 +391,16 @@ export default function CaseStageManagerPage() {
 
   const saveStages = async () => {
     if (!selectedCaseId) return;
+    const invalidRecheckIndex = stages.findIndex((stage, index) =>
+      stage.is_active && detectStageType(stage) === "recheck_transition" &&
+      (!stage.transition_message.trim() ||
+        !stages.slice(0, index).some((previous) => previous.is_active && detectStageType(previous) !== "recheck_transition") ||
+        !stages.slice(index + 1).some((following) => following.is_active && detectStageType(following) !== "recheck_transition"))
+    );
+    if (invalidRecheckIndex !== -1) {
+      setError(`Stage ${invalidRecheckIndex + 1}: add a recheck message and place this stage between two active encounters.`);
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -577,7 +603,7 @@ export default function CaseStageManagerPage() {
                   />
                 </label>
 
-                <label className="text-sm">
+                {detectStageType(stage) !== "recheck_transition" && <label className="text-sm">
                   <div className="mb-1 font-medium">Who answers in this stage</div>
                   <select
                     className="w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
@@ -590,9 +616,22 @@ export default function CaseStageManagerPage() {
                       </option>
                     ))}
                   </select>
-                </label>
+                </label>}
               </div>
 
+              {detectStageType(stage) === "recheck_transition" ? (
+                <label className="text-sm block">
+                  <div className="mb-1 font-medium">Message shown to students before the recheck</div>
+                  <textarea
+                    rows={5}
+                    className="w-full rounded-md border border-orange-300 bg-white px-3 py-2 text-slate-900 dark:border-orange-700 dark:bg-slate-900 dark:text-slate-100"
+                    placeholder="Four days after the initial consultation, the horse returns for a recheck. Meet the owner, ask how the horse has been, and carry out your recheck assessment."
+                    value={stage.transition_message}
+                    onChange={(e) => updateStage(index, { transition_message: e.target.value })}
+                  />
+                  <div className="mt-1 text-xs text-slate-700 dark:text-slate-300">Students see this as a written notice. The next active stage decides whether they speak to the owner or nurse.</div>
+                </label>
+              ) : <>
               <label className="text-sm block">
                 <div className="mb-1 font-medium">What should the student accomplish in this stage?</div>
                 <textarea
@@ -685,6 +724,7 @@ export default function CaseStageManagerPage() {
                   onChange={(e) => updateStage(index, { transition_message: e.target.value })}
                 />
               </label>
+              </>}
 
               <label className="inline-flex items-center gap-2 text-sm">
                 <input

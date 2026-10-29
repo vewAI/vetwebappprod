@@ -6,6 +6,12 @@ Professors can define any number of stages, in any order, with any persona, for 
 The current 6-stage hardcoded skeleton is preserved as the **default template** that seeds new cases.
 The system reads stage definitions from the database at runtime, falling back to the hardcoded config only when no DB rows exist for a case.
 
+### Recheck transition stage
+
+- An active stage with `settings.stage_type = "recheck_transition"` belongs between two active conversational stages. Its `transition_message` is the exact student-facing notice written by the case author, including elapsed time, next contact, and the learner's task.
+- Live shows this as a large orange written card. It stops voice interaction and the stage timer. The student presses Continue to enter the following stage, whose configured persona determines whether they speak to the owner or nurse.
+- The notice does not select a treatment outcome. Case-specific recheck findings and treatment-dependent pathways are authored separately.
+
 ---
 
 ## Current Architecture (What Exists)

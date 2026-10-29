@@ -11,6 +11,7 @@ import { useGeminiLive } from "../hooks/useGeminiLive";
 import { useMicrophone } from "../hooks/useMicrophone";
 import { useAudioPlayer } from "../hooks/useAudioPlayer";
 import { useLiveProgress } from "../hooks/useLiveProgress";
+import { isRecheckTransitionStage } from "@/features/stages/types";
 import { useSaveAttempt } from "@/features/attempts/hooks/useSaveAttempt";
 import { PersonaHeader } from "./persona-header";
 import type { LivePersonaDef, LivePersonaRoleKey } from "./live-controls";
@@ -142,6 +143,7 @@ export function LiveSession({
   const [initError, setInitError] = useState<string | null>(null);
   const [initRetryNonce, setInitRetryNonce] = useState(0);
   const currentStage = progress.stages[progress.currentStageIndex];
+  const isRecheckTransition = isRecheckTransitionStage(currentStage);
   const nextStage =
     progress.currentStageIndex < progress.stages.length - 1
       ? progress.stages[progress.currentStageIndex + 1]
@@ -190,12 +192,12 @@ export function LiveSession({
 
   useEffect(() => {
     const timer = setInterval(() => {
-      if (isPausedRef.current) return; // paused: freeze countdown and clock
+      if (isPausedRef.current || isRecheckTransition) return; // written recheck notices have no time limit
       timeSpentRef.current += 1;
       setStageSecondsLeft((s) => (s > 0 ? s - 1 : 0));
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [isRecheckTransition]);
 
   // P3.7: Listen for guided mode changes from other tabs/components
   useEffect(() => {
@@ -378,6 +380,18 @@ export function LiveSession({
   const hasConnectedRef = useRef(false);
   const retryCountRef = useRef(0);
   useEffect(() => {
+    if (!isRecheckTransition) return;
+    userInitiatedDisconnectRef.current = true;
+    hasConnectedRef.current = false;
+    retryCountRef.current = 0;
+    setInitError(null);
+    setShowAdvanceConfirm(false);
+    mic.stop();
+    player.stop();
+    live.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRecheckTransition, progress.currentStageIndex]);
+  useEffect(() => {
     if (!persona) return;
     // If a previous attempt was aborted (e.g. persona changed while the token
     // fetch was in flight) and the session never connected, allow a fresh one.
@@ -392,7 +406,6 @@ export function LiveSession({
     async function init() {
       try {
         if (!persona) return;
-        userInitiatedDisconnectRef.current = false;
         const accessToken = await getAccessToken().catch(() => null);
 
         console.log("[Session] Fetching token for case:", caseItem.id);
@@ -414,6 +427,7 @@ export function LiveSession({
         if (cancelled) return;
         console.log("[Session] Got token, connecting with persona:", persona.displayName);
         await live.connect(token, persona);
+        userInitiatedDisconnectRef.current = false;
         // Mark this persona as already connected so the persona-switch effect
         // does NOT treat the initial connection as a handoff (that made the
         // owner answer the HANDOFF goodbye instead of the first-contact greeting).
@@ -719,6 +733,16 @@ export function LiveSession({
     void saveProgress(nextIndex, live.messages, timeSpentRef.current).catch(() => {});
   }, [progress, saveProgress, live.messages, player, mic]);
 
+  const handleContinueRecheck = useCallback(() => {
+    if (!nextStage) return;
+    isPausedRef.current = false;
+    setIsPaused(false);
+    player.setMuted(isMuted);
+    const nextIndex = progress.currentStageIndex + 1;
+    progress.advanceStage();
+    void saveProgress(nextIndex, live.messages, timeSpentRef.current).catch(() => {});
+  }, [nextStage, progress, saveProgress, live.messages, player, isMuted]);
+
   const handleCancelAdvance = useCallback(() => {
     setShowAdvanceConfirm(false);
     if (timerExpiredRef.current && nextStage) {
@@ -916,6 +940,7 @@ export function LiveSession({
   // Track whether the timer expired so handleCancelAdvance knows to force-advance.
   const timerExpiredRef = useRef(false);
   useEffect(() => {
+    if (isRecheckTransition) return;
     if (stageSecondsLeft > 0) {
       autoAdvancedRef.current = false;
       timerExpiredRef.current = false;
@@ -935,8 +960,7 @@ export function LiveSession({
       console.log("[Session] Final stage time expired, ending session");
       void handleEndSession();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stageSecondsLeft, nextStage, handleConfirmAdvance, handleEndSession]);
+  }, [stageSecondsLeft, nextStage, handleConfirmAdvance, handleEndSession, isRecheckTransition]);
 
   // P3.6: Export handlers + click-outside close
   const exportMenuRef = useRef<HTMLDivElement>(null);
@@ -1060,6 +1084,22 @@ export function LiveSession({
             <PanelLeft className="h-4 w-4" />
           </Button>
         </div>
+        {isRecheckTransition ? (
+          <div className="flex flex-1 items-center justify-center overflow-y-auto px-4 py-8">
+            <section aria-labelledby="recheck-transition-title" className="w-full max-w-2xl rounded-2xl border-2 border-orange-400 bg-orange-50 p-6 shadow-lg dark:border-orange-600 dark:bg-orange-950/50 sm:p-10">
+              <div className="mb-3 text-sm font-semibold uppercase tracking-wide text-orange-800 dark:text-orange-200">Case progression</div>
+              <h1 id="recheck-transition-title" className="mb-5 text-2xl font-bold text-orange-950 dark:text-orange-50 sm:text-3xl">
+                {currentStage?.title || "Recheck transition"}
+              </h1>
+              <p className="whitespace-pre-wrap text-lg leading-relaxed text-orange-950 dark:text-orange-50">
+                {currentStage?.transitionMessage?.trim() || "Continue to the recheck encounter."}
+              </p>
+              <Button onClick={handleContinueRecheck} disabled={!nextStage} className="mt-8 min-h-12 bg-orange-600 px-6 text-white hover:bg-orange-700">
+                Continue to {nextStage?.title ?? "recheck"}
+              </Button>
+            </section>
+          </div>
+        ) : <>
         {/* P3.5: Persona joining banner */}
         {personaJoining && (
           <div
@@ -1274,6 +1314,7 @@ export function LiveSession({
           </div>
         )}
         </div>
+        </>}
       </div>
 
       {/* P2.4: Notepad overlay */}

@@ -93,6 +93,17 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     if (typeof stage.persona_role_key !== "string" || stage.persona_role_key.trim().length === 0) {
       return NextResponse.json({ error: `Stage ${i}: persona_role_key is required` }, { status: 400 });
     }
+    const settings = stage.settings as Record<string, unknown> | undefined;
+    if (stage.is_active !== false && settings?.stage_type === "recheck_transition") {
+      const hasPreviousEncounter = stages.slice(0, i).some((previous) => previous.is_active !== false &&
+        (previous.settings as Record<string, unknown> | undefined)?.stage_type !== "recheck_transition");
+      const hasNextEncounter = stages.slice(i + 1).some((following) => following.is_active !== false &&
+        (following.settings as Record<string, unknown> | undefined)?.stage_type !== "recheck_transition");
+      if (typeof stage.transition_message !== "string" || !stage.transition_message.trim() ||
+          !hasPreviousEncounter || !hasNextEncounter) {
+        return NextResponse.json({ error: `Stage ${i}: recheck transition needs a message between two active encounters` }, { status: 400 });
+      }
+    }
   }
 
   const { error: deleteError } = await supabase.from("case_stages").delete().eq("case_id", caseId);

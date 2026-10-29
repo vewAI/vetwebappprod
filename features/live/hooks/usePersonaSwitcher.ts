@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import type { Case } from "@/features/case-selection/models/case";
-import type { Stage } from "@/features/stages/types";
+import { isRecheckTransitionStage, type Stage } from "@/features/stages/types";
 import type { PersonaEntry } from "@/features/chat/hooks/usePersonaDirectory";
 import { GEMINI_VOICE_MAP, type PersonaInstruction } from "../types";
 import { buildPersonaSystemInstruction } from "../services/systemInstructionBuilder";
@@ -28,6 +28,7 @@ export function usePersonaSwitcher(
 
     const stage = stages[currentStageIndex];
     if (!stage) return null;
+    if (isRecheckTransitionStage(stage)) return null;
 
     // Follow the stage by default, unless the user manually selects a persona.
     const personaRoleKey = overrideRoleKey ?? resolveLivePersonaRoleKey(stage);

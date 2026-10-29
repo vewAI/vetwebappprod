@@ -14,6 +14,10 @@ export interface Stage {
   settings?: Record<string, unknown>;
 }
 
+export function isRecheckTransitionStage(stage?: Stage): boolean {
+  return stage?.settings?.stage_type === "recheck_transition";
+}
+
 export interface CaseStageRow {
   id: string;
   case_id: string;
