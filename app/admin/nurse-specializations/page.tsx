@@ -26,6 +26,7 @@ import { BundledTestsEditor } from "@/features/personas/components/BundledTestsE
 import { LabReferenceRangesTable } from "@/features/personas/components/LabReferenceRangesTable";
 import {
   getDefaultBundledTests,
+  renameTestInBundles,
   STANDARD_BUNDLE_DEFINITIONS,
   type BundledTestsMap,
 } from "@/features/personas/utils/bundledTests";
@@ -506,8 +507,36 @@ function SpecEditForm({ form, setForm, isNew, newLabKey, setNewLabKey, newLabVal
   const [bulkModalType, setBulkModalType] = useState<"lab" | "vital" | null>(null);
   const [labSearch, setLabSearch] = useState("");
   const [vitalSearch, setVitalSearch] = useState("");
+  const [editingRange, setEditingRange] = useState<{ kind: "lab" | "vital"; originalName: string; name: string; value: string } | null>(null);
+  const [editError, setEditError] = useState("");
   const activeBundles = (form.metadata?.bundled_tests as BundledTestsMap | undefined)
     ?? form.bundled_tests ?? getDefaultBundledTests();
+
+  const applyRangeEdit = () => {
+    if (!editingRange) return;
+    const name = editingRange.name.trim();
+    const value = editingRange.value.trim();
+    const ranges = editingRange.kind === "lab" ? form.lab_reference_ranges : form.vital_reference_ranges;
+    if (!name || !value) {
+      setEditError("Enter both a parameter name and a reference range.");
+      return;
+    }
+    if (Object.keys(ranges).some((key) => key !== editingRange.originalName && key.toLowerCase() === name.toLowerCase())) {
+      setEditError("A reference range with this parameter name already exists.");
+      return;
+    }
+    const updatedRanges = Object.fromEntries(Object.entries(ranges).map(([key, currentValue]) =>
+      key === editingRange.originalName ? [name, value] : [key, currentValue]
+    ));
+    if (editingRange.kind === "lab") {
+      const updatedBundles = renameTestInBundles(activeBundles, editingRange.originalName, name);
+      setForm({ ...form, lab_reference_ranges: updatedRanges, bundled_tests: updatedBundles, metadata: { ...(form.metadata ?? {}), bundled_tests: updatedBundles } });
+    } else {
+      setForm({ ...form, vital_reference_ranges: updatedRanges });
+    }
+    setEditingRange(null);
+    setEditError("");
+  };
 
   const handleApplyBulk = (newRanges: Record<string, string>, mode: "merge" | "replace") => {
     if (bulkModalType === "vital") {
@@ -625,6 +654,15 @@ function SpecEditForm({ form, setForm, isNew, newLabKey, setNewLabKey, newLabVal
               <span className="flex-1 truncate" title={v}>{v}</span>
               <button
                 type="button"
+                aria-label={`Edit ${k}`}
+                title={`Edit ${k}`}
+                className="flex items-center gap-1 p-0.5 text-primary hover:text-primary/80"
+                onClick={() => { setEditingRange({ kind: "vital", originalName: k, name: k, value: v }); setEditError(""); }}
+              >
+                <Edit className="h-3.5 w-3.5" /> Edit
+              </button>
+              <button
+                type="button"
                 className="text-destructive hover:text-destructive/80 p-0.5"
                 onClick={() => {
                   const next = { ...form.vital_reference_ranges };
@@ -689,6 +727,7 @@ function SpecEditForm({ form, setForm, isNew, newLabKey, setNewLabKey, newLabVal
             bundles={activeBundles}
             filter={labSearch}
             onBundleChange={(updated) => setForm({ ...form, bundled_tests: updated, metadata: { ...(form.metadata ?? {}), bundled_tests: updated } })}
+            onEdit={(name, value) => { setEditingRange({ kind: "lab", originalName: name, name, value }); setEditError(""); }}
             onRemove={(name) => {
               const next = { ...form.lab_reference_ranges };
               delete next[name];
@@ -706,6 +745,30 @@ function SpecEditForm({ form, setForm, isNew, newLabKey, setNewLabKey, newLabVal
           }}>Add</Button>
         </div>
       </div>
+
+      <Dialog open={editingRange !== null} onOpenChange={(open) => { if (!open) { setEditingRange(null); setEditError(""); } }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Edit reference range</DialogTitle></DialogHeader>
+          {editingRange && (
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="edit-range-name">Parameter</Label>
+                <Input id="edit-range-name" className="mt-1" value={editingRange.name} onChange={(event) => { setEditingRange({ ...editingRange, name: event.target.value }); setEditError(""); }} />
+              </div>
+              <div>
+                <Label htmlFor="edit-range-value">Reference range</Label>
+                <Textarea id="edit-range-value" className="mt-1" rows={3} value={editingRange.value} onChange={(event) => { setEditingRange({ ...editingRange, value: event.target.value }); setEditError(""); }} />
+              </div>
+              {editError && <p role="alert" className="text-sm text-destructive">{editError}</p>}
+              <p className="text-xs text-muted-foreground">Click Save changes on the nurse card after applying this edit.</p>
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => { setEditingRange(null); setEditError(""); }}>Cancel</Button>
+                <Button type="button" onClick={applyRangeEdit}>Apply edit</Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <BulkReferenceRangesDialog
         open={bulkModalType !== null}

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import { GripVertical, X } from "lucide-react";
+import { GripVertical, Pencil, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -65,6 +65,7 @@ export function LabReferenceRangesTable({
   filter = "",
   maxHeightClassName = "max-h-56",
   onBundleChange,
+  onEdit,
   onRemove,
 }: {
   ranges: Record<string, string>;
@@ -72,6 +73,7 @@ export function LabReferenceRangesTable({
   filter?: string;
   maxHeightClassName?: string;
   onBundleChange?: (bundles: BundledTestsMap) => void;
+  onEdit?: (testName: string, value: string) => void;
   onRemove?: (testName: string) => void;
 }) {
   const [widths, setWidths] = useState<ColumnWidths>(DEFAULT_WIDTHS);
@@ -83,7 +85,7 @@ export function LabReferenceRangesTable({
       return next;
     });
   };
-  const gridTemplateColumns = `${widths[0]}px ${widths[1]}px ${widths[2]}px${onRemove ? " 28px" : ""}`;
+  const gridTemplateColumns = `${widths[0]}px ${widths[1]}px ${widths[2]}px${onEdit || onRemove ? " 90px" : ""}`;
   const visibleRanges = Object.entries(ranges)
     .filter(([name, value]) => !filter || `${name} ${value}`.toLowerCase().includes(filter.toLowerCase()))
     .sort(([a], [b]) => a.localeCompare(b));
@@ -100,7 +102,7 @@ export function LabReferenceRangesTable({
               <ResizeHandle label={label.toLowerCase()} width={widths[index]} onResize={(value) => updateWidth(index, value)} />
             </span>
           ))}
-          {onRemove && <span className="sr-only" role="columnheader">Remove</span>}
+          {(onEdit || onRemove) && <span className="sr-only" role="columnheader">Actions</span>}
         </div>
         {visibleRanges.map(([name, value]) => {
           const memberships = bundlesForTest(bundles, name).map(bundleLabel);
@@ -131,10 +133,19 @@ export function LabReferenceRangesTable({
                   </Popover>
                 ) : memberships.join(", ") || "—"}
               </span>
-              {onRemove && (
-                <button type="button" aria-label={`Remove ${name}`} className="p-1 text-destructive hover:text-destructive/80" onClick={() => onRemove(name)}>
-                  <X className="h-3.5 w-3.5" />
-                </button>
+              {(onEdit || onRemove) && (
+                <span className="flex items-center justify-end gap-1" role="cell">
+                  {onEdit && (
+                    <button type="button" aria-label={`Edit ${name}`} title={`Edit ${name}`} className="flex items-center gap-1 p-1 text-primary hover:text-primary/80" onClick={() => onEdit(name, value)}>
+                      <Pencil className="h-3.5 w-3.5" /> Edit
+                    </button>
+                  )}
+                  {onRemove && (
+                    <button type="button" aria-label={`Remove ${name}`} title={`Remove ${name}`} className="p-1 text-destructive hover:text-destructive/80" onClick={() => onRemove(name)}>
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </span>
               )}
             </div>
           );

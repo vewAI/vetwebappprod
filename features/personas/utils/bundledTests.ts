@@ -33,6 +33,16 @@ export function setTestBundleMembership(
   };
 }
 
+export function renameTestInBundles(bundles: BundledTestsMap, oldName: string, newName: string): BundledTestsMap {
+  if (oldName === newName) return bundles;
+  return Object.fromEntries(
+    Object.entries(bundles).map(([bundleId, tests]) => [
+      bundleId,
+      [...new Set(tests.map((test) => test === oldName ? newName : test))],
+    ]),
+  );
+}
+
 export interface BundleDefinition {
   id: string;
   label: string;

@@ -7,6 +7,7 @@ import {
   getPanelAnalytesFromBundles,
   bundlesForTest,
   setTestBundleMembership,
+  renameTestInBundles,
 } from "../bundledTests";
 
 describe("bundledTests", () => {
@@ -78,5 +79,14 @@ describe("bundledTests", () => {
     expect(setTestBundleMembership(withUrinalysis, "Glucose", "biochemistry", false))
       .toEqual({ biochemistry: [], urinalysis: ["Protein", "Glucose"] });
     expect(original.urinalysis).toEqual(["Protein"]);
+  });
+
+  it("keeps bundle membership when a lab parameter is renamed", () => {
+    const original = { biochemistry: ["Glucose", "Lactate"], urinalysis: ["Glucose", "Protein"] };
+    expect(renameTestInBundles(original, "Glucose", "Blood glucose")).toEqual({
+      biochemistry: ["Blood glucose", "Lactate"],
+      urinalysis: ["Blood glucose", "Protein"],
+    });
+    expect(original.biochemistry).toEqual(["Glucose", "Lactate"]);
   });
 });
