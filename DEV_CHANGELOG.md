@@ -154,3 +154,8 @@ Every completed change must be logged chronologically using this structure. Use 
 - **Context / Problem:** Individual lab and vital reference ranges in Nurse Specializations had a delete control but no way to correct a parameter name or range value.
 - **Action Taken:** Added an Edit control beside each red X and a small edit dialog for the name and reference range. Edits remain in the nurse form until Save changes is clicked. Renaming a lab parameter updates its bundle memberships and duplicate or blank entries are blocked. Updated the bundle utility and its focused test.
 - **Verification:** On `preview/educators`, `npx tsc --noEmit` passed; `npm test -- features/personas` passed (3 files, 15 tests); targeted ESLint had no errors and only two existing warnings; `git diff --check` passed. Preview browser verification follows deployment.
+
+### [2026-10-29 18:30 Europe/London] Sort and search cases by author institution — (Requested by: Marco; Tool: Codex)
+- **Context / Problem:** The admin review list repeated creator and author credit in adjacent columns, while institution was combined with author and could not be searched independently.
+- **Action Taken:** Replaced the Created by and combined credit columns with separate sortable Author and Institution columns, and added a case-insensitive institution search above the admin table. Kept the stored creator account for provenance. Updated the cases specification.
+- **Verification:** On `preview/educators`, `npx tsc --noEmit` and `npm test -- features/cases features/case-selection` passed (5 files, 22 tests); targeted ESLint and `git diff --check` passed. Preview browser verification follows deployment.
