@@ -13,22 +13,26 @@ import { Select } from "@/features/navigation/components/select";
 import { SortHeader } from "@/features/navigation/components/sort-header";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/features/navigation/components/table";
 import { useTableSort } from "@/features/navigation/hooks/useTableSort";
+import { buildAuthHeaders } from "@/lib/auth-headers";
 
-type CaseSortKey = "case" | "species" | "discipline" | "difficulty" | "time" | "published";
+type CaseSortKey = "case" | "species" | "discipline" | "difficulty" | "time" | "published" | "author" | "created";
 
 const difficultyRank: Record<string, number> = { Easy: 1, Medium: 2, Hard: 3 };
+const caseDateFormatter = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "Europe/London" });
 
 export function CaseLibrary({
   getCaseHref,
   title = "Clinical Cases",
   subtitle = "Explore the full library of OSCE-style veterinary cases.",
   showPublished = false,
+  showAuthorship = false,
   includeUnpublished = false,
 }: {
   getCaseHref: (caseItem: Case) => string;
   title?: string;
   subtitle?: string;
   showPublished?: boolean;
+  showAuthorship?: boolean;
   includeUnpublished?: boolean;
 }) {
   const [cases, setCases] = useState<Case[]>([]);
@@ -67,6 +71,7 @@ export function CaseLibrary({
   }, [user, role]);
 
   useEffect(() => {
+    let cancelled = false;
     async function loadCases() {
       setLoading(true);
       try {
@@ -76,24 +81,49 @@ export function CaseLibrary({
           const mapped = Array.isArray(assigned)
             ? assigned.map((entry: { case?: Case }) => entry.case).filter((caseItem): caseItem is Case => Boolean(caseItem))
             : [];
-          setCases(mapped);
+          if (!cancelled) setCases(mapped);
         } else {
-          const result = await fetchCases({
+          let result = await fetchCases({
             category: selectedDiscipline === "all" ? undefined : selectedDiscipline,
             species: selectedSpecies === "all" ? undefined : selectedSpecies,
             includeUnpublished,
           });
-          setCases(result);
+          if (showAuthorship) {
+            const userIds = [...new Set(result.map((caseItem) => caseItem.creatorUserId).filter((id): id is string => Boolean(id)))];
+            let names: Record<string, string> = {};
+            let lookupFailed = false;
+            if (userIds.length > 0) {
+              try {
+                const response = await fetch("/api/cases/author-names", {
+                  method: "POST",
+                  headers: await buildAuthHeaders({ "Content-Type": "application/json" }),
+                  body: JSON.stringify({ userIds }),
+                });
+                if (!response.ok) throw new Error(`Author lookup failed (${response.status})`);
+                const payload = await response.json() as { names?: Record<string, string> };
+                names = payload.names ?? {};
+              } catch (authorError) {
+                console.warn("Failed to load case author names", authorError);
+                lookupFailed = true;
+              }
+            }
+            result = result.map((caseItem) => ({
+              ...caseItem,
+              creatorName: !caseItem.creatorUserId ? "Unknown" : lookupFailed ? "Unavailable" : names[caseItem.creatorUserId] ?? "Unknown",
+            }));
+          }
+          if (!cancelled) setCases(result);
         }
       } catch (err) {
         console.warn("Failed to load cases for selected filter", err);
-        setCases([]);
+        if (!cancelled) setCases([]);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
     loadCases();
-  }, [selectedDiscipline, selectedSpecies, user, role, includeUnpublished]);
+    return () => { cancelled = true; };
+  }, [selectedDiscipline, selectedSpecies, user, role, includeUnpublished, showAuthorship]);
 
   const { sort, toggle, sorted: sortedCases } = useTableSort<Case, CaseSortKey>(
     cases,
@@ -103,6 +133,8 @@ export function CaseLibrary({
       if (key === "discipline") return caseItem.category;
       if (key === "difficulty") return difficultyRank[caseItem.difficulty] ?? 0;
       if (key === "published") return caseItem.isPublished ? 1 : 0;
+      if (key === "author") return caseItem.creatorName ?? "";
+      if (key === "created") return caseItem.createdAt ?? "";
       return caseItem.estimatedTime;
     },
     { key: "case", dir: "asc" },
@@ -137,7 +169,7 @@ export function CaseLibrary({
 
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
         <div className="max-w-full overflow-x-auto">
-          <div className={showPublished ? "min-w-[840px]" : "min-w-[720px]"}>
+          <div className={showAuthorship ? "min-w-[1100px]" : showPublished ? "min-w-[840px]" : "min-w-[720px]"}>
             <Table>
               <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
                 <TableRow>
@@ -146,6 +178,8 @@ export function CaseLibrary({
                   <SortHeader label="Discipline" column="discipline" sort={sort} onSort={toggle} />
                   <SortHeader label="Difficulty" column="difficulty" sort={sort} onSort={toggle} />
                   <SortHeader label="Time" column="time" sort={sort} onSort={toggle} />
+                  {showAuthorship ? <SortHeader label="Created by" column="author" sort={sort} onSort={toggle} /> : null}
+                  {showAuthorship ? <SortHeader label="Date created" column="created" sort={sort} onSort={toggle} /> : null}
                   {showPublished ? <SortHeader label="Published" column="published" sort={sort} onSort={toggle} /> : null}
                 </TableRow>
               </TableHeader>
@@ -153,7 +187,7 @@ export function CaseLibrary({
                 {loading ? (
                   <TableRow>
                     <TableCell
-                      colSpan={showPublished ? 6 : 5}
+                      colSpan={5 + (showPublished ? 1 : 0) + (showAuthorship ? 2 : 0)}
                       className="px-5 py-8 text-center text-theme-sm text-gray-500 dark:text-gray-400"
                     >
                       Loading cases...
@@ -162,7 +196,7 @@ export function CaseLibrary({
                 ) : cases.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={showPublished ? 6 : 5}
+                      colSpan={5 + (showPublished ? 1 : 0) + (showAuthorship ? 2 : 0)}
                       className="px-5 py-8 text-center text-theme-sm text-gray-500 dark:text-gray-400"
                     >
                       No cases match these filters.
@@ -215,6 +249,18 @@ export function CaseLibrary({
                         <TableCell className="px-4 py-3 text-theme-sm text-gray-500 dark:text-gray-400">
                           {caseItem.estimatedTime} min
                         </TableCell>
+                        {showAuthorship ? (
+                          <TableCell className="px-4 py-3 text-theme-sm text-gray-500 dark:text-gray-400">
+                            {caseItem.creatorName ?? "Unknown"}
+                          </TableCell>
+                        ) : null}
+                        {showAuthorship ? (
+                          <TableCell className="px-4 py-3 text-theme-sm text-gray-500 dark:text-gray-400">
+                            {caseItem.createdAt && !Number.isNaN(Date.parse(caseItem.createdAt))
+                              ? caseDateFormatter.format(new Date(caseItem.createdAt))
+                              : "Unknown"}
+                          </TableCell>
+                        ) : null}
                         {showPublished ? (
                           <TableCell className="px-4 py-3">
                             {caseItem.isPublished ? (

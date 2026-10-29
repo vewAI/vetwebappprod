@@ -727,6 +727,7 @@ export default function CaseViewerClient() {
           title="Review and Edit Cases"
           subtitle="Select a case to edit"
           showPublished
+          showAuthorship
           includeUnpublished
           getCaseHref={(caseItem) => `/case-viewer?id=${encodeURIComponent(caseItem.id)}`}
         />

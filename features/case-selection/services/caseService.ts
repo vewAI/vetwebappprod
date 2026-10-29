@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import type { Case } from "../models/case";
 import { normalizeCaseMedia } from "@/features/cases/models/caseMedia";
+import { getCaseCreatorUserId } from "@/features/cases/utils/caseAuthorship";
 
 // Use shared singleton Supabase client to avoid multiple GoTrue instances
 
@@ -17,6 +18,8 @@ type DbCase = {
   gif_url?: string | null;
   tags?: string[] | null;
   is_published?: boolean | null;
+  created_at?: string | null;
+  settings?: unknown;
   media?: unknown;
   owner_background?: string | null;
   physical_exam_findings?: string | null;
@@ -279,6 +282,8 @@ export function mapDbCaseToCase(dbCase: DbCase): Case {
     gifUrl: dbCase.gif_url ?? undefined,
     tags: dbCase.tags ?? [],
     isPublished: dbCase.is_published ?? false,
+    createdAt: dbCase.created_at ?? undefined,
+    creatorUserId: getCaseCreatorUserId(dbCase.settings) ?? undefined,
     media: normalizeCaseMedia(dbCase.media),
     ownerBackground: dbCase.owner_background ?? undefined,
     physicalExamFindings: dbCase.physical_exam_findings ?? undefined,

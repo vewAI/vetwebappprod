@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireUser } from "@/app/api/_lib/auth";
+import { prepareCaseSettings } from "@/features/cases/utils/caseAuthorship";
 
 export async function POST(request: NextRequest, context: { params: Promise<{ caseId: string }> }) {
   const auth = await requireUser(request as Request);
@@ -29,6 +30,15 @@ export async function POST(request: NextRequest, context: { params: Promise<{ ca
     delete (sanitized as any).id;
     delete (sanitized as any).created_at;
     delete (sanitized as any).updated_at;
+    if (Object.prototype.hasOwnProperty.call(sanitized, "settings")) {
+      const { data: existingCase, error: existingCaseError } = await supabase
+        .from("cases")
+        .select("settings")
+        .eq("id", caseId)
+        .maybeSingle();
+      if (existingCaseError) return NextResponse.json({ error: existingCaseError.message }, { status: 500 });
+      sanitized.settings = prepareCaseSettings(sanitized.settings, existingCase?.settings, auth.user.id, false);
+    }
     const { data, error } = await supabase.from("cases").update(sanitized).eq("id", caseId).select().maybeSingle();
     if (error) {
       console.error("[compare.apply] supabase error:", error);

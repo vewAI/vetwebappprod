@@ -13,6 +13,9 @@ export type Case = {
     gifUrl?: string
     tags?: string[]
     isPublished?: boolean
+    createdAt?: string
+    creatorUserId?: string
+    creatorName?: string
     media?: CaseMediaItem[]
     ownerBackground?: string
     physicalExamFindings?: string

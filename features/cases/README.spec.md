@@ -62,6 +62,7 @@ interface TimepointTemplate {
 
 ## Case Viewer
 Admins pick a case at `/case-viewer` from the same table as `/cases`, then review or edit it at `/case-viewer?id={caseId}`.
+The admin-only list adds sortable **Created by** and **Date created** columns. New cases record the authenticated creator's user ID in `cases.settings.createdByUserId`; an admin-only lookup resolves the name from `profiles.full_name` or email. Existing cases without trustworthy creator metadata show **Unknown**. The date comes from `cases.created_at` and is displayed in Europe/London time. Editing a case must preserve its original creator and creation date.
 
 ### API Contract
 #### GET /api/cases?id={caseId}

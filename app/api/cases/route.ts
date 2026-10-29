@@ -13,6 +13,7 @@ import {
   scrubConflictingSpeciesStrings,
 } from "@/features/cases/services/caseCompletion";
 import { requireUser } from "@/app/api/_lib/auth";
+import { prepareCaseSettings } from "@/features/cases/utils/caseAuthorship";
 
 let openaiInstance: OpenAi | null = null;
 function getOpenAI() {
@@ -246,6 +247,18 @@ export async function POST(req: Request) {
       console.warn("LLM enrichment failed for new case:", llmErr);
     }
 
+    const { data: existingCase, error: existingCaseError } = await supabase
+      .from("cases")
+      .select("created_at, settings")
+      .eq("id", String(body["id"]))
+      .maybeSingle();
+    if (existingCaseError) {
+      return NextResponse.json({ error: existingCaseError.message }, { status: 500 });
+    }
+    body["settings"] = prepareCaseSettings(body["settings"], existingCase?.settings, auth.user.id, !existingCase);
+    if (existingCase?.created_at) body["created_at"] = existingCase.created_at;
+    else delete body["created_at"];
+
     // Upsert into Supabase: insert if new, update if exists (based on id conflict)
     // This prevents duplicate key errors when saving a case that already exists
     const { data, error } = await supabase.from("cases").upsert([body], { onConflict: "id" }).select();
@@ -304,6 +317,18 @@ export async function PUT(req: Request) {
     }
 
     body = normalizeCaseBody(body);
+    delete body.created_at;
+    if (Object.prototype.hasOwnProperty.call(body, "settings")) {
+      const { data: existingCase, error: existingCaseError } = await supabase
+        .from("cases")
+        .select("settings")
+        .eq("id", String(body.id))
+        .maybeSingle();
+      if (existingCaseError) {
+        return NextResponse.json({ error: existingCaseError.message }, { status: 500 });
+      }
+      body.settings = prepareCaseSettings(body.settings, existingCase?.settings, auth.user.id, false);
+    }
 
     // Try to update the row
     console.log(`[cases PUT] Calling supabase.update for case id="${body.id}"`);
