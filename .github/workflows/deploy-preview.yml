@@ -1,9 +1,21 @@
 name: Deploy Preview (Vercel)
 
-# Note: Vercel is natively connected to GitHub and automatically builds each push.
-# Kept as workflow_dispatch for manual on-demand triggers to prevent duplicate simultaneous builds.
 on:
+  push:
+    branches:
+      - feature/redesign
+      - preview/educators
+      - preview/redesign
   workflow_dispatch:
+    inputs:
+      target_branch:
+        description: 'Target preview environment'
+        required: true
+        default: 'feature/redesign'
+        type: choice
+        options:
+          - feature/redesign
+          - preview/educators
 
 jobs:
   trigger-preview:
@@ -12,7 +24,7 @@ jobs:
     steps:
       - name: Trigger Vercel Preview Deployment
         run: |
-          REF_NAME="${{ github.ref_name }}"
+          REF_NAME="${{ github.event.inputs.target_branch || github.ref_name }}"
           echo "Triggered for branch: $REF_NAME"
 
           if [ "$REF_NAME" = "preview/educators" ]; then
@@ -29,6 +41,7 @@ jobs:
             fi
           fi
 
+          echo "Calling Vercel Deploy Hook for $REF_NAME..."
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$DEPLOY_HOOK")
           HTTP_BODY=$(echo "$RESPONSE" | sed '$d')
           HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
@@ -37,4 +50,4 @@ jobs:
             echo "Deploy hook failed with HTTP status: $HTTP_STATUS"
             exit 1
           fi
-          echo "Vercel Preview Deployment triggered successfully!"
+          echo "Vercel Preview Deployment for $REF_NAME triggered successfully!"
