@@ -10,7 +10,9 @@ The system reads stage definitions from the database at runtime, falling back to
 
 - An active stage with `settings.stage_type = "recheck_transition"` belongs between two active conversational stages. Its `transition_message` is the exact student-facing notice written by the case author, including elapsed time, next contact, and the learner's task.
 - Live shows this as a large orange written card. It stops voice interaction and the stage timer. The student presses Continue to enter the following stage, whose configured persona determines whether they speak to the owner or nurse.
-- The notice does not select a treatment outcome. Case-specific recheck findings and treatment-dependent pathways are authored separately.
+- Authors can add one or more outcome tabs to each recheck transition. Each tab records its treatment and timing trigger, owner report, examination, repeat tests, and feedback focus. One tab represents a fixed course; three named starting outcomes and further custom tabs are available. These alternatives belong to the same recheck, not sequential stages. A separate recheck transition can be added for each later encounter.
+- An optional future case map section records a monitoring window, repeatable checks, time pattern, treatment timing effects, and exit conditions. The map editor and repeat-monitoring engine are planned; the notes do not alter Live progression.
+- Outcome tabs are authoring data only for now. Live does not select an outcome from a student's free-text treatment orders or serve outcome-specific recheck findings. The stages API removes author-only outcome and map settings from student responses. Activation needs treatment-order extraction, verified selection, persistence per attempt, and result-panel integration.
 
 ---
 

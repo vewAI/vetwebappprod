@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { fetchCases } from "@/features/case-selection/services/caseService";
 import { buildAuthHeaders } from "@/lib/auth-headers";
 import type { Case } from "@/features/case-selection/models/case";
+import { RecheckPlanEditor } from "@/features/stages/components/RecheckPlanEditor";
+import { newRecheckOutcome, validateRecheckOutcomes } from "@/features/stages/recheckPlan";
 
 type EditableStage = {
   id?: string;
@@ -364,6 +366,9 @@ export default function CaseStageManagerPage() {
           settings: {
             ...(stage.settings ?? {}),
             stage_type: typeId,
+            ...(typeId === "recheck_transition" && !stage.settings?.recheck_outcomes
+              ? { recheck_outcomes: [newRecheckOutcome()] }
+              : {}),
           },
         };
       }),
@@ -399,6 +404,15 @@ export default function CaseStageManagerPage() {
     );
     if (invalidRecheckIndex !== -1) {
       setError(`Stage ${invalidRecheckIndex + 1}: add a recheck message and place this stage between two active encounters.`);
+      return;
+    }
+    const invalidOutcomeIndex = stages.findIndex((stage) =>
+      stage.is_active && detectStageType(stage) === "recheck_transition" &&
+      stage.settings.recheck_outcomes !== undefined &&
+      validateRecheckOutcomes(stage.settings.recheck_outcomes) !== null
+    );
+    if (invalidOutcomeIndex !== -1) {
+      setError(`Stage ${invalidOutcomeIndex + 1}: ${validateRecheckOutcomes(stages[invalidOutcomeIndex].settings.recheck_outcomes)}.`);
       return;
     }
     setSaving(true);
@@ -620,7 +634,7 @@ export default function CaseStageManagerPage() {
               </div>
 
               {detectStageType(stage) === "recheck_transition" ? (
-                <label className="text-sm block">
+                <><label className="text-sm block">
                   <div className="mb-1 font-medium">Message shown to students before the recheck</div>
                   <textarea
                     rows={5}
@@ -631,6 +645,8 @@ export default function CaseStageManagerPage() {
                   />
                   <div className="mt-1 text-xs text-slate-700 dark:text-slate-300">Students see this as a written notice. The next active stage decides whether they speak to the owner or nurse.</div>
                 </label>
+                <RecheckPlanEditor settings={stage.settings} onChange={(settings) => updateStage(index, { settings })} />
+                </>
               ) : <>
               <label className="text-sm block">
                 <div className="mb-1 font-medium">What should the student accomplish in this stage?</div>

@@ -3,6 +3,7 @@ import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { requireAdmin, requireUser } from "@/app/api/_lib/auth";
 import { caseConfig } from "@/features/config/case-config";
 import { resolveChatPersonaRoleKey } from "@/features/chat/utils/persona-guardrails";
+import { publicStageSettings, validateRecheckOutcomes } from "@/features/stages/recheckPlan";
 
 type RouteContext = { params: Promise<{ caseId: string }> };
 
@@ -28,7 +29,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
       // Keep runtime clients on a deliberately small DTO.
       const stages = auth.role === "admin"
         ? data
-        : data.map(({ stage_prompt: _stagePrompt, ...stage }) => stage);
+        : data.map((stage) => {
+            const publicStage = { ...stage };
+            delete publicStage.stage_prompt;
+            publicStage.settings = publicStageSettings(stage.settings);
+            return publicStage;
+          });
       return NextResponse.json({ stages, source: "db" });
     }
   }
@@ -102,6 +108,10 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       if (typeof stage.transition_message !== "string" || !stage.transition_message.trim() ||
           !hasPreviousEncounter || !hasNextEncounter) {
         return NextResponse.json({ error: `Stage ${i}: recheck transition needs a message between two active encounters` }, { status: 400 });
+      }
+      if (settings.recheck_outcomes !== undefined) {
+        const outcomeError = validateRecheckOutcomes(settings.recheck_outcomes);
+        if (outcomeError) return NextResponse.json({ error: `Stage ${i}: ${outcomeError}` }, { status: 400 });
       }
     }
   }
