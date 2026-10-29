@@ -6,6 +6,7 @@ export type CaseFieldKey =
   | "description"
   | "species"
   | "patient_name"
+  | "patient_breed"
   | "patient_age"
   | "patient_sex"
   | "condition"
@@ -103,6 +104,12 @@ const metaList: CaseFieldMeta[] = [
     label: "Patient Name",
     placeholder: "e.g. Buster",
     help: "Name of the animal patient.",
+  },
+  {
+    key: "patient_breed",
+    label: "Patient Breed",
+    placeholder: "e.g. Thoroughbred, Warmblood, Holstein, Labrador Retriever, Cob",
+    help: "Breed of the animal (crucial in veterinary medicine for signalment, size, and breed predispositions).",
   },
   {
     key: "patient_age",

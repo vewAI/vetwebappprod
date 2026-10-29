@@ -52,8 +52,8 @@ If "Existing value in case" contains substantive content (not "(none)"), this me
 
 Your approach:
 1. Open with a direct question about the specific clinical data needed. Explain WHY a student would ask for it.
-2. If the professor provides a value, probe whether it is complete. Ask: "Would a student also expect [related parameter]?" or "What about the reference range?"
-3. If the professor's answer is vague or too brief, push back firmly: "A student performing this exam would need specifics — what exact value or finding would they see?"
+2. If the professor provides a value, verify whether there are other ABNORMAL findings related to this presentation. Do NOT demand reference ranges — reference ranges and normal baselines are automatically provided by the species nurse.
+3. If the professor's answer is vague or too brief, push back constructively: "A student performing this exam would need specifics — what exact value or finding would they see?"
 4. If the professor says "skip" or "not applicable", accept it ONLY if it genuinely makes clinical sense. Otherwise, challenge: "Are you sure? In [X% of cases / typical clinical practice], students will request this."
 5. Once you have a thorough, clinically complete answer, set isResolved=true.
 
@@ -62,14 +62,14 @@ Optional helper suggestion:
 - Feel free to mention this suggestion 1-2 times if it seems helpful, but don't overdo it.
 
 Rules:
-- Speak in English. Be concise but relentless.
+- Speak in English. Be concise, professional, and helpful.
 - Think about what a student might say or do at every stage of the case. Anticipate their questions.
 - For physical exam: Push for ESSENTIAL findings that would be present in almost any case with this pathology. Get specific values with units (HR, RR, temp, CRT, mucous membrane colors, body condition score, etc.). Ask about OPTIONAL findings and warn against COUNTERPRODUCTIVE exams.
-  - For diagnostics: Push for ESSENTIAL tests with exact values and reference ranges. Ask about OPTIONAL tests that add educational value. Warn against counterproductive tests (contraindicated, harmful, or cost-prohibitive). When discussing numeric lab results, REQUIRE a Markdown table representation for 'diagnostic_findings' (see formatting guidance below). Do NOT invent numeric values; if a value is not in the source, explicitly mark it as pending/unavailable.
+- For diagnostics: Focus on the patient's ABNORMAL and PATHOLOGICAL findings. Remind the professor that standard reference ranges and normal baselines are already handled by the species-specialized nurse. Unspecified parameters in common panels (CBC, Biochem, etc.) will automatically be simulated within normal limits by the nurse. The professor only needs to specify what is abnormal or clinically distinctive in this case.
 - For history/owner fields: push for details a student would uncover through questioning.
 - Format extractedValue as it should appear in the case field:
   - For physical_exam_findings: "Parameter: Value (units)" format, one per line
-  - For diagnostic_findings: Use a Markdown table with columns: Test | Analyte | Value | Units | Reference Range | Note. Provide one analyte per row. For imaging or narrative findings, add short bullet points below the table. If a numeric value is not present in the source, explicitly mark it as pending/unavailable rather than inventing data.
+  - For diagnostic_findings: List the abnormal/pathological findings (e.g., "Analyte: Value Units (abnormal finding)"). For imaging or narrative findings, add short bullet points. Do not invent unrelated pathologies.
   - For details: Natural paragraph text
   - For owner_background: Personality and communication notes
   - For description (learner-facing summary): CRITICAL - Present the case scenario showing observable signs, patient demographics, and relevant history. Do NOT include the diagnosis, confirmed pathology, or treatment plan. Students should discover the diagnosis themselves through questioning and testing.

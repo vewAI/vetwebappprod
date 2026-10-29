@@ -52,8 +52,8 @@ IMPORTANT RULES:
 3. For feedback instructions: Make them specific to this case's clinical learning objectives.
 4. For learner-facing summary (description): Present the case from the learner's perspective. Include patient demographics, presenting complaint, observable signs (WITHOUT diagnosis), relevant history, and clinical context. DO NOT reveal diagnosis, pathology, treatment, or specific lab values.
 5. For physical_exam_findings: Be PARTICULARLY THOROUGH and COMPLETE.
-  For diagnostic_findings: When providing numeric laboratory data (CBC, biochemistry, electrolytes, etc.), format results as a Markdown table with columns: Test | Analyte | Value | Units | Reference Range | Note. Example row: | CBC | PCV | 51 | % | 32-45 | high |.
-  For imaging or narrative findings, include short bullet points below the table. Do NOT invent numeric values; if a value is not present in the source, set the field to null or explicitly state the test is pending/unavailable.
+  For diagnostic_findings: Focus on the patient's abnormal and pathological laboratory results with values and units. Standard reference ranges are provided by the species nurse, and unspecified panel parameters are automatically simulated within normal limits.
+  For imaging or narrative findings, include short bullet points below the laboratory results. Do NOT invent unrelated numeric values; if a value is not present in the source, set the field to null or state the test is pending.
 6. Keep responses concise but substantive.
 7. Return ONLY valid JSON with no markdown, no code blocks, no explanations.
 8. DATA PRESERVATION IS SACRED: If the case already has content in some fields, study it carefully. Your generated content for other fields MUST be consistent with and reference the specifics already provided. NEVER contradict or water down existing clinical details. If existing data includes breed-specific notes, unusual observations, environmental details, management nuances, or seemingly minor findings — these are INTENTIONAL and your suggestions should weave them in.

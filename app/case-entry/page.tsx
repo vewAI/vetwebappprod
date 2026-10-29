@@ -12,7 +12,7 @@ import { useAuth } from "@/features/auth/services/authService";
 import ImageUploader from "@/components/ui/image-uploader";
 import { caseFieldMeta, createEmptyCaseFormState, orderedCaseFieldKeys, type CaseFieldKey, getFieldMeta } from "@/features/cases/fieldMeta";
 import { CaseMediaEditor } from "@/features/cases/components/case-media-editor";
-import { AvatarSelector } from "@/features/cases/components/avatar-selector";
+import { PersonaEditor, type PersonaConfig } from "@/features/personas/components/PersonaEditor";
 import type { CaseMediaItem } from "@/features/cases/models/caseMedia";
 import { VerificationChatbot } from "@/features/case-intake/components/VerificationChatbot";
 import NurseIntroModal from "@/features/personas/components/NurseIntroModal";
@@ -78,6 +78,7 @@ const IDENTITY_FIELDS: ReadonlySet<string> = new Set([
   "condition",
   "category",
   "patient_name",
+  "patient_breed",
   "patient_age",
   "patient_sex",
   "difficulty",
@@ -116,6 +117,16 @@ export default function CaseEntryForm() {
   const [wizardIndex, setWizardIndex] = useState(0);
   const [reviewed, setReviewed] = useState<Record<string, boolean>>({});
 
+  // Persona configurations (Owner customized, Nurse auto-assigned by species)
+  const [ownerPersonaConfig, setOwnerPersonaConfig] = useState<Partial<PersonaConfig>>({
+    displayName: "Pet Owner",
+    sex: "female",
+    voiceId: "shimmer",
+    imageUrl: "",
+  });
+  const [nursePersonaConfig, setNursePersonaConfig] = useState<Partial<PersonaConfig>>({});
+  const [nurseSpecialization, setNurseSpecialization] = useState<Record<string, unknown> | null>(null);
+
   // Draft auto-save / restore
   const draft = useCaseEntryDraft();
   const [draftRestored, setDraftRestored] = useState(false);
@@ -126,6 +137,8 @@ export default function CaseEntryForm() {
   intakeTextRef.current = intakeText;
   const savedCaseIdRef = useRef(savedCaseId);
   savedCaseIdRef.current = savedCaseId;
+  const ownerPersonaConfigRef = useRef(ownerPersonaConfig);
+  ownerPersonaConfigRef.current = ownerPersonaConfig;
 
   // Restore draft on mount
   useEffect(() => {
@@ -135,9 +148,73 @@ export default function CaseEntryForm() {
       setForm(data.form);
       setIntakeText(data.intakeText ?? "");
       if (data.savedCaseId) setSavedCaseId(data.savedCaseId);
+      if (data.ownerPersonaConfig) {
+        setOwnerPersonaConfig(data.ownerPersonaConfig);
+      } else if (data.form.owner_avatar_url) {
+        setOwnerPersonaConfig((prev) => ({
+          ...prev,
+          imageUrl: data.form.owner_avatar_url,
+        }));
+      }
     }
     setDraftRestored(true);
   }, [draftRestored]);
+
+  // Default species to Equine if unset
+  useEffect(() => {
+    setForm((prev) => {
+      if (!prev.species) {
+        return { ...prev, species: "Equine" };
+      }
+      return prev;
+    });
+  }, []);
+
+  // Auto-assign and load specialized nurse when species changes (defaults to Equine)
+  useEffect(() => {
+    const species = form.species?.trim() || "Equine";
+    let isCancelled = false;
+
+    async function loadNurse() {
+      try {
+        const token = await getAccessToken();
+        const headers = await buildAuthHeaders({ "Content-Type": "application/json" }, token);
+        const res = await fetch(`/api/personas/nurse?species=${encodeURIComponent(species)}`, { headers });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (isCancelled || !data?.nurse) return;
+        setNurseSpecialization(data.nurse);
+        setNursePersonaConfig({
+          displayName: data.nurse.displayName || "Veterinary Nurse",
+          imageUrl: data.nurse.imageUrl || "",
+          sex: data.nurse.sex || "female",
+          voiceId: data.nurse.voiceId || "nova",
+          behaviorPrompt: data.nurse.behaviorPrompt || undefined,
+        });
+        setForm((prev) => ({
+          ...prev,
+          nurse_avatar_url: data.nurse.imageUrl || prev.nurse_avatar_url,
+          nurse_persona_id: `nurse-spec:${data.nurse.speciesKey}`,
+        }));
+      } catch (err) {
+        console.warn("Could not load nurse for species", err);
+      }
+    }
+
+    void loadNurse();
+    return () => {
+      isCancelled = true;
+    };
+  }, [form.species]);
+
+  const handleOwnerPersonaChange = useCallback((config: PersonaConfig) => {
+    setOwnerPersonaConfig(config);
+    setForm((prev) => ({
+      ...prev,
+      owner_avatar_url: config.imageUrl,
+      owner_persona_id: config.sourcePersonaId || prev.owner_persona_id,
+    }));
+  }, []);
 
   // Auto-save every 5 seconds
   useEffect(() => {
@@ -151,6 +228,7 @@ export default function CaseEntryForm() {
         form: f,
         intakeText: intakeTextRef.current,
         savedCaseId: savedCaseIdRef.current,
+        ownerPersonaConfig: ownerPersonaConfigRef.current,
       });
       setLastAutoSave(new Date().toISOString());
     }, 5000);
@@ -168,6 +246,7 @@ export default function CaseEntryForm() {
         form: f,
         intakeText: intakeTextRef.current,
         savedCaseId: savedCaseIdRef.current,
+        ownerPersonaConfig: ownerPersonaConfigRef.current,
       });
     };
     window.addEventListener("beforeunload", handler);
@@ -526,6 +605,21 @@ export default function CaseEntryForm() {
     try {
       const payload: Record<string, unknown> = { ...form };
       payload["media"] = mediaItems;
+      payload["_ownerPersonaConfig"] = ownerPersonaConfig;
+      payload["_nursePersonaConfig"] = nursePersonaConfig;
+
+      if (ownerPersonaConfig.imageUrl) {
+        payload["owner_avatar_url"] = ownerPersonaConfig.imageUrl;
+      }
+      if (nursePersonaConfig.imageUrl) {
+        payload["nurse_avatar_url"] = nursePersonaConfig.imageUrl;
+      }
+      if (ownerPersonaConfig.sourcePersonaId) {
+        payload["owner_persona_id"] = ownerPersonaConfig.sourcePersonaId;
+      }
+      if (nursePersonaConfig.sourcePersonaId) {
+        payload["nurse_persona_id"] = nursePersonaConfig.sourcePersonaId;
+      }
 
       const ensure = (key: CaseFieldKey, value: string) => {
         const v = payload[key];
@@ -643,6 +737,27 @@ Remain collaborative, use everyday language, and avoid offering your own medical
       const createdId = String(inserted?.id ?? payload.id ?? "").trim();
       if (createdId) {
         setSavedCaseId(createdId);
+        // Persist owner persona configuration to case_personas table
+        if (ownerPersonaConfig.imageUrl || ownerPersonaConfig.displayName) {
+          try {
+            await axios.put(
+              "/api/personas",
+              {
+                caseId: createdId,
+                roleKey: "owner",
+                displayName: ownerPersonaConfig.displayName,
+                imageUrl: ownerPersonaConfig.imageUrl,
+                sex: ownerPersonaConfig.sex,
+                voiceId: ownerPersonaConfig.voiceId,
+                sourcePersonaId: ownerPersonaConfig.sourcePersonaId,
+                behaviorPrompt: ownerPersonaConfig.behaviorPrompt ?? null,
+              },
+              { headers },
+            );
+          } catch (pErr) {
+            console.warn("Could not save owner persona config:", pErr);
+          }
+        }
       }
 
       setSuccess("Case saved successfully.");
@@ -877,9 +992,50 @@ Remain collaborative, use everyday language, and avoid offering your own medical
           <p className="text-sm text-muted-foreground">Review, adjust, and save the complete case record.</p>
         </div>
 
+        {/* Unified Personas Section */}
+        <div className="rounded-lg border border-border p-6 bg-card space-y-4">
+          <div>
+            <h2 className="text-xl font-semibold">Case Personas</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Configure the AI characters for this case. Customise the animal owner, and review the veterinary nurse who is auto-assigned based on the patient&apos;s species ({form.species || "Equine"}).
+            </p>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Owner Persona */}
+            <div>
+              <h3 className="font-medium mb-3 text-lg">Animal Owner / Caretaker</h3>
+              <PersonaEditor
+                role="owner"
+                caseId={savedCaseId || form.id || "new-case"}
+                value={ownerPersonaConfig}
+                onChange={handleOwnerPersonaChange}
+              />
+            </div>
+
+            {/* Nurse Persona - Auto-assigned based on species */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <h3 className="font-medium text-lg">Veterinary Nurse</h3>
+                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+                  {`Auto-assigned (${form.species || "Equine"})`}
+                </span>
+              </div>
+              <PersonaEditor
+                role="nurse"
+                caseId={savedCaseId || form.id || "new-case"}
+                value={nursePersonaConfig}
+                onChange={(cfg) => setNursePersonaConfig(cfg)}
+                readOnly={true}
+                specializationData={nurseSpecialization}
+              />
+            </div>
+          </div>
+        </div>
+
         {orderedCaseFieldKeys.map((key) => {
           const meta = caseFieldMeta[key];
-          if (meta.isSystem) return null;
+          if (meta.isSystem || meta.isPersonaEditor || meta.isAvatarSelector) return null;
           const helpId = meta.help ? `${key}-help` : undefined;
 
           if (meta.options && meta.options.length > 0) {
@@ -930,38 +1086,6 @@ Remain collaborative, use everyday language, and avoid offering your own medical
                     className="w-full"
                   />
                 </div>
-                {meta.help && (
-                  <p id={helpId} className="mt-1 text-sm text-muted-foreground">
-                    {meta.help}
-                  </p>
-                )}
-              </div>
-            );
-          }
-
-          if (meta.isAvatarSelector) {
-            return (
-              <div key={key}>
-                <label className="block font-medium mb-1" htmlFor={key}>
-                  {meta.label}
-                </label>
-                <AvatarSelector
-                  role={meta.avatarRole ?? "owner"}
-                  value={form[key]}
-                  onChange={(url, roleKey) =>
-                    setForm((prev) => {
-                      const next = { ...prev, [key]: url };
-                      if (roleKey) {
-                        if (meta.avatarRole === "nurse") {
-                          next["nurse_persona_id"] = roleKey;
-                        } else if (meta.avatarRole === "owner") {
-                          next["owner_persona_id"] = roleKey;
-                        }
-                      }
-                      return next;
-                    })
-                  }
-                />
                 {meta.help && (
                   <p id={helpId} className="mt-1 text-sm text-muted-foreground">
                     {meta.help}

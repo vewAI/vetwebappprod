@@ -33,6 +33,7 @@ const TARGET_FIELDS: Array<{ key: string; label: string; guide: string }> = [
   },
   { key: "species", label: "Species", guide: "Must be exactly one of: Equine, Bovine, Canine, Feline, Ovine, Caprine, Porcine, Camelid, Avian." },
   { key: "patient_name", label: "Patient Name", guide: "Name of the animal patient. If not in source, generate one appropriate for species." },
+  { key: "patient_breed", label: "Patient Breed", guide: "Breed of the patient (e.g. Thoroughbred, Cob, Warmblood, Holstein, Labrador Retriever). Extract from source if mentioned, or leave blank." },
   { key: "patient_age", label: "Patient Age", guide: "Age of the patient, e.g. '8 years', '6 months'." },
   { key: "patient_sex", label: "Patient Sex", guide: "Must be one of: Male, Female, Gelding, Mare, Stallion, Steer, Heifer, Bull, Cow." },
   { key: "condition", label: "Primary condition", guide: "Top-level medical focus, e.g. 'Suspected Streptococcus equi infection'." },
@@ -72,7 +73,7 @@ const TARGET_FIELDS: Array<{ key: string; label: string; guide: string }> = [
     key: "diagnostic_findings",
     label: "Diagnostic findings",
     guide:
-      "Lab work and diagnostic results. For numeric laboratory analytes (CBC, biochemistry, electrolytes), present results in a Markdown table with columns: Test | Analyte | Value | Units | Reference Range | Note. Example row: `| CBC | PCV | 51 | % | 32-45 | high |`. For imaging or narrative findings (radiography, ultrasound), include short bullet points below the table. Do NOT invent numeric values — extract them from the source or mark as pending/unavailable.",
+      "Lab work and diagnostic results. Extract abnormal and pathological findings with values and units from the source. Reference ranges and normal baselines are automatically provided by the species nurse; unspecified panel parameters will be simulated within normal limits. For imaging or narrative findings (radiography, ultrasound), include short bullet points.",
   },
 
   // ── Owner persona content (GENERATE case-specific) ──

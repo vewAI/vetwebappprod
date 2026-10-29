@@ -2,6 +2,7 @@
 
 import { useRef, useState, useCallback, useEffect } from "react";
 import type { CaseFieldKey } from "../fieldMeta";
+import type { PersonaConfig } from "@/features/personas/components/PersonaEditor";
 
 const STORAGE_KEY = "case-entry-draft";
 
@@ -10,6 +11,7 @@ export type DraftData = {
   intakeText: string;
   savedCaseId: string;
   savedAt: string;
+  ownerPersonaConfig?: Partial<PersonaConfig>;
 };
 
 export function useCaseEntryDraft() {

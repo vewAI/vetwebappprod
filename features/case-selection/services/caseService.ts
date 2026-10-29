@@ -27,6 +27,7 @@ type DbCase = {
   learning_objectives?: string | null;
   details?: string | null;
   patient_name?: string | null;
+  patient_breed?: string | null;
   patient_age?: string | null;
   patient_sex?: string | null;
 };
@@ -292,6 +293,7 @@ export function mapDbCaseToCase(dbCase: DbCase): Case {
     diagnosticFindings: dbCase.diagnostic_findings ?? undefined,
     details: dbCase.details ?? undefined,
     patientName: dbCase.patient_name ?? undefined,
+    patientBreed: dbCase.patient_breed ?? (dbCase as any).settings?.patient_breed ?? undefined,
     patientAge: dbCase.patient_age ?? undefined,
     patientSex: dbCase.patient_sex ?? undefined,
   };

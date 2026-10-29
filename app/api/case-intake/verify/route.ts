@@ -70,13 +70,17 @@ Organize findings into THREE CLINICAL TIERS:
 
 Verify: Are ESSENTIAL findings thoroughly documented with specific values and units? Are OPTIONAL findings appropriately included? Are COUNTERPRODUCTIVE items omitted?
 
-### D. DIAGNOSTIC & LABORATORY COMPLETENESS
+### D. DIAGNOSTIC & LABORATORY COMPLETENESS (ABNORMAL / PATHOLOGICAL FINDINGS ONLY)
+IMPORTANT CLINICAL RULE:
+The species-specialized veterinary nurse (e.g. Equine Nurse) already possesses all standard reference ranges and baseline vitals. The professor ONLY needs to specify the ABNORMAL or PATHOLOGICAL findings that define this patient's condition. Any test or panel requested by a learner whose analytes are not explicitly marked as abnormal will be automatically simulated within normal limits by the species nurse.
+DO NOT flag standard reference ranges or unspecified normal panel values as missing!
+
 Organize findings into THREE CLINICAL TIERS:
 
 **ESSENTIAL** (would almost certainly be performed for this presentation):
-- CBC/Haematology (hemoglobin, hematocrit, WBC, differential, platelets) with exact values and reference ranges
-- Serum Chemistry (electrolytes, kidney values, liver enzymes, glucose, albumin, globulins)
-- Urinalysis (if indicated)
+- CBC/Haematology abnormal findings (e.g. WBC, neutrophils, band cells, fibrinogen, SAA, hematocrit)
+- Serum Chemistry abnormal findings (electrolytes, kidney values, liver enzymes, glucose, albumin, globulins)
+- Urinalysis / Body fluid analysis (if indicated for the condition)
 - Blood Gas (if indicated)
 - Imaging (radiography, ultrasound views relevant to differential)
 - Culture/sensitivity (if infection suspected)
@@ -87,7 +91,7 @@ Organize findings into THREE CLINICAL TIERS:
 **COUNTERPRODUCTIVE** (no diagnostic value, harmful, or cost-prohibitive):
 - Tests unrelated to the differential, contraindicated procedures, cost-prohibitive tests without clear indication
 
-Verify: Are ESSENTIAL tests documented with exact values, units, AND reference ranges? Are values consistent with the suspected diagnosis? Are OPTIONAL tests appropriately included? Are COUNTERPRODUCTIVE tests avoided?
+Verify: Are key ESSENTIAL abnormal findings documented with values and units? Are values consistent with the suspected diagnosis? (DO NOT demand reference ranges from the author). Are OPTIONAL tests appropriately included? Are COUNTERPRODUCTIVE tests avoided?
 
 ### E. IMAGING COMPLETENESS
 - Are radiography findings documented? (which views, positive/negative findings)
@@ -194,6 +198,7 @@ export async function POST(request: NextRequest) {
       "category",
       "title",
       "patient_name",
+      "patient_breed",
       "patient_age",
       "patient_sex",
       "details",

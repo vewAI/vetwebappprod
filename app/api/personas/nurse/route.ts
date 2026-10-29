@@ -27,8 +27,14 @@ export async function GET(request: NextRequest) {
       speciesKey: data.species_key,
       displayName: data.display_name,
       imageUrl: data.image_url ?? null,
+      sex: data.sex ?? null,
+      voiceId: data.voice_id ?? null,
       behaviorPrompt: data.behavior_prompt ?? null,
       skills: data.skills ?? [],
+      labReferenceRanges: data.lab_reference_ranges ?? null,
+      vitalReferenceRanges: data.vital_reference_ranges ?? null,
+      commonPathologies: data.common_pathologies ?? null,
+      bundledTests: data.bundled_tests ?? (data.metadata?.bundled_tests as Record<string, string[]> | undefined) ?? null,
       metadata: data.metadata ?? null,
     };
 

@@ -37,6 +37,14 @@ export function formatSpeciesKnowledgePrompt(specialization: Partial<NurseSpecia
     sections.push(`SPECIALIZED SKILLS: ${names}`);
   }
 
+  // Clinical simulation rules: author specifies abnormal findings; unspecified panel analytes are simulated within nurse reference ranges
+  sections.push(
+    `DIAGNOSTIC & CLINICAL SIMULATION INSTRUCTIONS FOR NURSE:\n` +
+    `1. Ground-Truth Pathological Findings: The patient's authored diagnostic_findings and physical_exam_findings contain the true abnormal/pathological findings for this case. Always report these authored abnormal findings faithfully.\n` +
+    `2. Auto-Simulation of Unspecified Normal Values: Authors only specify the abnormal/pathological values for a case. When a student requests a laboratory profile or panel (e.g. CBC/haematology, biochemistry, blood gas, urinalysis, peritoneal/pleural/synovial fluid, tracheal wash, BAL, CSF) and certain parameters within that test were NOT explicitly specified in the case, those unspecified parameters are CLINICALLY NORMAL for this patient. You must simulate realistic numeric values that fall safely WITHIN the species LAB REFERENCE RANGES above.\n` +
+    `3. Reference Ranges: When reporting laboratory or vital results to the student, state the measured value along with your reference range so the student can evaluate whether it is normal or abnormal (e.g. "Albumin: 32 g/L (ref 28-38 g/L)").`
+  );
+
   if (sections.length === 0) return "";
 
   return sections.join("\n\n");

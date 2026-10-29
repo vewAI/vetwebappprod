@@ -48,6 +48,20 @@ function normalizeCaseBody(body: Record<string, unknown>): Record<string, unknow
   delete next["owner_persona_config"];
   delete next["nurse_persona_config"];
 
+  // patient_breed: normalize and mirror to settings so it is always preserved
+  if (next["patient_breed"] !== undefined && next["patient_breed"] !== "") {
+    const breedStr = String(next["patient_breed"]).trim();
+    next["patient_breed"] = breedStr || null;
+    const currentSettings =
+      typeof next["settings"] === "object" && next["settings"] !== null && !Array.isArray(next["settings"])
+        ? { ...(next["settings"] as Record<string, unknown>) }
+        : {};
+    currentSettings.patient_breed = breedStr || null;
+    next["settings"] = currentSettings;
+  } else if (next["patient_breed"] === "") {
+    next["patient_breed"] = null;
+  }
+
   // estimated_time
   if (next["estimated_time"] !== undefined && next["estimated_time"] !== "") {
     const n = Number(next["estimated_time"]);
@@ -136,6 +150,12 @@ export async function GET(req: Request) {
     if (!row) {
       return NextResponse.json({ error: "Case not found" }, { status: 404 });
     }
+    if (row && typeof row === "object") {
+      const r = row as Record<string, unknown>;
+      if (!r.patient_breed && r.settings && typeof r.settings === "object" && (r.settings as any).patient_breed) {
+        r.patient_breed = (r.settings as any).patient_breed;
+      }
+    }
     return NextResponse.json([row]);
   }
 
@@ -144,7 +164,15 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const rows = Array.isArray(data) ? data : [];
+  const rows = (Array.isArray(data) ? data : []).map((row) => {
+    if (row && typeof row === "object") {
+      const r = row as Record<string, unknown>;
+      if (!r.patient_breed && r.settings && typeof r.settings === "object" && (r.settings as any).patient_breed) {
+        r.patient_breed = (r.settings as any).patient_breed;
+      }
+    }
+    return row;
+  });
   if (includeArchived) {
     return NextResponse.json(rows);
   }
@@ -265,7 +293,15 @@ export async function POST(req: Request) {
 
     // Upsert into Supabase: insert if new, update if exists (based on id conflict)
     // This prevents duplicate key errors when saving a case that already exists
-    const { data, error } = await supabase.from("cases").upsert([body], { onConflict: "id" }).select();
+    let { data, error } = await supabase.from("cases").upsert([body], { onConflict: "id" }).select();
+    if (error && (error.message?.includes("patient_breed") || (error as any).details?.includes("patient_breed"))) {
+      console.warn("Retrying upsert without patient_breed root column (safely stored in settings)...");
+      const fallbackBody = { ...body };
+      delete fallbackBody.patient_breed;
+      const retryResult = await supabase.from("cases").upsert([fallbackBody], { onConflict: "id" }).select();
+      data = retryResult.data;
+      error = retryResult.error;
+    }
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -336,7 +372,16 @@ export async function PUT(req: Request) {
 
     // Try to update the row
     console.log(`[cases PUT] Calling supabase.update for case id="${body.id}"`);
-    const { data, error } = await supabase.from("cases").update(body).eq("id", body.id).select();
+    let { data, error } = await supabase.from("cases").update(body).eq("id", body.id).select();
+
+    if (error && (error.message?.includes("patient_breed") || (error as any).details?.includes("patient_breed"))) {
+      console.warn("Retrying update without patient_breed root column (safely stored in settings)...");
+      const fallbackBody = { ...body };
+      delete fallbackBody.patient_breed;
+      const retryResult = await supabase.from("cases").update(fallbackBody).eq("id", body.id).select();
+      data = retryResult.data;
+      error = retryResult.error;
+    }
 
     if (error) {
       console.error(

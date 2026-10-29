@@ -25,6 +25,7 @@ export type Case = {
     diagnosticFindings?: string
     details?: string
     patientName?: string
+    patientBreed?: string
     patientAge?: string
     patientSex?: string
 };
