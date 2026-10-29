@@ -5,6 +5,8 @@ import {
   normalizeBundleKey,
   formatBundledTestsForPrompt,
   getPanelAnalytesFromBundles,
+  bundlesForTest,
+  setTestBundleMembership,
 } from "../bundledTests";
 
 describe("bundledTests", () => {
@@ -66,5 +68,15 @@ describe("bundledTests", () => {
     expect(analyteSets.biochemistry.has("ast")).toBe(true);
     expect(analyteSets.biochemistry.has("glucose")).toBe(true);
     expect(analyteSets.chem.has("glucose")).toBe(true);
+  });
+
+  it("assigns a lab test to multiple bundles without changing other tests", () => {
+    const original = { biochemistry: ["Glucose"], urinalysis: ["Protein"] };
+    const withUrinalysis = setTestBundleMembership(original, "Glucose", "urinalysis", true);
+    expect(bundlesForTest(withUrinalysis, "Glucose")).toEqual(["biochemistry", "urinalysis"]);
+    expect(withUrinalysis.urinalysis).toEqual(["Protein", "Glucose"]);
+    expect(setTestBundleMembership(withUrinalysis, "Glucose", "biochemistry", false))
+      .toEqual({ biochemistry: [], urinalysis: ["Protein", "Glucose"] });
+    expect(original.urinalysis).toEqual(["Protein"]);
   });
 });

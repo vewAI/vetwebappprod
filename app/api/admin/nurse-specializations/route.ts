@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { requireAdmin } from "@/app/api/_lib/auth";
+import { refreshSpecializedNurseCases } from "@/features/personas/services/nurseSpecializationService";
 
 export async function GET(request: NextRequest) {
   const auth = await requireAdmin(request);
@@ -64,7 +65,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ specialization: data });
+  try {
+    const refreshedCases = await refreshSpecializedNurseCases(supabase, species_key);
+    return NextResponse.json({ specialization: data, refreshedCases });
+  } catch (syncError) {
+    console.error("Saved nurse specialization but failed to refresh case personas", syncError);
+    return NextResponse.json({
+      specialization: data,
+      warning: "Specialization saved, but existing case nurses could not be refreshed. Please ask an administrator to check the case profiles.",
+    });
+  }
 }
 
 export async function DELETE(request: NextRequest) {

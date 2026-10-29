@@ -29,7 +29,7 @@ export async function getNurseForSpecies(supabase: SupabaseClient, species?: str
     labReferenceRanges: data.lab_reference_ranges ?? null,
     vitalReferenceRanges: data.vital_reference_ranges ?? null,
     commonPathologies: data.common_pathologies ?? null,
-    bundledTests: data.bundled_tests ?? (data.metadata?.bundled_tests as Record<string, string[]> | undefined) ?? null,
+    bundledTests: (data.metadata?.bundled_tests as Record<string, string[]> | undefined) ?? data.bundled_tests ?? null,
     metadata: data.metadata ?? null,
     createdAt: data.created_at ?? undefined,
     updatedAt: data.updated_at ?? undefined,
@@ -86,6 +86,7 @@ export async function applySpecializedNurse(supabase: SupabaseClient, caseId: st
       labReferenceRanges: nurse.labReferenceRanges,
       vitalReferenceRanges: nurse.vitalReferenceRanges,
       commonPathologies: nurse.commonPathologies,
+      bundledTests: nurse.bundledTests,
     },
   };
 
@@ -106,4 +107,49 @@ export async function applySpecializedNurse(supabase: SupabaseClient, caseId: st
   if (upsertError) {
     console.error("Failed to upsert specialized nurse persona", upsertError);
   }
+}
+
+/** Refresh clinical knowledge in automatically assigned case nurses after an admin save. */
+export async function refreshSpecializedNurseCases(
+  supabase: SupabaseClient,
+  speciesKey: string,
+): Promise<number> {
+  const nurse = await getNurseForSpecies(supabase, speciesKey);
+  if (!nurse) throw new Error("Saved nurse specialization could not be reloaded");
+
+  const { data: personas, error: fetchError } = await supabase
+    .from("case_personas")
+    .select("id, metadata")
+    .eq("role_key", "veterinary-nurse")
+    .eq("generated_by", "system")
+    .contains("metadata", { nurseSpecialization: { speciesKey: nurse.speciesKey } });
+  if (fetchError) throw fetchError;
+
+  for (const persona of personas ?? []) {
+    const metadata = (persona.metadata ?? {}) as Record<string, unknown>;
+    const previous = (metadata.nurseSpecialization ?? {}) as Record<string, unknown>;
+    const { error: updateError } = await supabase
+      .from("case_personas")
+      .update({
+        metadata: {
+          ...metadata,
+          nurseSpecialization: {
+            ...previous,
+            id: nurse.id,
+            speciesKey: nurse.speciesKey,
+            displayName: nurse.displayName,
+            skills: nurse.skills,
+            labReferenceRanges: nurse.labReferenceRanges,
+            vitalReferenceRanges: nurse.vitalReferenceRanges,
+            commonPathologies: nurse.commonPathologies,
+            bundledTests: nurse.bundledTests,
+          },
+        },
+      })
+      .eq("id", persona.id)
+      .eq("generated_by", "system");
+    if (updateError) throw updateError;
+  }
+
+  return personas?.length ?? 0;
 }

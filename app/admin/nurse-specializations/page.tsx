@@ -23,8 +23,13 @@ import { getAccessToken } from "@/lib/auth-headers";
 import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
 import { BulkReferenceRangesDialog } from "@/features/personas/components/BulkReferenceRangesDialog";
 import { BundledTestsEditor } from "@/features/personas/components/BundledTestsEditor";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
+  bundleLabel,
+  bundlesForTest,
   getDefaultBundledTests,
+  setTestBundleMembership,
   STANDARD_BUNDLE_DEFINITIONS,
   type BundledTestsMap,
 } from "@/features/personas/utils/bundledTests";
@@ -90,6 +95,7 @@ export default function NurseSpecializationsPage() {
   const [newSkillDesc, setNewSkillDesc] = useState("");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveNotice, setSaveNotice] = useState("");
 
   const fetchSpecs = useCallback(async () => {
     setLoading(true);
@@ -103,8 +109,8 @@ export default function NurseSpecializationsPage() {
         const loaded = (data.specializations ?? []).map((s: any) => ({
           ...s,
           bundled_tests:
-            s.bundled_tests ??
             (s.metadata?.bundled_tests as BundledTestsMap | undefined) ??
+            s.bundled_tests ??
             getDefaultBundledTests(),
         }));
         setSpecs(loaded);
@@ -126,8 +132,8 @@ export default function NurseSpecializationsPage() {
     setSaving(true);
     try {
       const activeBundles =
-        spec.bundled_tests ??
         (spec.metadata?.bundled_tests as BundledTestsMap | undefined) ??
+        spec.bundled_tests ??
         getDefaultBundledTests();
 
       const specToSave = {
@@ -149,9 +155,11 @@ export default function NurseSpecializationsPage() {
         body: JSON.stringify(specToSave),
       });
       if (res.ok) {
+        const saved = await res.json();
         await fetchSpecs();
         setEditingId(null);
         setCreateDialogOpen(false);
+        setSaveNotice(saved.warning ?? `Saved changes to ${spec.display_name}.`);
       } else {
         const err = await res.json();
         alert(err.error ?? "Save failed");
@@ -183,12 +191,13 @@ export default function NurseSpecializationsPage() {
   };
 
   const startEdit = (spec: Specialization) => {
+    setSaveNotice("");
     setEditingId(spec.species_key);
     setEditForm({
       ...spec,
       bundled_tests:
-        spec.bundled_tests ??
         (spec.metadata?.bundled_tests as BundledTestsMap | undefined) ??
+        spec.bundled_tests ??
         getDefaultBundledTests(),
     });
   };
@@ -209,7 +218,7 @@ export default function NurseSpecializationsPage() {
             { label: "Nurse Specializations" },
           ]}
         />
-        <Button onClick={() => { setEditForm(emptySpec()); setCreateDialogOpen(true); }}>
+        <Button onClick={() => { setSaveNotice(""); setEditForm(emptySpec()); setCreateDialogOpen(true); }}>
           <Plus className="h-4 w-4 mr-2" /> Add Species
         </Button>
       </div>
@@ -220,6 +229,8 @@ export default function NurseSpecializationsPage() {
           Manage species-specific veterinary nurse personas with clinical knowledge bases.
         </p>
       </header>
+
+      {saveNotice && <p role="status" className="mb-4 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">{saveNotice}</p>}
 
       {loading ? (
         <div className="flex items-center justify-center min-h-[50vh]">
@@ -357,6 +368,7 @@ function SpecCard({ spec, isEditing, editForm, setEditForm, onStartEdit, onCance
             <>
               <Button size="sm" onClick={onSave} disabled={saving}>
                 {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                <span className="ml-1.5">{saving ? "Saving..." : "Save changes"}</span>
               </Button>
               <Button size="sm" variant="outline" onClick={onCancel}>
                 <X className="h-3 w-3" />
@@ -378,6 +390,7 @@ function SpecCard({ spec, isEditing, editForm, setEditForm, onStartEdit, onCance
       {/* Content */}
       {isEditing ? (
         <div className="p-4">
+          <p className="mb-3 text-sm text-muted-foreground">Changes are not saved automatically. Click Save changes when finished.</p>
           <SpecEditForm
             form={editForm}
             setForm={setEditForm}
@@ -399,6 +412,12 @@ function SpecCard({ spec, isEditing, editForm, setEditForm, onStartEdit, onCance
             newSkillDesc={newSkillDesc}
             setNewSkillDesc={setNewSkillDesc}
           />
+          <div className="mt-5 flex justify-end">
+            <Button type="button" onClick={onSave} disabled={saving}>
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              {saving ? "Saving..." : "Save changes"}
+            </Button>
+          </div>
         </div>
       ) : (
         <div className="p-4 space-y-3">
@@ -424,11 +443,20 @@ function SpecCard({ spec, isEditing, editForm, setEditForm, onStartEdit, onCance
             <summary className="cursor-pointer text-muted-foreground font-medium">
               Lab Reference Ranges ({Object.keys(spec.lab_reference_ranges ?? {}).length})
             </summary>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-1 mt-2 ml-4 max-h-60 overflow-y-auto pr-2">
+            <div className="mt-2 ml-4 max-h-60 space-y-1 overflow-y-auto pr-2">
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 text-xs font-medium text-muted-foreground">
+                <span>Parameter</span><span>Reference range</span><span>Bundle</span>
+              </div>
               {Object.entries(spec.lab_reference_ranges ?? {})
                 .sort(([a], [b]) => a.localeCompare(b))
                 .map(([k, v]) => (
-                <span key={k} className="text-xs truncate"><strong>{k}:</strong> {v}</span>
+                <div key={k} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 text-xs">
+                  <strong className="truncate" title={k}>{k}</strong>
+                  <span className="truncate" title={v}>{v}</span>
+                  <span className="truncate" title={bundlesForTest(spec.bundled_tests ?? {}, k).map(bundleLabel).join(", ")}>
+                    {bundlesForTest(spec.bundled_tests ?? {}, k).map(bundleLabel).join(", ") || "—"}
+                  </span>
+                </div>
               ))}
             </div>
           </details>
@@ -495,6 +523,8 @@ function SpecEditForm({ form, setForm, isNew, newLabKey, setNewLabKey, newLabVal
   const [bulkModalType, setBulkModalType] = useState<"lab" | "vital" | null>(null);
   const [labSearch, setLabSearch] = useState("");
   const [vitalSearch, setVitalSearch] = useState("");
+  const activeBundles = (form.metadata?.bundled_tests as BundledTestsMap | undefined)
+    ?? form.bundled_tests ?? getDefaultBundledTests();
 
   const handleApplyBulk = (newRanges: Record<string, string>, mode: "merge" | "replace") => {
     if (bulkModalType === "vital") {
@@ -671,13 +701,38 @@ function SpecEditForm({ form, setForm, isNew, newLabKey, setNewLabKey, newLabVal
         )}
 
         <div className="space-y-1 mt-1 mb-2 max-h-56 overflow-y-auto divide-y divide-border/40">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 py-1 text-xs font-medium text-muted-foreground">
+            <span>Parameter</span><span>Reference range</span><span>Bundle</span><span className="sr-only">Remove</span>
+          </div>
           {Object.entries(form.lab_reference_ranges)
             .filter(([k, v]) => !labSearch || k.toLowerCase().includes(labSearch.toLowerCase()) || v.toLowerCase().includes(labSearch.toLowerCase()))
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([k, v]) => (
-            <div key={k} className="flex items-center gap-2 py-1 text-xs">
-              <span className="font-medium w-48 truncate" title={k}>{k}:</span>
-              <span className="flex-1 truncate font-mono text-[11px]" title={v}>{v}</span>
+            <div key={k} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2 py-1 text-xs">
+              <span className="font-medium truncate" title={k}>{k}</span>
+              <span className="truncate font-mono text-[11px]" title={v}>{v}</span>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button type="button" variant="outline" size="sm" className="h-7 min-w-0 justify-start truncate text-xs font-normal" title={bundlesForTest(activeBundles, k).map(bundleLabel).join(", ") || "No bundle"}>
+                    <span className="truncate">{bundlesForTest(activeBundles, k).map(bundleLabel).join(", ") || "None"}</span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="max-h-64 w-64 space-y-2 overflow-y-auto">
+                  {Object.keys(activeBundles).map((bundleId) => (
+                    <label key={bundleId} className="flex cursor-pointer items-center gap-2 text-xs">
+                      <Checkbox
+                        checked={activeBundles[bundleId].includes(k)}
+                        onCheckedChange={(checked) => {
+                          const updated = setTestBundleMembership(activeBundles, k, bundleId, checked === true);
+                          setForm({ ...form, bundled_tests: updated, metadata: { ...(form.metadata ?? {}), bundled_tests: updated } });
+                        }}
+                      />
+                      <span>{bundleLabel(bundleId)}</span>
+                    </label>
+                  ))}
+                  {Object.keys(activeBundles).length === 0 && <span className="text-xs text-muted-foreground">Create a bundle below first.</span>}
+                </PopoverContent>
+              </Popover>
               <button
                 type="button"
                 className="text-destructive hover:text-destructive/80 p-0.5"
@@ -719,9 +774,7 @@ function SpecEditForm({ form, setForm, isNew, newLabKey, setNewLabKey, newLabVal
       {/* Bundled Tests & Panels */}
       <BundledTestsEditor
         bundles={
-          form.bundled_tests ??
-          (form.metadata?.bundled_tests as BundledTestsMap | undefined) ??
-          getDefaultBundledTests()
+          activeBundles
         }
         onChange={(updated) => {
           setForm({

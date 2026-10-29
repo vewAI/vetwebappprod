@@ -7,6 +7,32 @@
 
 export type BundledTestsMap = Record<string, string[]>;
 
+export function bundleLabel(bundleId: string): string {
+  return STANDARD_BUNDLE_DEFINITIONS.find((definition) => definition.id === bundleId)?.label
+    ?? bundleId.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+export function bundlesForTest(bundles: BundledTestsMap, testName: string): string[] {
+  return Object.entries(bundles)
+    .filter(([, tests]) => tests.includes(testName))
+    .map(([bundleId]) => bundleId);
+}
+
+export function setTestBundleMembership(
+  bundles: BundledTestsMap,
+  testName: string,
+  bundleId: string,
+  included: boolean,
+): BundledTestsMap {
+  const tests = bundles[bundleId] ?? [];
+  return {
+    ...bundles,
+    [bundleId]: included
+      ? tests.includes(testName) ? tests : [...tests, testName]
+      : tests.filter((test) => test !== testName),
+  };
+}
+
 export interface BundleDefinition {
   id: string;
   label: string;
