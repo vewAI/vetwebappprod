@@ -182,6 +182,11 @@ Every completed change must be logged chronologically using this structure. Use 
 - **Action Taken:** Added Test case links in case review and Stage Manager, with a fresh administrator test attempt that is not attached to a class session. Added a Continue attempt link for in-progress student attempts while their session is active, clarified the attempt limit field, and blocked stale or mismatched resume links from silently creating or relinking attempts. Updated the case and session specifications and access tests.
 - **Verification:** On `preview/educators`, `npx tsc --noEmit` passed; `npm test -- features/case-sessions features/case-selection features/cases features/live` passed (21 files, 120 tests); targeted ESLint passed with 13 existing warnings and no errors; `git diff --check` passed. Authenticated browser testing remains to be done on the preview.
 
+### [2026-10-30 10:32 Europe/London] Test case button in administrator Cases — (Requested by: Marco; Tool: Codex)
+- **Context / Problem:** Administrators also needed to launch a test from the Cases area without first opening the case editor or Stage Manager.
+- **Action Taken:** Added a Test case action for each row of the administrator Cases list and on the case detail page, using the existing isolated administrator test flow. Kept the action hidden from student and professor case lists. Updated the cases specification.
+- **Verification:** On `preview/educators`, `npx tsc --noEmit`, `npm test -- features/cases features/case-selection` (6 files, 26 tests), targeted ESLint, and `git diff --check` passed. Browser review follows the preview deployment.
+
 ### [2026-10-29 21:10 Europe/London] Patient Breed Signalment, Case Personas Editor & Nurse Diagnostic Simulation — (Requested by: Marco; Tool: Antigravity)
 - **Context / Problem:** In `/case-entry` (Add New Case), clinical authors could not configure the owner persona (avatar, name, gender, voice) nor view the auto-assigned species nurse (Equine nurse by default); the patient breed was absent despite being essential signalment in veterinary medicine; and AI verification was prompting authors to manually enter reference ranges and normal analytes rather than leveraging the nurse's reference ranges.
 - **Action Taken:**

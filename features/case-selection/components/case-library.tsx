@@ -8,6 +8,8 @@ import { useAuth } from "@/features/auth/services/authService";
 import { fetchCases, fetchDisciplines } from "@/features/case-selection/services/caseService";
 import type { Case } from "@/features/case-selection/models/case";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { caseAttemptHref } from "@/features/case-selection/caseViewHref";
 import { caseFieldMeta } from "@/features/cases/fieldMeta";
 import { Select } from "@/features/navigation/components/select";
 import { SortHeader } from "@/features/navigation/components/sort-header";
@@ -26,6 +28,7 @@ export function CaseLibrary({
   showPublished = false,
   showAuthorship = false,
   includeUnpublished = false,
+  showTestAction = false,
 }: {
   getCaseHref: (caseItem: Case) => string;
   title?: string;
@@ -33,6 +36,7 @@ export function CaseLibrary({
   showPublished?: boolean;
   showAuthorship?: boolean;
   includeUnpublished?: boolean;
+  showTestAction?: boolean;
 }) {
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,6 +45,7 @@ export function CaseLibrary({
   const [selectedSpecies, setSelectedSpecies] = useState<string>("all");
   const [institutionQuery, setInstitutionQuery] = useState("");
   const { user, role } = useAuth();
+  const canTest = showTestAction && role === "admin";
   const [hasAssignedCases, setHasAssignedCases] = useState<boolean>(false);
 
   useEffect(() => {
@@ -162,7 +167,7 @@ export function CaseLibrary({
 
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
         <div className="max-w-full overflow-x-auto">
-          <div className={showAuthorship ? "min-w-[1300px]" : showPublished ? "min-w-[840px]" : "min-w-[720px]"}>
+          <div className={showAuthorship ? "min-w-[1300px]" : showPublished ? "min-w-[840px]" : canTest ? "min-w-[840px]" : "min-w-[720px]"}>
             <Table>
               <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
                 <TableRow>
@@ -175,13 +180,14 @@ export function CaseLibrary({
                   {showAuthorship ? <SortHeader label="Institution" column="institution" sort={sort} onSort={toggle} /> : null}
                   {showAuthorship ? <SortHeader label="Date created" column="created" sort={sort} onSort={toggle} /> : null}
                   {showPublished ? <SortHeader label="Published" column="published" sort={sort} onSort={toggle} /> : null}
+                  {canTest ? <TableCell isHeader className="px-4 py-3 text-start text-theme-xs font-medium text-gray-500">Test</TableCell> : null}
                 </TableRow>
               </TableHeader>
               <TableBody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
                 {loading ? (
                   <TableRow>
                     <TableCell
-                      colSpan={5 + (showPublished ? 1 : 0) + (showAuthorship ? 3 : 0)}
+                      colSpan={5 + (showPublished ? 1 : 0) + (showAuthorship ? 3 : 0) + (canTest ? 1 : 0)}
                       className="px-5 py-8 text-center text-theme-sm text-gray-500 dark:text-gray-400"
                     >
                       Loading cases...
@@ -190,7 +196,7 @@ export function CaseLibrary({
                 ) : visibleCases.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={5 + (showPublished ? 1 : 0) + (showAuthorship ? 3 : 0)}
+                      colSpan={5 + (showPublished ? 1 : 0) + (showAuthorship ? 3 : 0) + (canTest ? 1 : 0)}
                       className="px-5 py-8 text-center text-theme-sm text-gray-500 dark:text-gray-400"
                     >
                       No cases match these filters.
@@ -267,6 +273,15 @@ export function CaseLibrary({
                             ) : (
                               <X className="size-5 text-gray-400" strokeWidth={2.5} aria-label="Unpublished" />
                             )}
+                          </TableCell>
+                        ) : null}
+                        {canTest ? (
+                          <TableCell className="relative z-20 px-4 py-3">
+                            <Button size="sm" variant="outline" asChild>
+                              <Link href={caseAttemptHref(caseItem.id, { test: true })} target="_blank" rel="noopener noreferrer">
+                                Test case
+                              </Link>
+                            </Button>
                           </TableCell>
                         ) : null}
                       </TableRow>

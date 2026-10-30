@@ -18,6 +18,7 @@ import { DefaultTabs } from "@/features/navigation/components/tabs";
 import { FilterSearch } from "@/features/navigation/components/filter-search";
 import { Select } from "@/features/navigation/components/select";
 import { useAuth } from "@/features/auth/services/authService";
+import { caseAttemptHref } from "@/features/case-selection/caseViewHref";
 import { buildAuthHeaders, getAccessToken } from "@/lib/auth-headers";
 import {
   defaultAcademicYearEnd,
@@ -120,7 +121,7 @@ export function CaseDashboard({
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [sessions, setSessions] = useState<CaseSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
-  const { institutionId } = useAuth();
+  const { institutionId, role } = useAuth();
   const [studentSearch, setStudentSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [yearFilter, setYearFilter] = useState("all");
@@ -304,6 +305,15 @@ export function CaseDashboard({
   return (
     <div className="space-y-8">
       <CaseHeroCard caseData={caseData} />
+      {role === "admin" && (
+        <div className="flex justify-end">
+          <Button asChild>
+            <Link href={caseAttemptHref(caseId, { test: true })} target="_blank" rel="noopener noreferrer">
+              Test case
+            </Link>
+          </Button>
+        </div>
+      )}
 
       <DefaultTabs<TabId>
         items={[

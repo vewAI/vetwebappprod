@@ -31,7 +31,7 @@ export default function CasesPage() {
   return (
     <div className="container mx-auto px-4 pb-8">
       <Breadcrumb items={[{ label: "Home", href: "/dashboard" }, { label: "Clinical Cases" }]} />
-      <CaseLibrary getCaseHref={(caseItem) => professorCaseHref(caseItem.id)} />
+      <CaseLibrary getCaseHref={(caseItem) => professorCaseHref(caseItem.id)} showTestAction />
     </div>
   );
 }
