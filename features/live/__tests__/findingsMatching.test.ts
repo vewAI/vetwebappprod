@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DIAG_SYNONYMS,
   entryMatchesUserText,
+  extractFindingsFromDetails,
   extractDiagPairs,
   findMatchingSynonymKeys,
   isAllLabsRequest,
@@ -236,6 +237,37 @@ Abdominal radiographs: Gas distension of the large colon with ventral displaceme
       expect(stageAllowsReveal("physical", "history")).toBe(false);
       expect(stageAllowsReveal("physical", "laboratory")).toBe(false);
       expect(stageAllowsReveal("physical", "physical")).toBe(true);
+    });
+  });
+  describe("Structured Case Submission fallback and ASR tolerance", () => {
+    it("tolerates common ASR phonetic mis-transcriptions for vitals (e.g. 'age Aaron RR')", () => {
+      const requested = parseRequestedKeys("Um, tell me age Aaron RR.");
+      expect(requested.canonical).toContain("heart_rate");
+      expect(requested.canonical).toContain("respiratory_rate");
+    });
+
+    it("extracts physical and diagnostic sections from structured case details", () => {
+      const sampleDetails = `
+1 Case and teaching purpose
+Author: Marco Duz
+4 Physical examination
+4.3  Heart rate HR in beats per minute
+66 beats/min.
+4.4  Respiratory rate RR in breaths per minute
+14 breaths/min.
+4.5  Temperature in degrees Celsius; site or method
+38.1 °C, rectal.
+5 Diagnostics and results
+5.4  Admission CBC
+RBC 9.5 x10^12/L [6.4-10.4], WBC 12.2 x10^9/L
+6 Diagnosis and treatment decisions
+Final diagnosis: Larval cyathostominosis
+`;
+      const extracted = extractFindingsFromDetails(sampleDetails);
+      expect(extracted.physical).toContain("Heart rate: 66 beats/min.");
+      expect(extracted.physical).toContain("Respiratory rate: 14 breaths/min.");
+      expect(extracted.physical).toContain("Temperature: 38.1 °C, rectal.");
+      expect(extracted.diagnostic).toContain("Admission CBC: RBC 9.5 x10^12/L");
     });
   });
 });

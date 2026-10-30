@@ -14,7 +14,7 @@ export type PhysMatchResult = {
 };
 
 const ALIAS_MAP: Record<string, string[]> = {
-  heart_rate: ["hr", "heart rate", "pulse", "heartbreak", "how great"],
+  heart_rate: ["hr", "heart rate", "pulse", "heartbreak", "how great", "aaron", "age aaron", "h r", "h.r.", "hrr"],
   respiratory_rate: ["rr", "respiratory rate"],
   temperature: ["temp", "temperature", "t"],
   blood_pressure: ["bp", "blood pressure"],
@@ -71,6 +71,7 @@ const TOKEN_TO_CANONICAL: Record<string, string> = (() => {
   // also add single-letter shortcuts
   out["hr"] = "heart_rate";
   out["rr"] = "respiratory_rate";
+  out["aaron"] = "heart_rate";
   out["t"] = "temperature";
   out["bp"] = "blood_pressure";
   return out;
@@ -82,7 +83,7 @@ function splitTokens(input: string): string[] {
   const cleaned = input
     .toLowerCase()
     // Strip common filler/request phrases so tokens focus on parameters
-    .replace(/\b(please|please\s+tell|give|give\s+me|show|show\s+me|what is|what's|tell|tell\s+me|ok|okay|could you|can you|would you)\b/g, " ")
+    .replace(/\b(please|please\s+tell|give|give\s+me|show|show\s+me|what is|what's|tell|tell\s+me|ok|okay|could you|can you|would you|um|uh|er|ah|me)\b/g, " ")
     .replace(/[()]/g, " ")
     .replace(/[^a-z0-9,\s/\-]/g, " ")
     .replace(/\band\b/g, ",");
@@ -173,8 +174,8 @@ export const PHYS_SYNONYMS: Record<string, string[]> = {
   ],
   ballottement: ["ballottement", "ballottement was", "ballott"],
   temperature: ["temp", "temperature"],
-  heart_rate: ["heart", "heart rate", "pulse"],
-  respiratory_rate: ["respiratory", "respirations", "resp rate", "resp"],
+  heart_rate: ["heart", "heart rate", "pulse", "aaron", "age aaron", "hr"],
+  respiratory_rate: ["respiratory", "respirations", "resp rate", "resp", "rr"],
   mucous_membranes: [
     "mucous",
     "mucous membrane",

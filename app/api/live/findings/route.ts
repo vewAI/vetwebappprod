@@ -1,3 +1,102 @@
+export function extractFindingsFromDetails(details: string): { physical: string; diagnostic: string } {
+  if (!details || typeof details !== "string") return { physical: "", diagnostic: "" };
+
+  let physical = "";
+  let diagnostic = "";
+
+  // 1. Section 4: Physical examination
+  const p4 = details.match(/4\s+Physical examination[\s\S]*?(?=5\s+Diagnostics|$)/i);
+  if (p4) {
+    const lines = p4[0].split("\n").map((l) => l.trim()).filter(Boolean);
+    const entries: string[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(/^4\.(\d+)\s+(.+)/);
+      if (m) {
+        const rawLabel = m[2].trim();
+        let nextIdx = i + 1;
+        const valLines: string[] = [];
+        while (
+          nextIdx < lines.length &&
+          !lines[nextIdx].match(/^4\.(\d+)\s+/) &&
+          !lines[nextIdx].match(/^[45]\s+[A-Z]/)
+        ) {
+          const vl = lines[nextIdx];
+          if (!vl.startsWith("Essential") && !vl.startsWith("Useful") && !vl.startsWith("Background")) {
+            valLines.push(vl);
+          }
+          nextIdx++;
+        }
+        let val = valLines.join(" ");
+        if (
+          valLines.length >= 2 &&
+          /^(Abnormal|Examined and normal|Normal if examined|Minor finding if examined|Not examined|Unknown|N\/A)$/i.test(
+            valLines[0]
+          )
+        ) {
+          val = valLines.slice(1).join(" ");
+        }
+        let cleanLabel = rawLabel;
+        if (/Heart rate/i.test(rawLabel)) cleanLabel = "Heart rate";
+        else if (/Respiratory rate/i.test(rawLabel)) cleanLabel = "Respiratory rate";
+        else if (/Temperature/i.test(rawLabel)) cleanLabel = "Temperature";
+        else if (/Body weight/i.test(rawLabel)) cleanLabel = "Body weight";
+        else if (/Body condition/i.test(rawLabel)) cleanLabel = "Body condition score";
+        else if (/Mucous membrane/i.test(rawLabel)) cleanLabel = "Mucous membranes";
+        else if (/Capillary refill/i.test(rawLabel)) cleanLabel = "Capillary refill time";
+        else if (/Hydration/i.test(rawLabel)) cleanLabel = "Hydration";
+        else if (/Cardiovascular/i.test(rawLabel)) cleanLabel = "Cardiovascular";
+        else if (/Respiratory:/i.test(rawLabel)) cleanLabel = "Respiratory";
+        else if (/Gastrointestinal/i.test(rawLabel)) cleanLabel = "Abdomen & GI";
+        else if (/Lymph nodes/i.test(rawLabel)) cleanLabel = "Lymph nodes";
+        else if (/Demeanour/i.test(rawLabel)) cleanLabel = "Demeanour";
+
+        if (val && !/^(Examination time|Handling, welfare|Specialty grading)/i.test(rawLabel)) {
+          entries.push(`${cleanLabel}: ${val}`);
+        }
+      }
+    }
+    physical = entries.join("\n");
+  }
+
+  // 2. Section 5: Diagnostics and results
+  const p5 = details.match(/5\s+Diagnostics and results[\s\S]*?(?=6\s+Diagnosis|$)/i);
+  if (p5) {
+    const lines = p5[0].split("\n").map((l) => l.trim()).filter(Boolean);
+    const entries: string[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(/^5\.(\d+)\s+(.+)/);
+      if (m) {
+        const rawLabel = m[2].trim();
+        let nextIdx = i + 1;
+        const valLines: string[] = [];
+        while (
+          nextIdx < lines.length &&
+          !lines[nextIdx].match(/^5\.(\d+)\s+/) &&
+          !lines[nextIdx].match(/^[56]\s+[A-Z]/)
+        ) {
+          const vl = lines[nextIdx];
+          if (!vl.startsWith("Essential") && !vl.startsWith("Useful") && !vl.startsWith("Background")) {
+            valLines.push(vl);
+          }
+          nextIdx++;
+        }
+        let val = valLines.join(" ");
+        if (
+          val &&
+          !/^(Tests to make available|When available|Release details|Missing results|Optional|Method, source)/i.test(
+            rawLabel
+          )
+        ) {
+          entries.push(`${rawLabel}: ${val}`);
+        }
+      }
+    }
+    diagnostic = entries.join("\n");
+  }
+
+  return { physical, diagnostic };
+}
+
 import { NextResponse } from "next/server";
 import { parseRequestedKeys, PHYS_SYNONYMS } from "@/features/chat/services/physFinder";
 import { normalizeStageType } from "@/features/live/utils/normalizeStageType";
@@ -595,15 +694,29 @@ export async function POST(request: Request) {
     const { supabase } = auth;
     const { data: caseRow, error } = await supabase
       .from("cases")
-      .select("physical_exam_findings, diagnostic_findings")
+      .select("physical_exam_findings, diagnostic_findings, details")
       .eq("id", caseId)
       .maybeSingle();
     if (error || !caseRow) {
       return NextResponse.json({ error: "Case not found" }, { status: 404 });
     }
 
-    const physText = typeof caseRow.physical_exam_findings === "string" ? caseRow.physical_exam_findings : "";
-    const diagText = typeof caseRow.diagnostic_findings === "string" ? caseRow.diagnostic_findings : "";
+    let physText = typeof caseRow.physical_exam_findings === "string" ? caseRow.physical_exam_findings : "";
+    let diagText = typeof caseRow.diagnostic_findings === "string" ? caseRow.diagnostic_findings : "";
+    const detailsText = typeof (caseRow as Record<string, unknown>).details === "string" ? ((caseRow as Record<string, unknown>).details as string) : "";
+
+    const isPlaceholderPhys = !physText.trim() || /^List physical exam findings/i.test(physText.trim());
+    const isPlaceholderDiag = !diagText.trim() || /^Share diagnostic results only/i.test(diagText.trim());
+
+    if ((isPlaceholderPhys || isPlaceholderDiag) && detailsText) {
+      const extracted = extractFindingsFromDetails(detailsText);
+      if (isPlaceholderPhys && extracted.physical) {
+        physText = extracted.physical;
+      }
+      if (isPlaceholderDiag && extracted.diagnostic) {
+        diagText = extracted.diagnostic;
+      }
+    }
 
     const items: FindingItem[] = [];
     const seen = new Set<string>();
