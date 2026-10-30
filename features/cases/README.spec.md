@@ -62,6 +62,7 @@ interface TimepointTemplate {
 
 ## Case Viewer
 Admins pick a case at `/case-viewer` from the same table as `/cases`, then review or edit it at `/case-viewer?id={caseId}`.
+The case viewer and Stage Manager provide a **Test case** action. Stage Manager asks authors to save pending stage changes first. Testing opens the live case in a new tab as a fresh administrator attempt with no class session attached, including for draft cases. It does not use a student's session attempt allowance.
 The admin-only list shows separate sortable **Author**, **Institution**, and **Date created** columns. A search field filters cases by institution name (case-insensitive partial match) alongside discipline and species filters. New cases still record the authenticated creator's user ID in `cases.settings.createdByUserId` for provenance, but the list displays the clinical author rather than a duplicate Created by column. The date comes from `cases.created_at` and is displayed in Europe/London time. Editing a case must preserve its original creator and creation date.
 Clinical Author and Institution appear together in case information and can be edited there. New cases store them in `cases.settings.authorName` and `institutionName`; intake extracts only explicit credits from the source. Older cases display explicit attribution found in their saved case history, including the template's “Author name and institution” entry. Missing credit remains Unknown until an editor supplies it.
 

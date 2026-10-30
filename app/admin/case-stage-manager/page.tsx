@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { fetchCases } from "@/features/case-selection/services/caseService";
 import { buildAuthHeaders } from "@/lib/auth-headers";
@@ -9,6 +10,7 @@ import { RecheckPlanEditor } from "@/features/stages/components/RecheckPlanEdito
 import { newRecheckOutcome, validateRecheckOutcomes } from "@/features/stages/recheckPlan";
 import { Check, Loader2, AlertCircle, Plus, ArrowUp, ArrowDown, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { caseAttemptHref } from "@/features/case-selection/caseViewHref";
 
 type EditableStage = {
   id?: string;
@@ -976,6 +978,17 @@ export default function CaseStageManagerPage() {
               </div>
 
               <div className="flex items-center gap-2">
+                {selectedCaseId && (
+                  isDirty ? (
+                    <span className="text-sm text-muted-foreground">Save changes before testing</span>
+                  ) : (
+                    <Button type="button" variant="outline" asChild>
+                      <Link href={caseAttemptHref(selectedCaseId, { test: true })} target="_blank" rel="noopener noreferrer">
+                        Test case
+                      </Link>
+                    </Button>
+                  )
+                )}
                 {saveStatus === "saved" && !isDirty && (
                   <span className="flex items-center gap-1.5 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
                     <Check className="w-4 h-4" /> All changes saved

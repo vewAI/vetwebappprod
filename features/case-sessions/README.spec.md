@@ -116,6 +116,7 @@ Status is **never** stored; `deriveStatus({ startAt, endAt }, now)` returns `sch
   - `StartSessionCard` — year group, window dates, countdown until close, start button
   - `SessionCasePanel` — the same `CaseCard` used on `/attempts/[id]`
   - `MySessionAttemptsList` — attempt limit, remaining count, current user's attempts only
+  - While the session is active, an in-progress row links directly to **Continue attempt** using its existing attempt ID. Resuming does not create a new attempt or reduce the remaining allowance. Completed and expired-session rows link to the saved attempt view.
 
 ## Critical Rules
 

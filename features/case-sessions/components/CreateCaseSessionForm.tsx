@@ -263,6 +263,9 @@ export function CreateCaseSessionForm({ initialCaseId }: Props) {
           onChange={(e) => setAttemptLimit(e.target.value)}
           placeholder="Unlimited if empty"
         />
+        <p className="text-xs text-muted-foreground">
+          Continuing an unfinished attempt after a disconnection does not use another attempt.
+        </p>
       </div>
 
       {error && (

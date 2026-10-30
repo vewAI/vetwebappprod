@@ -36,6 +36,7 @@ export default function LiveSessionPage() {
   const searchParams = useSearchParams();
   const urlAttemptId = searchParams?.get("attempt") ?? undefined;
   const urlSessionId = searchParams?.get("session") ?? undefined;
+  const testMode = searchParams?.get("test") === "1";
   const { user } = useAuth();
 
   const [caseData, setCaseData] = useState<Case | null>(null);
@@ -106,8 +107,9 @@ export default function LiveSessionPage() {
   const initializedCaseRef = useRef<string | null>(null);
   useEffect(() => {
     if (!caseId || !user) return;
-    if (initializedCaseRef.current === caseId) return;
-    initializedCaseRef.current = caseId;
+    const sessionKey = [caseId, urlAttemptId, urlSessionId, testMode].join("|");
+    if (initializedCaseRef.current === sessionKey) return;
+    initializedCaseRef.current = sessionKey;
 
     async function initSession() {
       try {
@@ -122,6 +124,7 @@ export default function LiveSessionPage() {
             caseId,
             attemptId: urlAttemptId,
             sessionId: urlSessionId,
+            testMode,
           }),
         };
 
@@ -151,7 +154,7 @@ export default function LiveSessionPage() {
     }
 
     initSession();
-  }, [caseId, user]);
+  }, [caseId, user, urlAttemptId, urlSessionId, testMode]);
 
   // Handle session end — generate communication feedback and show dialog
   const handleSessionEnd = async (messages?: Message[]) => {

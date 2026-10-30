@@ -14,9 +14,32 @@ export async function POST(req: Request) {
     const caseId = body?.caseId;
     const specificAttemptId = typeof body?.attemptId === "string" ? body.attemptId.trim() : null;
     const sessionId = typeof body?.sessionId === "string" ? body.sessionId.trim() : null;
+    const testMode = body?.testMode === true;
 
     if (!caseId) {
       return NextResponse.json({ error: "caseId is required" }, { status: 400 });
+    }
+
+    if (testMode) {
+      if (auth.role !== "admin" || specificAttemptId || sessionId) {
+        return NextResponse.json({ error: "Case testing is available to administrators only" }, { status: 403 });
+      }
+      const { data: testAttempt, error: testError } = await supabase
+        .from("attempts")
+        .insert({
+          case_id: caseId,
+          user_id: user.id,
+          title: `Case test — ${new Date().toISOString()}`,
+          last_stage_index: 0,
+          completion_status: "in_progress",
+          time_spent_seconds: 0,
+        })
+        .select("id")
+        .single();
+      if (testError) {
+        return NextResponse.json({ error: testError.message }, { status: 500 });
+      }
+      return NextResponse.json({ attemptId: testAttempt.id, currentStageIndex: 0, resumed: false, messages: [] });
     }
 
     if (specificAttemptId) {
@@ -25,14 +48,13 @@ export async function POST(req: Request) {
         .select("id, last_stage_index, time_spent_seconds, session_id")
         .eq("id", specificAttemptId)
         .eq("user_id", user.id)
+        .eq("case_id", caseId)
+        .eq("completion_status", "in_progress")
         .maybeSingle();
 
       if (specificAttempt) {
-        if (sessionId && !specificAttempt.session_id) {
-          await supabase
-            .from("attempts")
-            .update({ session_id: sessionId })
-            .eq("id", specificAttempt.id);
+        if (sessionId && specificAttempt.session_id !== sessionId) {
+          return NextResponse.json({ error: "Attempt does not belong to this session" }, { status: 403 });
         }
 
         const { data: storedMessages } = await supabase
@@ -64,6 +86,7 @@ export async function POST(req: Request) {
           })),
         });
       }
+      return NextResponse.json({ error: "This attempt is no longer available to continue" }, { status: 404 });
     }
 
     // F4.2: Prefer the atomic RPC (select+insert serialized via FOR UPDATE)

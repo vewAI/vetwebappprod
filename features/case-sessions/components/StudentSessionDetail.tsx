@@ -90,7 +90,7 @@ export function StudentSessionDetail({ sessionId }: Props) {
         <SessionCasePanel session={session} titleClassName="text-xl font-semibold text-primary" />
       </div>
 
-      <MySessionAttemptsList attempts={myAttempts} attemptLimit={limit} />
+      <MySessionAttemptsList attempts={myAttempts} attemptLimit={limit} canResume={status === "active"} />
 
       <JoinSessionDialog
         open={joinOpen}

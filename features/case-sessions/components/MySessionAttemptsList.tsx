@@ -5,11 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { attemptViewHref } from "@/features/attempts/attemptViewHref";
+import { caseAttemptHref } from "@/features/case-selection/caseViewHref";
 import type { SessionAttemptRow } from "../models/caseSession";
 
 type Props = {
   attempts: SessionAttemptRow[];
   attemptLimit: number | null;
+  canResume: boolean;
 };
 
 function statusLabel(status: SessionAttemptRow["completionStatus"]) {
@@ -23,7 +25,7 @@ function formatTimeSpent(seconds: number) {
   return `${Math.floor(seconds / 60)} min`;
 }
 
-export function MySessionAttemptsList({ attempts, attemptLimit }: Props) {
+export function MySessionAttemptsList({ attempts, attemptLimit, canResume }: Props) {
   const unlimited = attemptLimit == null || attemptLimit <= 0;
   const remaining = unlimited ? null : Math.max(0, attemptLimit - attempts.length);
 
@@ -82,7 +84,11 @@ export function MySessionAttemptsList({ attempts, attemptLimit }: Props) {
                     <td className="py-2 pr-4">{new Date(attempt.createdAt).toLocaleString()}</td>
                     <td className="py-2">
                       <Button variant="link" className="h-auto p-0" asChild>
-                        <Link href={attemptViewHref(attempt.id, "session")}>View</Link>
+                        <Link href={attempt.completionStatus === "in_progress" && canResume
+                          ? caseAttemptHref(attempt.caseId, { attempt: attempt.id, session: attempt.sessionId })
+                          : attemptViewHref(attempt.id, "session")}>
+                          {attempt.completionStatus === "in_progress" && canResume ? "Continue attempt" : "View"}
+                        </Link>
                       </Button>
                     </td>
                   </tr>

@@ -21,6 +21,7 @@ import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
 import { WarningAlertModal } from "@/features/navigation/components/warning-alert-modal";
 import { CaseLibrary } from "@/features/case-selection/components/case-library";
 import { getCaseAuthorDetails } from "@/features/cases/utils/caseAuthorship";
+import { caseAttemptHref } from "@/features/case-selection/caseViewHref";
 
 type CaseRecord = Record<string, unknown>;
 
@@ -807,6 +808,13 @@ export default function CaseViewerClient() {
           </Badge>
         </div>
         <div className="flex items-center gap-2">
+          {caseIdValue && (
+            <Button variant="outline" asChild>
+              <Link href={caseAttemptHref(caseIdValue, { test: true })} target="_blank" rel="noopener noreferrer">
+                Test case
+              </Link>
+            </Button>
+          )}
           {isCasePublished(formState) ? (
             <Button variant="outline" disabled={publishing} onClick={() => setPublishModal("unpublish")}>
               Unpublish

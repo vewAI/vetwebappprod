@@ -19,5 +19,6 @@ describe("caseViewHref", () => {
       caseAttemptHref("case-1", { attempt: "a1", session: "s1" }),
       "/live/case-1?attempt=a1&session=s1",
     );
+    assert.equal(caseAttemptHref("case-1", { test: true }), "/live/case-1?test=1");
   });
 });
