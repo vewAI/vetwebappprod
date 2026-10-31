@@ -396,13 +396,16 @@ function sanitizeDiagnosticText(text: string): string {
     .trim();
 }
 
-function canonicalKeysForLabel(label: string): string[] {
+export function canonicalKeysForLabel(label: string): string[] {
   const normalizedLabel = normalizeForMatch(label);
   const keys: string[] = [];
   for (const [canon, aliases] of Object.entries(PHYS_SYNONYMS)) {
-    // Prefix match on the entry label: "Heart Rate" ↔ alias "heart rate" ✓,
-    // while "Digital pulses" must NOT match the heart_rate alias "pulse".
-    if (aliases.some((a) => normalizedLabel.startsWith(normalizeForMatch(a)))) {
+    // Match a whole alias at the start, so "resp" does not turn
+    // "Respiratory auscultation" into a respiratory-rate result.
+    if (aliases.some((alias) => {
+      const normalizedAlias = normalizeForMatch(alias);
+      return normalizedLabel === normalizedAlias || normalizedLabel.startsWith(`${normalizedAlias} `);
+    })) {
       keys.push(canon);
     }
   }
@@ -470,6 +473,11 @@ export function entryMatchesUserText(entryLabel: string, userText: string): bool
       return commonPrefixLength(lw, uw) >= 5;
     })
   );
+}
+
+export function physicalEntryMatchesUserText(entryLabel: string, userText: string): boolean {
+  const labelWords = words(entryLabel).filter((word) => !GENERIC_EXAM_WORDS.has(word));
+  return labelWords.length > 0 && labelWords.every((word) => entryMatchesUserText(word, userText));
 }
 
 // Extract labelled pairs from JSON-as-text records ("glucose": "3.8 ...").
@@ -738,7 +746,7 @@ export async function POST(request: Request) {
         if (isGarbageEntry(entry.label, entry.value)) continue;
         const entryKeys = canonicalKeysForLabel(entry.label);
         const canonicalHit = entryKeys.some((k) => requestedCanonical.has(k));
-        const vocabHit = entryMatchesUserText(entry.label, userText);
+        const vocabHit = physicalEntryMatchesUserText(entry.label, userText);
         if (!canonicalHit && !vocabHit) continue;
         const dedupeKey = `phys:${normalizeForMatch(entry.label)}`;
         if (seen.has(dedupeKey)) continue;

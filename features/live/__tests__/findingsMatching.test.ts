@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DIAG_SYNONYMS,
+  canonicalKeysForLabel,
   entryMatchesUserText,
   extractFindingsFromDetails,
   extractDiagPairs,
@@ -10,12 +11,30 @@ import {
   isGeneralBloodworkRequest,
   labelSpokenIn,
   matchDiagnosticFinding,
+  physicalEntryMatchesUserText,
   stageAllowsReveal,
 } from "@/app/api/live/findings/route";
 import { parseRequestedKeys } from "@/features/chat/services/physFinder";
+import { resolveLiveStageType } from "@/features/live/utils/normalizeStageType";
 
 describe("live findings matching & stage gating", () => {
   describe("Physical exam selectivity (prevent false positive leaks)", () => {
+    it("keeps mucous membranes, CRT and respiratory auscultation as separate requests", () => {
+      const request = "Heart rate, respiratory rate and mucous membranes, please";
+      const keys = parseRequestedKeys(request).canonical;
+
+      expect(keys).toContain("mucous_membranes");
+      expect(keys).not.toContain("capillary_refill_time");
+      expect(canonicalKeysForLabel("Capillary refill time")).toEqual(["capillary_refill_time"]);
+      expect(canonicalKeysForLabel("Respiratory auscultation")).toEqual(["thoracic_auscultation"]);
+      expect(physicalEntryMatchesUserText("Respiratory auscultation", request)).toBe(false);
+      expect(physicalEntryMatchesUserText("Respiratory rate", request)).toBe(true);
+      expect(parseRequestedKeys("Please check CRT").canonical).toContain("capillary_refill_time");
+      expect(canonicalKeysForLabel("Gut sounds (gastrointestinal borborygmi)")).toContain("abdomen");
+      expect(parseRequestedKeys("Please check gut sounds").canonical).toContain("abdomen");
+      expect(canonicalKeysForLabel("Gastrointestinal borborygmi")).toContain("abdomen");
+    });
+
     it("does not match temperature, coronary band, or hoof testers when asking about respiratory and heart rate", () => {
       const userText = "So about respiratory and heart rate.";
 
@@ -239,6 +258,24 @@ Abdominal radiographs: Gas distension of the large colon with ventral displaceme
   });
 
   describe("Stage gating", () => {
+    it("treats a clearly named laboratory stage as laboratory despite stale diagnostic metadata", () => {
+      expect(resolveLiveStageType({
+        title: "Laboratory & Tests",
+        description: "Request diagnostics, imaging, and lab outputs",
+        settings: { stage_type: "diagnostic" },
+      })).toBe("laboratory");
+      expect(resolveLiveStageType({
+        title: "Laboratory & Tests",
+        description: "Request diagnostics, imaging, and lab outputs",
+        settings: {},
+      })).toBe("laboratory");
+      expect(resolveLiveStageType({
+        title: "Diagnostic Planning",
+        description: "Explain planned tests",
+        settings: {},
+      })).toBe("diagnostic");
+    });
+
     it("never reveals diagnostic findings during physical examination or history", () => {
       expect(stageAllowsReveal("diagnostic", "physical")).toBe(false);
       expect(stageAllowsReveal("diagnostic", "history")).toBe(false);

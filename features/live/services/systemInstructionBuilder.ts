@@ -2,6 +2,7 @@ import type { Case } from "@/features/case-selection/models/case";
 import type { Stage } from "@/features/stages/types";
 import { CHAT_SYSTEM_GUIDELINE, DISCLAIMER_SUPPRESSION } from "@/features/chat/prompts/systemGuideline";
 import { LIVE_BRITISH_ACCENT, type PersonaInstruction } from "../types";
+import { resolveLiveStageType } from "../utils/normalizeStageType";
 
 type PersonaRow = {
   displayName?: string;
@@ -377,9 +378,7 @@ function getRoleLabel(roleKey: string): string {
 }
 
 function getStageType(stage: Stage): string {
-  const settings = stage.settings as Record<string, unknown> | undefined;
-  const stageType = settings?.stage_type;
-  return typeof stageType === "string" ? stageType : "custom";
+  return resolveLiveStageType(stage) || "custom";
 }
 
 function getStageGuidance(stageType: string, roleKey: string): string {

@@ -101,12 +101,13 @@ describe("buildPersonaSystemInstruction", () => {
         ...stage,
         id: "stage-3",
         title: "Laboratory Tests",
-        settings: { stage_type: "laboratory" },
+        settings: { stage_type: "diagnostic" },
       },
       personaRoleKey: "veterinary-nurse",
     });
 
     expect(labResult.systemInstruction).toContain("Diagnostic/Lab Results:");
+    expect(labResult.systemInstruction).toContain("CURRENT STAGE: Laboratory Tests (laboratory)");
     expect(labResult.systemInstruction).toContain("Elevated lactate");
   });
 

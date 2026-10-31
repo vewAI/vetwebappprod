@@ -27,7 +27,7 @@ import {
   copyTranscriptToClipboard,
 } from "../services/transcriptExport";
 import { buildConversationContext } from "../utils/conversationContext";
-import { normalizeStageType, inferStageTypeFromText } from "../utils/normalizeStageType";
+import { normalizeStageType, inferStageTypeFromText, resolveLiveStageType } from "../utils/normalizeStageType";
 import { Button } from "@/components/ui/button";
 import { FileText, Download, Copy, Check, PanelLeft } from "lucide-react";
 
@@ -244,16 +244,7 @@ export function LiveSession({
     const signature = `${lastUser?.id ?? ""}|${lastAssistant?.id ?? ""}|${lastAssistant?.content?.length ?? 0}`;
     if (signature === findingsSignatureRef.current) return;
     const currentStage = progress.stages[progress.currentStageIndex];
-    const currentSettings = currentStage?.settings as Record<string, unknown> | undefined;
-    const currentStageRaw =
-      typeof currentSettings?.stage_type === "string" ? currentSettings.stage_type : "";
-    // settings.stage_type is authoritative (backfilled in DB); infer from the
-    // title/description only when it is missing. Title inference must NOT run
-    // first: a Laboratory stage whose description mentions "diagnostic" would
-    // be misclassified and the gate would block all lab reveals.
-    const normalizedCurrentStageType =
-      normalizeStageType(currentStageRaw) ||
-      inferStageTypeFromText(`${currentStage?.title ?? ""} ${currentStage?.description ?? ""}`);
+    const normalizedCurrentStageType = resolveLiveStageType(currentStage);
     if (normalizedCurrentStageType === "history") {
       findingsSignatureRef.current = signature;
       return;
