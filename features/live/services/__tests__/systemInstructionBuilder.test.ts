@@ -110,6 +110,22 @@ describe("buildPersonaSystemInstruction", () => {
     expect(labResult.systemInstruction).toContain("Elevated lactate");
   });
 
+  it("gives the owner author-supplied exercise facts when the persona background omits them", () => {
+    const result = buildPersonaSystemInstruction({
+      caseItem: {
+        ...caseItem,
+        details: "2 Presenting signs and clinical history\n2.4 Frequency, severity and triggers\nToday 30 km hilly; usual rides 10–15 km flat.\nEssential\n3.6 Exercise, work, training or daily activity\nUsually 10–15 km flat.\nEssential",
+      },
+      stage,
+      personaRoleKey: "owner",
+      ownerBackground: "She thought it was an enjoyable weekend hack.",
+    });
+
+    expect(result.systemInstruction).toContain("AUTHOR-SUPPLIED HISTORY FACTS");
+    expect(result.systemInstruction).toContain("Today 30 km hilly; usual rides 10–15 km flat.");
+    expect(result.systemInstruction).toContain("these take precedence over shorthand owner background");
+  });
+
   describe("difficulty-based clinical reasoning guidance for veterinary nurse", () => {
     it("scaffolds student reasoning with Socratic cues when difficulty is Easy", () => {
       const easyResult = buildPersonaSystemInstruction({
@@ -120,7 +136,8 @@ describe("buildPersonaSystemInstruction", () => {
 
       expect(easyResult.systemInstruction).toContain("CLINICAL REASONING GUIDANCE (EARLY-YEAR / NOVICE STUDENT SCAFFOLDING)");
       expect(easyResult.systemInstruction).toContain("SOCRATIC QUESTIONS");
-      expect(easyResult.systemInstruction).toContain("What specific body system or differential are you prioritizing");
+      expect(easyResult.systemInstruction).toContain("Never ask for a differential or justification before making the requested result available");
+      expect(easyResult.systemInstruction).toContain("Do not interrupt a list of requested measurements with questions");
       expect(easyResult.systemInstruction).toContain("NON-SPOILER GUARDRAIL");
       expect(easyResult.systemInstruction).toContain("CLINICAL REASONING SCAFFOLDING (EASY DIFFICULTY)");
     });

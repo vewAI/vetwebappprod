@@ -86,6 +86,19 @@ Urinalysis: Specific gravity 1.030, pH 7.0, protein negative
 Abdominal radiographs: Gas distension of the large colon with ventral displacement
 `;
 
+    it("matches requested short analyte names in a case laboratory table", () => {
+      const entries = extractDiagPairs(`| Test | Analyte | Value | Units | Reference Range | Note |
+| --- | --- | --- | --- | --- | --- |
+| Biochemistry | CK | Approximately 15% above reference interval | | Not supplied | Day 1 |
+| Biochemistry | AST | Unremarkable | | Not supplied | Day 1 |
+| Urinalysis | USG | 1.045 | | Not supplied | Day 1 |`);
+      const request = "Please show me CK and USG";
+      const keys = findMatchingSynonymKeys(request, DIAG_SYNONYMS);
+      const matched = entries.filter((entry) => matchDiagnosticFinding(entry, keys, request, false, false));
+
+      expect(matched.map((entry) => entry.label)).toEqual(["CK", "USG"]);
+    });
+
     it("extracts individual diagnostic entries correctly", () => {
       const entries = extractDiagPairs(caseDiagText);
       const labels = entries.map((e) => e.label);

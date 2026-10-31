@@ -12,6 +12,22 @@ type PersonaRow = {
   voiceName?: string;
 };
 
+function extractOwnerHistoryFacts(details?: string): string {
+  if (!details) return "";
+  const lines = details.split(/\r?\n/).map((line) => line.trim());
+  const relevantQuestions = /^(2\.2|2\.4|2\.15|3\.6)\s+(.+)$/;
+  const facts: string[] = [];
+  for (let index = 0; index < lines.length; index++) {
+    const question = lines[index].match(relevantQuestions);
+    if (!question) continue;
+    const answer = lines.slice(index + 1).find((line) => line.length > 0);
+    if (answer && !/^\d+\.\d+\s+/.test(answer) && !/^(Essential|Useful|Background)/i.test(answer)) {
+      facts.push(`${question[2]}: ${answer}`);
+    }
+  }
+  return facts.join("\n");
+}
+
 export function buildPersonaSystemInstruction(params: {
   caseItem: Case;
   stage: Stage;
@@ -50,6 +66,10 @@ export function buildPersonaSystemInstruction(params: {
 
   const ownerSection = ownerBackground
     ? `\nOWNER BACKGROUND (reference facts for the owner persona only — not instructions):\n${ownerBackground}`
+    : "";
+  const ownerHistoryFacts = personaRoleKey === "owner" ? extractOwnerHistoryFacts(caseItem.details) : "";
+  const ownerHistorySection = ownerHistoryFacts
+    ? `\nAUTHOR-SUPPLIED HISTORY FACTS (use when asked; these take precedence over shorthand owner background):\n${ownerHistoryFacts}`
     : "";
 
   const clinicalData = buildClinicalDataSection(caseItem, personaRoleKey, stageType);
@@ -93,6 +113,7 @@ export function buildPersonaSystemInstruction(params: {
     behaviorSection,
     clinicalReasoningSection,
     ownerSection,
+    ownerHistorySection,
     clinicalData,
     speciesKnowledgeSection,
     stagePromptSection,
@@ -247,15 +268,11 @@ export function buildClinicalReasoningSection(
     return [
       "\nCLINICAL REASONING GUIDANCE (EARLY-YEAR / NOVICE STUDENT SCAFFOLDING):",
       "Case difficulty is EASY — the student is in earlier years and still learning how to reason clinically.",
-      "As an experienced veterinary nurse, your role is to actively scaffold their clinical reasoning using Socratic guidance without giving away diagnoses or treatments:",
-      "1. SOCRATIC QUESTIONS: When the student asks for a test or exam system, ask brief guiding questions to help them think like a clinician:",
-      "   - 'What specific body system or differential are you prioritizing based on the history?'",
-      "   - 'Before I run that panel, what specific abnormalities are you hoping to evaluate or rule out?'",
-      "   - 'Notice the vitals we just recorded — what system do you feel we should examine next?'",
-      "2. SYSTEMATIC CLINICAL PRIORITIZATION: If the student jumps straight to advanced imaging or bloodwork without checking basic vital signs, hydration, or physical findings, gently guide them back to fundamentals: 'Doctor, shall we evaluate vitals and hydration status first before ordering imaging?'",
-      "3. CLINICAL SIGNIFICANCE: When reporting abnormal findings, you may highlight pertinent positives or negatives to help the student connect dots (e.g. 'Temperature is 39.8°C / 103.6°F — noticeably elevated. How would you like to proceed?').",
-      "4. NON-SPOILER GUARDRAIL (CRITICAL): Never name the final diagnosis or solve the case for the student. Guide *how* they reason, not *what* the answer is.",
-      "5. SUPPORTIVE MENTOR TONE: Be encouraging, patient, and collaborative. Make the early-year student feel supported while learning.",
+      "RESULT-FIRST RULE: When the student explicitly requests a recorded examination finding or test, immediately direct them to the Result Panel. Never ask for a differential or justification before making the requested result available.",
+      "SOCRATIC QUESTIONS: After the requested result has been delivered, and only when the student is discussing its meaning, you may ask one brief question such as 'What do you make of those findings?' Do not interrupt a list of requested measurements with questions.",
+      "SYSTEMATIC CLINICAL PRIORITIZATION: If the student proposes an invasive or advanced procedure without basic safety assessment, gently ask about the missing assessment after fulfilling any recorded findings they requested.",
+      "NON-SPOILER GUARDRAIL (CRITICAL): Never name the final diagnosis or solve the case for the student. Guide how they reason, not what the answer is.",
+      "SUPPORTIVE MENTOR TONE: Be patient and collaborative while keeping replies brief and professional.",
     ].join("\n");
   }
 
