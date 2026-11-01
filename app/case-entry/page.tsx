@@ -21,6 +21,12 @@ import { caseVerificationService } from "@/features/case-intake/services/caseVer
 import type { CaseVerificationResult } from "@/features/case-intake/models/caseVerification";
 import { useCaseEntryDraft } from "@/features/cases/hooks/useCaseEntryDraft";
 import { Breadcrumb } from "@/features/navigation/components/breadcrumb";
+import {
+  validatePersonaVoices,
+  findDistinctAlternativeVoice,
+  normalizeVoiceId,
+} from "@/features/personas/utils/personaVoiceValidation";
+import { AlertTriangle } from "lucide-react";
 
 type IntakeCompletionItem = {
   fieldKey: string;
@@ -126,6 +132,28 @@ export default function CaseEntryForm() {
   });
   const [nursePersonaConfig, setNursePersonaConfig] = useState<Partial<PersonaConfig>>({});
   const [nurseSpecialization, setNurseSpecialization] = useState<Record<string, unknown> | null>(null);
+  const ownerVoiceManuallyEditedRef = useRef(false);
+
+  // Validate that persona voices do not collide
+  const personaVoiceValidation = useMemo(() => {
+    return validatePersonaVoices([
+      {
+        role: "Animal Owner",
+        displayName: ownerPersonaConfig.displayName,
+        voiceId: ownerPersonaConfig.voiceId,
+      },
+      {
+        role: "Veterinary Nurse",
+        displayName: nursePersonaConfig.displayName,
+        voiceId: nursePersonaConfig.voiceId,
+      },
+    ]);
+  }, [
+    ownerPersonaConfig.displayName,
+    ownerPersonaConfig.voiceId,
+    nursePersonaConfig.displayName,
+    nursePersonaConfig.voiceId,
+  ]);
 
   // Draft auto-save / restore
   const draft = useCaseEntryDraft();
@@ -183,12 +211,13 @@ export default function CaseEntryForm() {
         if (!res.ok) return;
         const data = await res.json();
         if (isCancelled || !data?.nurse) return;
+        const nurseVoice = data.nurse.voiceId || "nova";
         setNurseSpecialization(data.nurse);
         setNursePersonaConfig({
           displayName: data.nurse.displayName || "Veterinary Nurse",
           imageUrl: data.nurse.imageUrl || "",
           sex: data.nurse.sex || "female",
-          voiceId: data.nurse.voiceId || "nova",
+          voiceId: nurseVoice,
           behaviorPrompt: data.nurse.behaviorPrompt || undefined,
         });
         setForm((prev) => ({
@@ -196,6 +225,19 @@ export default function CaseEntryForm() {
           nurse_avatar_url: data.nurse.imageUrl || prev.nurse_avatar_url,
           nurse_persona_id: `nurse-spec:${data.nurse.speciesKey}`,
         }));
+
+        // If author has not manually customized the owner voice yet and the loaded nurse
+        // shares the same voice, automatically select a non-colliding default for the owner
+        if (!ownerVoiceManuallyEditedRef.current && ownerPersonaConfigRef.current.voiceId) {
+          const currentOwnerVoice = normalizeVoiceId(ownerPersonaConfigRef.current.voiceId);
+          if (currentOwnerVoice === normalizeVoiceId(nurseVoice)) {
+            const alternativeVoice = findDistinctAlternativeVoice([nurseVoice], ownerPersonaConfigRef.current.sex);
+            setOwnerPersonaConfig((prev) => ({
+              ...prev,
+              voiceId: alternativeVoice,
+            }));
+          }
+        }
       } catch (err) {
         console.warn("Could not load nurse for species", err);
       }
@@ -208,6 +250,7 @@ export default function CaseEntryForm() {
   }, [form.species]);
 
   const handleOwnerPersonaChange = useCallback((config: PersonaConfig) => {
+    ownerVoiceManuallyEditedRef.current = true;
     setOwnerPersonaConfig(config);
     setForm((prev) => ({
       ...prev,
@@ -599,9 +642,21 @@ export default function CaseEntryForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
     setSuccess("");
     setError("");
+
+    // Rule: Nurse, owner, and all personas must not have the same voice
+    if (!personaVoiceValidation.valid) {
+      const errorMsg =
+        personaVoiceValidation.error ??
+        "The owner and nurse cannot share the same voice. Please select a different voice for one of them before saving.";
+      setError(errorMsg);
+      const section = document.getElementById("case-personas-section");
+      section?.scrollIntoView({ behavior: "smooth" });
+      return;
+    }
+
+    setLoading(true);
     try {
       const payload: Record<string, unknown> = { ...form };
       payload["media"] = mediaItems;
@@ -993,13 +1048,23 @@ Remain collaborative, use everyday language, and avoid offering your own medical
         </div>
 
         {/* Unified Personas Section */}
-        <div className="rounded-lg border border-border p-6 bg-card space-y-4">
+        <div id="case-personas-section" className="rounded-lg border border-border p-6 bg-card space-y-4">
           <div>
             <h2 className="text-xl font-semibold">Case Personas</h2>
             <p className="text-sm text-muted-foreground mt-1">
               Configure the AI characters for this case. Customise the animal owner, and review the veterinary nurse who is auto-assigned based on the patient&apos;s species ({form.species || "Equine"}).
             </p>
           </div>
+
+          {!personaVoiceValidation.valid && (
+            <div className="flex items-start gap-2.5 p-3.5 bg-destructive/15 border border-destructive/30 rounded-md text-sm text-destructive font-medium">
+              <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">Voice Conflict Detected</p>
+                <p className="text-xs mt-0.5">{personaVoiceValidation.error}</p>
+              </div>
+            </div>
+          )}
 
           <div className="grid gap-6 lg:grid-cols-2">
             {/* Owner Persona */}
@@ -1010,6 +1075,8 @@ Remain collaborative, use everyday language, and avoid offering your own medical
                 caseId={savedCaseId || form.id || "new-case"}
                 value={ownerPersonaConfig}
                 onChange={handleOwnerPersonaChange}
+                takenVoiceIds={[nursePersonaConfig.voiceId].filter(Boolean) as string[]}
+                otherPersonaRoleName="Veterinary Nurse"
               />
             </div>
 
@@ -1028,6 +1095,8 @@ Remain collaborative, use everyday language, and avoid offering your own medical
                 onChange={(cfg) => setNursePersonaConfig(cfg)}
                 readOnly={true}
                 specializationData={nurseSpecialization}
+                takenVoiceIds={[ownerPersonaConfig.voiceId].filter(Boolean) as string[]}
+                otherPersonaRoleName="Animal Owner"
               />
             </div>
           </div>
@@ -1153,6 +1222,16 @@ Remain collaborative, use everyday language, and avoid offering your own medical
             <div className="border border-dashed border-muted-foreground/40 rounded-lg p-4">
               <h3 className="text-lg font-medium mb-4">Case Media</h3>
               <CaseMediaEditor caseId={caseIdForMedia} value={mediaItems} onChange={setMediaItems} />
+            </div>
+          </div>
+        )}
+
+        {!personaVoiceValidation.valid && (
+          <div className="flex items-start gap-2.5 p-3.5 bg-destructive/15 border border-destructive/30 rounded-md text-sm text-destructive font-medium mb-3">
+            <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">Cannot Save Case — Duplicate Voice</p>
+              <p className="text-xs mt-0.5">{personaVoiceValidation.error}</p>
             </div>
           </div>
         )}

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NurseSpecialization } from "@/features/personas/models/nurseSpecialization";
 import { normalizeSpeciesKey } from "@/features/cases/services/caseCompletion";
+import { findDistinctAlternativeVoice, normalizeVoiceId } from "@/features/personas/utils/personaVoiceValidation";
 
 export async function getNurseForSpecies(supabase: SupabaseClient, species?: string | null): Promise<NurseSpecialization | null> {
   if (!species) return null;
@@ -68,12 +69,32 @@ export async function applySpecializedNurse(supabase: SupabaseClient, caseId: st
     return;
   }
 
+  // Check if owner persona exists on this case and avoid duplicate voices
+  let effectiveNurseVoice = nurse.voiceId ?? undefined;
+  const { data: siblingPersonas } = await supabase
+    .from("case_personas")
+    .select("role_key, metadata")
+    .eq("case_id", caseId);
+
+  if (siblingPersonas && siblingPersonas.length > 0 && effectiveNurseVoice) {
+    const takenVoiceIds: string[] = [];
+    siblingPersonas.forEach((p) => {
+      if (p.role_key === "veterinary-nurse") return;
+      const m = p.metadata as Record<string, unknown> | null;
+      const v = (m?.voiceId ?? (m?.identity as Record<string, unknown>)?.voiceId) as string | undefined;
+      if (v) takenVoiceIds.push(v);
+    });
+    if (takenVoiceIds.some((taken) => normalizeVoiceId(taken) === normalizeVoiceId(effectiveNurseVoice))) {
+      effectiveNurseVoice = findDistinctAlternativeVoice(takenVoiceIds, nurse.sex, effectiveNurseVoice);
+    }
+  }
+
   const metadata: Record<string, unknown> = {
     sex: nurse.sex ?? undefined,
-    voiceId: nurse.voiceId ?? undefined,
+    voiceId: effectiveNurseVoice,
     identity: {
       sex: nurse.sex ?? undefined,
-      voiceId: nurse.voiceId ?? undefined,
+      voiceId: effectiveNurseVoice,
     },
     nurseSpecialization: {
       id: nurse.id,
@@ -81,7 +102,7 @@ export async function applySpecializedNurse(supabase: SupabaseClient, caseId: st
       displayName: nurse.displayName,
       imageUrl: nurse.imageUrl,
       sex: nurse.sex,
-      voiceId: nurse.voiceId,
+      voiceId: effectiveNurseVoice,
       skills: nurse.skills,
       labReferenceRanges: nurse.labReferenceRanges,
       vitalReferenceRanges: nurse.vitalReferenceRanges,

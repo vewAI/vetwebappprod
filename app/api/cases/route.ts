@@ -14,6 +14,7 @@ import {
 } from "@/features/cases/services/caseCompletion";
 import { requireUser } from "@/app/api/_lib/auth";
 import { moveCaseAuthorFields, prepareCaseSettings } from "@/features/cases/utils/caseAuthorship";
+import { validatePersonaVoices, type PersonaVoiceEntry } from "@/features/personas/utils/personaVoiceValidation";
 
 let openaiInstance: OpenAi | null = null;
 function getOpenAI() {
@@ -226,6 +227,33 @@ export async function POST(req: Request) {
       body = { details: String(parsed ?? "") };
     }
 
+    // Validate persona voices if supplied in payload: owner, nurse, and all personas must not share a voice
+    const rawOwner = (body["_ownerPersonaConfig"] ?? body["owner_persona_config"]) as Record<string, unknown> | undefined;
+    const rawNurse = (body["_nursePersonaConfig"] ?? body["nurse_persona_config"]) as Record<string, unknown> | undefined;
+    if (rawOwner || rawNurse) {
+      const personasToValidate: PersonaVoiceEntry[] = [];
+      if (rawOwner && typeof rawOwner === "object") {
+        personasToValidate.push({
+          role: "Owner",
+          displayName: typeof rawOwner.displayName === "string" ? rawOwner.displayName : undefined,
+          voiceId: typeof (rawOwner.voiceId ?? rawOwner.voice_id) === "string" ? String(rawOwner.voiceId ?? rawOwner.voice_id) : undefined,
+        });
+      }
+      if (rawNurse && typeof rawNurse === "object") {
+        personasToValidate.push({
+          role: "Veterinary Nurse",
+          displayName: typeof rawNurse.displayName === "string" ? rawNurse.displayName : undefined,
+          voiceId: typeof (rawNurse.voiceId ?? rawNurse.voice_id) === "string" ? String(rawNurse.voiceId ?? rawNurse.voice_id) : undefined,
+        });
+      }
+      if (personasToValidate.length > 1) {
+        const validation = validatePersonaVoices(personasToValidate);
+        if (!validation.valid) {
+          return NextResponse.json({ error: validation.error }, { status: 400 });
+        }
+      }
+    }
+
     // Normalize fields (estimated_time, details, media, tags, etc.)
     body = normalizeCaseBody(body);
 
@@ -354,6 +382,33 @@ export async function PUT(req: Request) {
         return NextResponse.json({ error: `Case with id "${body.id}" not found` }, { status: 404 });
       }
       return NextResponse.json({ success: true, data: updatedCase });
+    }
+
+    // Validate persona voices if supplied in payload: owner, nurse, and all personas must not share a voice
+    const rawOwner = (body["_ownerPersonaConfig"] ?? body["owner_persona_config"]) as Record<string, unknown> | undefined;
+    const rawNurse = (body["_nursePersonaConfig"] ?? body["nurse_persona_config"]) as Record<string, unknown> | undefined;
+    if (rawOwner || rawNurse) {
+      const personasToValidate: PersonaVoiceEntry[] = [];
+      if (rawOwner && typeof rawOwner === "object") {
+        personasToValidate.push({
+          role: "Owner",
+          displayName: typeof rawOwner.displayName === "string" ? rawOwner.displayName : undefined,
+          voiceId: typeof (rawOwner.voiceId ?? rawOwner.voice_id) === "string" ? String(rawOwner.voiceId ?? rawOwner.voice_id) : undefined,
+        });
+      }
+      if (rawNurse && typeof rawNurse === "object") {
+        personasToValidate.push({
+          role: "Veterinary Nurse",
+          displayName: typeof rawNurse.displayName === "string" ? rawNurse.displayName : undefined,
+          voiceId: typeof (rawNurse.voiceId ?? rawNurse.voice_id) === "string" ? String(rawNurse.voiceId ?? rawNurse.voice_id) : undefined,
+        });
+      }
+      if (personasToValidate.length > 1) {
+        const validation = validatePersonaVoices(personasToValidate);
+        if (!validation.valid) {
+          return NextResponse.json({ error: validation.error }, { status: 400 });
+        }
+      }
     }
 
     body = normalizeCaseBody(body);

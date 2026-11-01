@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PersonaSeed } from "@/features/personas/models/persona";
 import { buildPersonaSeeds } from "@/features/personas/services/personaSeedService";
 import { applySpecializedNurse } from "@/features/personas/services/nurseSpecializationService";
+import { findDistinctAlternativeVoice, normalizeVoiceId } from "@/features/personas/utils/personaVoiceValidation";
 
 type DbPersonaRow = {
   id?: string;
@@ -50,6 +51,14 @@ export async function ensureCasePersonas(supabase: SupabaseClient, caseId: strin
   // Cache for source personas (when copying from another case's persona)
   const sourcePersonaCache = new Map<string, DbPersonaRow | null>();
 
+  // Track assigned voices to avoid collisions among seeded personas
+  const assignedVoiceIds: string[] = [];
+  existingRoleMap.forEach((row) => {
+    const meta = toRecord(row.metadata);
+    const vId = (meta?.voiceId ?? toRecord(meta?.identity)?.voiceId) as string | undefined;
+    if (vId) assignedVoiceIds.push(vId);
+  });
+
   const pendingInserts: DbPersonaRow[] = [];
   const pendingUpdates: Record<string, unknown>[] = [];
 
@@ -68,6 +77,23 @@ export async function ensureCasePersonas(supabase: SupabaseClient, caseId: strin
 
     // Merge metadata
     const mergedMetadata = buildMetadata(sourcePersona?.metadata, existing?.metadata, seed);
+
+    // Ensure seeded voice does not collide with other personas in the same case
+    let candidateVoice = (mergedMetadata?.voiceId ?? toRecord(mergedMetadata?.identity)?.voiceId) as string | undefined;
+    if (candidateVoice && assignedVoiceIds.some((taken) => normalizeVoiceId(taken) === normalizeVoiceId(candidateVoice))) {
+      const candidateSex = (mergedMetadata?.sex ?? toRecord(mergedMetadata?.identity)?.sex) as string | undefined;
+      const altVoice = findDistinctAlternativeVoice(assignedVoiceIds, candidateSex, candidateVoice);
+      candidateVoice = altVoice;
+      if (mergedMetadata) {
+        mergedMetadata.voiceId = altVoice;
+        if (mergedMetadata.identity && typeof mergedMetadata.identity === "object") {
+          (mergedMetadata.identity as Record<string, unknown>).voiceId = altVoice;
+        }
+      }
+    }
+    if (candidateVoice) {
+      assignedVoiceIds.push(candidateVoice);
+    }
 
     if (!existing) {
       // Insert new persona for this case

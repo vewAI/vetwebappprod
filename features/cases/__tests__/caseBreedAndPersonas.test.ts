@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { caseFieldMeta, orderedCaseFieldKeys, createEmptyCaseFormState } from "@/features/cases/fieldMeta";
 import { formatSpeciesKnowledgePrompt } from "@/features/personas/services/speciesKnowledgeFormatter";
+import { validatePersonaVoices } from "@/features/personas/utils/personaVoiceValidation";
 
 describe("Case Field Meta - Signalment & Breed", () => {
   it("includes patient_breed in caseFieldMeta with appropriate clinical label and help", () => {
@@ -39,5 +40,31 @@ describe("Species Knowledge & Diagnostic Simulation Rules", () => {
     expect(prompt).toContain("Auto-Simulation of Unspecified Normal Values");
     expect(prompt).toContain("CLINICALLY NORMAL");
     expect(prompt).toContain("WITHIN the species LAB REFERENCE RANGES");
+  });
+});
+
+describe("Case Personas Voice Conflict Rules", () => {
+  it("rejects case creation/update when owner and nurse share the same voice", () => {
+    const validation = validatePersonaVoices([
+      { role: "Animal Owner", displayName: "Sarah", voiceId: "nova" },
+      { role: "Veterinary Nurse", displayName: "Emily", voiceId: "nova" },
+    ]);
+
+    expect(validation.valid).toBe(false);
+    expect(validation.conflicts).toHaveLength(1);
+    expect(validation.conflicts[0].voiceId).toBe("nova");
+    expect(validation.error).toContain('cannot share the same voice ("Nova (American Female)")');
+    expect(validation.error).toContain("Please select a different voice");
+  });
+
+  it("permits case creation when owner and nurse have distinct voices", () => {
+    const validation = validatePersonaVoices([
+      { role: "Animal Owner", displayName: "Sarah", voiceId: "shimmer" },
+      { role: "Veterinary Nurse", displayName: "Emily", voiceId: "nova" },
+    ]);
+
+    expect(validation.valid).toBe(true);
+    expect(validation.conflicts).toHaveLength(0);
+    expect(validation.error).toBeUndefined();
   });
 });

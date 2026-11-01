@@ -164,6 +164,35 @@ export async function PUT(request: NextRequest) {
     metadata.identity = identity;
   }
 
+  // Enforce voice uniqueness rule across case personas
+  if (voiceId && typeof voiceId === "string" && effectiveCaseId) {
+    const normRequestedVoice = voiceId.trim().toLowerCase();
+    const { data: siblings } = await supabase
+      .from("case_personas")
+      .select("id, role_key, display_name, metadata")
+      .eq("case_id", effectiveCaseId);
+
+    if (siblings && siblings.length > 0) {
+      const conflict = siblings.find((sibling) => {
+        if (id && sibling.id === id) return false;
+        if (effectiveRoleKey && sibling.role_key === effectiveRoleKey) return false;
+        const sMeta = sibling.metadata as Record<string, unknown> | null;
+        const sVoice = (sMeta?.voiceId ?? (sMeta?.identity as Record<string, unknown>)?.voiceId) as string | undefined;
+        return sVoice && sVoice.trim().toLowerCase() === normRequestedVoice;
+      });
+
+      if (conflict) {
+        const otherName = conflict.display_name || conflict.role_key || "another persona";
+        return NextResponse.json(
+          {
+            error: `Voice conflict: The persona "${otherName}" for this case already uses the voice "${voiceId}". Each persona must have a distinct voice.`,
+          },
+          { status: 400 },
+        );
+      }
+    }
+  }
+
   const updatePayload: Record<string, unknown> = {};
 
   if (typeof effectiveDisplayName === "string") {

@@ -14,6 +14,7 @@ import { useAuth } from "@/features/auth/services/authService";
 import { CaseMediaEditor } from "@/features/cases/components/case-media-editor";
 import { AvatarSelector } from "@/features/cases/components/avatar-selector";
 import { PersonaEditor, type PersonaConfig } from "@/features/personas/components/PersonaEditor";
+import { validatePersonaVoices } from "@/features/personas/utils/personaVoiceValidation";
 import { normalizeCaseMedia, type CaseMediaItem } from "@/features/cases/models/caseMedia";
 import { getActiveStagesForCase, getStagesForCase } from "@/features/stages/services/stageService";
 import { resolveChatPersonaRoleKey } from "@/features/chat/utils/persona-guardrails";
@@ -355,6 +356,15 @@ export default function CaseViewerClient() {
   const savePersonaConfigs = useCallback(
     async (caseId: string) => {
       if (!authHeaders) return;
+
+      const voiceValidation = validatePersonaVoices([
+        { role: "Pet Owner", displayName: ownerPersonaConfig.displayName, voiceId: ownerPersonaConfig.voiceId },
+        { role: "Veterinary Nurse", displayName: nursePersonaConfig.displayName, voiceId: nursePersonaConfig.voiceId },
+      ]);
+      if (!voiceValidation.valid) {
+        console.warn("Skipping persona persistence due to voice conflict:", voiceValidation.error);
+        return;
+      }
 
       const configs = [
         { roleKey: "owner", config: ownerPersonaConfig },
@@ -853,6 +863,16 @@ export default function CaseViewerClient() {
                 alert("You must be signed in to save cases.");
                 return;
               }
+
+              const voiceValidation = validatePersonaVoices([
+                { role: "Pet Owner", displayName: ownerPersonaConfig.displayName, voiceId: ownerPersonaConfig.voiceId },
+                { role: "Veterinary Nurse", displayName: nursePersonaConfig.displayName, voiceId: nursePersonaConfig.voiceId },
+              ]);
+              if (!voiceValidation.valid) {
+                alert(voiceValidation.error ?? "The owner and nurse cannot share the same voice. Please select a different voice before saving.");
+                return;
+              }
+
               try {
                 // Build payload with persona config data for persistence
                 const payload: Record<string, unknown> = {
@@ -990,7 +1010,15 @@ export default function CaseViewerClient() {
             {/* Owner Persona */}
             <div>
               <h3 className="font-medium mb-3 text-lg">Pet Owner</h3>
-              <PersonaEditor role="owner" caseId={caseIdValue} value={ownerPersonaConfig} onChange={handleOwnerPersonaChange} readOnly={!editable} />
+              <PersonaEditor
+                role="owner"
+                caseId={caseIdValue}
+                value={ownerPersonaConfig}
+                onChange={handleOwnerPersonaChange}
+                readOnly={!editable}
+                takenVoiceIds={[nursePersonaConfig.voiceId].filter(Boolean) as string[]}
+                otherPersonaRoleName="Veterinary Nurse"
+              />
             </div>
 
             {/* Nurse Persona — Auto-assigned based on species */}
@@ -1001,7 +1029,16 @@ export default function CaseViewerClient() {
                   {"Auto-assigned (" + (formState?.species ?? "Unknown species") + ")"}
                 </span>
               </div>
-              <PersonaEditor role="nurse" caseId={caseIdValue} value={nursePersonaConfig} onChange={handleNursePersonaChange} readOnly={true} specializationData={nurseSpecialization as any} />
+              <PersonaEditor
+                role="nurse"
+                caseId={caseIdValue}
+                value={nursePersonaConfig}
+                onChange={handleNursePersonaChange}
+                readOnly={true}
+                specializationData={nurseSpecialization as any}
+                takenVoiceIds={[ownerPersonaConfig.voiceId].filter(Boolean) as string[]}
+                otherPersonaRoleName="Pet Owner"
+              />
             </div>
           </div>
         </div>

@@ -23,10 +23,11 @@ import {
 import { supabase } from "@/lib/supabase";
 import { VOICE_PRESETS, type VoicePreset } from "@/features/speech/services/voiceMap";
 import { speakRemote, stopActiveTtsPlayback } from "@/features/speech/services/ttsService";
-import { Play, Square, Loader2, User, Mic, Pencil, ChevronDown, ChevronRight, Expand } from "lucide-react";
+import { Play, Square, Loader2, User, Mic, Pencil, ChevronDown, ChevronRight, Expand, AlertTriangle } from "lucide-react";
 import type { PersonaSex } from "@/features/personas/models/persona";
 import type { BundledTestsMap } from "@/features/personas/utils/bundledTests";
 import { LabReferenceRangesTable } from "@/features/personas/components/LabReferenceRangesTable";
+import { findDistinctAlternativeVoice, normalizeVoiceId } from "@/features/personas/utils/personaVoiceValidation";
 
 // Avatar templates fetched from existing case_personas
 type AvatarTemplate = {
@@ -60,6 +61,10 @@ type PersonaEditorProps = {
   readOnly?: boolean;
   /** Nurse specialization data for read-only display */
   specializationData?: Record<string, unknown> | null;
+  /** Voice IDs already in use by other personas in this case */
+  takenVoiceIds?: string[];
+  /** Label for other persona in conflict messages (e.g. "Veterinary Nurse") */
+  otherPersonaRoleName?: string;
 };
 
 /**
@@ -74,6 +79,8 @@ export function PersonaEditor({
   onChange,
   readOnly,
   specializationData,
+  takenVoiceIds,
+  otherPersonaRoleName,
 }: PersonaEditorProps) {
   const [avatarTemplates, setAvatarTemplates] = useState<AvatarTemplate[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
@@ -247,6 +254,11 @@ export function PersonaEditor({
       const matchingVoice = VOICE_PRESETS.find((v) => v.gender === templateSex && v.accent === "british") ??
         VOICE_PRESETS.find((v) => v.gender === templateSex);
       voiceId = matchingVoice?.id ?? (templateSex === "male" ? "george" : "alice");
+    }
+
+    // If template's voice conflicts with another persona in this case, auto-select a non-conflicting alternative
+    if (voiceId && takenVoiceIds && takenVoiceIds.some((taken) => normalizeVoiceId(taken) === normalizeVoiceId(voiceId))) {
+      voiceId = findDistinctAlternativeVoice(takenVoiceIds, templateSex, voiceId);
     }
 
     onChange({
@@ -522,11 +534,18 @@ export function PersonaEditor({
               <SelectValue placeholder="Select voice" />
             </SelectTrigger>
             <SelectContent>
-              {availableVoices.map((voice) => (
-                <SelectItem key={voice.id} value={voice.id}>
-                  {voice.label}
-                </SelectItem>
-              ))}
+              {availableVoices.map((voice) => {
+                const isTaken = Boolean(
+                  takenVoiceIds?.some(
+                    (id) => id && normalizeVoiceId(id) === normalizeVoiceId(voice.id),
+                  ),
+                );
+                return (
+                  <SelectItem key={voice.id} value={voice.id}>
+                    {voice.label} {isTaken ? `(In use by ${otherPersonaRoleName || "another persona"})` : ""}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
           <Button
@@ -545,6 +564,21 @@ export function PersonaEditor({
             )}
           </Button>
         </div>
+        {Boolean(
+          config.voiceId &&
+            takenVoiceIds?.some(
+              (id) => id && normalizeVoiceId(id) === normalizeVoiceId(config.voiceId),
+            ),
+        ) && (
+          <div className="flex items-start gap-2 p-2 bg-destructive/15 border border-destructive/30 rounded text-xs text-destructive mt-1 font-medium">
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+            <div>
+              <span>
+                <strong>Voice Conflict:</strong> This voice is already assigned to the {otherPersonaRoleName || "another persona"}. The owner and nurse must have distinct voices so students can tell them apart. Please select a different voice.
+              </span>
+            </div>
+          </div>
+        )}
         <p className="text-xs text-muted-foreground">
           {VOICE_PRESETS.find((v) => v.id === config.voiceId)?.accent ?? ""} accent,{" "}
           {VOICE_PRESETS.find((v) => v.id === config.voiceId)?.provider ?? ""} provider
