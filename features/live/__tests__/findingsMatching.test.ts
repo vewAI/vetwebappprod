@@ -521,5 +521,18 @@ Final diagnosis: Larval cyathostominosis
       expect(EQUINE_NORMAL_PHYSICAL_BASELINES.gut_sounds).toBeDefined();
       expect(EQUINE_NORMAL_PHYSICAL_BASELINES.musculoskeletal).toBeDefined();
     });
+
+    it("ensures physical exam panel starts empty and greetings never leak vitals", () => {
+      // Greetings or conversational introductions should yield 0 canonical keys
+      expect(parseRequestedKeys("Hi Amanda, I am ready to start.").canonical).toEqual([]);
+      expect(parseRequestedKeys("Let us begin the physical examination.").canonical).toEqual([]);
+
+      // Non-requested vitals must not match
+      expect(physicalEntryMatchesUserText("Heart rate", "Hi Amanda, I am ready to start.")).toBe(false);
+      expect(physicalEntryMatchesUserText("Pulse", "Hi Amanda, I am ready to start.")).toBe(false);
+      expect(physicalEntryMatchesUserText("Digital pulse", "Hi Amanda, I am ready to start.")).toBe(false);
+      expect(physicalEntryMatchesUserText("Respiratory rate", "Let us begin the physical examination.")).toBe(false);
+      expect(physicalEntryMatchesUserText("Temperature", "Let us begin the physical examination.")).toBe(false);
+    });
   });
 });

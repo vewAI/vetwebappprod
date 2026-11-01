@@ -224,16 +224,24 @@ export function LiveSession({
   }, [live.messages]);
 
   // Test results panel: reveal entries as the conversation progresses —
-  // triggered by BOTH the student's requests and the persona's spoken
-  // replies, debounced so streaming text settles before the lookup.
+  // triggered by the student's requests in the CURRENT stage, debounced so
+  // speech settles before the lookup.
   const [revealedFindings, setRevealedFindings] = useState<RevealedFinding[]>([]);
+
+  // Ensure findings panel starts completely empty at the beginning of a consultation (stage 0)
+  useEffect(() => {
+    if (progress.currentStageIndex === 0) {
+      setRevealedFindings([]);
+    }
+  }, [caseItem.id, progress.currentStageIndex]);
+
   // Prime the signature with the INITIAL transcript so resumed history is
   // acknowledged without triggering anything — but the first NEW message of
   // any session (fresh or resumed) is always evaluated.
   const initLastUser = initialMessages.filter((m) => m.role === "user").slice(-1)[0];
   const initLastAssistant = initialMessages.filter((m) => m.role !== "user").slice(-1)[0];
   const findingsSignatureRef = useRef<string>(
-    `${initLastUser?.id ?? ""}|${initLastAssistant?.id ?? ""}|${initLastAssistant?.content?.length ?? 0}`
+    `${progress.currentStageIndex}|${initLastUser?.id ?? ""}|${initLastAssistant?.id ?? ""}|${initLastAssistant?.content?.length ?? 0}`
   );
   const findingsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -254,15 +262,19 @@ export function LiveSession({
     findingsTimerRef.current = setTimeout(async () => {
       findingsSignatureRef.current = signature;
       try {
+        // Only evaluate user requests sent in the CURRENT stage.
+        // Never pull messages from prior stages (e.g. history taking with the owner).
         const stageUserMessages = msgs
-          .filter((m) => m.role === "user" && (m.stageIndex === undefined || m.stageIndex === progress.currentStageIndex))
+          .filter((m) => m.role === "user" && m.stageIndex === progress.currentStageIndex)
           .map((m) => m.content)
           .filter(Boolean);
-        const allStageTexts = [...stageUserMessages];
-        if (lastUser?.content && !allStageTexts.includes(lastUser.content)) {
-          allStageTexts.push(lastUser.content);
+
+        // If the student has not asked anything in this stage yet, the Result Panel must stay completely empty.
+        if (stageUserMessages.length === 0) {
+          return;
         }
-        const userText = (allStageTexts.length > 0 ? allStageTexts.join(", ") : lastUser?.content || "").slice(0, 1800);
+
+        const userText = stageUserMessages.join(", ").slice(0, 1800);
 
         const accessToken = await getAccessToken().catch(() => null);
         const res = await fetch("/api/live/findings", {
