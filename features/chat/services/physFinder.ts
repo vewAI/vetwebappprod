@@ -15,7 +15,7 @@ export type PhysMatchResult = {
 
 const ALIAS_MAP: Record<string, string[]> = {
   heart_rate: ["hr", "heart rate", "pulse", "heartbreak", "how great", "aaron", "age aaron", "h r", "h.r.", "hrr"],
-  respiratory_rate: ["rr", "respiratory rate"],
+  respiratory_rate: ["rr", "respiratory rate", "respiration", "respirations", "resp rate", "resp", "breathing rate"],
   temperature: ["temp", "temperature", "t"],
   blood_pressure: ["bp", "blood pressure"],
   hydration: ["hydration", "skin tent", "skin turgor", "turgor"],
@@ -52,12 +52,90 @@ const ALIAS_MAP: Record<string, string[]> = {
   rectal_palpation: ["rectal palpation", "rectal exam", "rectal palp", "rectal", "rectal examination", "feces", "faeces", "manure"],
   nasogastric_intubation: ["nasogastric intubation", "nasogastric tube", "ng tube", "nasogastric", "ngt"],
   abdominocentesis: ["abdominocentesis", "abdominal centesis", "abdo centesis", "abdo-centesis"],
+  musculoskeletal: [
+    "musculoskeletal",
+    "muscles",
+    "muscle",
+    "muscle palpation",
+    "palpate muscles",
+    "palpating muscles",
+    "palpating the muscles",
+    "palpate the muscles",
+    "epaxial",
+    "gluteal",
+    "epaxial muscles",
+    "gluteal muscles",
+    "muscle tone",
+    "muscle soreness",
+    "muscle pain",
+    "muscle stiffness",
+    "cramping",
+    "stiffness",
+    "fasciculations",
+    "muscle fasciculations",
+    "limbs",
+    "legs",
+    "joints",
+    "back",
+    "epaxials",
+    "gluteals",
+  ],
+  neurological: [
+    "neurological",
+    "neuro",
+    "cranial nerves",
+    "reflexes",
+    "ataxia",
+    "proprioception",
+    "menace",
+    "pupillary",
+  ],
+  eyes: [
+    "eyes",
+    "eye",
+    "ocular",
+    "ophthalmic",
+    "pupils",
+    "sclera",
+    "cornea",
+    "conjunctiva",
+    "vision",
+  ],
+  skin: [
+    "skin",
+    "integument",
+    "coat",
+    "hair",
+    "dermatological",
+    "lesions",
+    "alopecia",
+    "pruritus",
+  ],
+  oral: [
+    "oral",
+    "oral cavity",
+    "teeth",
+    "mouth",
+    "tongue",
+    "pharynx",
+  ],
 };
 
 // Group tokens map to multiple canonical keys
 const GROUP_MAP: Record<string, string[]> = {
   vitals: ["heart_rate", "respiratory_rate", "temperature", "blood_pressure"],
   vital: ["heart_rate", "respiratory_rate", "temperature", "blood_pressure"],
+  exam: [
+    "heart_rate",
+    "respiratory_rate",
+    "temperature",
+    "blood_pressure",
+    "mucous_membranes",
+    "capillary_refill_time",
+    "hydration",
+    "abdomen",
+    "musculoskeletal",
+  ],
 };
 
 const TOKEN_TO_CANONICAL: Record<string, string> = (() => {
@@ -73,6 +151,22 @@ const TOKEN_TO_CANONICAL: Record<string, string> = (() => {
   out["aaron"] = "heart_rate";
   out["t"] = "temperature";
   out["bp"] = "blood_pressure";
+  out["muscles"] = "musculoskeletal";
+  out["muscle"] = "musculoskeletal";
+  out["musculoskeletal"] = "musculoskeletal";
+  out["epaxial"] = "musculoskeletal";
+  out["gluteal"] = "musculoskeletal";
+  out["stiffness"] = "musculoskeletal";
+  out["cramping"] = "musculoskeletal";
+  out["neuro"] = "neurological";
+  out["neurological"] = "neurological";
+  out["eyes"] = "eyes";
+  out["eye"] = "eyes";
+  out["ocular"] = "eyes";
+  out["skin"] = "skin";
+  out["integument"] = "skin";
+  out["teeth"] = "oral";
+  out["mouth"] = "oral";
   return out;
 })();
 
@@ -174,7 +268,7 @@ export const PHYS_SYNONYMS: Record<string, string[]> = {
   ballottement: ["ballottement", "ballottement was", "ballott"],
   temperature: ["temp", "temperature"],
   heart_rate: ["heart rate", "pulse", "aaron", "age aaron", "hr"],
-  respiratory_rate: ["respiratory rate", "respirations", "resp rate", "resp", "rr"],
+  respiratory_rate: ["respiratory rate", "respiration", "respirations", "resp rate", "resp", "rr"],
   mucous_membranes: [
     "mucous",
     "mucous membrane",
@@ -205,6 +299,73 @@ export const PHYS_SYNONYMS: Record<string, string[]> = {
   rectal_palpation: ["rectal palpation", "rectal exam", "rectal palp", "rectal", "feces", "faeces", "manure"],
   nasogastric_intubation: ["nasogastric intubation", "nasogastric tube", "ng tube", "ngt", "nasogastric"],
   abdominocentesis: ["abdominocentesis", "abdominal centesis", "abdo centesis"],
+  musculoskeletal: [
+    "musculoskeletal",
+    "muscles",
+    "muscle",
+    "muscle palpation",
+    "palpating muscles",
+    "palpate muscles",
+    "palpating the muscles",
+    "palpate the muscles",
+    "epaxial",
+    "gluteal",
+    "epaxial muscles",
+    "gluteal muscles",
+    "muscle tone",
+    "muscle soreness",
+    "muscle pain",
+    "muscle stiffness",
+    "cramping",
+    "stiffness",
+    "fasciculations",
+    "muscle fasciculations",
+    "limbs",
+    "legs",
+    "joints",
+    "back",
+    "epaxials",
+    "gluteals",
+  ],
+  neurological: [
+    "neurological",
+    "neuro",
+    "cranial nerves",
+    "reflexes",
+    "ataxia",
+    "proprioception",
+    "menace",
+    "pupillary",
+  ],
+  eyes: [
+    "eyes",
+    "eye",
+    "ocular",
+    "ophthalmic",
+    "pupils",
+    "sclera",
+    "cornea",
+    "conjunctiva",
+    "vision",
+  ],
+  skin: [
+    "skin",
+    "integument",
+    "coat",
+    "hair",
+    "dermatological",
+    "lesions",
+    "alopecia",
+    "pruritus",
+  ],
+  oral: [
+    "oral",
+    "oral cavity",
+    "teeth",
+    "mouth",
+    "tongue",
+    "pharynx",
+  ],
 };
 
 export default { parseRequestedKeys, matchPhysicalFindings };

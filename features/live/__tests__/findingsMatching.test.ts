@@ -68,6 +68,26 @@ describe("live findings matching & stage gating", () => {
       expect(labelSpokenIn("Coronary band", spokenAssistant)).toBe(false);
       expect(labelSpokenIn("Hoof testers", spokenAssistant)).toBe(false);
     });
+
+    it("matches all 5 requested physical parameters when student asks for heart rate, respiration, gut sounds, rectal temperature, and palpating the muscles", () => {
+      const userText = "Could you check the heart rate, respiration, gut sounds, and rectal temperature, as well as palpating the muscles?";
+      const requested = parseRequestedKeys(userText);
+
+      expect(requested.canonical).toContain("heart_rate");
+      expect(requested.canonical).toContain("respiratory_rate");
+      expect(requested.canonical).toContain("abdomen");
+      expect(requested.canonical).toContain("temperature");
+      expect(requested.canonical).toContain("musculoskeletal");
+
+      expect(physicalEntryMatchesUserText("Heart rate", userText)).toBe(true);
+      expect(physicalEntryMatchesUserText("Respiratory rate", userText)).toBe(true);
+      expect(physicalEntryMatchesUserText("Gut sounds", userText)).toBe(true);
+      expect(physicalEntryMatchesUserText("Rectal temperature", userText)).toBe(true);
+      expect(physicalEntryMatchesUserText("Musculoskeletal", userText)).toBe(true);
+      expect(physicalEntryMatchesUserText("Muscle palpation", userText)).toBe(true);
+      expect(canonicalKeysForLabel("Musculoskeletal")).toContain("musculoskeletal");
+      expect(canonicalKeysForLabel("Musculoskeletal (muscles)")).toContain("musculoskeletal");
+    });
   });
 
   describe("Laboratory availability inquiries vs requests", () => {
@@ -91,6 +111,8 @@ describe("live findings matching & stage gating", () => {
     it("detects general blood work requests", () => {
       expect(isGeneralBloodworkRequest("Can we run blood work?")).toBe(true);
       expect(isGeneralBloodworkRequest("Let's do the routine bloods")).toBe(true);
+      expect(isGeneralBloodworkRequest("Can we run blood tests?")).toBe(true);
+      expect(isGeneralBloodworkRequest("I would like blood tests please")).toBe(true);
       expect(isGeneralBloodworkRequest("What labs do we have?")).toBe(false);
     });
   });
@@ -254,6 +276,36 @@ Abdominal radiographs: Gas distension of the large colon with ventral displaceme
 
       const matched = entries.filter((e) => matchDiagnosticFinding(e, userKeys, userText, isAll, isBloodwork));
       expect(matched.map((m) => m.label)).toEqual(["dorsal findings", "ventral findings"]);
+    });
+
+    it("matches all bloodwork analytes including un-categorized CK, AST, Urea, Creatinine when student asks for 'blood tests'", () => {
+      const bloodworkCaseText = `
+        CK: 4500 U/L [high]
+        AST: 850 U/L [high]
+        Urea: 7.2 mmol/L
+        Creatinine: 110 umol/L
+        Total Protein: 68 g/L
+        Albumin: 32 g/L
+        Abdominal Ultrasound: Normal peritoneal space, no free fluid
+      `;
+      const entries = extractDiagPairs(bloodworkCaseText);
+      const userText = "Can we run blood tests, please?";
+      const userKeys = findMatchingSynonymKeys(userText, DIAG_SYNONYMS);
+      const isBloodwork = isGeneralBloodworkRequest(userText);
+      const isAll = isAllLabsRequest(userText);
+
+      expect(isBloodwork).toBe(true);
+
+      const matched = entries.filter((e) => matchDiagnosticFinding(e, userKeys, userText, isAll, isBloodwork));
+      const matchedLabels = matched.map((m) => m.label.toLowerCase());
+
+      expect(matchedLabels).toContain("ck");
+      expect(matchedLabels).toContain("ast");
+      expect(matchedLabels).toContain("urea");
+      expect(matchedLabels).toContain("creatinine");
+      expect(matchedLabels).toContain("total protein");
+      expect(matchedLabels).toContain("albumin");
+      expect(matchedLabels).not.toContain("abdominal ultrasound");
     });
   });
 

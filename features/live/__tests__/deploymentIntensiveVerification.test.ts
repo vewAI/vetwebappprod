@@ -156,6 +156,18 @@ describe("Intensive Verification: Deployment 30074d4 + Feedback Fixes", () => {
       expect(labInstruction).toContain("Recorded results are delivered as WRITTEN TEXT in the Result Panel");
       expect(labInstruction).toContain("NEVER speak values aloud");
     });
+
+    it("instructs the nurse to relay results aloud as an exception if the student reports they do not appear in the panel", () => {
+      const nurseInstruction = buildPersonaSystemInstruction({
+        caseItem: mockCase,
+        stage: physicalStage,
+        personaRoleKey: "veterinary-nurse",
+      }).systemInstruction;
+
+      expect(nurseInstruction).toContain("CRITICAL EXCEPTION - RELAYING WHEN MISSING FROM PANEL");
+      expect(nurseInstruction).toContain("If the student explicitly states that a finding or result does NOT show up in their panel");
+      expect(nurseInstruction).toContain("you MUST immediately relay that specific finding or measurement from your clinical data aloud");
+    });
   });
 
   describe("3. Owner Persona Tone: Concerned & Anxious, Not Cheerful", () => {

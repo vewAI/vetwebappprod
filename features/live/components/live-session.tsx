@@ -254,6 +254,12 @@ export function LiveSession({
     findingsTimerRef.current = setTimeout(async () => {
       findingsSignatureRef.current = signature;
       try {
+        const stageUserMessages = msgs
+          .filter((m) => m.role === "user" && (m.stageIndex === undefined || m.stageIndex === progress.currentStageIndex))
+          .map((m) => m.content)
+          .filter(Boolean);
+        const userText = stageUserMessages.slice(-4).join(" \n ") || lastUser?.content || "";
+
         const accessToken = await getAccessToken().catch(() => null);
         const res = await fetch("/api/live/findings", {
           method: "POST",
@@ -263,7 +269,7 @@ export function LiveSession({
           },
           body: JSON.stringify({
             caseId: caseItem.id,
-            userText: lastUser?.content ?? "",
+            userText,
             assistantText: lastAssistant?.content ?? "",
             stageType: normalizedCurrentStageType,
           }),

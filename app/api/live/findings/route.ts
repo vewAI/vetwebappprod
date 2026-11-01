@@ -49,6 +49,13 @@ export function extractFindingsFromDetails(details: string): { physical: string;
         else if (/Gastrointestinal/i.test(rawLabel)) cleanLabel = "Abdomen & GI";
         else if (/Lymph nodes/i.test(rawLabel)) cleanLabel = "Lymph nodes";
         else if (/Demeanour/i.test(rawLabel)) cleanLabel = "Demeanour";
+        else if (/Musculoskeletal|Muscle/i.test(rawLabel)) cleanLabel = "Musculoskeletal";
+        else if (/Nervous|Neurolog/i.test(rawLabel)) cleanLabel = "Neurological";
+        else if (/Ophthalmic|Eyes?/i.test(rawLabel)) cleanLabel = "Eyes & Vision";
+        else if (/Integument|Skin|Coat/i.test(rawLabel)) cleanLabel = "Skin & Coat";
+        else if (/Rectal/i.test(rawLabel)) cleanLabel = "Rectal examination";
+        else if (/Oral|Teeth|Mouth/i.test(rawLabel)) cleanLabel = "Oral & Teeth";
+        else if (/Urogenital/i.test(rawLabel)) cleanLabel = "Urogenital";
 
         if (val && !/^(Examination time|Handling, welfare|Specialty grading)/i.test(rawLabel)) {
           entries.push(`${cleanLabel}: ${val}`);
@@ -137,6 +144,18 @@ export const DIAG_SYNONYMS: Record<string, string[]> = {
   electrolytes: ["electrolytes", "lytes", "sodium", "potassium", "chloride"],
   blood_gas: ["blood gas", "abg", "vbg", "venous blood gas", "arterial blood gas"],
   coagulation: ["coagulation", "coag", "pt", "aptt", "clotting"],
+  creatinine: ["creatinine", "creat"],
+  urea: ["urea", "bun", "blood urea nitrogen"],
+  total_protein: ["total protein", "tp"],
+  albumin: ["albumin"],
+  globulin: ["globulin"],
+  fibrinogen: ["fibrinogen"],
+  platelets: ["platelets", "plt", "thrombocytes"],
+  troponin: ["troponin", "ctni"],
+  liver_enzymes: ["liver enzymes", "liver panel", "ggt", "gldh", "sdh", "alp", "alt"],
+  bilirubin: ["bilirubin"],
+  bile_acids: ["bile acids"],
+  sdma: ["sdma"],
   cytology: [
     "cytology",
     "peritoneal fluid",
@@ -366,7 +385,9 @@ export function isAllLabsRequest(text: string): boolean {
 export function isGeneralBloodworkRequest(text: string): boolean {
   const norm = normalizeForMatch(text);
   if (isAvailabilityInquiry(text)) return false;
-  return /\b(blood work|bloodwork|bloods|routine bloods)\b/.test(norm);
+  return /\b(blood\s*work|bloodwork|bloods|blood\s*tests?|blood\s*panel|routine\s*bloods|routine\s*blood\s*work|cbc\s*(?:and|&)\s*chem|hematology\s*(?:and|&)\s*biochemistry|haematology\s*(?:and|&)\s*biochemistry)\b/.test(
+    norm
+  );
 }
 
 // Stage gating: findings reveal ONLY while the consultation is IN their
@@ -400,22 +421,33 @@ export function canonicalKeysForLabel(label: string): string[] {
   const normalizedLabel = normalizeForMatch(label);
   const keys: string[] = [];
   for (const [canon, aliases] of Object.entries(PHYS_SYNONYMS)) {
-    // Match a whole alias at the start, so "resp" does not turn
-    // "Respiratory auscultation" into a respiratory-rate result.
-    if (aliases.some((alias) => {
-      const normalizedAlias = normalizeForMatch(alias);
-      return normalizedLabel === normalizedAlias || normalizedLabel.startsWith(`${normalizedAlias} `);
-    })) {
+    // Match a whole alias at the start, end, or surrounded by delimiters
+    if (
+      aliases.some((alias) => {
+        const normalizedAlias = normalizeForMatch(alias);
+        return (
+          normalizedLabel === normalizedAlias ||
+          normalizedLabel.startsWith(`${normalizedAlias} `) ||
+          normalizedLabel.endsWith(` ${normalizedAlias}`) ||
+          normalizedLabel.includes(` ${normalizedAlias} `) ||
+          normalizedLabel.includes(`(${normalizedAlias})`)
+        );
+      })
+    ) {
       keys.push(canon);
     }
   }
   return keys;
 }
 
+const CLINICAL_SHORT_WORDS = new Set([
+  "gut", "eye", "ear", "jaw", "rib", "hip", "toe", "leg", "gum", "bcs", "crt", "tpp", "pcv", "bun", "ast", "ggt", "alp", "ldh", "ck"
+]);
+
 function words(s: string): string[] {
   return normalizeForMatch(s)
     .split(" ")
-    .filter((w) => w.length >= 4 && !GENERIC_CLINICAL_STOPWORDS.has(w));
+    .filter((w) => (w.length >= 4 || CLINICAL_SHORT_WORDS.has(w)) && !GENERIC_CLINICAL_STOPWORDS.has(w));
 }
 
 function commonPrefixLength(a: string, b: string): number {
@@ -469,6 +501,8 @@ export function entryMatchesUserText(entryLabel: string, userText: string): bool
       if (lw === uw) return true;
       if (lw.length >= 4 && uw.length >= 4) {
         if (lw.startsWith(uw) || uw.startsWith(lw)) return true;
+        // Support cross-matching for musculoskeletal <-> muscle/muscles
+        if (lw.startsWith("musc") && uw.startsWith("musc")) return true;
       }
       return commonPrefixLength(lw, uw) >= 5;
     })
@@ -656,8 +690,12 @@ export function matchDiagnosticFinding(
     (entryDiagKeys.has("cbc") ||
       entryDiagKeys.has("chem") ||
       entryDiagKeys.has("pcv_tpp") ||
+      entryDiagKeys.has("electrolytes") ||
+      entryDiagKeys.has("blood_gas") ||
       doesEntryBelongToPanel(entry.label, "chem", entry.category) ||
-      doesEntryBelongToPanel(entry.label, "cbc", entry.category));
+      doesEntryBelongToPanel(entry.label, "cbc", entry.category) ||
+      doesEntryBelongToPanel(entry.label, "electrolytes", entry.category) ||
+      doesEntryBelongToPanel(entry.label, "blood_gas", entry.category));
 
   return keyMatch || panelMatch || vocabMatch || bloodworkMatch;
 }
