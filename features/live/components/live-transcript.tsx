@@ -4,6 +4,7 @@ import { useRef, useEffect } from "react";
 import type { Message } from "@/features/chat/models/chat";
 import type { Stage } from "@/features/stages/types";
 import { ChatMessage } from "@/features/chat/components/chat-message";
+import { resolveLivePersonaRoleKey } from "../utils/resolveLivePersonaRoleKey";
 
 const HIDDEN_PATTERNS = ["[SYS_TRIGGER]", "[HANDOFF]", "[The veterinarian has just arrived"];
 
@@ -19,6 +20,27 @@ type LiveTranscriptProps = {
   filterPersona?: string | null;
 };
 
+export function filterTranscriptMessages(
+  messages: Message[],
+  filterPersona?: string | null,
+  stages: Stage[] = []
+): Message[] {
+  if (!filterPersona) {
+    return messages.filter((m) => !isHiddenEntry(m.content));
+  }
+  return messages.filter((m) => {
+    if (isHiddenEntry(m.content)) return false;
+    if (m.personaRoleKey) {
+      return m.personaRoleKey === filterPersona;
+    }
+    if (typeof m.stageIndex === "number" && stages[m.stageIndex]) {
+      const stageRole = resolveLivePersonaRoleKey(stages[m.stageIndex]);
+      return stageRole === filterPersona;
+    }
+    return m.role === "user";
+  });
+}
+
 export function LiveTranscript({
   messages,
   isOpen,
@@ -28,14 +50,7 @@ export function LiveTranscript({
   const scrollRef = useRef<HTMLDivElement>(null);
   const shouldAutoScrollRef = useRef(true);
 
-  // Filter: user messages always visible; persona messages filtered by filterPersona
-  const filteredMessages = filterPersona
-    ? messages.filter(
-        (m) =>
-          !isHiddenEntry(m.content) &&
-          (m.role === "user" || m.personaRoleKey === filterPersona)
-      )
-    : messages.filter((m) => !isHiddenEntry(m.content));
+  const filteredMessages = filterTranscriptMessages(messages, filterPersona, stages);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {

@@ -19,7 +19,7 @@ import {
   splitCompoundEntries,
   stageAllowsReveal,
 } from "@/app/api/live/findings/route";
-import { parseRequestedKeys } from "@/features/chat/services/physFinder";
+import { matchPhysicalFindings, parseRequestedKeys } from "@/features/chat/services/physFinder";
 import { resolveLiveStageType } from "@/features/live/utils/normalizeStageType";
 
 describe("live findings matching & stage gating", () => {
@@ -109,6 +109,22 @@ describe("live findings matching & stage gating", () => {
       expect(physicalEntryMatchesUserText("Digital pulses", digitalPulseReq)).toBe(true);
       expect(physicalEntryMatchesUserText("Hooves & digital pulses", digitalPulseReq)).toBe(true);
       expect(physicalEntryMatchesUserText("Heart rate", digitalPulseReq)).toBe(false);
+
+      // Verify complete isolation in matchPhysicalFindings
+      const caseFindings = [
+        "Heart rate: 44 bpm",
+        "Pulses: strong and synchronous",
+        "Digital pulses: normal, no increased pulsation",
+        "Respiratory rate: 16 breaths/min",
+      ].join("\n");
+
+      const digitalRes = matchPhysicalFindings({ raw: "digital pulses", tokens: ["digital", "pulses"], canonical: ["digital_pulse"] }, caseFindings);
+      const digMatch = digitalRes.find((r) => r.canonicalKey === "digital_pulse");
+      expect(digMatch?.lines).toEqual(["Digital pulses: normal, no increased pulsation"]);
+
+      const pulseRes = matchPhysicalFindings({ raw: "pulses", tokens: ["pulses"], canonical: ["pulse"] }, caseFindings);
+      const pulseMatch = pulseRes.find((r) => r.canonicalKey === "pulse");
+      expect(pulseMatch?.lines).toEqual(["Pulses: strong and synchronous"]);
     });
 
     it("matches muscle palpation across compound labels and typo variations", () => {

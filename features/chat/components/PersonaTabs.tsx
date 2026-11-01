@@ -19,12 +19,14 @@ export type PersonaTabsProps = {
   onChange: (k: string) => void;
   /** Optional extended tabs for Live (includes LAB). Falls back to OWNER/NURSE only. */
   extendedTabs?: PersonaTabDef[];
+  className?: string;
 };
 
 export const PersonaTabs: React.FC<PersonaTabsProps> = ({
   activePersona,
   onChange,
   extendedTabs,
+  className,
 }) => {
   const tabs: PersonaTabDef[] = extendedTabs ?? [
     { key: "owner", label: "OWNER" },
@@ -55,7 +57,7 @@ export const PersonaTabs: React.FC<PersonaTabsProps> = ({
       id="persona-tabs"
       role="tablist"
       aria-label="Persona tabs"
-      className="flex gap-2 mb-4"
+      className={cn("flex gap-2 mb-4", className)}
       onKeyDown={handleKeyDown}
       tabIndex={0}
     >

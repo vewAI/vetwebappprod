@@ -185,6 +185,8 @@ function buildPersonaChatGuidelines(personaRoleKey: string): string {
     "GROUNDED CLINICAL DATA ONLY: Never invent, guess, or hypothesize findings. Your function is to report only factual information that already exists in the verified clinical record when explicitly asked for.",
     "TOKEN EFFICIENCY & PANEL DELIVERY: Physical examination values, vital numbers, and laboratory results appear directly in the written results panel on the student's screen. At the start of an examination or laboratory stage, announce: 'I'm ready to assist with the examination, Doctor. Please request the specific parameters you want to appear in the test panel.' (or for laboratory: 'I'm ready to assist with laboratory testing, Doctor. Please request the specific tests or panels you want to appear in the test panel.'). When the student requests values or results of the CURRENT stage, acknowledge in ONE to TWO words (e.g. 'Recorded.', 'Added.') so parameters appear without repeating chatty sentences or wasting audio tokens. Never claim results are in the panel for tests or stages that have not been performed yet. EXCEPTION - RELAYING WHEN NOT SHOWING UP: If the student states that a finding or result does not show up in their panel, is missing, or asks you to read or relay it aloud because it didn't appear (e.g. 'It doesn't show up in the panel', 'I don't see the muscle palpation', 'Could you read that out?'), you MUST immediately relay that specific requested finding or measurement verbally from your clinical data accurately and concisely.",
     "Do not provide final summaries, interpretations, or diagnostic conclusions. Interpretation is the veterinarian's responsibility.",
+    "NO SOCRATIC QUIZZING OF THE CLINICIAN: NEVER quiz the veterinarian or ask what they think of findings; explaining findings and diagnoses is solely for the owner in the communication stage.",
+    "EQUINE PULSE INDEPENDENCE: In equine cases, digital pulses (feet/digits) and peripheral pulses (face/head) are strictly separate clinical entities. When asked for one, never report or mention the other.",
     "",
     CHAT_SYSTEM_GUIDELINE,
   ].join("\n");
@@ -208,7 +210,7 @@ function buildClassicRoleSection(roleInfoKey: string | undefined, personaRoleKey
     getOwnerDiagnosisPrompt:
       "Role-info contract: portray the owner receiving the explanation and plan. Ask practical questions about prognosis, monitoring, medication, home care, cost, and when to seek help. Do not supply veterinary conclusions yourself.",
     getPhysicalExamPrompt:
-      "Role-info contract: you hold the physical-examination record. When the student asks for a recorded system or parameter, acknowledge briefly and direct them to the Result Panel. If the student states that a result does not show up in the panel or asks you to relay it aloud, speak that specific finding directly from the record. If the requested finding is not recorded, say so. Do not diagnose, recommend treatment, ask the student what they found, or invent missing values. Never name syndromes or diagnostic conclusions, even if present in the record.",
+      "Role-info contract: you hold the physical-examination record. When the student asks for a recorded system or parameter, acknowledge briefly and direct them to the Result Panel. In equine cases, treat digital pulses (feet/digits) and peripheral pulses (face/head) as completely independent clinical entities — never combine or group them together. NEVER ask the doctor 'what do you think' or quiz them on findings. If the student states that a result does not show up in the panel or asks you to relay it aloud, speak that specific finding directly from the record. If the requested finding is not recorded, say so. Do not diagnose, recommend treatment, ask the student what they found, or invent missing values. Never name syndromes or diagnostic conclusions, even if present in the record.",
     getDiagnosticPrompt:
       "Role-info contract: you hold the diagnostic record. Make available in the Result Panel only the exact recorded test, panel, modality, or category requested. If the student reports that a result did not show up in the panel or asks you to relay it aloud, speak that specific result directly from the record. Keep categories separate, say when a result is unavailable or pending, and do not diagnose or recommend treatment. Never name syndromes or diagnostic conclusions (e.g. 'consistent with...') even if the record contains them.",
     getTreatmentPlanPrompt:
@@ -228,6 +230,13 @@ function buildAccentSection(): string {
   ].join("\n");
 }
 
+function formatPhysicalExamFindingsForClinicalData(text: string): string {
+  if (!text) return "";
+  return text
+    .replace(/,\s*(?=(?:pulses?|peripheral pulses?|digital pulses?|palmar digital|plantar digital|resp(?:iratory)? rate|respiration|temp(?:erature)?|rectal temp|gut sounds?|borborygmi|muscles?|musculoskeletal)\b[:\s])/gi, "\n- ")
+    .replace(/;\s*/g, "\n- ");
+}
+
 function buildClinicalDataSection(caseItem: Case, personaRoleKey: string, stageType?: string): string {
   const isClinical = personaRoleKey === "veterinary-nurse" || personaRoleKey === "lab-technician";
   if (!isClinical) return "";
@@ -241,7 +250,7 @@ function buildClinicalDataSection(caseItem: Case, personaRoleKey: string, stageT
   }
 
   if (caseItem.physicalExamFindings) {
-    sections.push(`\nPhysical Examination Findings:\n${caseItem.physicalExamFindings}`);
+    sections.push(`\nPhysical Examination Findings:\n${formatPhysicalExamFindingsForClinicalData(caseItem.physicalExamFindings)}`);
   }
 
   // During history or physical examination stage, do NOT include diagnostic/lab results
@@ -270,7 +279,7 @@ export function buildClinicalReasoningSection(
       "\nCLINICAL REASONING GUIDANCE (EARLY-YEAR / NOVICE STUDENT SCAFFOLDING):",
       "Case difficulty is EASY — the student is in earlier years and still learning how to reason clinically.",
       "RESULT-FIRST RULE: When the student explicitly requests a recorded examination finding or test, immediately direct them to the Result Panel. Never ask for a differential or justification before making the requested result available.",
-      "SOCRATIC QUESTIONS: After the requested result has been delivered, and only when the student is discussing its meaning, you may ask one brief question such as 'What do you make of those findings?' Do not interrupt a list of requested measurements with questions.",
+      "NO SOCRATIC QUIZZING OF THE CLINICIAN: You are a veterinary nurse assisting the doctor, NOT an educator or examiner. NEVER ask the doctor 'What do you think?', 'What do you make of those findings?', or quiz them on their interpretation or reasoning. Explaining findings, diagnoses, and rationale is done by the student to the CLIENT/OWNER in lay terms during the communication stage, NEVER to the nurse.",
       "SYSTEMATIC CLINICAL PRIORITIZATION: If the student proposes an invasive or advanced procedure without basic safety assessment, gently ask about the missing assessment after fulfilling any recorded findings they requested.",
       "NON-SPOILER GUARDRAIL (CRITICAL): Never name the final diagnosis or solve the case for the student. Guide how they reason, not what the answer is.",
       "SUPPORTIVE MENTOR TONE: Be patient and collaborative while keeping replies brief and professional.",
@@ -328,13 +337,17 @@ function getNurseRules(stageType: string, difficulty?: string): string {
   const diff = (difficulty ?? "Medium").trim().toLowerCase();
   if (diff === "easy") {
     rules.push(
-      "13) CLINICAL REASONING SCAFFOLDING (EASY DIFFICULTY): You are actively encouraged to ask brief Socratic questions to scaffold student reasoning (e.g. asking which system they want to prioritize, or prompting for vitals before diagnostics) without revealing diagnoses."
+      "13) CLINICAL REASONING SCAFFOLDING (EASY DIFFICULTY): Support the student by efficiently fulfilling requested findings and procedures. You may gently prompt for missing baseline safety parameters before an invasive procedure if omitted. NEVER quiz the clinician or ask what they think of findings."
     );
   } else if (diff === "hard") {
     rules.push(
       "13) EXAM CONDITIONS (HARD DIFFICULTY): Strict neutral execution. Do NOT ask guiding or scaffolding questions."
     );
   }
+
+  rules.push(
+    "17) EQUINE CLINICAL DISTINCTION - DIGITAL PULSES VS PERIPHERAL PULSES (CRITICAL): In horses and equine cases, DIGITAL PULSES (palmar/plantar digital arterial pulse of the feet/digits) are a completely separate, independent clinical entity from PERIPHERAL ARTERIAL PULSES (facial, transverse facial, or submandibular arteries). They must NEVER be treated as extensions of each other, grouped together, or conflated. When the veterinarian asks for digital pulses, report/acknowledge ONLY the digital pulses. NEVER report, group, or mention peripheral pulses when asked about digital pulses, and NEVER mention digital pulses when asked about pulses or peripheral pulses."
+  );
 
   if (stageType === "physical") {
     rules.push(

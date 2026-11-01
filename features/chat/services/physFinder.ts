@@ -343,6 +343,24 @@ export function matchPhysicalFindings(requested: RequestedKeys, findingsText: st
         loweredAliases.some((alias) => low.includes(alias)) ||
         loweredAliases.some((alias) => low.includes(alias.split(" ")[0]))
       ) {
+        // Equine pulse distinction: digital pulse vs peripheral pulse isolation
+        if (
+          canon === "pulse" &&
+          (low.includes("digit") || low.includes("hoof") || low.includes("palmar") || low.includes("plantar"))
+        ) {
+          continue;
+        }
+        if (
+          canon === "digital_pulse" &&
+          !low.includes("digit") &&
+          !low.includes("hoof") &&
+          !low.includes("palmar") &&
+          !low.includes("plantar") &&
+          !low.includes("foot") &&
+          !low.includes("feet")
+        ) {
+          continue;
+        }
         matched.push(line);
       }
     }

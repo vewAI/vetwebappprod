@@ -14,6 +14,8 @@ import { useLiveProgress } from "../hooks/useLiveProgress";
 import { isRecheckTransitionStage } from "@/features/stages/types";
 import { useSaveAttempt } from "@/features/attempts/hooks/useSaveAttempt";
 import { PersonaHeader } from "./persona-header";
+import { PersonaTabs, type PersonaTabDef } from "@/features/chat/components/PersonaTabs";
+import type { AllowedChatPersonaKey } from "@/features/chat/utils/persona-guardrails";
 import type { LivePersonaDef, LivePersonaRoleKey } from "./live-controls";
 import { LiveControls } from "./live-controls";
 import { ProgressSidebar } from "@/features/chat/components/progress-sidebar";
@@ -28,6 +30,7 @@ import {
 } from "../services/transcriptExport";
 import { buildConversationContext } from "../utils/conversationContext";
 import { normalizeStageType, inferStageTypeFromText, resolveLiveStageType } from "../utils/normalizeStageType";
+import { resolveLivePersonaRoleKey } from "../utils/resolveLivePersonaRoleKey";
 import { Button } from "@/components/ui/button";
 import { FileText, Download, Copy, Check, PanelLeft } from "lucide-react";
 
@@ -150,6 +153,45 @@ export function LiveSession({
       : null;
   const [showAdvanceHint, setShowAdvanceHint] = useState(false);
 
+  const defaultStagePersonaRole = resolveLivePersonaRoleKey(currentStage);
+  const activePersonaKey = (activePersonaRole ?? defaultStagePersonaRole ?? "owner") as AllowedChatPersonaKey;
+
+  const hasLabStage = useMemo(() => {
+    return progress.stages.some((s) => {
+      const stageType = resolveLiveStageType(s);
+      return (
+        stageType === "laboratory" ||
+        s.role === "Laboratory Technician" ||
+        s.personaRoleKey === "lab-technician"
+      );
+    });
+  }, [progress.stages]);
+
+  const extendedTabs: PersonaTabDef[] = useMemo(() => {
+    const tabs: PersonaTabDef[] = [
+      {
+        key: "owner",
+        label: "OWNER",
+        isSpeaking: live.isSpeaking && activePersonaKey === "owner",
+      },
+      {
+        key: "veterinary-nurse",
+        label: "NURSE",
+        isSpeaking: live.isSpeaking && activePersonaKey === "veterinary-nurse",
+      },
+    ];
+
+    if (hasLabStage) {
+      tabs.push({
+        key: "lab-technician",
+        label: "LAB",
+        isSpeaking: live.isSpeaking && activePersonaKey === "lab-technician",
+      });
+    }
+
+    return tabs;
+  }, [activePersonaKey, live.isSpeaking, hasLabStage]);
+
   // P3.8: Session timer
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const timeSpentRef = useRef(initialTimeSpentSeconds);
@@ -262,10 +304,10 @@ export function LiveSession({
     findingsTimerRef.current = setTimeout(async () => {
       findingsSignatureRef.current = signature;
       try {
-        // Only evaluate user requests sent in the CURRENT stage.
-        // Never pull messages from prior stages (e.g. history taking with the owner).
+        // Only evaluate user requests sent in the CURRENT stage to clinical staff.
+        // Never pull messages from prior stages or questions directed to the owner.
         const stageUserMessages = msgs
-          .filter((m) => m.role === "user" && m.stageIndex === progress.currentStageIndex)
+          .filter((m) => m.role === "user" && m.stageIndex === progress.currentStageIndex && m.personaRoleKey !== "owner")
           .map((m) => m.content)
           .filter(Boolean);
 
@@ -591,6 +633,7 @@ export function LiveSession({
       stageAdvancePendingRef.current =
         progress.currentStageIndex > prevStageIndexRef.current;
       prevStageIndexRef.current = progress.currentStageIndex;
+      setActivePersonaRole(null);
     }
   }, [progress.currentStageIndex]);
 
@@ -602,7 +645,7 @@ export function LiveSession({
     if (live.status === "connected") {
       // Commit the switch only when it actually runs, so a switch requested
       // while reconnecting is retried once the status flips to connected.
-      switchedPersonaRoleRef.current = persona.roleKey;
+      switchedPersonaRoleRef.current = personaStageKey;
       // Replay the transcript so a voice-change reconnect (owner↔nurse↔lab)
       // keeps continuity instead of treating the stage change as first contact.
       live.switchPersona(persona, buildConversationContext(live.messages, { viewerRoleKey: persona.roleKey }));
@@ -1142,7 +1185,17 @@ export function LiveSession({
           </div>
         )}
 
-        {/* Top: Persona header (horizontal — keeps vertical space for the transcript) */}
+        {/* Top: Persona tabs (switch between OWNER and NURSE to view separate conversations) */}
+        <div className="flex-shrink-0 px-4 pt-2">
+          <PersonaTabs
+            activePersona={activePersonaKey}
+            onChange={(key) => setActivePersonaRole(key)}
+            extendedTabs={extendedTabs}
+            className="mb-2"
+          />
+        </div>
+
+        {/* Persona header (horizontal — keeps vertical space for the transcript) */}
         <div className="flex-shrink-0">
           <PersonaHeader
             persona={persona}
@@ -1167,6 +1220,7 @@ export function LiveSession({
             messages={live.messages}
             isOpen={true}
             stages={progress.stages}
+            filterPersona={activePersonaKey}
           />
         </div>
 

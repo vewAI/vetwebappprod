@@ -128,7 +128,7 @@ describe("buildPersonaSystemInstruction", () => {
   });
 
   describe("difficulty-based clinical reasoning guidance for veterinary nurse", () => {
-    it("scaffolds student reasoning with Socratic cues when difficulty is Easy", () => {
+    it("scaffolds student reasoning without quizzing the clinician when difficulty is Easy", () => {
       const easyResult = buildPersonaSystemInstruction({
         caseItem: { ...caseItem, difficulty: "Easy" },
         stage: { ...stage, settings: { stage_type: "physical" } },
@@ -136,11 +136,12 @@ describe("buildPersonaSystemInstruction", () => {
       });
 
       expect(easyResult.systemInstruction).toContain("CLINICAL REASONING GUIDANCE (EARLY-YEAR / NOVICE STUDENT SCAFFOLDING)");
-      expect(easyResult.systemInstruction).toContain("SOCRATIC QUESTIONS");
+      expect(easyResult.systemInstruction).toContain("NO SOCRATIC QUIZZING OF THE CLINICIAN");
+      expect(easyResult.systemInstruction).toContain("NEVER ask the doctor 'What do you think?'");
       expect(easyResult.systemInstruction).toContain("Never ask for a differential or justification before making the requested result available");
-      expect(easyResult.systemInstruction).toContain("Do not interrupt a list of requested measurements with questions");
       expect(easyResult.systemInstruction).toContain("NON-SPOILER GUARDRAIL");
       expect(easyResult.systemInstruction).toContain("CLINICAL REASONING SCAFFOLDING (EASY DIFFICULTY)");
+      expect(easyResult.systemInstruction).toContain("EQUINE CLINICAL DISTINCTION - DIGITAL PULSES VS PERIPHERAL PULSES");
     });
 
     it("provides standard professional assistance when difficulty is Medium", () => {
