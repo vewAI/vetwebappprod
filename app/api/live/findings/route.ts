@@ -49,7 +49,8 @@ export function extractFindingsFromDetails(details: string): { physical: string;
         else if (/Gastrointestinal/i.test(rawLabel)) cleanLabel = "Abdomen & GI";
         else if (/Lymph nodes/i.test(rawLabel)) cleanLabel = "Lymph nodes";
         else if (/Demeanour/i.test(rawLabel)) cleanLabel = "Demeanour";
-        else if (/Musculoskeletal|Muscle/i.test(rawLabel)) cleanLabel = "Musculoskeletal";
+        else if (/Digital pulse|Digital pulses|Hoof|Hooves|Feet/i.test(rawLabel)) cleanLabel = "Digital pulses";
+        else if (/Musculoskeletal|Muscle|Locomotor|Lameness|Epaxial/i.test(rawLabel)) cleanLabel = "Musculoskeletal";
         else if (/Nervous|Neurolog/i.test(rawLabel)) cleanLabel = "Neurological";
         else if (/Ophthalmic|Eyes?/i.test(rawLabel)) cleanLabel = "Eyes & Vision";
         else if (/Integument|Skin|Coat/i.test(rawLabel)) cleanLabel = "Skin & Coat";
@@ -437,6 +438,10 @@ export function canonicalKeysForLabel(label: string): string[] {
       keys.push(canon);
     }
   }
+  // Disambiguate digital_pulse from heart_rate: digital pulse is peripheral limb pulse, not heart rate
+  if (keys.includes("digital_pulse")) {
+    return keys.filter((k) => k !== "heart_rate");
+  }
   return keys;
 }
 
@@ -511,7 +516,24 @@ export function entryMatchesUserText(entryLabel: string, userText: string): bool
 
 export function physicalEntryMatchesUserText(entryLabel: string, userText: string): boolean {
   const labelWords = words(entryLabel).filter((word) => !GENERIC_EXAM_WORDS.has(word));
-  return labelWords.length > 0 && labelWords.every((word) => entryMatchesUserText(word, userText));
+  if (labelWords.length === 0) return false;
+  if (labelWords.every((word) => entryMatchesUserText(word, userText))) {
+    return true;
+  }
+  const normUser = userText.toLowerCase();
+  if (
+    labelWords.some((w) => w.startsWith("musc")) &&
+    normUser.includes("musc")
+  ) {
+    return true;
+  }
+  if (
+    labelWords.some((w) => w.startsWith("digit")) &&
+    normUser.includes("digit")
+  ) {
+    return true;
+  }
+  return false;
 }
 
 // Extract labelled pairs from JSON-as-text records ("glucose": "3.8 ...").
@@ -757,10 +779,17 @@ export async function POST(request: Request) {
     const isPlaceholderPhys = !physText.trim() || /^List physical exam findings/i.test(physText.trim());
     const isPlaceholderDiag = !diagText.trim() || /^Share diagnostic results only/i.test(diagText.trim());
 
-    if ((isPlaceholderPhys || isPlaceholderDiag) && detailsText) {
+    if (detailsText) {
       const extracted = extractFindingsFromDetails(detailsText);
-      if (isPlaceholderPhys && extracted.physical) {
-        physText = extracted.physical;
+      if (extracted.physical) {
+        if (isPlaceholderPhys) {
+          physText = extracted.physical;
+        } else if (
+          (!physText.toLowerCase().includes("musculoskeletal") && extracted.physical.toLowerCase().includes("musculoskeletal")) ||
+          (!physText.toLowerCase().includes("digital pulse") && extracted.physical.toLowerCase().includes("digital pulse"))
+        ) {
+          physText = `${physText}\n${extracted.physical}`;
+        }
       }
       if (isPlaceholderDiag && extracted.diagnostic) {
         diagText = extracted.diagnostic;

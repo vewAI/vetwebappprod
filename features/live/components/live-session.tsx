@@ -241,7 +241,7 @@ export function LiveSession({
     if (msgs.length === 0) return;
     const lastUser = [...msgs].reverse().find((m) => m.role === "user");
     const lastAssistant = [...msgs].reverse().find((m) => m.role !== "user");
-    const signature = `${lastUser?.id ?? ""}|${lastAssistant?.id ?? ""}|${lastAssistant?.content?.length ?? 0}`;
+    const signature = `${progress.currentStageIndex}|${lastUser?.id ?? ""}|${lastAssistant?.id ?? ""}|${lastAssistant?.content?.length ?? 0}`;
     if (signature === findingsSignatureRef.current) return;
     const currentStage = progress.stages[progress.currentStageIndex];
     const normalizedCurrentStageType = resolveLiveStageType(currentStage);
@@ -258,7 +258,11 @@ export function LiveSession({
           .filter((m) => m.role === "user" && (m.stageIndex === undefined || m.stageIndex === progress.currentStageIndex))
           .map((m) => m.content)
           .filter(Boolean);
-        const userText = stageUserMessages.slice(-4).join(" \n ") || lastUser?.content || "";
+        const allStageTexts = [...stageUserMessages];
+        if (lastUser?.content && !allStageTexts.includes(lastUser.content)) {
+          allStageTexts.push(lastUser.content);
+        }
+        const userText = (allStageTexts.length > 0 ? allStageTexts.join(", ") : lastUser?.content || "").slice(0, 1800);
 
         const accessToken = await getAccessToken().catch(() => null);
         const res = await fetch("/api/live/findings", {

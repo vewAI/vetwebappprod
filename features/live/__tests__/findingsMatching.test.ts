@@ -88,6 +88,56 @@ describe("live findings matching & stage gating", () => {
       expect(canonicalKeysForLabel("Musculoskeletal")).toContain("musculoskeletal");
       expect(canonicalKeysForLabel("Musculoskeletal (muscles)")).toContain("musculoskeletal");
     });
+
+    it("correctly handles digital pulses as an independent parameter without leaking heart rate", () => {
+      const digitalPulseReq = "Can you check the digital pulses?";
+      const parsed = parseRequestedKeys(digitalPulseReq);
+
+      expect(parsed.canonical).toContain("digital_pulse");
+      expect(parsed.canonical).not.toContain("heart_rate");
+
+      expect(canonicalKeysForLabel("Digital pulses")).toEqual(["digital_pulse"]);
+      expect(canonicalKeysForLabel("Digital pulse")).toEqual(["digital_pulse"]);
+      expect(canonicalKeysForLabel("Palmar digital pulse")).toEqual(["digital_pulse"]);
+      expect(canonicalKeysForLabel("Heart rate")).toEqual(["heart_rate"]);
+
+      expect(physicalEntryMatchesUserText("Digital pulses", digitalPulseReq)).toBe(true);
+      expect(physicalEntryMatchesUserText("Hooves & digital pulses", digitalPulseReq)).toBe(true);
+      expect(physicalEntryMatchesUserText("Heart rate", digitalPulseReq)).toBe(false);
+    });
+
+    it("matches muscle palpation across compound labels and typo variations", () => {
+      expect(parseRequestedKeys("muscle palpation").canonical).toContain("musculoskeletal");
+      expect(parseRequestedKeys("muscle pa;pation").canonical).toContain("musculoskeletal");
+      expect(parseRequestedKeys("palpating the muscles").canonical).toContain("musculoskeletal");
+
+      expect(canonicalKeysForLabel("Muscle tone / palpation")).toContain("musculoskeletal");
+      expect(canonicalKeysForLabel("Epaxial muscles")).toContain("musculoskeletal");
+
+      expect(physicalEntryMatchesUserText("Muscle tone / palpation", "muscle palpation")).toBe(true);
+      expect(physicalEntryMatchesUserText("Epaxial muscles", "palpating the muscles")).toBe(true);
+    });
+
+    it("preserves all 5 canonical keys across multi-turn accumulated history", () => {
+      const multiTurnText = "HR and RR, temperature, HR and RR, digital pulses, muscle palpation";
+      const parsed = parseRequestedKeys(multiTurnText);
+
+      expect(parsed.canonical).toContain("heart_rate");
+      expect(parsed.canonical).toContain("respiratory_rate");
+      expect(parsed.canonical).toContain("temperature");
+      expect(parsed.canonical).toContain("digital_pulse");
+      expect(parsed.canonical).toContain("musculoskeletal");
+
+      // Also verify when joined with newlines
+      const newlineText = "HR and RR\ntemperature\nHR and RR\ndigital pulses\nmuscle palpation";
+      const parsedNewline = parseRequestedKeys(newlineText);
+
+      expect(parsedNewline.canonical).toContain("heart_rate");
+      expect(parsedNewline.canonical).toContain("respiratory_rate");
+      expect(parsedNewline.canonical).toContain("temperature");
+      expect(parsedNewline.canonical).toContain("digital_pulse");
+      expect(parsedNewline.canonical).toContain("musculoskeletal");
+    });
   });
 
   describe("Laboratory availability inquiries vs requests", () => {

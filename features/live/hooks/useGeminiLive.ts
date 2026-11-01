@@ -101,11 +101,7 @@ export function useGeminiLive(
   const personaRef = useRef<PersonaInstruction | null>(null);
   const tokenRef = useRef<string | null>(null);
   const stageIndexRef = useRef(currentStageIndex);
-
-  // Keep stageIndexRef in sync with the prop so new messages get the right stage
-  useEffect(() => {
-    stageIndexRef.current = currentStageIndex;
-  }, [currentStageIndex]);
+  stageIndexRef.current = currentStageIndex;
 
   const commitMessages = useCallback((next: Message[]) => {
     messagesRef.current = next;

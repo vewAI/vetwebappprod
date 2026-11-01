@@ -119,6 +119,21 @@ const ALIAS_MAP: Record<string, string[]> = {
     "tongue",
     "pharynx",
   ],
+  digital_pulse: [
+    "digital pulse",
+    "digital pulses",
+    "palmar digital pulse",
+    "plantar digital pulse",
+    "digital arterial pulse",
+    "hoof pulse",
+    "hoof pulses",
+    "foot pulse",
+    "feet pulses",
+    "bounding pulse",
+    "bounding pulses",
+    "bounding digital pulse",
+    "bounding digital pulses",
+  ],
 };
 
 // Group tokens map to multiple canonical keys
@@ -135,6 +150,7 @@ const GROUP_MAP: Record<string, string[]> = {
     "hydration",
     "abdomen",
     "musculoskeletal",
+    "digital_pulse",
   ],
 };
 
@@ -154,6 +170,9 @@ const TOKEN_TO_CANONICAL: Record<string, string> = (() => {
   out["muscles"] = "musculoskeletal";
   out["muscle"] = "musculoskeletal";
   out["musculoskeletal"] = "musculoskeletal";
+  out["palpate"] = "musculoskeletal";
+  out["palpating"] = "musculoskeletal";
+  out["palpation"] = "musculoskeletal";
   out["epaxial"] = "musculoskeletal";
   out["gluteal"] = "musculoskeletal";
   out["stiffness"] = "musculoskeletal";
@@ -167,6 +186,9 @@ const TOKEN_TO_CANONICAL: Record<string, string> = (() => {
   out["integument"] = "skin";
   out["teeth"] = "oral";
   out["mouth"] = "oral";
+  out["digital"] = "digital_pulse";
+  out["hoof"] = "digital_pulse";
+  out["hooves"] = "digital_pulse";
   return out;
 })();
 
@@ -181,9 +203,9 @@ function splitTokens(input: string): string[] {
     .replace(/[^a-z0-9,\s/\-]/g, " ")
     .replace(/\band\b/g, ",");
 
-  // Split by comma or whitespace
+  // Split by comma or whitespace (including newlines and carriage returns)
   const parts = cleaned
-    .split(/[ ,]+/)
+    .split(/[\s,]+/)
     .map((s) => s.trim())
     .filter(Boolean);
 
@@ -191,11 +213,25 @@ function splitTokens(input: string): string[] {
 }
 
 export function parseRequestedKeys(text: string): RequestedKeys {
+  const normText = (text || "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ");
   const tokens = splitTokens(text || "");
   const canonical: string[] = [];
   if (/\b(?:physical|vital) (?:parameters|signs)\b/i.test(text)) {
     canonical.push(...GROUP_MAP.vitals);
   }
+
+  // Multi-word phrase matching directly on text
+  if (/\b(?:digital|palmar|plantar|hoof|foot)\s+pulses?\b|\bbounding\s+(?:digital\s+)?pulses?\b/i.test(normText)) {
+    if (!canonical.includes("digital_pulse")) canonical.push("digital_pulse");
+  }
+  if (
+    /\b(?:muscle|muscles|epaxial|gluteal)\b.*\b(?:palpation|pa;pation|tone|pain|soreness|stiffness)\b|\b(?:palpate|palpating)\b.*\b(?:muscles?|epaxial|gluteals?)\b/i.test(
+      (text || "").toLowerCase()
+    )
+  ) {
+    if (!canonical.includes("musculoskeletal")) canonical.push("musculoskeletal");
+  }
+
   for (const tok of tokens) {
     // Trim unit-like suffixes such as mmhg or /min
     const plain = tok.replace(/mmhg$/i, "").replace(/\/.*/g, "");
@@ -226,6 +262,12 @@ export function parseRequestedKeys(text: string): RequestedKeys {
         }
       }
     }
+  }
+
+  // Disambiguate digital_pulse vs heart_rate: if digital pulses was asked, don't leak heart rate unless asked
+  if (canonical.includes("digital_pulse") && !/\b(?:heart|hr|cardiac|bpm|pulse rate)\b/i.test(normText)) {
+    const hrIdx = canonical.indexOf("heart_rate");
+    if (hrIdx !== -1) canonical.splice(hrIdx, 1);
   }
 
   return { raw: text, tokens, canonical };
@@ -365,6 +407,23 @@ export const PHYS_SYNONYMS: Record<string, string[]> = {
     "mouth",
     "tongue",
     "pharynx",
+  ],
+  digital_pulse: [
+    "digital pulse",
+    "digital pulses",
+    "palmar digital pulse",
+    "plantar digital pulse",
+    "digital arterial pulse",
+    "hoof pulse",
+    "hoof pulses",
+    "foot pulse",
+    "feet pulses",
+    "bounding pulse",
+    "bounding pulses",
+    "bounding digital pulse",
+    "bounding digital pulses",
+    "hooves",
+    "hoof",
   ],
 };
 
