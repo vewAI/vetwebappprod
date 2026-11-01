@@ -9,7 +9,7 @@ describe("parseRequestedKeys", () => {
 
   it("parses 'and' separated tokens and aliases", () => {
     const r = parseRequestedKeys("pulse and temp");
-    expect(r.canonical).toEqual(["heart_rate", "temperature"]);
+    expect(r.canonical).toEqual(["pulse", "temperature"]);
   });
 
   it("parses space separated tokens", () => {

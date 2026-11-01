@@ -1,17 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
   DIAG_SYNONYMS,
+  EQUINE_NORMAL_PHYSICAL_BASELINES,
   canonicalKeysForLabel,
   entryMatchesUserText,
+  extractFindingsEntries,
+  extractFindingsFromDescription,
   extractFindingsFromDetails,
   extractDiagPairs,
   findMatchingSynonymKeys,
   isAllLabsRequest,
   isAvailabilityInquiry,
+  isGarbageEntry,
   isGeneralBloodworkRequest,
   labelSpokenIn,
   matchDiagnosticFinding,
   physicalEntryMatchesUserText,
+  splitCompoundEntries,
   stageAllowsReveal,
 } from "@/app/api/live/findings/route";
 import { parseRequestedKeys } from "@/features/chat/services/physFinder";
@@ -420,6 +425,101 @@ Final diagnosis: Larval cyathostominosis
       expect(extracted.physical).toContain("Respiratory rate: 14 breaths/min.");
       expect(extracted.physical).toContain("Temperature: 38.1 °C, rectal.");
       expect(extracted.diagnostic).toContain("Admission CBC: RBC 9.5 x10^12/L");
+    });
+  });
+
+  describe("Equine pulse separation & compound vitals splitting", () => {
+    it("strictly separates heart_rate, peripheral pulse, and digital_pulse requests", () => {
+      // 1. Asking for heart rate only
+      const hrReq = parseRequestedKeys("What is the heart rate?");
+      expect(hrReq.canonical).toContain("heart_rate");
+      expect(hrReq.canonical).not.toContain("pulse");
+      expect(hrReq.canonical).not.toContain("digital_pulse");
+
+      // 2. Asking for peripheral pulses only
+      const pulseReq = parseRequestedKeys("Can you check the pulses?");
+      expect(pulseReq.canonical).toContain("pulse");
+      expect(pulseReq.canonical).not.toContain("digital_pulse");
+      expect(pulseReq.canonical).not.toContain("heart_rate");
+
+      const periphPulseReq = parseRequestedKeys("Check the peripheral pulse quality and facial artery pulse");
+      expect(periphPulseReq.canonical).toContain("pulse");
+      expect(periphPulseReq.canonical).not.toContain("digital_pulse");
+
+      // 3. Asking for digital pulses only
+      const digReq = parseRequestedKeys("Please check digital pulses");
+      expect(digReq.canonical).toContain("digital_pulse");
+      expect(digReq.canonical).not.toContain("pulse");
+      expect(digReq.canonical).not.toContain("heart_rate");
+
+      // Canonical label mappings
+      expect(canonicalKeysForLabel("Heart rate")).toEqual(["heart_rate"]);
+      expect(canonicalKeysForLabel("Pulse")).toEqual(["pulse"]);
+      expect(canonicalKeysForLabel("Peripheral pulse")).toEqual(["pulse"]);
+      expect(canonicalKeysForLabel("Digital pulse")).toEqual(["digital_pulse"]);
+      expect(canonicalKeysForLabel("Digital pulses")).toEqual(["digital_pulse"]);
+
+      // Vocabulary matching mutual exclusion
+      expect(physicalEntryMatchesUserText("Pulse", "What is the heart rate?")).toBe(false);
+      expect(physicalEntryMatchesUserText("Digital pulse", "What is the heart rate?")).toBe(false);
+      expect(physicalEntryMatchesUserText("Heart rate", "Can you check the pulses?")).toBe(false);
+      expect(physicalEntryMatchesUserText("Digital pulse", "Can you check the pulses?")).toBe(false);
+      expect(physicalEntryMatchesUserText("Pulse", "Please check digital pulses")).toBe(false);
+      expect(physicalEntryMatchesUserText("Digital pulse", "Please check digital pulses")).toBe(true);
+    });
+
+    it("splits compound vitals so heart rate does not group pulses with HR", () => {
+      const compoundText = "Heart rate: 44 bpm, pulses strong and synchronous";
+      const entries = extractFindingsEntries(compoundText);
+
+      expect(entries).toHaveLength(2);
+      expect(entries[0]).toEqual({ label: "Heart rate", value: "44 bpm" });
+      expect(entries[1]).toEqual({ label: "Pulse", value: "strong and synchronous" });
+    });
+
+    it("splits three-way compound findings with digital pulses into separate lines", () => {
+      const compoundThree = "Heart rate: 44 bpm, peripheral pulses strong and regular, digital pulses faint and equal";
+      const entries = extractFindingsEntries(compoundThree);
+
+      expect(entries).toHaveLength(3);
+      expect(entries[0]).toEqual({ label: "Heart rate", value: "44 bpm" });
+      expect(entries[1]).toEqual({ label: "Peripheral pulse", value: "strong and regular" });
+      expect(entries[2]).toEqual({ label: "Digital pulse", value: "faint and equal" });
+    });
+
+    it("extracts muscle palpation from narrative case description when authored there", () => {
+      const caseDescription =
+        "Cerveso is a 9-year-old gelding presenting with acute reluctance to move after a 2-hour hack. The epaxial and gluteal muscles are hard and painful on palpation. Heart rate is 44 bpm.";
+      const extracted = extractFindingsFromDescription(caseDescription);
+
+      expect(extracted.length).toBeGreaterThanOrEqual(1);
+      const muscleFinding = extracted.find((e) => e.label.includes("Muscle"));
+      expect(muscleFinding).toBeDefined();
+      expect(muscleFinding?.value).toContain("hard and painful on palpation");
+
+      const gaitFinding = extracted.find((e) => e.label.includes("Gait"));
+      expect(gaitFinding).toBeDefined();
+      expect(gaitFinding?.value).toContain("reluctance to move");
+    });
+
+    it("does not reject clinical labels containing forward slashes in isGarbageEntry", () => {
+      expect(isGarbageEntry("Musculoskeletal / Muscle palpation", "firm and painful")).toBe(false);
+      expect(isGarbageEntry("Muscle tone / palpation", "tense")).toBe(false);
+      expect(isGarbageEntry("PCV / TP", "42% / 7.2 g/dL")).toBe(false);
+      expect(isGarbageEntry("Gait / Locomotion", "stiff")).toBe(false);
+
+      // Web URLs or questions should still be identified as garbage
+      expect(isGarbageEntry("https://example.com/file", "data")).toBe(true);
+      expect(isGarbageEntry("Question", "Which specific test do you want to know about?")).toBe(true);
+    });
+
+    it("provides equine normal reference baselines for unauthored parameters", () => {
+      expect(EQUINE_NORMAL_PHYSICAL_BASELINES.digital_pulse).toBeDefined();
+      expect(EQUINE_NORMAL_PHYSICAL_BASELINES.digital_pulse.value).toContain("faint");
+      expect(EQUINE_NORMAL_PHYSICAL_BASELINES.pulse).toBeDefined();
+      expect(EQUINE_NORMAL_PHYSICAL_BASELINES.pulse.value).toContain("Strong, regular, synchronous");
+      expect(EQUINE_NORMAL_PHYSICAL_BASELINES.gut_sounds).toBeDefined();
+      expect(EQUINE_NORMAL_PHYSICAL_BASELINES.musculoskeletal).toBeDefined();
     });
   });
 });

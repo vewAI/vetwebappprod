@@ -611,9 +611,9 @@ export function LiveSession({
         // Stage-specific ask so the incoming persona opens with the RIGHT move.
         const handoffAsk: Record<string, string> = {
           history: "Ask the veterinarian what history they would like to take.",
-          physical: "Ask the veterinarian which findings or body system they would like to examine first.",
+          physical: "Say: \"I'm ready to assist with the examination, Doctor. Please request the specific parameters you want to appear in the test panel.\"",
           diagnostic: "Ask the veterinarian which differentials or diagnostics they are considering.",
-          laboratory: "Ask the veterinarian which tests or panels they would like run.",
+          laboratory: "Say: \"I'm ready to assist with laboratory testing, Doctor. Please request the specific tests or panels you want to appear in the test panel.\"",
           treatment: "Ask the veterinarian FOR THE TREATMENT PLAN (e.g. 'So doctor, what's the treatment plan?').",
           communication: "Invite the veterinarian to explain the plan and prognosis to the owner.",
         };

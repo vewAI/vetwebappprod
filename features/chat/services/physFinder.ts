@@ -14,7 +14,25 @@ export type PhysMatchResult = {
 };
 
 const ALIAS_MAP: Record<string, string[]> = {
-  heart_rate: ["hr", "heart rate", "pulse", "heartbreak", "how great", "aaron", "age aaron", "h r", "h.r.", "hrr"],
+  heart_rate: ["hr", "heart rate", "heartbreak", "how great", "aaron", "age aaron", "h r", "h.r.", "hrr", "heartrate", "cardiac rate", "heart rhythm"],
+  pulse: [
+    "pulse",
+    "pulses",
+    "peripheral pulse",
+    "peripheral pulses",
+    "arterial pulse",
+    "arterial pulses",
+    "facial pulse",
+    "transverse facial pulse",
+    "submandibular pulse",
+    "coccygeal pulse",
+    "metatarsal pulse",
+    "pulse quality",
+    "pulse rate",
+    "quality of pulse",
+    "femoral pulse",
+    "femoral pulses",
+  ],
   respiratory_rate: ["rr", "respiratory rate", "respiration", "respirations", "resp rate", "resp", "breathing rate"],
   temperature: ["temp", "temperature", "t"],
   blood_pressure: ["bp", "blood pressure"],
@@ -138,10 +156,11 @@ const ALIAS_MAP: Record<string, string[]> = {
 
 // Group tokens map to multiple canonical keys
 const GROUP_MAP: Record<string, string[]> = {
-  vitals: ["heart_rate", "respiratory_rate", "temperature", "blood_pressure"],
-  vital: ["heart_rate", "respiratory_rate", "temperature", "blood_pressure"],
+  vitals: ["heart_rate", "respiratory_rate", "temperature", "blood_pressure", "pulse"],
+  vital: ["heart_rate", "respiratory_rate", "temperature", "blood_pressure", "pulse"],
   exam: [
     "heart_rate",
+    "pulse",
     "respiratory_rate",
     "temperature",
     "blood_pressure",
@@ -161,12 +180,14 @@ const TOKEN_TO_CANONICAL: Record<string, string> = (() => {
       out[a] = canon;
     }
   }
-  // also add single-letter shortcuts
+  // also add single-letter and key clinical shortcuts
   out["hr"] = "heart_rate";
   out["rr"] = "respiratory_rate";
   out["aaron"] = "heart_rate";
   out["t"] = "temperature";
   out["bp"] = "blood_pressure";
+  out["pulse"] = "pulse";
+  out["pulses"] = "pulse";
   out["muscles"] = "musculoskeletal";
   out["muscle"] = "musculoskeletal";
   out["musculoskeletal"] = "musculoskeletal";
@@ -221,11 +242,18 @@ export function parseRequestedKeys(text: string): RequestedKeys {
   }
 
   // Multi-word phrase matching directly on text
-  if (/\b(?:digital|palmar|plantar|hoof|foot)\s+pulses?\b|\bbounding\s+(?:digital\s+)?pulses?\b/i.test(normText)) {
+  const hasDigitalPulsePhrase = /\b(?:digital|palmar|plantar|hoof|foot)\s+pulses?\b|\bbounding\s+(?:digital\s+)?pulses?\b/i.test(normText);
+  if (hasDigitalPulsePhrase) {
     if (!canonical.includes("digital_pulse")) canonical.push("digital_pulse");
   }
+
+  const hasPeripheralPulsePhrase = /\b(?:peripheral|arterial|facial|transverse\s+facial|submandibular|coccygeal|metatarsal|femoral)\s+pulses?\b|\bpulse\s+quality\b/i.test(normText);
+  if (hasPeripheralPulsePhrase) {
+    if (!canonical.includes("pulse")) canonical.push("pulse");
+  }
+
   if (
-    /\b(?:muscle|muscles|epaxial|gluteal)\b.*\b(?:palpation|pa;pation|tone|pain|soreness|stiffness)\b|\b(?:palpate|palpating)\b.*\b(?:muscles?|epaxial|gluteals?)\b/i.test(
+    /\b(?:muscle|muscles|epaxial|gluteal)\b.*\b(?:palpation|pa;pation|tone|pain|soreness|stiffness|hard|firm|cramp|tender)\b|\b(?:palpate|palpating)\b.*\b(?:muscles?|epaxial|gluteals?)\b/i.test(
       (text || "").toLowerCase()
     )
   ) {
@@ -244,6 +272,10 @@ export function parseRequestedKeys(text: string): RequestedKeys {
     }
     if (TOKEN_TO_CANONICAL[plain]) {
       const c = TOKEN_TO_CANONICAL[plain];
+      // If user said "digital pulse", do not map the bare token "pulse" to generic peripheral pulse
+      if (c === "pulse" && hasDigitalPulsePhrase && !hasPeripheralPulsePhrase) {
+        continue;
+      }
       if (!canonical.includes(c)) canonical.push(c);
     } else {
       // try alias map: short aliases (<= 2 chars like "t", "hr", "rr", "bp") must be an
@@ -257,6 +289,9 @@ export function parseRequestedKeys(text: string): RequestedKeys {
           return plain === first || (first.length >= 4 && plain.startsWith(first));
         });
         if (hit) {
+          if (canon === "pulse" && hasDigitalPulsePhrase && !hasPeripheralPulsePhrase) {
+            continue;
+          }
           if (!canonical.includes(canon)) canonical.push(canon);
           break;
         }
@@ -265,9 +300,27 @@ export function parseRequestedKeys(text: string): RequestedKeys {
   }
 
   // Disambiguate digital_pulse vs heart_rate: if digital pulses was asked, don't leak heart rate unless asked
-  if (canonical.includes("digital_pulse") && !/\b(?:heart|hr|cardiac|bpm|pulse rate)\b/i.test(normText)) {
+  if (canonical.includes("digital_pulse") && !/\b(?:heart|hr|cardiac|bpm)\b/i.test(normText)) {
     const hrIdx = canonical.indexOf("heart_rate");
     if (hrIdx !== -1) canonical.splice(hrIdx, 1);
+  }
+
+  // Disambiguate digital_pulse vs peripheral pulse:
+  if (canonical.includes("digital_pulse") && !hasPeripheralPulsePhrase) {
+    // If text only mentions digital pulse, do not leak peripheral pulse
+    const stripped = normText.replace(/\b(?:digital|palmar|plantar|hoof|foot)\s+pulses?\b/g, "").trim();
+    if (!/\bpulses?\b/i.test(stripped)) {
+      const pIdx = canonical.indexOf("pulse");
+      if (pIdx !== -1) canonical.splice(pIdx, 1);
+    }
+  }
+
+  // Disambiguate heart_rate vs pulse: if heart rate was asked without pulses, don't leak pulse
+  if (canonical.includes("heart_rate") && !/\bpulses?\b/i.test(normText)) {
+    const pIdx = canonical.indexOf("pulse");
+    if (pIdx !== -1) canonical.splice(pIdx, 1);
+    const dpIdx = canonical.indexOf("digital_pulse");
+    if (dpIdx !== -1) canonical.splice(dpIdx, 1);
   }
 
   return { raw: text, tokens, canonical };
@@ -309,7 +362,20 @@ export const PHYS_SYNONYMS: Record<string, string[]> = {
   ],
   ballottement: ["ballottement", "ballottement was", "ballott"],
   temperature: ["temp", "temperature"],
-  heart_rate: ["heart rate", "pulse", "aaron", "age aaron", "hr"],
+  heart_rate: ["heart rate", "aaron", "age aaron", "hr", "heartrate", "cardiac rate", "heart rhythm"],
+  pulse: [
+    "pulse",
+    "pulses",
+    "peripheral pulse",
+    "peripheral pulses",
+    "arterial pulse",
+    "arterial pulses",
+    "facial pulse",
+    "transverse facial pulse",
+    "submandibular pulse",
+    "pulse quality",
+    "pulse rate",
+  ],
   respiratory_rate: ["respiratory rate", "respiration", "respirations", "resp rate", "resp", "rr"],
   mucous_membranes: [
     "mucous",

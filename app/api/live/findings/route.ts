@@ -438,9 +438,17 @@ export function canonicalKeysForLabel(label: string): string[] {
       keys.push(canon);
     }
   }
-  // Disambiguate digital_pulse from heart_rate: digital pulse is peripheral limb pulse, not heart rate
+  // Disambiguate digital_pulse from heart_rate and peripheral pulse:
   if (keys.includes("digital_pulse")) {
-    return keys.filter((k) => k !== "heart_rate");
+    return keys.filter((k) => k !== "heart_rate" && k !== "pulse");
+  }
+  // If label has pulse without digital, make sure it does not get digital_pulse or heart_rate
+  if (keys.includes("pulse") && !normalizedLabel.includes("digit")) {
+    return keys.filter((k) => k !== "heart_rate" && k !== "digital_pulse");
+  }
+  // If label has heart_rate without pulse, make sure it does not get pulse
+  if (keys.includes("heart_rate") && !normalizedLabel.includes("pulse")) {
+    return keys.filter((k) => k !== "pulse" && k !== "digital_pulse");
   }
   return keys;
 }
@@ -515,22 +523,42 @@ export function entryMatchesUserText(entryLabel: string, userText: string): bool
 }
 
 export function physicalEntryMatchesUserText(entryLabel: string, userText: string): boolean {
+  const normLabel = normalizeForMatch(entryLabel);
+  const normUser = userText.toLowerCase();
+
+  // 1. Digital pulses vs peripheral pulse vs heart rate mutual exclusion
+  const labelIsDigital = normLabel.includes("digit") || normLabel.includes("hoof") || normLabel.includes("feet");
+  const userHasDigital = /\b(?:digital|palmar|plantar|hoof|foot)\s+pulses?\b|\bdigit\b/i.test(normUser);
+  const labelIsPeripheralPulse = (normLabel.includes("pulse") || normLabel.includes("arterial")) && !labelIsDigital;
+  const userHasPeripheralPulse =
+    /\b(?:peripheral|arterial|facial)\s+pulses?\b|\bpulse\s+quality\b/i.test(normUser) ||
+    (/\bpulses?\b/i.test(normUser) && !userHasDigital);
+  const labelIsHeartRate = normLabel.includes("heart") || normLabel.includes("cardiac") || /\bhr\b/.test(normLabel);
+  const userHasHeartRate = /\b(?:heart\s+rate|heart|cardiac|bpm|hr)\b/i.test(normUser);
+
+  if (labelIsDigital && !userHasDigital) return false;
+  if (userHasDigital && !labelIsDigital) {
+    if (!userHasPeripheralPulse && labelIsPeripheralPulse) return false;
+    if (!userHasHeartRate && labelIsHeartRate) return false;
+  }
+  if (labelIsPeripheralPulse && !userHasPeripheralPulse) return false;
+  if (labelIsHeartRate && !userHasHeartRate) return false;
+
   const labelWords = words(entryLabel).filter((word) => !GENERIC_EXAM_WORDS.has(word));
   if (labelWords.length === 0) return false;
   if (labelWords.every((word) => entryMatchesUserText(word, userText))) {
     return true;
   }
-  const normUser = userText.toLowerCase();
   if (
     labelWords.some((w) => w.startsWith("musc")) &&
     normUser.includes("musc")
   ) {
     return true;
   }
-  if (
-    labelWords.some((w) => w.startsWith("digit")) &&
-    normUser.includes("digit")
-  ) {
+  if (labelIsDigital && userHasDigital) {
+    return true;
+  }
+  if (labelIsPeripheralPulse && userHasPeripheralPulse) {
     return true;
   }
   return false;
@@ -549,6 +577,76 @@ export function extractLabelledPairs(text: string): FindingsEntry[] {
   return pairs;
 }
 
+export function splitCompoundEntries(entries: FindingsEntry[]): FindingsEntry[] {
+  const result: FindingsEntry[] = [];
+
+  for (const entry of entries) {
+    let val = entry.value;
+
+    // 1. Check if an entry embeds digital pulse
+    const digitalPulseMatch = val.match(/,\s*(?:(palmar|plantar)\s+)?digital\s+pulses?[:\s]+([^,;]+)/i);
+    let digitalPulseEntry: FindingsEntry | null = null;
+    if (digitalPulseMatch) {
+      digitalPulseEntry = {
+        label: "Digital pulse",
+        value: digitalPulseMatch[2].trim(),
+      };
+      val = val.replace(digitalPulseMatch[0], "").trim();
+    }
+
+    // 2. Check if an entry (e.g. Heart rate) embeds peripheral pulse
+    // Patterns:
+    // ", pulses strong and synchronous"
+    // ", peripheral pulse: strong"
+    // ", pulses: strong, regular"
+    // ", pulse strong and regular"
+    const pulseMatch = val.match(/,\s*(?:(peripheral|arterial|facial)\s+)?pulses?[:\s]+([^,;]+(?:,\s*(?:regular|synchronous|equal|strong|weak|bounding))?)/i);
+    let pulseEntry: FindingsEntry | null = null;
+    if (pulseMatch) {
+      pulseEntry = {
+        label: pulseMatch[1] ? `${capitalizeLabel(pulseMatch[1])} pulse` : "Pulse",
+        value: pulseMatch[2].trim(),
+      };
+      val = val.replace(pulseMatch[0], "").trim();
+    }
+
+    // 3. Check if an entry embeds respiratory rate
+    const rrMatch = val.match(/,\s*(?:respiratory\s+rate|respiration|rr)[:\s]+([^,;]+)/i);
+    let rrEntry: FindingsEntry | null = null;
+    if (rrMatch) {
+      rrEntry = {
+        label: "Respiratory rate",
+        value: rrMatch[1].trim(),
+      };
+      val = val.replace(rrMatch[0], "").trim();
+    }
+
+    // 4. Check if an entry embeds temperature
+    const tempMatch = val.match(/,\s*(?:rectal\s+)?temp(?:erature)?[:\s]+([^,;]+)/i);
+    let tempEntry: FindingsEntry | null = null;
+    if (tempMatch) {
+      tempEntry = {
+        label: "Temperature",
+        value: tempMatch[1].trim(),
+      };
+      val = val.replace(tempMatch[0], "").trim();
+    }
+
+    // Push the cleaned original entry
+    result.push({
+      label: entry.label,
+      value: val.replace(/^[,\s;]+|[,\s;]+$/g, "").trim(),
+    });
+
+    if (pulseEntry) result.push(pulseEntry);
+    if (digitalPulseEntry) result.push(digitalPulseEntry);
+    if (rrEntry) result.push(rrEntry);
+    if (tempEntry) result.push(tempEntry);
+  }
+
+  return result;
+}
+
 // Findings are stored as "Label: value" entries separated by newlines and/or
 // " - " bullets — often ALL inside a single line, or as JSON-as-text. Split
 // into granular entries so revealing one match never exposes the whole dataset.
@@ -558,10 +656,13 @@ export function extractFindingsEntries(findingsText: string): FindingsEntry[] {
   // JSON-shaped records first (quoted keys are the giveaway).
   if (text.startsWith("{") || /["'][a-z0-9_\- ]{2,48}["']\s*:/.test(text)) {
     const jsonPairs = extractLabelledPairs(text);
-    if (jsonPairs.length > 0) return jsonPairs;
+    if (jsonPairs.length > 0) return splitCompoundEntries(jsonPairs);
   }
   const entries: FindingsEntry[] = [];
-  const parts = text.replace(/\r?\n/g, " - ").split(/\s-\s+/);
+  const preprocessed = text
+    .replace(/;/g, " - ")
+    .replace(/,\s*(?=(?:HR|Heart rate|RR|Resp(?:iratory)? rate|Temp(?:erature)?|Pulses?|Peripheral pulses?|Digital pulses?|Mucous membranes?|CRT|MM|Gut sounds?|Borborygmi|Muscles?|Musculoskeletal)\s*:)/gi, " - ");
+  const parts = preprocessed.replace(/\r?\n/g, " - ").split(/\s-\s+/);
   for (const partRaw of parts) {
     const part = partRaw.trim().replace(/^-\s*/, "");
     if (!part) continue;
@@ -572,10 +673,18 @@ export function extractFindingsEntries(findingsText: string): FindingsEntry[] {
         value: part.slice(colonIdx + 1).trim(),
       });
     } else {
-      entries.push({ label: part, value: "" });
+      const pulseHead = part.match(/^(?:(peripheral|arterial|facial)\s+)?pulses?\s+(.+)$/i);
+      const digHead = part.match(/^(?:(palmar|plantar)\s+)?digital\s+pulses?\s+(.+)$/i);
+      if (digHead) {
+        entries.push({ label: "Digital pulse", value: digHead[2].trim() });
+      } else if (pulseHead) {
+        entries.push({ label: pulseHead[1] ? `${capitalizeLabel(pulseHead[1])} pulse` : "Pulse", value: pulseHead[2].trim() });
+      } else {
+        entries.push({ label: part, value: "" });
+      }
     }
   }
-  return entries;
+  return splitCompoundEntries(entries);
 }
 
 export function capitalizeLabel(label: string): string {
@@ -731,10 +840,105 @@ export function prettifyLabel(label: string): string {
 // ("Which specific aspects... do you want to know about?") — never findings.
 export function isGarbageEntry(label: string, value: string): boolean {
   const combined = `${label} ${value}`;
-  if (label.includes("/") || combined.includes("?")) return true;
+  if (/\b(?:https?:\/\/|\bapplication\/\w+|\btext\/\w+)/i.test(label) || combined.includes("?")) return true;
   if (/which\s+specific|do you want to know|please (ask|specify)|tell me what/i.test(combined)) return true;
   return false;
 }
+
+export function extractFindingsFromDescription(description: string, condition = ""): FindingsEntry[] {
+  const combined = `${description || ""}\n${condition || ""}`.trim();
+  if (!combined) return [];
+
+  const entries: FindingsEntry[] = [];
+  const sentences = combined
+    .split(/(?<=[.!?\n])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  // 1. Muscle palpation / tone / soreness
+  const muscleRegex = /(?:epaxial|gluteal|hindquarter|lumbar|neck|shoulder)?\s*(?:muscles?|musculature|muscle tone|muscle palpation)[^.\n;]*(?:hard|firm|tense|rigid|spasm|cramp|fasciculat\w*|painful|sore|stiff|swollen|tender|hyperton\w*|atroph\w*)[^.\n;]*/i;
+  const muscleRegexAlt = /(?:hard|firm|tense|rigid|painful|sore|stiff|swollen|tender|cramped)\s+(?:epaxial|gluteal|hindquarter|lumbar|neck|shoulder)?\s*(?:muscles?|musculature)[^.\n;]*/i;
+
+  for (const s of sentences) {
+    const m = s.match(muscleRegex) || s.match(muscleRegexAlt);
+    if (m) {
+      entries.push({
+        label: "Musculoskeletal / Muscle palpation",
+        value: s.replace(/^[-*•\s]+/, "").trim(),
+      });
+      break;
+    }
+  }
+
+  // 2. Gait & Locomotion
+  const gaitRegex = /(?:reluctance|reluctant|refuses?|refusal|unwilling)\s+to\s+(?:move|walk|bear weight)|stiff\s+gait|lameness|short-strided/i;
+  for (const s of sentences) {
+    if (gaitRegex.test(s)) {
+      entries.push({
+        label: "Gait & Locomotion",
+        value: s.replace(/^[-*•\s]+/, "").trim(),
+      });
+      break;
+    }
+  }
+
+  // 3. Sweating / Integument
+  const sweatRegex = /\b(?:profuse(?:ly)?\s+sweating|sweating|patchy\s+sweat|tacky\s+coat)\b/i;
+  for (const s of sentences) {
+    if (sweatRegex.test(s)) {
+      entries.push({
+        label: "Integument / Sweating",
+        value: s.replace(/^[-*•\s]+/, "").trim(),
+      });
+      break;
+    }
+  }
+
+  return entries;
+}
+
+export const EQUINE_NORMAL_PHYSICAL_BASELINES: Record<string, { label: string; value: string }> = {
+  pulse: {
+    label: "Pulse",
+    value: "Strong, regular, synchronous with heartbeat (facial / transverse facial artery)",
+  },
+  digital_pulse: {
+    label: "Digital pulse",
+    value: "Normal (faint, equal in all 4 feet, no bounding or increased pulsation)",
+  },
+  gut_sounds: {
+    label: "Gut sounds",
+    value: "Present in all 4 quadrants (normal borborygmi every 10–20 seconds)",
+  },
+  musculoskeletal: {
+    label: "Musculoskeletal / Muscle palpation",
+    value: "Normal muscle tone throughout, soft and non-painful on palpation, no fasciculations",
+  },
+  temperature: {
+    label: "Rectal temperature",
+    value: "37.8 °C (100.0 °F)",
+  },
+  respiratory_rate: {
+    label: "Respiratory rate",
+    value: "12 breaths/min (resting, eupneic)",
+  },
+  heart_rate: {
+    label: "Heart rate",
+    value: "36 bpm (regular rhythm)",
+  },
+  capillary_refill_time: {
+    label: "Capillary refill time",
+    value: "< 2 seconds",
+  },
+  mucous_membranes: {
+    label: "Mucous membranes",
+    value: "Pink, moist",
+  },
+  hydration: {
+    label: "Hydration",
+    value: "Normal skin turgor (< 2s skin tent), moist gums",
+  },
+};
 
 function cleanValue(value: string): string {
   return String(value || "")
@@ -765,7 +969,7 @@ export async function POST(request: Request) {
     const { supabase } = auth;
     const { data: caseRow, error } = await supabase
       .from("cases")
-      .select("physical_exam_findings, diagnostic_findings, details")
+      .select("id, title, physical_exam_findings, diagnostic_findings, details, description, condition, species")
       .eq("id", caseId)
       .maybeSingle();
     if (error || !caseRow) {
@@ -775,6 +979,8 @@ export async function POST(request: Request) {
     let physText = typeof caseRow.physical_exam_findings === "string" ? caseRow.physical_exam_findings : "";
     let diagText = typeof caseRow.diagnostic_findings === "string" ? caseRow.diagnostic_findings : "";
     const detailsText = typeof (caseRow as Record<string, unknown>).details === "string" ? ((caseRow as Record<string, unknown>).details as string) : "";
+    const descText = typeof (caseRow as Record<string, unknown>).description === "string" ? ((caseRow as Record<string, unknown>).description as string) : "";
+    const condText = typeof (caseRow as Record<string, unknown>).condition === "string" ? ((caseRow as Record<string, unknown>).condition as string) : "";
 
     const isPlaceholderPhys = !physText.trim() || /^List physical exam findings/i.test(physText.trim());
     const isPlaceholderDiag = !diagText.trim() || /^Share diagnostic results only/i.test(diagText.trim());
@@ -796,6 +1002,14 @@ export async function POST(request: Request) {
       }
     }
 
+    // Extract any clinical examination findings authored in description/condition
+    const descFindings = extractFindingsFromDescription(descText, condText);
+    for (const df of descFindings) {
+      if (!physText.toLowerCase().includes(df.label.toLowerCase())) {
+        physText = `${physText}\n${df.label}: ${df.value}`;
+      }
+    }
+
     const items: FindingItem[] = [];
     const seen = new Set<string>();
 
@@ -809,7 +1023,8 @@ export async function POST(request: Request) {
     const physEntries = extractFindingsEntries(physText);
     const physAllowed = stageAllowsReveal("physical", stageType);
 
-    if (physAllowed && (requestedCanonical.size > 0 || userText.trim())) {      for (const entry of physEntries) {
+    if (physAllowed && (requestedCanonical.size > 0 || userText.trim())) {
+      for (const entry of physEntries) {
         if (isGarbageEntry(entry.label, entry.value)) continue;
         const entryKeys = canonicalKeysForLabel(entry.label);
         const canonicalHit = entryKeys.some((k) => requestedCanonical.has(k));
@@ -824,6 +1039,33 @@ export async function POST(request: Request) {
           value: cleanValue(entry.value) || prettifyLabel(entry.label),
           source: "physical",
         });
+      }
+
+      // Equine normal reference baseline fallback for unauthored parameters
+      const isEquineCase =
+        (typeof caseRow?.species === "string" && /equine|horse/i.test(caseRow.species)) ||
+        /equine|horse|gelding|mare|stallion|thoroughbred/i.test(`${caseRow?.title ?? ""} ${caseRow?.details ?? ""} ${caseRow?.description ?? ""}`);
+
+      if (isEquineCase) {
+        for (const canonKey of requestedCanonical) {
+          const alreadyMatched = items.some((it) => {
+            const keys = canonicalKeysForLabel(it.label);
+            return keys.includes(canonKey);
+          });
+          if (!alreadyMatched && EQUINE_NORMAL_PHYSICAL_BASELINES[canonKey]) {
+            const baseline = EQUINE_NORMAL_PHYSICAL_BASELINES[canonKey];
+            const dedupeKey = `phys:${normalizeForMatch(baseline.label)}`;
+            if (!seen.has(dedupeKey)) {
+              seen.add(dedupeKey);
+              items.push({
+                key: dedupeKey,
+                label: baseline.label,
+                value: baseline.value,
+                source: "physical",
+              });
+            }
+          }
+        }
       }
     }
 
